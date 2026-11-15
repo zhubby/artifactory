@@ -55,11 +55,13 @@
 - [可选调度后端评估 · 2026-11-12](substrate-scheduling-assessment-2026-11-12.md)
 - [Toasty 数据访问迁移计划 · 2026-11-13](plans/2026-11-13-toasty-data-access.md)
 - [多租户实施与审查修复 · 2026-11-15](plans/2026-11-15-multitenancy.md)
+- [可读租户、项目与构建路由计划 · 2026-11-15](superpowers/plans/2026-11-15-readable-routes.md)
 
 # 品牌与变更记录
 
 - [Artifactory 0.2.0](releases/0.2.0.md)
 - [0.2.0 Kubernetes 试部署记录](releases/0.2.0-kubernetes-trial.md)
 - [多租户 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-multitenancy-kubernetes.md)
+- [可读路由 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-readable-routes-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)

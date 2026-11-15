@@ -12,8 +12,10 @@ The browser resolves the tenant slug through an authenticated membership lookup 
 - [x] Append the SQL migration and projection snapshot; expose slugs/numbers in typed responses and authorized lookup endpoints. Keep UUID resource APIs and their authorization checks.
 - [x] Add failing browser regressions for readable navigation, deep links, old-path 404 and delayed tenant-resolution isolation.
 - [x] Replace the catch-all route, tenant resolution and all project/build navigation. Update fixtures and active documentation without compatibility branches.
-- [ ] Run database and browser regressions, format, lint, type checks and production build; review permissions, races and migration behavior.
-- [ ] Commit scoped changes, merge and push main, build immutable deployment images, migrate and upgrade only namespace `artifactory`, preserving three control replicas, PVCs and identities. Verify live route/API health and Git/deployment revisions.
+- [x] Run database and browser regressions, format, lint, type checks and production build; review permissions, races and migration behavior.
+- [x] Commit scoped changes, merge and push main, build immutable deployment images, migrate and upgrade only namespace `artifactory`, preserving three control replicas, PVCs and identities. Verify live route/API health and Git/deployment revisions.
+
+Delivery evidence and CI limitations: [Kubernetes upgrade receipt](../../releases/2026-11-15-readable-routes-kubernetes.md).
 
 ## Validation boundaries
 
