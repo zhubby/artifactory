@@ -1,5 +1,39 @@
 //! Lifecycle authority, admission and operation progress use the real database.
 use super::*;
+use std::time::Duration;
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn production_scheduler_consumes_durable_lifecycle_operations() {
+    let db = Database::new().await;
+    let (_, owner) = account(&db, "background-owner", "viewer").await;
+    let tenant = tenant(&db, &owner, "Background").await;
+    let project = project(&db, &owner, tenant, "Desktop").await;
+    let (status, operation) = request(
+        &db,
+        &owner,
+        Some(tenant),
+        "POST",
+        &format!("/projects/{project}/lifecycle"),
+        json!({"action":"archive","idempotency_key":Uuid::new_v4()}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    scheduler::start(db.state.clone());
+    let path = format!("/operations/{}", operation["id"].as_str().unwrap());
+    let result = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let (_, operation) = request(&db, &owner, None, "GET", &path, json!({})).await;
+            if operation["state"] == "succeeded" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await;
+    db.close().await;
+    result.expect("production scheduler must consume the durable queue without a manual tick");
+}
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]

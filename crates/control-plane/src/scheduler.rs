@@ -99,6 +99,27 @@ pub fn start(state: AppState) {
             }
         }
     });
+    // Cleanup may wait on external services. Reconcile its durable queue on
+    // every replica without blocking admission, commands or housekeeping.
+    let lifecycle = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                _ = lifecycle.coordination.stop.cancelled() => break,
+                _ = interval.tick() => {},
+            }
+            tokio::select! {
+                _ = lifecycle.coordination.stop.cancelled() => break,
+                result = crate::lifecycle::tick(&lifecycle) => {
+                    if let Err(error) = result {
+                        tracing::error!(%error,"workspace lifecycle reconciliation failed");
+                    }
+                }
+            }
+        }
+    });
     tokio::spawn(async move {
         loop {
             if let Err(error) = dispatch_work(&state).await {
