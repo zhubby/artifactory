@@ -11,9 +11,9 @@ export default defineConfig({
   workers: 1,
   reporter: [
     ["list"],
-    ["html", { outputFolder: "playwright-report/ui", open: "never" }],
+    ["html", { outputFolder: process.env.ARTIFACTORY_UI_REPORT || "playwright-report/ui", open: "never" }],
   ],
-  outputDir: "test-results/ui",
+  outputDir: process.env.ARTIFACTORY_UI_OUTPUT || "test-results/ui",
   use: {
     baseURL: process.env.ARTIFACTORY_UI_URL || localURL,
     trace: "retain-on-failure",

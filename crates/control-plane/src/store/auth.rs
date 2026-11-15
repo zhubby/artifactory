@@ -7,7 +7,7 @@ use super::{
     models::{Session, User},
 };
 use crate::{
-    auth::Auth,
+    auth::{AccountAuth, Auth},
     error::{ApiError, Result},
 };
 
@@ -22,13 +22,16 @@ pub struct LoginAccount {
 
 impl ControlStore {
     pub async fn authenticate_token(&self, hash: &str) -> Result<Option<Auth>> {
-        let row = sql::optional_record(&mut self.pool.clone(), "SELECT u.id,u.username,u.role,t.project_ids,t.scopes FROM api_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=$1 AND NOT t.revoked AND t.expires_at>now()", params![hash], &[("id", Type::Uuid),("username", Type::String),("role", Type::String),("project_ids", Type::List(Box::new(Type::Uuid))),("scopes", Type::List(Box::new(Type::String)))]).await?;
+        let row = sql::optional_record(&mut self.pool.clone(), "SELECT u.id,u.username,t.tenant_id,t.project_ids,t.scopes FROM api_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=$1 AND NOT t.revoked AND t.expires_at>now()", params![hash], &[("id", Type::Uuid),("username", Type::String),("tenant_id", Type::Uuid),("project_ids", Type::List(Box::new(Type::Uuid))),("scopes", Type::List(Box::new(Type::String)))]).await?;
         Ok(row
             .map(|row| {
                 Ok::<_, artifactory_database::Error>(Auth {
                     user_id: row.decode("id")?,
                     username: row.decode("username")?,
-                    role: row.decode("role")?,
+                    tenant_id: row.decode("tenant_id")?,
+                    role: String::new(),
+                    project_roles: Default::default(),
+                    credential_hash: hash.into(),
                     token_projects: Some(row.decode("project_ids")?),
                     token_scopes: row.decode("scopes")?,
                 })
@@ -36,16 +39,13 @@ impl ControlStore {
             .transpose()?)
     }
 
-    pub async fn authenticate_session(&self, hash: &str) -> Result<Option<Auth>> {
-        let row = sql::optional_record(&mut self.pool.clone(), "SELECT u.id,u.username,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()", params![hash], &[("id", Type::Uuid),("username", Type::String),("role", Type::String)]).await?;
+    pub async fn authenticate_session(&self, hash: &str) -> Result<Option<AccountAuth>> {
+        let row=sql::optional_record(&mut self.pool.clone(),"SELECT u.id,u.username FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()",params![hash],&[("id",Type::Uuid),("username",Type::String)]).await?;
         Ok(row
-            .map(|row| {
-                Ok::<_, artifactory_database::Error>(Auth {
-                    user_id: row.decode("id")?,
-                    username: row.decode("username")?,
-                    role: row.decode("role")?,
-                    token_projects: None,
-                    token_scopes: vec![],
+            .map(|r| {
+                Ok::<_, artifactory_database::Error>(AccountAuth {
+                    user_id: r.decode("id")?,
+                    username: r.decode("username")?,
                 })
             })
             .transpose()?)

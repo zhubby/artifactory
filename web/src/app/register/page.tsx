@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, RefreshCw } from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";
 import { ErrorBox, Field, Loading } from "@/components/common";
@@ -19,6 +19,8 @@ export default function Register() {
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState({ username: "", password: "", confirmPassword: "" });
   const submitting = useRef(false);
+  const [invite, setInvite] = useState<string | null>(null);
+  useEffect(() => { setInvite(new URLSearchParams(window.location.search).get("invite")); }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,7 +51,8 @@ export default function Register() {
     setBusy(true);
     try {
       await mutation("/auth/register", { username, password });
-      window.location.assign("/");
+      const invite = new URLSearchParams(window.location.search).get("invite");
+      window.location.assign(invite ? `/join/${encodeURIComponent(invite)}` : "/tenants");
     } catch (error) {
       setError(asError(error, "register.failed"));
     } finally {
@@ -129,7 +132,7 @@ export default function Register() {
         </>
       )}
       <p className="mt-5 text-center text-sm">
-        <Link className="text-primary underline-offset-4 hover:underline" href="/login">
+        <Link className="text-primary underline-offset-4 hover:underline" href={invite ? `/login?invite=${encodeURIComponent(invite)}` : "/login"}>
           {translate("register.backToLogin")}
         </Link>
       </p>

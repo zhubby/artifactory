@@ -69,6 +69,20 @@ async fn business_authorization(url: &str) -> Result<BusinessAuthorizationReposi
             (2026111301, "0000_baseline.sql"),
             (2026111401, "0001_control_replication.sql"),
             (2026111402, "0002_node_placements.sql"),
+            (2026111501, "0003_multitenancy.sql"),
+        ],
+    )
+    .await
+    .is_ok()
+    {
+        return Ok(BusinessAuthorizationRepository::new(business));
+    }
+    if artifactory_database::validate_versions(
+        &business,
+        &[
+            (2026111301, "0000_baseline.sql"),
+            (2026111401, "0001_control_replication.sql"),
+            (2026111402, "0002_node_placements.sql"),
         ],
     )
     .await

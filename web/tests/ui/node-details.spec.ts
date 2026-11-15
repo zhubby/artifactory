@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { effectsStorage, themeStorage } from "../../src/lib/preferences";
-import { fixtureAPI, nodes, nodeTelemetry } from "./fixtures";
+import {fixtureAPI, nodes, nodeTelemetry, tenantURL } from "./fixtures";
 import type { Node } from "../../src/lib/types";
 
 async function english(page: Page) {
@@ -72,7 +72,7 @@ for (const theme of ["light", "dark"]) {
         ],
       }),
     );
-    await page.goto("/nodes");
+    await page.goto(tenantURL("/nodes"));
     const cards = page.locator(".node-card");
     await expect(cards).toHaveCount(3);
     await expect(cards.first().getByRole("meter")).toHaveAttribute(
@@ -177,7 +177,7 @@ test("detail requests are lazy and stop when their tabs or dialog close", async 
     queries.ota++;
     return route.fulfill({ json: [] });
   });
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   await expect(page.getByText("Mac Studio", { exact: true })).toBeVisible();
   expect(queries).toEqual({ telemetry: 0, metadata: 0, ota: 0 });
   await openDetails(page);
@@ -207,7 +207,7 @@ test("arrow keys switch tabs and nested OTA and revoke dialogs restore focus", a
 }) => {
   await fixtureAPI(page);
   await english(page);
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   await openDetails(page);
   const overview = page.getByRole("tab", { name: "Overview", exact: true });
   await overview.focus();
@@ -285,7 +285,7 @@ test("missing and expired resource values stay unknown and failed data can be re
           json: { error: "Telemetry temporarily unavailable" },
         }),
   );
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   const dialog = await openDetails(page);
   await expect(dialog.getByRole("alert")).toContainText(
     "Telemetry temporarily unavailable",
@@ -319,7 +319,7 @@ test("old nodes and unavailable metadata preserve the other detail tabs", async 
       json: { error: "Metadata endpoint unavailable" },
     }),
   );
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   const dialog = await openDetails(page, "Linux Runner");
   await expect(
     dialog.getByText("Unknown", { exact: true }).first(),
@@ -344,7 +344,7 @@ for (const role of ["viewer", "operator"] as const) {
   }) => {
     const events = await fixtureAPI(page, role);
     await english(page);
-    await page.goto("/nodes");
+    await page.goto(tenantURL("/nodes"));
     const dialog = await openDetails(page);
     await page.getByRole("tab", { name: "Operations", exact: true }).click();
     await expect(dialog.getByTestId("node-ota")).toBeVisible();
@@ -374,7 +374,7 @@ test("saving configuration and revoking a node refresh the open detail and card"
     node = { ...node, ...update };
     await route.fulfill({ json: {} });
   });
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   const dialog = await openDetails(page);
   await page.getByRole("tab", { name: "Operations", exact: true }).click();
   await dialog.getByRole("button", { name: "Configure", exact: true }).click();
@@ -440,7 +440,7 @@ test("OTA retry stays inside node details and uses the existing action", async (
       return route.fulfill({ json: {} });
     },
   );
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   const dialog = await openDetails(page);
   await page.getByRole("tab", { name: "Operations", exact: true }).click();
   await dialog.getByRole("button", { name: "Retry", exact: true }).click();
@@ -463,7 +463,7 @@ test("a node removed by polling closes its detail with a notice", async ({
   await page.route("**/api/v1/nodes?*", (route) =>
     route.fulfill({ json: present ? nodes : [nodes[1]] }),
   );
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   await openDetails(page);
   present = false;
   await page.clock.fastForward(10001);
@@ -491,7 +491,7 @@ test("a delayed response cannot populate the next node's details", async ({
     await pending;
     await route.fulfill({ json: nodeTelemetry });
   });
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   await openDetails(page);
   await expect.poll(() => started).toBe(true);
   await page.keyboard.press("Escape");
@@ -547,7 +547,7 @@ test("large metadata and tool output wrap while the dialog header remains visibl
       },
     }),
   );
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   const dialog = await openDetails(page);
   await page.getByRole("tab", { name: "Toolchain", exact: true }).click();
   await expect(dialog.locator(".node-tool")).toHaveCount(41);

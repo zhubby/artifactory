@@ -5,6 +5,7 @@
 # 使用与配置
 
 - [零侵入 AI 构建](ai-builds.md)
+- [多租户、项目权限与共享设备](multitenancy.md)
 - [节点元数据、MCP 与 AI 选机](node-placement.md)
 - [执行配方与历史配置](configuration.md)
 - [控制台语言、主题与动效](frontend-experience.md)
@@ -53,6 +54,7 @@
 - [Operator 落地计划 · 2026-11-12](plans/2026-11-12-001-feat-kubernetes-agent-operator-plan.md)
 - [可选调度后端评估 · 2026-11-12](substrate-scheduling-assessment-2026-11-12.md)
 - [Toasty 数据访问迁移计划 · 2026-11-13](plans/2026-11-13-toasty-data-access.md)
+- [多租户实施与审查修复 · 2026-11-15](plans/2026-11-15-multitenancy.md)
 
 # 品牌与变更记录
 

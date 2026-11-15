@@ -4,6 +4,7 @@ use uuid::Uuid;
 #[derive(Debug, toasty::Model)]
 #[table = "runtime_runs"]
 pub(super) struct Run {
+    pub tenant_id: Option<Uuid>,
     #[key]
     pub id: Uuid,
     pub version: i64,

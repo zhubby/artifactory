@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { fixtureAPI, project, repositoryRefs, openPreferences, closePreferences } from "./fixtures";
+import {fixtureAPI, project, repositoryRefs, openPreferences, closePreferences, tenantId, tenantURL } from "./fixtures";
 
 async function next(page: Page) {
   await page.getByRole("button", { name: "继续", exact: true }).click();
@@ -22,7 +22,7 @@ test("all build entry points open the dedicated wizard without treating new as a
     if (new URL(request.url()).pathname === "/api/v1/builds/new") detailRequests.push(request.url());
   });
   for (const path of ["/", "/builds", `/projects/${project.id}`]) {
-    await page.goto(path);
+    await page.goto(tenantURL(path));
     await page.getByRole("button", { name: "发起构建", exact: true }).click();
     await expect(page).toHaveURL(path.startsWith("/projects/") ? /\/builds\/new\?project=project-main$/ : /\/builds\/new$/);
     await expect(page.getByRole("heading", { name: "要构建哪份源码？", exact: true })).toBeVisible();
@@ -39,7 +39,7 @@ test("only final confirmation creates a build with the existing request contract
     requests.push(route.request().postDataJSON());
     await route.fulfill({ json: { id: "build-main" } });
   });
-  await page.goto("/builds/new?project=project-main");
+  await page.goto(tenantURL("/builds/new?project=project-main"));
   await reachReview(page);
   expect(events.writes).toEqual([]);
   expect(requests).toEqual([]);
@@ -56,7 +56,7 @@ test("only final confirmation creates a build with the existing request contract
 
 test("viewer cannot operate the wizard even through a direct URL", async ({ page }) => {
   await fixtureAPI(page, "viewer");
-  await page.goto("/builds/new");
+  await page.goto(tenantURL("/builds/new"));
   await expect(page.getByText("当前账号没有发起构建的权限。", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "继续", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "发起构建", exact: true })).toHaveCount(0);
@@ -69,7 +69,7 @@ test("tags, manual platforms, release and parameters keep the existing payload a
     requests.push(route.request().postDataJSON());
     await route.fulfill({ status: 403, json: { error: "Release permission denied [fixture]" } });
   });
-  await page.goto("/builds/new");
+  await page.goto(tenantURL("/builds/new"));
   await page.getByRole("button", { name: "标签", exact: true }).click();
   await page.getByRole("searchbox", { name: "搜索分支或标签" }).fill("1.2");
   await page.getByRole("radio", { name: "标签 v1.2.0", exact: true }).check();
@@ -114,7 +114,7 @@ test("source failures allow retry or explicit manual input without silently usin
     queries++;
     await route.fulfill({ status: 504, json: { error: "Reference query timed out [fixture]" } });
   });
-  await page.goto("/builds/new");
+  await page.goto(tenantURL("/builds/new"));
   await expect(page.locator(".error-box[role=alert]")).toContainText("Reference query timed out [fixture]");
   await next(page);
   await expect(page.getByRole("heading", { name: "要构建哪份源码？", exact: true })).toBeVisible();
@@ -137,7 +137,7 @@ test("empty or unknown default branches are never guessed and refresh discovers 
   await page.route("**/api/v1/projects/project-main/refs", async route => {
     await route.fulfill({ json: populated ? { ...repositoryRefs, default_ref: null } : { default_ref: null, branches: [], tags: [] } });
   });
-  await page.goto("/builds/new");
+  await page.goto(tenantURL("/builds/new"));
   await expect(page.getByText("没有找到匹配的引用。可尝试其他分类，或手动输入引用与 commit。", { exact: true })).toBeVisible();
   await next(page);
   await expect(page.locator(".error-box[role=alert]")).toContainText("请选择有效的源码引用");
@@ -154,9 +154,10 @@ test("empty or unknown default branches are never guessed and refresh discovers 
 
 test("project changes clear source selection, keep other answers and ignore late responses", async ({ page }) => {
   await fixtureAPI(page);
-  const other = { ...project, id: "project-other", name: "Other application" };
+  const other = { ...project, id: "project-other", name: "Other application", effective_role: "admin" };
+  await page.route("**/api/v1/tenant", route => route.fulfill({json:{tenant:{id:tenantId,name:"Build Team",role:"owner",owner_id:"user-main"},project_roles:{[project.id]:"admin",[other.id]:"admin"}}}));
   await page.route("**/api/v1/projects", route => route.fulfill({ json: [project, other] }));
-  await page.goto("/builds/new");
+  await page.goto(tenantURL("/builds/new"));
   await expect(page.getByRole("heading", { name: "先选择要构建的项目", exact: true })).toBeVisible();
   await page.getByRole("radio", { name: project.name, exact: true }).check();
   await next(page);
@@ -197,7 +198,7 @@ test("submission is guarded against repeated form submissions and never automati
     await pending;
     await route.fulfill({ status: 502, json: { error: "Build request rejected [fixture]" } });
   });
-  await page.goto("/builds/new");
+  await page.goto(tenantURL("/builds/new"));
   await reachReview(page);
   await page.getByRole("button", { name: "发起构建", exact: true }).click();
   await expect(page.locator('button[type="submit"]')).toBeDisabled();
@@ -214,7 +215,7 @@ test("submission is guarded against repeated form submissions and never automati
 
 test("UTF-8 byte limits are validated before advancing or sending a request", async ({ page }) => {
   const events = await fixtureAPI(page);
-  await page.goto("/builds/new");
+  await page.goto(tenantURL("/builds/new"));
   await page.getByRole("button", { name: "手动输入", exact: true }).click();
   await page.locator('input[name="ref"]').fill("中".repeat(100));
   await next(page);
@@ -232,7 +233,7 @@ test("UTF-8 byte limits are validated before advancing or sending a request", as
 test("preference changes preserve answers and keyboard navigation honors reduced motion", async ({ page }) => {
   const events = await fixtureAPI(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/builds/new");
+  await page.goto(tenantURL("/builds/new"));
   const main = page.getByRole("radio", { name: "分支 main", exact: true });
   await expect(main).toBeChecked();
   await main.focus();
@@ -262,7 +263,7 @@ for (const locale of ["zh-CN", "en"] as const) {
       page.on("pageerror", error => failures.push(error.message));
       await page.context().addCookies([{ name: "artifactory-locale", value: locale, url: "http://127.0.0.1:3100" }]);
       await page.addInitScript(value => localStorage.setItem("artifactory-theme", value), theme);
-      await page.goto("/builds/new?project=project-main");
+      await page.goto(tenantURL("/builds/new?project=project-main"));
       await expect(page.getByRole("radio", { name: locale === "en" ? "Branch main" : "分支 main", exact: true })).toBeChecked();
       const continueButton = page.getByRole("button", { name: locale === "en" ? "Continue" : "继续", exact: true });
       await continueButton.click();
@@ -281,12 +282,12 @@ for (const locale of ["zh-CN", "en"] as const) {
 
 test("missing projects and invalid preselected projects cannot bypass selection", async ({ page }) => {
   const events = await fixtureAPI(page);
-  await page.goto("/builds/new?project=missing-project");
+  await page.goto(tenantURL("/builds/new?project=missing-project"));
   await expect(page.getByRole("heading", { name: "先选择要构建的项目", exact: true })).toBeVisible();
   await next(page);
   await expect(page.locator(".error-box[role=alert]")).toContainText("请选择一个可用的项目");
   await page.route("**/api/v1/projects", route => route.fulfill({ json: [] }));
-  await page.goto("/builds/new");
+  await page.goto(tenantURL("/builds/new"));
   await expect(page.getByRole("heading", { name: "还没有可构建的项目", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "继续", exact: true })).toHaveCount(0);
   expect(events.writes).toEqual([]);
@@ -294,7 +295,7 @@ test("missing projects and invalid preselected projects cannot bypass selection"
 
 test("cancelling and refreshing discard the in-memory draft without persistence", async ({ page }) => {
   const events = await fixtureAPI(page);
-  await page.goto("/builds/new?project=project-main");
+  await page.goto(tenantURL("/builds/new?project=project-main"));
   await expect(page.getByRole("radio", { name: "分支 main", exact: true })).toBeChecked();
   await next(page);
   await page.locator('textarea[name="goal"]').fill("Do not persist this draft");

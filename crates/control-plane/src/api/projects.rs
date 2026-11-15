@@ -1,3 +1,4 @@
+use crate::auth::TenantState;
 pub use crate::store::ProjectInput;
 use crate::store::dto;
 use crate::{
@@ -6,15 +7,12 @@ use crate::{
     source, source_cache,
     state::AppState,
 };
-use axum::{
-    Json,
-    extract::{Path, State},
-};
+use axum::{Json, extract::Path};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 pub async fn list(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
 ) -> Result<Json<Vec<dto::ProjectSummary>>> {
     if auth.token_projects.is_some() && !auth.token_scopes.iter().any(|scope| scope == "read") {
@@ -24,7 +22,7 @@ pub async fn list(
 }
 
 pub async fn detail(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<dto::Project>> {
@@ -33,7 +31,7 @@ pub async fn detail(
 }
 
 pub async fn refs(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<source_cache::RepositoryRefs>> {
@@ -72,11 +70,9 @@ pub async fn refs(
         })
 }
 
-async fn validate(state: &AppState, input: &ProjectInput) -> Result<()> {
+async fn validate(_state: &AppState, input: &ProjectInput) -> Result<()> {
     if input.name.is_empty()
         || input.name.len() > 100
-        || input.pool_ids.is_empty()
-        || input.pool_ids.len() > 32
         || input.signing_profiles.len() > 32
         || input.build_context.len() > 16000
         || input.source_credentials.len() > 128
@@ -95,17 +91,11 @@ async fn validate(state: &AppState, input: &ProjectInput) -> Result<()> {
         source::validate_repository(&binding.repository_url)
             .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     }
-    let count = state.store.pool_count(&input.pool_ids).await?;
-    if count as usize != input.pool_ids.len() {
-        return Err(ApiError::BadRequest(
-            "unknown or duplicate node pool".into(),
-        ));
-    }
     Ok(())
 }
 
 pub async fn create(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Json(input): Json<ProjectInput>,
 ) -> Result<Json<Value>> {
@@ -120,12 +110,12 @@ pub async fn create(
 }
 
 pub async fn update(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
     Json(input): Json<ProjectInput>,
 ) -> Result<Json<Value>> {
-    auth.session_role("admin")?;
+    auth.project(id, "admin")?;
     validate(&state, &input).await?;
     state.store.update_project(id, &input).await?;
     state

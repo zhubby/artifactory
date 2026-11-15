@@ -1,8 +1,9 @@
 "use client";
+import { subscribeBuild } from "@/lib/events";
 
 import { useUI } from "@/components/providers";
 
-import Link from "next/link";
+import { Link } from "@/lib/tenant";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -50,6 +51,9 @@ export function BuildDetail({ id, user }: { id: string; user: User }) {
   const { t, date } = useUI();
   const remote = useRemote<Build>(`/builds/${id}`);
   const build = remote.data;
+  const role = user.role === "admin"
+    ? "admin"
+    : user.project_roles?.[build?.project_id || ""] || "viewer";
   const [logs, setLogs] = useState<Log[]>([]);
   const [selected, setSelected] = useState<string>();
   const [filter, setFilter] = useState<string>();
@@ -64,21 +68,19 @@ export function BuildDetail({ id, user }: { id: string; user: User }) {
     setSelected(undefined);
     setFilter(undefined);
     setClipped(false);
-    const stream = new EventSource(`/api/v1/builds/${id}/events`);
-    stream.addEventListener("snapshot", (event) => {
-      remote.setData(JSON.parse(event.data));
-      setConnected(true);
-    });
-    stream.addEventListener("log", (event) => {
-      const log: Log = JSON.parse(event.data);
-      setLogs((previous) => {
-        if (previous.some((entry) => entry.id === log.id)) return previous;
-        if (previous.length >= 3000) setClipped(true);
-        return [...previous, log].slice(-3000);
-      });
-    });
-    stream.onerror = () => setConnected(false);
-    return () => stream.close();
+    const controller = new AbortController();
+    void subscribeBuild(id, controller.signal, (kind, data) => {
+      if (kind === "snapshot") { remote.setData(JSON.parse(data)); setConnected(true); }
+      if (kind === "log") {
+        const log: Log = JSON.parse(data);
+        setLogs(previous => {
+          if (previous.some(entry => entry.id === log.id)) return previous;
+          if (previous.length >= 3000) setClipped(true);
+          return [...previous,log].slice(-3000);
+        });
+      }
+    }, () => setConnected(false));
+    return () => controller.abort();
   }, [id, remote.setData]);
   useEffect(() => {
     if (follow && terminal.current)
@@ -119,6 +121,7 @@ export function BuildDetail({ id, user }: { id: string; user: User }) {
         <ArrowLeft size={13} />
         {t("builds.all")}
       </Link>
+      {build.jobs?.some(job => job.blocked_reason) && <p className="notice" role="status">{build.jobs.filter(job => job.blocked_reason).map(job => `${job.target}: ${job.blocked_reason}`).join(" · ")}</p>}
       <PageTitle
         eyebrow={t("builds.eyebrowId", { id: short(build.id) })}
         title={build.project_name}
@@ -127,7 +130,7 @@ export function BuildDetail({ id, user }: { id: string; user: User }) {
         })}
       >
         <Status value={build.status} />
-        {user.role !== "viewer" && active && (
+        {role !== "viewer" && active && (
           <Button
             variant="destructive"
             onClick={() => void action(`/builds/${id}/cancel`)}
@@ -136,7 +139,7 @@ export function BuildDetail({ id, user }: { id: string; user: User }) {
             {t("builds.cancel")}
           </Button>
         )}
-        {user.role !== "viewer" &&
+        {role !== "viewer" &&
           build.status === "succeeded" &&
           build.publish_status !== "succeeded" && (
             <Button onClick={() => setPublish(true)}>
@@ -269,7 +272,7 @@ export function BuildDetail({ id, user }: { id: string; user: User }) {
             {job &&
               ["failed", "lost", "canceled"].includes(job.status) &&
               !["planning", "replanning", "needs_input"].includes(build.status) &&
-              user.role !== "viewer" && (
+              role !== "viewer" && (
                 <div className="p-4">
                   <Button
                     size="sm"

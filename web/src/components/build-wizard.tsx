@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useRouter } from "@/lib/tenant";
 import { ArrowLeft, ArrowRight, Check, GitBranch, LoaderCircle, Pencil, Play, RefreshCw } from "lucide-react";
 import { Empty, ErrorBox, Field, PageTitle } from "@/components/common";
 import { usePreferences, useUI } from "@/components/providers";

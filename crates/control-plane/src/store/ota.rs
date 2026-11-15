@@ -22,8 +22,8 @@ impl ControlStore {
     ) -> Result<Option<Uuid>> {
         if let Some(row) = sql::optional_record(
             &mut self.pool.clone(),
-            "SELECT id,manifest_hash FROM emissary_releases WHERE version=$1",
-            params![tag],
+            "SELECT id,manifest_hash FROM emissary_releases WHERE version=$1 AND tenant_id=$2",
+            params![tag, self.tenant()?],
             &[("id", Type::Uuid), ("manifest_hash", Type::String)],
         )
         .await?
@@ -45,18 +45,11 @@ impl ControlStore {
         hash: &str,
     ) -> Result<Uuid> {
         let id = Uuid::new_v4();
-        super::models::EmissaryRelease::upsert_by_version(tag)
-            .id(id)
-            .manifest(raw)
-            .signature(signature)
-            .manifest_hash(hash)
-            .or_ignore()
-            .exec(&mut self.pool.clone())
-            .await?;
+        sql::execute(&mut self.pool.clone(),"INSERT INTO emissary_releases(id,tenant_id,version,manifest,signature,manifest_hash) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(tenant_id,version) DO NOTHING",params![id,self.tenant()?,tag,raw,signature,hash]).await?;
         let row = sql::record(
             &mut self.pool.clone(),
-            "SELECT id,manifest_hash FROM emissary_releases WHERE version=$1",
-            params![tag],
+            "SELECT id,manifest_hash FROM emissary_releases WHERE version=$1 AND tenant_id=$2",
+            params![tag, self.tenant()?],
             &[("id", Type::Uuid), ("manifest_hash", Type::String)],
         )
         .await?;
@@ -93,7 +86,7 @@ impl ControlStore {
         let Some(n)=sql::optional_record(&mut tx, "SELECT n.os,n.arch,n.capabilities,n.emissary_current_version,coalesce(n.emissary_target_release,p.emissary_target_release) AS desired,p.emissary_update_concurrency,p.emissary_updates_paused FROM nodes n JOIN node_pools p ON p.id=n.pool_id WHERE n.id=$1 AND n.pool_id=$2 AND n.active_session=$3 AND NOT n.revoked AND n.certificate_expires_at>clock_timestamp() AND n.last_seen>now()-interval '30 seconds' FOR UPDATE OF n SKIP LOCKED", params![node, pool, session], &[("os", Type::String),("arch", Type::String),("capabilities", Type::String),("emissary_current_version", Type::String),("desired", Type::Uuid),("emissary_update_concurrency", Type::I32),("emissary_updates_paused", Type::Bool)]).await? else{tx.rollback().await?;return Ok(None)};
         let mut update = sql::optional_record(
             &mut tx,
-            "SELECT * FROM emissary_updates WHERE node_id=$1 AND finished_at IS NULL",
+            "SELECT id,generation,node_id,pool_id,release_id,previous_version,status,cancel_requested,error,retry_of,created_at,updated_at,finished_at,last_command_at FROM emissary_updates WHERE node_id=$1 AND finished_at IS NULL",
             params![node],
             &[
                 ("id", Type::Uuid),
@@ -172,7 +165,7 @@ impl ControlStore {
             .await?;
             update = sql::optional_record(
                 &mut tx,
-                "SELECT * FROM emissary_updates WHERE id=$1",
+                "SELECT id,generation,node_id,pool_id,release_id,previous_version,status,cancel_requested,error,retry_of,created_at,updated_at,finished_at,last_command_at FROM emissary_updates WHERE id=$1",
                 params![id],
                 &[
                     ("id", Type::Uuid),
@@ -203,7 +196,7 @@ impl ControlStore {
         let id: Uuid = u.decode("id")?;
         let r = sql::record(
             &mut tx,
-            "SELECT * FROM emissary_releases WHERE id=$1",
+            "SELECT id,version,manifest,signature,manifest_hash,created_at FROM emissary_releases WHERE id=$1",
             params![u.decode::<Uuid>("release_id")?],
             &[
                 ("id", Type::Uuid),
@@ -294,7 +287,7 @@ impl ControlStore {
         if let Some(id) = status["update_id"]
         .as_str()
         .and_then(|s| Uuid::parse_str(s).ok())
-        && let Some(u)=sql::optional_record(&mut tx, "SELECT u.*,r.version FROM emissary_updates u JOIN emissary_releases r ON r.id=u.release_id WHERE u.id=$1 AND u.node_id=$2 AND u.finished_at IS NULL", params![id, node], &[("id", Type::Uuid),("generation", Type::I64),("node_id", Type::Uuid),("pool_id", Type::Uuid),("release_id", Type::Uuid),("previous_version", Type::String),("status", Type::String),("cancel_requested", Type::Bool),("error", Type::String),("retry_of", Type::Uuid),("created_at", Type::Timestamp),("updated_at", Type::Timestamp),("finished_at", Type::Timestamp),("last_command_at", Type::Timestamp),("version", Type::String)]).await? {
+        && let Some(u)=sql::optional_record(&mut tx, "SELECT u.id,u.generation,u.node_id,u.pool_id,u.release_id,u.previous_version,u.status,u.cancel_requested,u.error,u.retry_of,u.created_at,u.updated_at,u.finished_at,u.last_command_at,r.version FROM emissary_updates u JOIN emissary_releases r ON r.id=u.release_id WHERE u.id=$1 AND u.node_id=$2 AND u.finished_at IS NULL", params![id, node], &[("id", Type::Uuid),("generation", Type::I64),("node_id", Type::Uuid),("pool_id", Type::Uuid),("release_id", Type::Uuid),("previous_version", Type::String),("status", Type::String),("cancel_requested", Type::Bool),("error", Type::String),("retry_of", Type::Uuid),("created_at", Type::Timestamp),("updated_at", Type::Timestamp),("finished_at", Type::Timestamp),("last_command_at", Type::Timestamp),("version", Type::String)]).await? {
             let phase=status["phase"].as_str().unwrap_or("");
             let terminal=["succeeded","failed","rolled_back","canceled"].contains(&phase);
             if phase=="activating"||phase=="succeeded" {

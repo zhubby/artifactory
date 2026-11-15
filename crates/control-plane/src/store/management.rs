@@ -31,32 +31,12 @@ pub struct NodeUpdate {
 
 impl ControlStore {
     pub async fn overview(&self) -> Result<dto::Overview> {
-        Ok(sql::scalar(&mut self.pool.clone(), "SELECT jsonb_build_object('projects',(SELECT count(*) FROM projects),'nodes_registered',(SELECT count(*) FROM nodes),'nodes_online',(SELECT count(*) FROM nodes WHERE NOT revoked AND last_seen>now()-interval '30 seconds'),'running',(SELECT count(*) FROM jobs WHERE status IN ('leased','running')),'queued',(SELECT count(*) FROM jobs WHERE status='queued'),'releases',(SELECT count(*) FROM releases),'builds_today',(SELECT count(*) FROM builds WHERE created_at>now()-interval '24 hours'))", params![]).await?)
-    }
-
-    pub async fn users(&self) -> Result<Vec<dto::UserSummary>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT jsonb_build_object('id',id,'username',username,'role',role,'created_at',created_at) FROM users ORDER BY created_at", params![]).await?)
-    }
-
-    pub async fn create_user(
-        &self,
-        id: Uuid,
-        username: &str,
-        password: &str,
-        role: &str,
-    ) -> Result<()> {
-        super::models::User::create()
-            .id(id)
-            .username(username)
-            .password_hash(password)
-            .role(role)
-            .exec(&mut self.pool.clone())
-            .await?;
-        Ok(())
+        let visible = self.scoped_projects();
+        Ok(sql::scalar(&mut self.pool.clone(), "WITH vp AS (SELECT id FROM projects WHERE tenant_id=$1 AND ($2::uuid[] IS NULL OR id=ANY($2))), vn AS (SELECT n.* FROM nodes n WHERE n.tenant_id=$1 AND ($3 OR EXISTS(SELECT 1 FROM vp WHERE project_node_allowed(vp.id,n.id)))) SELECT jsonb_build_object('projects',(SELECT count(*) FROM vp),'nodes_registered',(SELECT count(*) FROM vn),'nodes_online',(SELECT count(*) FROM vn WHERE NOT revoked AND last_seen>now()-interval '30 seconds'),'running',(SELECT count(*) FROM jobs j JOIN builds b ON b.id=j.build_id WHERE b.project_id IN(SELECT id FROM vp) AND j.status IN ('leased','running')),'queued',(SELECT count(*) FROM jobs j JOIN builds b ON b.id=j.build_id WHERE b.project_id IN(SELECT id FROM vp) AND j.status='queued'),'releases',(SELECT count(*) FROM releases WHERE project_id IN(SELECT id FROM vp)),'builds_today',(SELECT count(*) FROM builds WHERE project_id IN(SELECT id FROM vp) AND created_at>now()-interval '24 hours'))", params![self.tenant()?,visible,self.scoped_admin()]).await?)
     }
 
     pub async fn tokens(&self, user_id: Uuid) -> Result<Vec<dto::TokenSummary>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(t)-'token_hash' FROM api_tokens t WHERE user_id=$1 ORDER BY created_at DESC", params![user_id]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(t)-'token_hash' FROM api_tokens t WHERE user_id=$1 AND tenant_id=$2 ORDER BY created_at DESC", params![user_id,self.tenant()?]).await?)
     }
 
     pub async fn project_exists(&self, project: Uuid) -> Result<bool> {
@@ -76,6 +56,7 @@ impl ControlStore {
         hash: String,
     ) -> Result<()> {
         super::models::ApiToken::create()
+            .tenant_id(self.tenant()?)
             .id(id)
             .user_id(user_id)
             .name(input.name)
@@ -89,15 +70,11 @@ impl ControlStore {
     }
 
     pub async fn revoke_token(&self, id: Uuid, user_id: Uuid) -> Result<()> {
-        super::models::ApiToken::filter(
-            super::models::ApiToken::fields()
-                .id()
-                .eq(id)
-                .and(super::models::ApiToken::fields().user_id().eq(user_id)),
+        sql::execute(
+            &mut self.pool.clone(),
+            "UPDATE api_tokens SET revoked=true WHERE id=$1 AND user_id=$2 AND tenant_id=$3",
+            params![id, user_id, self.tenant()?],
         )
-        .update()
-        .revoked(true)
-        .exec(&mut self.pool.clone())
         .await?;
         Ok(())
     }
@@ -105,14 +82,15 @@ impl ControlStore {
     pub async fn pools(&self) -> Result<Vec<dto::PoolSummary>> {
         Ok(sql::scalars(
             &mut self.pool.clone(),
-            "SELECT to_jsonb(p) FROM node_pools p ORDER BY name",
-            params![],
+            "SELECT to_jsonb(p) FROM node_pools p WHERE p.tenant_id=$1 AND ($2 OR EXISTS(SELECT 1 FROM nodes n WHERE n.pool_id=p.id AND EXISTS(SELECT 1 FROM projects pr WHERE pr.id=ANY($3) AND project_node_allowed(pr.id,n.id))) OR EXISTS(SELECT 1 FROM projects pr WHERE pr.id=ANY($3) AND pr.node_access_mode='pools' AND p.id=ANY(pr.pool_ids))) ORDER BY name",
+            params![self.tenant()?,self.scoped_admin(),self.scoped_projects().unwrap_or_default()],
         )
         .await?)
     }
 
     pub async fn create_pool(&self, id: Uuid, name: &str) -> Result<()> {
         super::models::NodePool::create()
+            .tenant_id(self.tenant()?)
             .id(id)
             .name(name)
             .exec(&mut self.pool.clone())
@@ -121,6 +99,7 @@ impl ControlStore {
     }
 
     pub async fn enrollment_token(&self, id: Uuid, hash: String, pool_id: Uuid) -> Result<()> {
+        self.authorize_owned("node_pools", pool_id).await?;
         sql::execute(&mut self.pool.clone(), "INSERT INTO enrollment_tokens(id,token_hash,pool_id,expires_at) VALUES($1,$2,$3,now()+interval '15 minutes')", params![id, hash, pool_id]).await?;
         Ok(())
     }
@@ -128,22 +107,23 @@ impl ControlStore {
     pub async fn nodes(&self, limit: i64, offset: i64, q: &str) -> Result<Vec<dto::NodeSummary>> {
         // Project before encoding so list requests never deserialize large metadata values.
         Ok(sql::scalars(&mut self.pool.clone(), r#"SELECT to_jsonb(summary) FROM (
-            SELECT n.id,n.name,n.os,n.arch,n.pool_id,n.labels,n.capabilities,n.diagnostics,
+            SELECT n.id,n.name,n.os,n.arch,n.pool_id,n.labels,n.capabilities,CASE WHEN $5 THEN n.diagnostics ELSE '{}'::jsonb END AS diagnostics,
                 n.signing_profiles,n.slots,n.draining,n.revoked,n.certificate_expires_at,
                 n.last_seen,n.created_at,n.emissary_target_release,n.emissary_current_version,
-                n.emissary_launcher_version,n.emissary_ota_status,n.ota_draining,
+                n.emissary_launcher_version,CASE WHEN $5 THEN n.emissary_ota_status ELSE '{}'::jsonb END AS emissary_ota_status,n.ota_draining,
                 coalesce(n.emissary_target_release,p.emissary_target_release) AS emissary_desired_release,
                 p.emissary_updates_paused AS emissary_pool_paused,p.name AS pool_name,
                 NOT n.revoked AND n.last_seen>now()-interval '30 seconds' AS online,
                 (SELECT count(*) FROM attempts a WHERE a.node_id=n.id
                     AND a.status IN ('leased','running') AND a.lease_expires_at>now()) AS active_jobs
             FROM nodes n JOIN node_pools p ON p.id=n.pool_id
-            WHERE strpos(lower(n.name||' '||n.os||' '||p.name),lower($3))>0
+            WHERE n.tenant_id=$4 AND ($5 OR EXISTS(SELECT 1 FROM projects pr WHERE pr.id=ANY($6) AND project_node_allowed(pr.id,n.id))) AND strpos(lower(n.name||' '||n.os||' '||p.name),lower($3))>0
             ORDER BY n.created_at DESC,n.id DESC LIMIT $1 OFFSET $2
-        ) summary"#, params![limit, offset, q]).await?)
+        ) summary"#, params![limit, offset, q,self.tenant()?,self.scoped_admin(),self.scoped_projects().unwrap_or_default()]).await?)
     }
 
     pub async fn update_node(&self, id: Uuid, input: &NodeUpdate) -> Result<bool> {
+        self.authorize_owned("node_pools", input.pool_id).await?;
         let mut transaction_db = self.pool.clone();
         let mut transaction = transaction_db.transaction().await?;
         sql::execute(
@@ -171,8 +151,8 @@ impl ControlStore {
     pub async fn credentials(&self) -> Result<Vec<dto::CredentialSummary>> {
         Ok(sql::scalars(
             &mut self.pool.clone(),
-            "SELECT to_jsonb(c)-'ciphertext' FROM credentials c ORDER BY created_at DESC",
-            params![],
+            "SELECT to_jsonb(c)-'ciphertext' FROM credentials c WHERE c.tenant_id=$1 ORDER BY created_at DESC",
+            params![self.tenant()?],
         )
         .await?)
     }
@@ -184,17 +164,20 @@ impl ControlStore {
         kind: String,
         ciphertext: String,
     ) -> Result<()> {
-        self.source
-            .create_control_credential(id, name, kind, ciphertext)
-            .await?;
+        sql::execute(
+            &mut self.pool.clone(),
+            "INSERT INTO credentials(id,tenant_id,name,kind,ciphertext) VALUES($1,$2,$3,$4,$5)",
+            params![id, self.tenant()?, name, kind, ciphertext],
+        )
+        .await?;
         Ok(())
     }
 
     pub async fn audit_events(&self) -> Result<Vec<dto::AuditEvent>> {
         Ok(sql::scalars(
             &mut self.pool.clone(),
-            "SELECT to_jsonb(a) FROM audit_events a ORDER BY id DESC LIMIT 200",
-            params![],
+            "SELECT to_jsonb(a) FROM audit_events a WHERE a.tenant_id=$1 ORDER BY id DESC LIMIT 200",
+            params![self.tenant()?],
         )
         .await?)
     }

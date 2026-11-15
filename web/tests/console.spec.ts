@@ -1,21 +1,41 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, request, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const evidence = JSON.parse(readFileSync(process.env.ARTIFACTORY_BROWSER_EVIDENCE || resolve(process.cwd(), "../.local/acceptance/latest.json"), "utf8")) as { build_id: string; project_id: string; release_id: string; partial_build_id?: string; failed_build_id?: string; collision_build_id?: string };
+const evidence = JSON.parse(readFileSync(process.env.ARTIFACTORY_BROWSER_EVIDENCE || resolve(process.cwd(), "../.local/acceptance/latest.json"), "utf8")) as { tenant_id: string; build_id: string; project_id: string; release_id: string; partial_build_id?: string; failed_build_id?: string; collision_build_id?: string };
 const username = process.env.ARTIFACTORY_BOOTSTRAP_USERNAME;
 const password = process.env.ARTIFACTORY_BOOTSTRAP_PASSWORD;
 if (!username || !password) throw new Error("Load .local/env and run scripts/acceptance.py --keep-alive first.");
+if (!evidence.tenant_id) throw new Error("Regenerate acceptance evidence with an explicit tenant context.");
+const tenantHeaders = { "X-Artifactory-Tenant": evidence.tenant_id, "x-artifactory-csrf": "1" };
+const tenantURL = (path: string) => `/t/${evidence.tenant_id}${path === "/" ? "" : path}`;
+
+async function chooseTenant(page: Page) {
+  await expect(page).toHaveURL(/\/tenants$/);
+  await page.locator(`a[href="${tenantURL("/")}"]`).click();
+  await expect(page.getByRole("heading", { name: "构建，签名，交付。" })).toBeVisible();
+}
+
+async function grantViewer(page: Page, name: string, user: string) {
+  const admin = await request.newContext({ baseURL: new URL(page.url()).origin });
+  try {
+    expect((await admin.post("/api/v1/auth/login", { headers: { "x-artifactory-csrf": "1" }, data: { username, password } })).status()).toBe(200);
+    expect((await admin.post("/api/v1/tenant/members", { headers: tenantHeaders, data: { username: name, role: "member" } })).status()).toBe(200);
+    expect((await admin.put(`/api/v1/projects/${evidence.project_id}/members/${user}`, { headers: tenantHeaders, data: { role: "viewer" } })).status()).toBe(200);
+  } finally {
+    await admin.dispose();
+  }
+}
 
 async function login(page: Page, user = username!, secret = password!) {
   await page.goto("/login");
   await page.locator('input[name="username"]').fill(user);
   await page.locator('input[name="password"]').fill(secret);
   await page.getByRole("button", { name: "进入工作空间" }).click();
-  await expect(page.getByRole("heading", { name: "构建，签名，交付。" })).toBeVisible();
+  await chooseTenant(page);
 }
 
-test("self-registration creates a real viewer session, downloads artifacts and supports re-login", async ({ page, context }, testInfo) => {
+test("self-registration requires explicit tenant and project grants before artifact access", async ({ page, context }, testInfo) => {
   const registeredUser = `registered-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`;
   const registeredPassword = "registration-acceptance-only-2026";
   await page.goto("/login");
@@ -38,26 +58,32 @@ test("self-registration creates a real viewer session, downloads artifacts and s
   const response = await registered;
   expect(response.status()).toBe(201);
   expect(response.request().postDataJSON()).toEqual({ username: registeredUser, password: registeredPassword });
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("heading", { name: "构建，签名，交付。" })).toBeVisible();
+  const registeredIdentity = await response.json() as { id: string };
+  await expect(page).toHaveURL(/\/tenants$/);
   const session = (await context.cookies()).find(cookie => cookie.name === "artifactory_session");
   expect(session).toMatchObject({ httpOnly: true, sameSite: "Strict", path: "/" });
   expect(session!.expires * 1000).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000);
   const identity = await page.request.get("/api/v1/auth/me");
   expect(identity.status()).toBe(200);
-  expect(await identity.json()).toMatchObject({ username: registeredUser, role: "viewer", token: false });
-  const projects = await page.request.get("/api/v1/projects");
+  expect(await identity.json()).toEqual({ id: registeredIdentity.id, username: registeredUser });
+  expect(await (await page.request.get("/api/v1/tenants")).json()).toEqual([]);
+  expect((await page.request.get("/api/v1/projects")).status()).toBe(400);
+  expect((await page.request.get("/api/v1/projects", { headers: tenantHeaders })).status()).toBe(403);
+  await grantViewer(page, registeredUser, registeredIdentity.id);
+  await page.reload();
+  await chooseTenant(page);
+  const projects = await page.request.get("/api/v1/projects", { headers: tenantHeaders });
   expect(projects.status()).toBe(200);
   expect((await projects.json()).some((project: { id: string }) => project.id === evidence.project_id)).toBe(true);
   await expect(page.getByRole("button", { name: "发起构建", exact: true })).toHaveCount(0);
   const denied = await page.request.post(`/api/v1/projects/${evidence.project_id}/builds`, {
-    headers: { "x-artifactory-csrf": "1" }, data: { ref: "main" },
+    headers: tenantHeaders, data: { ref: "main" },
   });
   expect(denied.status()).toBe(403);
   for (const path of ["users", "credentials"]) {
-    expect((await page.request.get(`/api/v1/${path}`)).status()).toBe(403);
+    expect((await page.request.get(`/api/v1/${path}`, { headers: tenantHeaders })).status()).toBe(403);
   }
-  await page.goto(`/builds/${evidence.build_id}`);
+  await page.goto(tenantURL(`/builds/${evidence.build_id}`));
   const downloading = page.waitForEvent("download");
   await page.getByRole("link", { name: "下载 dist/app", exact: true }).click();
   expect(await (await downloading).failure()).toBeNull();
@@ -74,12 +100,12 @@ test("real console, native logs, artifact download and immutable release", async
   await login(page);
   await page.screenshot({ path: testInfo.outputPath("overview.png"), fullPage: true });
   for (const [route, title] of [["projects", "项目空间"], ["builds", "构建记录"], ["nodes", "构建节点"], ["artifacts", "制品仓库"], ["releases", "内部发布"], ["settings", "访问与安全"]]) {
-    await page.goto(`/${route}`);
+    await page.goto(tenantURL(`/${route}`));
     await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
     await expect(page.locator(".error-box[role=alert]")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
   }
-  await page.goto(`/builds/${evidence.build_id}`);
+  await page.goto(tenantURL(`/builds/${evidence.build_id}`));
   await expect(page.getByRole("log", { name: "构建日志" })).toContainText("native compilation complete");
   await expect(page.getByRole("log")).toContainText("artifactory-native-ok");
   await page.screenshot({ path: testInfo.outputPath("native-build.png"), fullPage: true });
@@ -87,7 +113,7 @@ test("real console, native logs, artifact download and immutable release", async
   await page.getByRole("link", { name: "下载 dist/app", exact: true }).click();
   const download = await downloadEvent;
   expect(await download.failure()).toBeNull();
-  await page.goto(`/releases/${evidence.release_id}`);
+  await page.goto(tenantURL(`/releases/${evidence.release_id}`));
   await expect(page.getByText("dist/app", { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("release.png"), fullPage: true });
   expect(errors).toEqual([]);
@@ -95,7 +121,7 @@ test("real console, native logs, artifact download and immutable release", async
 
 test("dialogs are keyboard accessible and mobile navigation works", async ({ page }, testInfo) => {
   await login(page);
-  await page.goto("/projects");
+  await page.goto(tenantURL("/projects"));
   await expect(page.getByRole("heading", { name: "项目空间", exact: true })).toBeVisible();
   const trigger = page.getByRole("button", { name: "接入项目" });
   await trigger.click();
@@ -120,19 +146,27 @@ test("readonly identity cannot trigger builds or modify nodes", async ({ page })
   await login(page);
   const readonlyUser = `browser-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`;
   const readonlyPassword = "browser-acceptance-only-2026";
-  const created = await page.request.post("/api/v1/users", { headers: { "x-artifactory-csrf": "1" }, data: { username: readonlyUser, password: readonlyPassword, role: "viewer" } });
-  expect(created.status()).toBe(200);
+  const registration = await request.newContext({ baseURL: new URL(page.url()).origin });
+  let reader: { id: string };
+  try {
+    const created = await registration.post("/api/v1/auth/register", { headers: { "x-artifactory-csrf": "1" }, data: { username: readonlyUser, password: readonlyPassword } });
+    expect(created.status()).toBe(201);
+    reader = await created.json() as { id: string };
+  } finally {
+    await registration.dispose();
+  }
+  await grantViewer(page, readonlyUser, reader.id);
   if (await page.getByRole("button", { name: "打开导航", exact: true }).isVisible()) await page.getByRole("button", { name: "打开导航", exact: true }).click();
   await page.getByRole("button", { name: "退出登录" }).click();
   await expect(page).toHaveURL(/\/login$/);
   await login(page, readonlyUser, readonlyPassword);
   await expect(page.getByRole("button", { name: "发起构建" })).toHaveCount(0);
-  const denied = await page.request.post(`/api/v1/projects/${evidence.project_id}/builds`, { headers: { "x-artifactory-csrf": "1" }, data: { ref: "main" } });
+  const denied = await page.request.post(`/api/v1/projects/${evidence.project_id}/builds`, { headers: tenantHeaders, data: { ref: "main" } });
   expect(denied.status()).toBe(403);
-  await page.goto("/builds/new");
+  await page.goto(tenantURL("/builds/new"));
   await expect(page.getByText("当前账号没有发起构建的权限。", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "继续", exact: true })).toHaveCount(0);
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   await expect(page.getByRole("heading", { name: "构建节点", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "接入节点" })).toHaveCount(0);
 });
@@ -140,29 +174,29 @@ test("readonly identity cannot trigger builds or modify nodes", async ({ page })
 test("SSE reconnect and failed publication never imply overall success", async ({ page }, testInfo) => {
   await login(page);
   await page.route("**/api/v1/builds/*/events", route => route.abort("connectionfailed"));
-  await page.goto(`/builds/${evidence.build_id}`);
+  await page.goto(tenantURL(`/builds/${evidence.build_id}`));
   await expect(page.getByText("等待连接 / 重连中", { exact: true })).toBeVisible();
   await page.unroute("**/api/v1/builds/*/events");
   await expect(page.getByRole("log")).toContainText("native compilation complete", { timeout: 25000 });
   if (evidence.partial_build_id) {
-    await page.goto(`/builds/${evidence.partial_build_id}`);
+    await page.goto(tenantURL(`/builds/${evidence.partial_build_id}`));
     await expect(page.getByRole("heading", { name: "目标矩阵", exact: true })).toBeVisible();
     await expect(page.locator(".target-button .status-succeeded")).toHaveCount(1);
     await expect(page.locator(".target-button .status-failed")).toHaveCount(1);
     await page.screenshot({ path: testInfo.outputPath("partial-failure.png"), fullPage: true });
   }
   if (evidence.collision_build_id) {
-    await page.goto(`/builds/${evidence.collision_build_id}`);
+    await page.goto(tenantURL(`/builds/${evidence.collision_build_id}`));
     await expect(page.locator(".error-box[role=alert]")).toContainText("发布失败（构建结果保留）");
   }
 });
 
 test("real repository references and the build wizard preserve model configuration errors", async ({ page }, testInfo) => {
   await login(page);
-  const response = await page.request.get(`/api/v1/projects/${evidence.project_id}`);
+  const response = await page.request.get(`/api/v1/projects/${evidence.project_id}`, { headers: tenantHeaders });
   const source = await response.json() as { repository_url: string; credential_id: string; signing_profiles: string[] };
   const projectName = `Browser native ${testInfo.project.name} ${Date.now()}`;
-  await page.goto("/projects");
+  await page.goto(tenantURL("/projects"));
   await page.getByRole("button", { name: "接入项目" }).click();
   await page.locator('input[name="name"]').fill(projectName);
   await page.locator('input[name="repository_url"]').fill(source.repository_url);

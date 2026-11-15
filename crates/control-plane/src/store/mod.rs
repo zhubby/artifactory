@@ -2,7 +2,10 @@
 use artifactory_database::{params, sql};
 
 mod auth;
+mod tenancy;
+pub use tenancy::{NodeAccess, NodeAccessMode};
 pub mod dto;
+pub mod maintenance;
 mod management;
 mod models;
 mod planning_management;
@@ -15,6 +18,7 @@ pub use projects::{ProjectInput, ProjectSource};
 #[derive(Clone)]
 pub struct ControlStore {
     pool: toasty::Db,
+    scope: Option<crate::auth::Auth>,
     pub source: artifactory_source_core::store::SourceStore,
 }
 
@@ -23,6 +27,7 @@ impl ControlStore {
         Self {
             source: artifactory_source_core::store::SourceStore::embedded(pool.clone()),
             pool,
+            scope: None,
         }
     }
 
@@ -34,6 +39,7 @@ impl ControlStore {
         details: serde_json::Value,
     ) -> anyhow::Result<()> {
         models::AuditEvent::create()
+            .tenant_id(self.scope.as_ref().map(|s| s.tenant_id))
             .actor(actor)
             .action(action)
             .resource_id(resource)
@@ -110,13 +116,14 @@ impl ControlStore {
         Ok(count == 0)
     }
     pub async fn bootstrap_admin(&self, username: String, hash: String) -> anyhow::Result<()> {
-        models::User::upsert_by_username(username)
+        models::User::upsert_by_username(username.clone())
             .id(uuid::Uuid::new_v4())
             .password_hash(hash)
             .role("admin")
             .or_ignore()
             .exec(&mut self.pool.clone())
             .await?;
+        self.bootstrap_tenant(username).await?;
         Ok(())
     }
 }

@@ -366,7 +366,7 @@ async fn device_fleet_load() {
             && (20..=300).contains(&seconds)
             && (8..=256).contains(&database_connections)
     );
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let database_configuration: Value = sql::scalar(&mut database.pool.clone(), "SELECT jsonb_build_object('server_version',current_setting('server_version'),'max_connections',current_setting('max_connections')::integer,'fsync',current_setting('fsync'),'synchronous_commit',current_setting('synchronous_commit'),'full_page_writes',current_setting('full_page_writes'),'shared_buffers',current_setting('shared_buffers'),'wal_buffers',current_setting('wal_buffers'))", params![]).await.unwrap();
     let root = tempfile::tempdir().unwrap();
     let certificates = Certificates::new();
@@ -525,6 +525,10 @@ async fn device_fleet_load() {
             let sent = Instant::now();
             let response = http
                 .get(format!("{}{path}", replicas[1].http))
+                .header(
+                    "X-Artifactory-Tenant",
+                    "00000000-0000-0000-0000-000000000001",
+                )
                 .header("cookie", "artifactory_session=load-session")
                 .send()
                 .await;

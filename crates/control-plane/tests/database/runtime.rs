@@ -6,7 +6,7 @@ use toasty::stmt::Type;
 #[ignore = "requires isolated PostgreSQL"]
 async fn source_public_address_does_not_replace_internal_rpc_and_old_snapshots_still_work() {
     use artifactory_control_plane::runtime_bridge;
-    let db = Database::new().await;
+    let db = Database::with_tenant().await;
     let (project, _, _) = db.fixture().await;
     let repository = Uuid::new_v4();
     let snapshot = Uuid::new_v4();
@@ -58,7 +58,7 @@ async fn source_public_address_does_not_replace_internal_rpc_and_old_snapshots_s
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL"]
 async fn native_run_outbox_is_atomic_and_cancel_is_a_new_version() {
-    let db = Database::new().await;
+    let db = Database::with_tenant().await;
     let (project, build, _) = db.fixture().await;
     sql::execute(
         &mut db.pool.clone(),

@@ -1,4 +1,5 @@
 //! Runtime persistence. Lifecycle rules execute with the locked persistent state.
+pub mod maintenance;
 mod models;
 use crate::{lifecycle::Lifecycle, server::id};
 use anyhow::{Context, Result, ensure};
@@ -76,15 +77,27 @@ async fn locked(tx: &mut toasty::db::Transaction<'_>, run: Uuid) -> Result<sql::
             ("created_at", Type::Timestamp),
             ("dispatched_at", Type::Timestamp),
             ("updated_at", Type::Timestamp),
+            ("tenant_id", Type::Uuid),
         ],
     )
     .await?)
 }
 fn config(s: &RuntimeStore, row: &sql::Record) -> Result<RunIntent> {
-    Ok(serde_json::from_slice(&crypto::open(
+    let mut value: Value = serde_json::from_slice(&crypto::open(
         &s.key,
         &row.decode::<String>("intent_ciphertext")?,
-    )?)?)
+    )?)?;
+    let tenant: Uuid = row.decode("tenant_id")?;
+    // Historical encrypted intents are upgraded only after the trusted project-map backfill.
+    if value.get("tenant_id").is_none() {
+        value["tenant_id"] = json!(tenant);
+    }
+    let intent: RunIntent = serde_json::from_value(value)?;
+    ensure!(
+        intent.tenant_id == tenant && Some(intent.project_id) == row.decode("project_id")?,
+        "runtime tenant mismatch"
+    );
+    Ok(intent)
 }
 fn authorized(row: &sql::Record, lease: &Lease) -> Result<Lifecycle> {
     ensure!(
@@ -200,7 +213,19 @@ impl RuntimeStore {
         } else {
             let mut life = Lifecycle::new(intent.as_ref().map_or(20, |i| i.model.max_calls));
             life.canceled = cancel;
+            if let Some(i) = &intent {
+                ensure!(!i.tenant_id.is_nil(), "tenant identity is required");
+                sql::execute(&mut tx,"INSERT INTO runtime_project_tenants(project_id,tenant_id) VALUES($1,$2) ON CONFLICT(project_id) DO NOTHING",params![i.project_id,i.tenant_id]).await?;
+                let same: bool = sql::scalar(
+                    &mut tx,
+                    "SELECT tenant_id=$2 FROM runtime_project_tenants WHERE project_id=$1",
+                    params![i.project_id, i.tenant_id],
+                )
+                .await?;
+                ensure!(same, "project belongs to a different tenant");
+            }
             models::Run::create()
+                .tenant_id(intent.as_ref().map(|i| i.tenant_id))
                 .id(run)
                 .version(version)
                 .intent_hash(hash)
@@ -282,6 +307,7 @@ impl RuntimeStore {
                 ("created_at", Type::Timestamp),
                 ("dispatched_at", Type::Timestamp),
                 ("updated_at", Type::Timestamp),
+                ("tenant_id", Type::Uuid),
             ],
         )
         .await?;
@@ -317,6 +343,7 @@ impl RuntimeStore {
                 ("created_at", Type::Timestamp),
                 ("dispatched_at", Type::Timestamp),
                 ("updated_at", Type::Timestamp),
+                ("tenant_id", Type::Uuid),
             ],
         )
         .await?;
@@ -416,7 +443,9 @@ impl RuntimeStore {
         };
         sql::execute(&mut tx, "UPDATE runtime_runs SET status='running',lifecycle=$2,grant_hash=$3,grant_ciphertext=$4 WHERE id=$1", params![execution.run_id, serde_json::to_value(&life)?, crypto::hash(&token), crypto::seal(&self.key,token.as_bytes())?]).await?;
         let source_url = intent.context.get("source_url").cloned();
+        let tenant = intent.tenant_id;
         let mut context = intent.context;
+        context["tenant_id"] = json!(tenant);
         context["checkpoint"] = row
             .decode::<Option<Value>>("checkpoint")?
             .unwrap_or(Value::Null);
@@ -530,7 +559,7 @@ impl RuntimeStore {
         .await?;
         let active: i64 = sql::scalar(&mut tx, "SELECT count(*) FROM runtime_runs WHERE pool=$1 AND status IN ('provisioning','running')", params![pool])
     .await?;
-        let rows=sql::records(&mut tx, "SELECT * FROM runtime_runs r WHERE pool=$1 AND status='queued' AND (SELECT count(*) FROM runtime_runs a WHERE a.project_id=r.project_id AND a.pool=r.pool AND a.status IN ('provisioning','running'))<$3 ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT $2", params![pool, (limit-active).max(0), per_project], &[("id", Type::Uuid),("version", Type::I64),("intent_hash", Type::String),("intent_ciphertext", Type::String),("project_id", Type::Uuid),("pool", Type::String),("snapshot_id", Type::Uuid),("snapshot_digest", Type::String),("lifecycle", Type::String),("status", Type::String),("execution", Type::String),("grant_hash", Type::String),("grant_ciphertext", Type::String),("checkpoint", Type::String),("usage", Type::String),("report_sequence", Type::I64),("created_at", Type::Timestamp),("dispatched_at", Type::Timestamp),("updated_at", Type::Timestamp)]).await?;
+        let rows=sql::records(&mut tx, "SELECT * FROM runtime_runs r WHERE pool=$1 AND status='queued' AND (SELECT count(*) FROM runtime_runs a WHERE a.project_id=r.project_id AND a.pool=r.pool AND a.status IN ('provisioning','running'))<$3 ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT $2", params![pool, (limit-active).max(0), per_project], &[("id", Type::Uuid),("version", Type::I64),("intent_hash", Type::String),("intent_ciphertext", Type::String),("project_id", Type::Uuid),("pool", Type::String),("snapshot_id", Type::Uuid),("snapshot_digest", Type::String),("lifecycle", Type::String),("status", Type::String),("execution", Type::String),("grant_hash", Type::String),("grant_ciphertext", Type::String),("checkpoint", Type::String),("usage", Type::String),("report_sequence", Type::I64),("created_at", Type::Timestamp),("dispatched_at", Type::Timestamp),("updated_at", Type::Timestamp),("tenant_id",Type::Uuid)]).await?;
         let mut admitted = Vec::new();
         for row in rows {
             let project: Uuid = row.decode("project_id")?;
@@ -573,6 +602,7 @@ impl RuntimeStore {
                 ("created_at", Type::Timestamp),
                 ("dispatched_at", Type::Timestamp),
                 ("updated_at", Type::Timestamp),
+                ("tenant_id", Type::Uuid),
             ],
         )
         .await?;

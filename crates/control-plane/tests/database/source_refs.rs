@@ -21,7 +21,7 @@ async fn token(database: &Database, role: &str, projects: &[Uuid], scopes: &[&st
     )
     .await
     .unwrap();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO api_tokens(id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES($1,$2,'refs-test',$3,$4,$5,now()+interval '1 hour')", params![Uuid::new_v4(), user, crypto::hash(&secret), projects, scopes]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO api_tokens(tenant_id,id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES('00000000-0000-0000-0000-000000000001',$1,$2,'refs-test',$3,$4,$5,now()+interval '1 hour')", params![Uuid::new_v4(), user, crypto::hash(&secret), projects, scopes]).await.unwrap();
     secret
 }
 
@@ -43,9 +43,9 @@ async fn request(
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn references_enforce_read_scope_project_scope_and_not_found() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let project = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO projects(id,name,repository_url) VALUES($1,'refs','https://127.0.0.1:1/repo.git')", params![project]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO projects(tenant_id,id,name,repository_url) VALUES('00000000-0000-0000-0000-000000000001',$1,'refs','https://127.0.0.1:1/repo.git')", params![project]).await.unwrap();
     assert_eq!(
         request(&database, project, None).await.status(),
         StatusCode::UNAUTHORIZED
@@ -112,7 +112,7 @@ async fn repository_refs_probe_helper() {
         return;
     };
     let fixture: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     for entry in fixture["cases"].as_array().unwrap() {
         let credential = (entry["kind"] != "none").then(Uuid::new_v4);
         let project = Uuid::new_v4();
@@ -133,7 +133,7 @@ async fn repository_refs_probe_helper() {
             .unwrap();
             sql::execute(
                 &mut database.pool.clone(),
-                "INSERT INTO credentials(id,name,kind,ciphertext) VALUES($1,'refs',$2,$3)",
+                "INSERT INTO credentials(tenant_id,id,name,kind,ciphertext) VALUES('00000000-0000-0000-0000-000000000001',$1,'refs',$2,$3)",
                 params![credential, entry["kind"].as_str().unwrap(), encrypted],
             )
             .await
@@ -141,7 +141,7 @@ async fn repository_refs_probe_helper() {
         }
         sql::execute(
             &mut database.pool.clone(),
-            "INSERT INTO projects(id,name,repository_url,credential_id) VALUES($1,'refs',$2,$3)",
+            "INSERT INTO projects(tenant_id,id,name,repository_url,credential_id) VALUES('00000000-0000-0000-0000-000000000001',$1,'refs',$2,$3)",
             params![project, entry["url"].as_str().unwrap(), credential],
         )
         .await

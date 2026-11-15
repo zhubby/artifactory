@@ -82,7 +82,9 @@ class Acceptance:
         # Keep signature, trust-chain and hostname verification enabled.
         context.verify_flags &= ~ssl.VERIFY_X509_STRICT
         self.http = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(self.jar), urllib.request.HTTPSHandler(context=context))
-        self.evidence = {'schema': self.schema, 'checks': [], 'builds': {}, 'upstream': {'git_bytes': 0, 'lfs_bytes': 0, 'reads': 0, 'writes': 0}}
+        self.tenant_id = '00000000-0000-0000-0000-000000000001'
+        self.http.addheaders.append(('X-Artifactory-Tenant', self.tenant_id))
+        self.evidence = {'schema': self.schema, 'tenant_id': self.tenant_id, 'checks': [], 'builds': {}, 'upstream': {'git_bytes': 0, 'lfs_bytes': 0, 'reads': 0, 'writes': 0}}
 
     def sql(self, query, isolated=True):
         parts=urllib.parse.urlsplit(self.config['DATABASE_URL'] if isolated else self.db)
@@ -303,7 +305,7 @@ class Acceptance:
         self.project=self.api('/projects',{'name':'Zero intrusion AI acceptance','repository_url':self.repository_url,
             'pool_ids':['00000000-0000-0000-0000-000000000001'],'signing_profiles':['adhoc-test'] if host_os=='darwin' else []})['id']
         self.evidence.update(project_id=self.project,source_commit=self.source_commit)
-        (self.run/'access.json').write_text(json.dumps({'base':self.base,'project_id':self.project,'schema':self.schema,
+        (self.run/'access.json').write_text(json.dumps({'base':self.base,'project_id':self.project,'tenant_id':self.tenant_id,'schema':self.schema,
             'emissary_config':str(self.emissary_config),'cookies':{c.name:c.value for c in self.jar}}))
 
     def build(self,name,goal,parameters=None):

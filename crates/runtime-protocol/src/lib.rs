@@ -36,6 +36,7 @@ pub fn default_timeout() -> u32 {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunIntent {
+    pub tenant_id: Uuid,
     pub run_id: Uuid,
     pub build_id: Uuid,
     pub project_id: Uuid,

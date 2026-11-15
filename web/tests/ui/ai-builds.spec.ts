@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fixtureAPI, build } from "./fixtures";
+import {fixtureAPI, build, tenantURL } from "./fixtures";
 
 for (const locale of ["zh-CN", "en"] as const) {
   test(`${locale}: AI planning, clarification, plan history and model settings`, async ({page}, info) => {
@@ -21,7 +21,7 @@ for (const locale of ["zh-CN", "en"] as const) {
       answer = (route.request().postDataJSON() as {answer: string}).answer;
       await route.fulfill({json: {ok: true}});
     });
-    await page.goto("/builds/build-main");
+    await page.goto(tenantURL("/builds/build-main"));
     await expect(page.getByText("Which application should be built?", {exact: true})).toBeVisible();
     await expect(page.getByText("snapshot-pinned", {exact: false})).toBeVisible();
     await page.locator('textarea[name="answer"]').fill("The desktop client");
@@ -34,7 +34,7 @@ for (const locale of ["zh-CN", "en"] as const) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
     await page.screenshot({path: info.outputPath(`${locale}-ai-plan.png`), fullPage: true});
 
-    await page.goto("/settings");
+    await page.goto(tenantURL("/settings"));
     await page.getByRole("tab", {name: locale === "en" ? "AI planning" : "AI 规划", exact: true}).click();
     await expect(page.getByRole("heading", {name: locale === "en" ? "Model profiles" : "模型配置", exact: true})).toBeVisible();
     await page.getByRole("button", {name: locale === "en" ? "Add model" : "添加模型", exact: true}).click();
@@ -43,7 +43,7 @@ for (const locale of ["zh-CN", "en"] as const) {
     await expect(page.locator('input[name="timeout_seconds"]')).toHaveValue("600");
     await page.screenshot({path: info.outputPath(`${locale}-ai-model.png`), fullPage: true});
     await page.keyboard.press("Escape");
-    await page.goto("/projects/project-main");
+    await page.goto(tenantURL("/projects/project-main"));
     await page.getByRole("button", {name: locale === "en" ? "Start build" : "发起构建", exact: true}).click();
     await expect(page).toHaveURL(/\/builds\/new\?project=project-main$/);
     await expect(page.getByRole("radio", {name: locale === "en" ? "Branch main" : "分支 main", exact: true})).toBeChecked();

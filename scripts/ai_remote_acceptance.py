@@ -34,7 +34,7 @@ def main():
     endpoint=json.loads((run/'worker.json').read_text())['endpoint']
     if endpoint.startswith('localhost:'):
         raise RuntimeError('start the isolated acceptance with --tailnet-address before the Mac mini check')
-    headers={'Cookie':'; '.join(k+'='+v for k,v in access['cookies'].items()),'Content-Type':'application/json','Origin':access['base'],'x-artifactory-csrf':'1'}
+    headers={'Cookie':'; '.join(k+'='+v for k,v in access['cookies'].items()),'Content-Type':'application/json','Origin':access['base'],'x-artifactory-csrf':'1','X-Artifactory-Tenant':access['tenant_id']}
     def api(path,body=None,method=None):
         with http.open(urllib.request.Request(access['base']+'/api/v1'+path,data=None if body is None else json.dumps(body).encode(),method=method,headers=headers),timeout=45) as response:return json.load(response)
     evidence={'kind':'isolated-macmini-platform-source','checks':[]}

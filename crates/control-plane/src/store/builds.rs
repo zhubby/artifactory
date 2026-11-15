@@ -52,9 +52,12 @@ impl ControlStore {
         input: &BuildInput,
         goal: String,
     ) -> Result<Uuid> {
-        let project_row=sql::record(&mut self.pool.clone(), "SELECT model_profile_id,pool_ids,signing_profiles,build_context,source_credentials FROM projects WHERE id=$1", params![project], &[("model_profile_id", Type::Uuid),("pool_ids", Type::List(Box::new(Type::Uuid))),("signing_profiles", Type::List(Box::new(Type::String))),("build_context", Type::String),("source_credentials", Type::String)]).await?;
+        let project_row=sql::record(&mut self.pool.clone(), "SELECT tenant_id,model_profile_id,pool_ids,signing_profiles,build_context,source_credentials FROM projects WHERE id=$1", params![project], &[("tenant_id",Type::Uuid),("model_profile_id", Type::Uuid),("pool_ids", Type::List(Box::new(Type::Uuid))),("signing_profiles", Type::List(Box::new(Type::String))),("build_context", Type::String),("source_credentials", Type::String)]).await?;
         let model = self
-            .model_snapshot(project_row.decode("model_profile_id")?)
+            .model_snapshot(
+                project_row.decode("model_profile_id")?,
+                project_row.decode("tenant_id")?,
+            )
             .await?;
         let context = json!({"placement_version":if std::env::var("ARTIFACTORY_AI_PLACEMENT").is_ok_and(|v|v=="1" || v=="true") {1}else{0},"pool_ids":project_row.decode::<Vec<Uuid>>("pool_ids")?,"signing_profiles":project_row.decode::<Vec<String>>("signing_profiles")?,"build_context":project_row.decode::<String>("build_context")?,"source_credentials":project_row.decode::<Value>("source_credentials")?});
         let id = Uuid::new_v4();

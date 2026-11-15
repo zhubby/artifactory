@@ -26,6 +26,8 @@ mod replication;
 mod runtime;
 #[path = "database/source_refs.rs"]
 mod source_refs;
+#[path = "database/tenancy.rs"]
+mod tenancy;
 #[path = "database/transport.rs"]
 mod transport;
 
@@ -34,7 +36,7 @@ mod transport;
 async fn evicted_source_restores_pinned_objects_after_upstream_refs_move() {
     use artifactory_control_plane::source_cache::{self, LfsObject, Repository, Snapshot};
     use tokio::io::{AsyncBufReadExt, BufReader};
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (project, build, _) = database.fixture().await;
     let upstream = tempfile::tempdir().unwrap();
     let origin = upstream.path().join("repo.git");
@@ -235,7 +237,7 @@ async fn evicted_source_restores_pinned_objects_after_upstream_refs_move() {
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn source_download_rechecks_authorization_after_cache_lock() {
     use artifactory_control_plane::source_cache::{self, LfsObject, Repository, Snapshot};
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (project, build, job) = database.fixture().await;
     let node = database.node().await;
     let repository = Uuid::new_v4();
@@ -382,7 +384,7 @@ async fn planning_fixture(database: &Database) -> (Uuid, Uuid, Uuid) {
     let (_, build, _) = database.fixture().await;
     let worker = Uuid::new_v4();
     let run = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO ai_workers(id,name,certificate_hash,certificate_expires_at) VALUES($1,'planner',$2,now()+interval '1 day')", params![worker, worker.to_string()]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO ai_workers(tenant_id,id,name,certificate_hash,certificate_expires_at) VALUES('00000000-0000-0000-0000-000000000001',$1,'planner',$2,now()+interval '1 day')", params![worker, worker.to_string()]).await.unwrap();
     sql::execute(
         &mut database.pool.clone(),
         "UPDATE builds SET status='planning',goal='Build project' WHERE id=$1",
@@ -397,7 +399,7 @@ async fn planning_fixture(database: &Database) -> (Uuid, Uuid, Uuid) {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn planner_reaper_rechecks_renewal_after_waiting_for_build_lock() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (build, run, _) = planning_fixture(&database).await;
     let mut lock_db = database.pool.clone();
     let mut lock = lock_db.transaction().await.unwrap();
@@ -461,7 +463,7 @@ async fn planner_reaper_rechecks_renewal_after_waiting_for_build_lock() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn planner_deadline_finishes_build_and_failed_planning_does_not_loop() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (build, run, _) = planning_fixture(&database).await;
     sql::execute(
         &mut database.pool.clone(),
@@ -490,7 +492,7 @@ async fn planner_deadline_finishes_build_and_failed_planning_does_not_loop() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn model_profile_queries_mask_keys_and_validate_runtime_parameters() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let user = Uuid::new_v4();
     sql::execute(
         &mut database.pool.clone(),
@@ -532,6 +534,10 @@ async fn model_profile_queries_mask_keys_and_validate_runtime_parameters() {
                 Request::builder()
                     .method("POST")
                     .uri("/api/v1/model-profiles")
+                    .header(
+                        "X-Artifactory-Tenant",
+                        "00000000-0000-0000-0000-000000000001",
+                    )
                     .header("cookie", "artifactory_session=ai-session")
                     .header("origin", "http://localhost:3000")
                     .header("x-artifactory-csrf", "1")
@@ -547,6 +553,10 @@ async fn model_profile_queries_mask_keys_and_validate_runtime_parameters() {
         .oneshot(
             Request::builder()
                 .uri("/api/v1/model-profiles")
+                .header(
+                    "X-Artifactory-Tenant",
+                    "00000000-0000-0000-0000-000000000001",
+                )
                 .header("cookie", "artifactory_session=ai-session")
                 .body(Body::empty())
                 .unwrap(),
@@ -616,7 +626,10 @@ async fn registration_creates_viewer_and_standard_session() {
         .unwrap();
     let user: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(user["username"], "new-reader");
-    assert_eq!(user["role"], "viewer");
+    assert!(
+        user.get("role").is_none(),
+        "account identity has no global business role"
+    );
     assert!(user.get("password_hash").is_none());
     let (encoded, role): (String, String) = sql::tuple(
         &mut database.pool.clone(),
@@ -790,6 +803,38 @@ impl Database {
     async fn new() -> Self {
         Self::with_migrations(&artifactory_control_plane::store::MIGRATIONS).await
     }
+    async fn with_tenant() -> Self {
+        let db = Self::new().await;
+        db.ensure_fixture_tenant().await;
+        db
+    }
+    async fn ensure_fixture_tenant(&self) {
+        let upgraded: bool = sql::scalar(
+            &mut self.pool.clone(),
+            "SELECT to_regclass(current_schema()||'.tenants') IS NOT NULL",
+            params![],
+        )
+        .await
+        .unwrap();
+        if !upgraded {
+            sql::execute(&mut self.pool.clone(),"INSERT INTO users(id,username,password_hash,role) VALUES('ffffffff-ffff-ffff-ffff-ffffffffffff','fixture-owner','unused','admin') ON CONFLICT DO NOTHING",params![]).await.unwrap();
+            return;
+        }
+        self.state
+            .store
+            .bootstrap_admin("fixture-owner".into(), "unused".into())
+            .await
+            .unwrap();
+        sql::execute(&mut self.pool.clone(),"CREATE OR REPLACE FUNCTION grant_legacy_fixture_account() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO tenant_members(tenant_id,user_id,role) VALUES('00000000-0000-0000-0000-000000000001',NEW.id,CASE WHEN NEW.role='admin' THEN 'admin' ELSE 'member' END) ON CONFLICT DO NOTHING; INSERT INTO project_members(tenant_id,project_id,user_id,role) SELECT tenant_id,id,NEW.id,NEW.role FROM projects ON CONFLICT DO NOTHING; RETURN NEW; END $$",params![]).await.unwrap();
+        sql::execute(
+            &mut self.pool.clone(),
+            "DROP TRIGGER IF EXISTS fixture_account_grants ON users",
+            params![],
+        )
+        .await
+        .unwrap();
+        sql::execute(&mut self.pool.clone(),"CREATE TRIGGER fixture_account_grants AFTER INSERT ON users FOR EACH ROW EXECUTE FUNCTION grant_legacy_fixture_account()",params![]).await.unwrap();
+    }
     async fn with_migrations(migrations: &toasty::migration::MigrationSet) -> Self {
         let url = std::env::var("ARTIFACTORY_TEST_DATABASE_URL")
             .expect("ARTIFACTORY_TEST_DATABASE_URL is required for explicit database tests");
@@ -874,11 +919,26 @@ impl Database {
         .unwrap();
     }
     async fn fixture(&self) -> (Uuid, Uuid, Uuid) {
+        self.ensure_fixture_tenant().await;
         let project = Uuid::new_v4();
         let build = Uuid::new_v4();
         let job = Uuid::new_v4();
         let recipe=Recipe::parse("version: 1\nrelease: {enabled: true}\ntargets:\n  app:\n    os: linux\n    arch: amd64\n    steps: [{name: compile, run: make}]\n    artifacts: [dist/app]\n").unwrap();
-        sql::execute(&mut self.pool.clone(), "INSERT INTO projects(id,name,repository_url) VALUES($1,'test','https://example.com/repo.git')", params![project]).await.unwrap();
+        let upgraded: bool = sql::scalar(
+            &mut self.pool.clone(),
+            "SELECT to_regclass(current_schema()||'.tenants') IS NOT NULL",
+            params![],
+        )
+        .await
+        .unwrap();
+        let query = if upgraded {
+            "INSERT INTO projects(id,tenant_id,name,repository_url,pool_ids) VALUES($1,'00000000-0000-0000-0000-000000000001','test','https://example.com/repo.git','{00000000-0000-0000-0000-000000000001}')"
+        } else {
+            "INSERT INTO projects(id,name,repository_url) VALUES($1,'test','https://example.com/repo.git')"
+        };
+        sql::execute(&mut self.pool.clone(), query, params![project])
+            .await
+            .unwrap();
         sql::execute(&mut self.pool.clone(), "INSERT INTO builds(id,project_id,requested_ref,commit_sha,config_snapshot,status,release_version,source_repository_url) VALUES($1,$2,'main',$3,$4,'queued','v1','https://example.com/repo.git')", params![build, project, "0".repeat(40), serde_json::to_value(&recipe).unwrap()]).await.unwrap();
         sql::execute(
             &mut self.pool.clone(),
@@ -894,6 +954,7 @@ impl Database {
         (project, build, job)
     }
     async fn node(&self) -> Uuid {
+        self.ensure_fixture_tenant().await;
         let node = Uuid::new_v4();
         let session = Uuid::new_v4();
         let (sender, _receiver) = mpsc::channel::<Result<Command, tonic::Status>>(128);
@@ -910,7 +971,7 @@ impl Database {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn build_summary_cannot_overwrite_retry_or_planning_committed_while_waiting() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     for next in ["queued", "planning"] {
         let (_, build, job) = database.fixture().await;
         sql::execute(
@@ -995,7 +1056,7 @@ async fn build_summary_cannot_overwrite_retry_or_planning_committed_while_waitin
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn concurrent_schedulers_do_not_double_assign_or_exceed_slots() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, _, job) = database.fixture().await;
     sql::execute(&mut database.pool.clone(), "INSERT INTO jobs(id,build_id,target,target_config) SELECT $1,build_id,'second',target_config FROM jobs WHERE id=$2", params![Uuid::new_v4(), job]).await.unwrap();
     database.node().await;
@@ -1027,7 +1088,7 @@ async fn concurrent_schedulers_do_not_double_assign_or_exceed_slots() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn queued_signing_authorization_is_rechecked() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (project, _, _) = database.fixture().await;
     let node = database.node().await;
     sql::execute(
@@ -1075,11 +1136,11 @@ async fn queued_signing_authorization_is_rechecked() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn scoped_retry_cannot_enable_publication_and_source_is_snapshotted() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (project, _, job) = database.fixture().await;
     let user = Uuid::new_v4();
     sql::execute(&mut database.pool.clone(), "INSERT INTO users(id,username,password_hash,role) VALUES($1,'builder','unused','operator')", params![user]).await.unwrap();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO api_tokens(id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES($1,$2,'build-only',$3,$4,'{read,build}',now()+interval '1 hour')", params![Uuid::new_v4(), user, crypto::hash("builder"), vec![project]]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO api_tokens(tenant_id,id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES('00000000-0000-0000-0000-000000000001',$1,$2,'build-only',$3,$4,'{read,build}',now()+interval '1 hour')", params![Uuid::new_v4(), user, crypto::hash("builder"), vec![project]]).await.unwrap();
     sql::execute(
         &mut database.pool.clone(),
         "UPDATE jobs SET status='failed' WHERE id=$1",
@@ -1134,7 +1195,7 @@ async fn scoped_retry_cannot_enable_publication_and_source_is_snapshotted() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn incomplete_artifacts_never_make_a_release_visible() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, build, _) = database.fixture().await;
     sql::execute(
         &mut database.pool.clone(),
@@ -1170,7 +1231,7 @@ async fn incomplete_artifacts_never_make_a_release_visible() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn expired_started_tasks_are_lost_and_unstarted_tasks_requeue() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, _, job) = database.fixture().await;
     database.node().await;
     scheduler::tick(&database.state).await.unwrap();
@@ -1207,7 +1268,7 @@ async fn expired_started_tasks_are_lost_and_unstarted_tasks_requeue() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn publication_is_atomic_immutable_and_idempotent() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, build, job) = database.fixture().await;
     let node = database.node().await;
     let attempt = Uuid::new_v4();
@@ -1256,7 +1317,7 @@ async fn publication_is_atomic_immutable_and_idempotent() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn real_http_authorization_rejects_csrf_and_scope_escalation() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (project, _, _) = database.fixture().await;
     let user = Uuid::new_v4();
     sql::execute(&mut database.pool.clone(), "INSERT INTO users(id,username,password_hash,role) VALUES($1,'operator','unused','operator')", params![user]).await.unwrap();
@@ -1267,12 +1328,16 @@ async fn real_http_authorization_rejects_csrf_and_scope_escalation() {
     )
     .await
     .unwrap();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO api_tokens(id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES($1,$2,'scoped',$3,$4,'{read}',now()+interval '1 hour')", params![Uuid::new_v4(), user, crypto::hash("api-token"), vec![project]]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO api_tokens(tenant_id,id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES('00000000-0000-0000-0000-000000000001',$1,$2,'scoped',$3,$4,'{read}',now()+interval '1 hour')", params![Uuid::new_v4(), user, crypto::hash("api-token"), vec![project]]).await.unwrap();
     let router = api::router(database.state.clone());
     let request = Request::builder()
         .method("POST")
         .uri(format!("/api/v1/projects/{project}/builds"))
         .header("content-type", "application/json")
+        .header(
+            "X-Artifactory-Tenant",
+            "00000000-0000-0000-0000-000000000001",
+        )
         .header("cookie", "artifactory_session=session")
         .body(Body::from(r#"{"ref":"main"}"#))
         .unwrap();
@@ -1306,7 +1371,7 @@ async fn real_http_authorization_rejects_csrf_and_scope_escalation() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn node_revocation_audit_records_effective_irreversible_state() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let node = database.node().await;
     let user = Uuid::new_v4();
     sql::execute(
@@ -1329,6 +1394,10 @@ async fn node_revocation_audit_records_effective_irreversible_state() {
             .method("PATCH")
             .uri(format!("/api/v1/nodes/{node}"))
             .header("content-type", "application/json")
+            .header(
+                "X-Artifactory-Tenant",
+                "00000000-0000-0000-0000-000000000001",
+            )
             .header("cookie", "artifactory_session=admin-session")
             .header("x-artifactory-csrf", "1")
             .header("origin", "http://localhost:3000")
@@ -1367,12 +1436,12 @@ async fn node_revocation_audit_records_effective_irreversible_state() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn ota_uses_node_lock_and_pool_limit_and_never_changes_admin_drain() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, _, _job) = database.fixture().await;
     let first = database.node().await;
     let second = database.node().await;
     let release = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(id,version,manifest,signature,manifest_hash) VALUES($1,'v-next',$2,'test','hash')", params![release, serde_json::json!({"assets":[{"os":"linux","arch":"amd64","name":"artifactory-emissary-linux-amd64"}]}).to_string()]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES('00000000-0000-0000-0000-000000000001',$1,'v-next',$2,'test','hash')", params![release, serde_json::json!({"assets":[{"os":"linux","arch":"amd64","name":"artifactory-emissary-linux-amd64"}]}).to_string()]).await.unwrap();
     sql::execute(&mut database.pool.clone(), "UPDATE nodes SET capabilities=capabilities || '[\"emissary-ota-v1\"]'::jsonb,emissary_current_version='v-old',emissary_launcher_version='v-old',draining=true", params![]).await.unwrap();
     sql::execute(
         &mut database.pool.clone(),
@@ -1428,7 +1497,7 @@ async fn ota_uses_node_lock_and_pool_limit_and_never_changes_admin_drain() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn ota_management_rejects_operator_and_project_tokens() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (project, _, _) = database.fixture().await;
     let user = Uuid::new_v4();
     sql::execute(&mut database.pool.clone(), "INSERT INTO users(id,username,password_hash,role) VALUES($1,'ota-operator','unused','operator')", params![user]).await.unwrap();
@@ -1439,7 +1508,7 @@ async fn ota_management_rejects_operator_and_project_tokens() {
     )
     .await
     .unwrap();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO api_tokens(id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES($1,$2,'scoped',$3,$4,'{read,build,release}',now()+interval '1 hour')", params![Uuid::new_v4(), user, crypto::hash("ota-token"), vec![project]]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO api_tokens(tenant_id,id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES('00000000-0000-0000-0000-000000000001',$1,$2,'scoped',$3,$4,'{read,build,release}',now()+interval '1 hour')", params![Uuid::new_v4(), user, crypto::hash("ota-token"), vec![project]]).await.unwrap();
     let router = api::router(database.state.clone());
     for (method, path, body) in [
         (
@@ -1478,16 +1547,21 @@ async fn ota_management_rejects_operator_and_project_tokens() {
             request = if token {
                 request.header("authorization", "Bearer ota-token")
             } else {
-                request.header("cookie", "artifactory_session=ota-session")
+                request
+                    .header(
+                        "X-Artifactory-Tenant",
+                        "00000000-0000-0000-0000-000000000001",
+                    )
+                    .header("cookie", "artifactory_session=ota-session")
             };
-            assert_eq!(
-                router
-                    .clone()
-                    .oneshot(request.body(Body::from(body.clone())).unwrap())
-                    .await
-                    .unwrap()
-                    .status(),
-                StatusCode::FORBIDDEN,
+            let status = router
+                .clone()
+                .oneshot(request.body(Body::from(body.clone())).unwrap())
+                .await
+                .unwrap()
+                .status();
+            assert!(
+                [StatusCode::FORBIDDEN, StatusCode::NOT_FOUND].contains(&status),
                 "{method} {path} token={token}"
             );
         }
@@ -1498,10 +1572,10 @@ async fn ota_management_rejects_operator_and_project_tokens() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn ota_failed_activation_pauses_pool_and_fences_stale_sessions() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let node = database.node().await;
     let release = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(id,version,manifest,signature,manifest_hash) VALUES($1,'v-next',$2,'test','hash')", params![release, serde_json::json!({"assets":[{"os":"linux","arch":"amd64","name":"artifactory-emissary-linux-amd64"}]}).to_string()]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES('00000000-0000-0000-0000-000000000001',$1,'v-next',$2,'test','hash')", params![release, serde_json::json!({"assets":[{"os":"linux","arch":"amd64","name":"artifactory-emissary-linux-amd64"}]}).to_string()]).await.unwrap();
     sql::execute(&mut database.pool.clone(), "UPDATE nodes SET capabilities=capabilities || '[\"emissary-ota-v1\"]'::jsonb,emissary_current_version='v-old',emissary_target_release=$1,draining=true WHERE id=$2", params![release, node]).await.unwrap();
     scheduler::tick(&database.state).await.unwrap();
     let id: Uuid = sql::scalar(
@@ -1574,17 +1648,17 @@ async fn ota_failed_activation_pauses_pool_and_fences_stale_sessions() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn ota_retry_after_pool_move_respects_new_pool_capacity() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let node = database.node().await;
     let other = database.node().await;
     let release = Uuid::new_v4();
     let prior = Uuid::new_v4();
     let new_pool = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(id,version,manifest,signature,manifest_hash) VALUES($1,'v-next','{}','test','hash')", params![release]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES('00000000-0000-0000-0000-000000000001',$1,'v-next','{}','test','hash')", params![release]).await.unwrap();
     sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_updates(id,node_id,pool_id,release_id,status,finished_at) VALUES($1,$2,'00000000-0000-0000-0000-000000000001',$3,'failed',now())", params![prior, node, release]).await.unwrap();
     sql::execute(
         &mut database.pool.clone(),
-        "INSERT INTO node_pools(id,name) VALUES($1,'new pool')",
+        "INSERT INTO node_pools(tenant_id,id,name) VALUES('00000000-0000-0000-0000-000000000001',$1,'new pool')",
         params![new_pool],
     )
     .await
@@ -1622,6 +1696,10 @@ async fn ota_retry_after_pool_move_respects_new_pool_capacity() {
         .method("POST")
         .uri(format!("/api/v1/emissary-updates/{prior}/retry"))
         .header("content-type", "application/json")
+        .header(
+            "X-Artifactory-Tenant",
+            "00000000-0000-0000-0000-000000000001",
+        )
         .header("cookie", "artifactory_session=admin-session")
         .header("x-artifactory-csrf", "1")
         .header("origin", "http://localhost:3000")
@@ -1641,7 +1719,7 @@ async fn ota_retry_after_pool_move_respects_new_pool_capacity() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn unchanged_terminal_builds_do_not_generate_new_row_versions() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, build, job) = database.fixture().await;
     sql::execute(
         &mut database.pool.clone(),

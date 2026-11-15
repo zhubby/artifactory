@@ -25,7 +25,8 @@ DIRECTORY = Path('/acceptance')
 def main():
     os.umask(0o077)
     base = os.environ['ARTIFACTORY_COMPOSE_CONSOLE_URL']
-    evidence = {'kind': 'compose-tls-probe', 'checks': [], 'host': platform.platform()}
+    tenant_id = '00000000-0000-0000-0000-000000000001'
+    evidence = {'kind': 'compose-tls-probe', 'tenant_id': tenant_id, 'checks': [], 'host': platform.platform()}
     context = ssl.create_default_context(cafile=str(DIRECTORY / 'https-ca.pem'))
     cookies = http.cookiejar.CookieJar()
 
@@ -33,7 +34,10 @@ def main():
         handlers = [urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context)]
         if authenticated:
             handlers.append(urllib.request.HTTPCookieProcessor(cookies))
-        return urllib.request.build_opener(*handlers)
+        result = urllib.request.build_opener(*handlers)
+        if authenticated:
+            result.addheaders.append(('X-Artifactory-Tenant', tenant_id))
+        return result
 
     client = opener()
 

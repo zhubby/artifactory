@@ -13,6 +13,8 @@ pub enum ApiError {
     BadRequest(String),
     #[error("authentication required")]
     Unauthorized,
+    #[error("select a tenant before accessing this resource")]
+    TenantRequired,
     #[error("permission denied")]
     Forbidden,
     #[error("resource not found")]
@@ -32,6 +34,7 @@ pub enum ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let status = match &self {
+            Self::TenantRequired => StatusCode::BAD_REQUEST,
             Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::Forbidden => StatusCode::FORBIDDEN,
@@ -50,7 +53,7 @@ impl IntoResponse for ApiError {
         } else {
             self.to_string()
         };
-        let mut response = (status, Json(json!({"error": message}))).into_response();
+        let mut response = (status, Json(json!({"error": message,"code":if matches!(&self,Self::TenantRequired) {"tenant_required"} else {"request_failed"}}))).into_response();
         if let Self::TooManyRequests(seconds) = self {
             response.headers_mut().insert(
                 axum::http::header::RETRY_AFTER,

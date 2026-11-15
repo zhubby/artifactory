@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { fixtureAPI, openPreferences, closePreferences } from "./fixtures";
+import {fixtureAPI, openPreferences, closePreferences, tenantURL } from "./fixtures";
 
 async function instrumentDraws(page: Page) {
   await page.addInitScript(() => {
@@ -27,7 +27,7 @@ test("running effects stop immediately for reduced motion and the saved manual s
 }) => {
   await instrumentDraws(page);
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.goto("/login");
+  await page.goto(tenantURL("/login"));
   await expect(page.locator("canvas")).toHaveCount(1);
   await expect.poll(() => draws(page)).toBeGreaterThan(2);
   if (page.viewportSize()!.width <= 760) {
@@ -74,7 +74,7 @@ test("offscreen and visibility changes pause actual WebGL draws and resume on re
   await instrumentDraws(page);
   await fixtureAPI(page);
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.goto("/builds/build-main");
+  await page.goto(tenantURL("/builds/build-main"));
   await expect(page.getByRole("log")).toContainText(
     "native compilation complete",
   );
@@ -139,7 +139,7 @@ test("WebGL failure keeps a static atmosphere and an accessible working form", a
       >);
     } as typeof original;
   });
-  await page.goto("/login");
+  await page.goto(tenantURL("/login"));
   await expect(page.locator('[data-renderer="fallback"]')).toBeAttached();
   await expect(page.locator(".atmosphere-static")).not.toHaveCSS(
     "background-image",
@@ -162,7 +162,7 @@ test("polling and locale updates preserve the title element and do not restart i
   page,
 }) => {
   await fixtureAPI(page);
-  await page.goto("/");
+  await page.goto(tenantURL("/"));
   const title = page.locator(".page-title");
   await expect(
     page.getByRole("heading", { name: "构建，签名，交付。" }),

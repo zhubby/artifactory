@@ -1,4 +1,5 @@
 "use client";
+import { api } from "@/lib/api";
 
 import { usePathname } from "next/navigation";
 import AnimatedContent from "@/components/react-bits/AnimatedContent";
@@ -21,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Artifact } from "@/lib/types";
 import { bytes, short } from "@/lib/utils";
-import { LocalizedError } from "@/lib/errors";
+import { LocalizedError, asError } from "@/lib/errors";
 
 export function Status({
   value,
@@ -220,8 +221,9 @@ export function CopyButton({ value }: { value: string }) {
 }
 export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
   const { t } = useUI();
+  const [error,setError]=useState<Error>();
   return (
-    <div className="table-scroll">
+    <div><ErrorBox message={error}/><div className="table-scroll">
       <table>
         <thead>
           <tr>
@@ -252,7 +254,8 @@ export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
               <td className="text-right">
                 <Button variant="ghost" size="icon" asChild>
                   <a
-                    href={`/api/v1/artifacts/${artifact.id}/download`}
+                    href="#"
+                    onClick={(event) => { event.preventDefault(); setError(undefined); void api<{url:string}>(`/artifacts/${artifact.id}/download`).then(result => window.location.assign(result.url)).catch(error => setError(asError(error))); }}
                     aria-label={t("artifacts.download", {
                       path: artifact.path,
                     })}
@@ -265,7 +268,7 @@ export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </div></div>
   );
 }
 export function StepIcon({ status }: { status?: string }) {

@@ -107,7 +107,7 @@ async fn redeliver(database: &Database, state: &AppState) {
 async fn coalesced_notifications_preserve_commands_and_reconciliation() {
     use std::time::Duration;
 
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (project, build, job) = database.fixture().await;
     let node = database.node().await;
     let mut socket = connect(&database, &database.state, node).await;
@@ -208,7 +208,7 @@ async fn coalesced_notifications_preserve_commands_and_reconciliation() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn outbox_is_atomic_and_replays_to_new_owner_with_the_same_command() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, _, job) = database.fixture().await;
     let node = database.node().await;
     let mut old = connect(&database, &database.state, node).await;
@@ -258,7 +258,7 @@ async fn outbox_is_atomic_and_replays_to_new_owner_with_the_same_command() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn full_command_queue_and_cancel_are_replayed_until_durable_ack() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, build, _) = database.fixture().await;
     let node = database.node().await;
     let mut socket = connect(&database, &database.state, node).await;
@@ -322,7 +322,7 @@ async fn full_command_queue_and_cancel_are_replayed_until_durable_ack() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn three_replicas_competing_for_distinct_builds_do_not_overbook_a_node() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     for _ in 0..20 {
         database.fixture().await;
     }
@@ -358,7 +358,7 @@ async fn three_replicas_competing_for_distinct_builds_do_not_overbook_a_node() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn draining_ownership_stops_other_replicas_from_admitting_new_work() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, _, job) = database.fixture().await;
     let node = database.node().await;
     let session: Uuid = sql::scalar(
@@ -422,7 +422,7 @@ async fn draining_ownership_stops_other_replicas_from_admitting_new_work() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn draining_a_locked_node_does_not_retain_locks_on_other_nodes() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let locked = database.node().await;
     let available = database.node().await;
     let mut lock_db = database.pool.clone();
@@ -464,7 +464,7 @@ async fn draining_a_locked_node_does_not_retain_locks_on_other_nodes() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn locked_build_maintenance_does_not_block_new_job_admission() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, build, job) = database.fixture().await;
     sql::execute(
         &mut database.pool.clone(),
@@ -540,7 +540,7 @@ async fn locked_build_maintenance_does_not_block_new_job_admission() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn incompatible_queue_prefix_does_not_starve_compatible_work() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, _, base) = database.fixture().await;
     sql::execute(
         &mut database.pool.clone(),
@@ -569,6 +569,10 @@ async fn incompatible_queue_prefix_does_not_starve_compatible_work() {
 async fn read_nodes(state: &AppState, query: &str) -> (StatusCode, Value) {
     let request = Request::builder()
         .uri(format!("/api/v1/nodes{query}"))
+        .header(
+            "X-Artifactory-Tenant",
+            "00000000-0000-0000-0000-000000000001",
+        )
         .header("cookie", "artifactory_session=nodes-session")
         .body(Body::empty())
         .unwrap();
@@ -583,7 +587,8 @@ async fn read_nodes(state: &AppState, query: &str) -> (StatusCode, Value) {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn node_pagination_is_bounded_stable_searchable_and_hides_sessions() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
+    database.fixture().await;
     let user = Uuid::new_v4();
     sql::execute(
         &mut database.pool.clone(),
@@ -631,7 +636,7 @@ async fn node_pagination_is_bounded_stable_searchable_and_hides_sessions() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn planner_groups_large_fleets_and_retains_tool_versions() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, build, _) = database.fixture().await;
     sql::execute(
         &mut database.pool.clone(),

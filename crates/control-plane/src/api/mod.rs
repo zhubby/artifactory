@@ -5,16 +5,54 @@ mod management;
 mod projects;
 mod source_http;
 mod telemetry;
+mod tenants;
 
 use crate::{auth, state::AppState};
 use axum::{
     Router,
     extract::DefaultBodyLimit,
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
 };
 
 pub fn router(state: AppState) -> Router {
     health_routes()
+        .route("/api/v1/tenants", get(tenants::list).post(tenants::create))
+        .route("/api/v1/tenant", get(tenants::context))
+        .route(
+            "/api/v1/tenant/members",
+            get(tenants::members).post(tenants::add_member),
+        )
+        .route(
+            "/api/v1/tenant/members/{id}",
+            patch(tenants::change_member).delete(tenants::remove_member),
+        )
+        .route("/api/v1/tenant/owner", post(tenants::transfer))
+        .route(
+            "/api/v1/tenant/invitations",
+            get(tenants::invitations).post(tenants::invite),
+        )
+        .route(
+            "/api/v1/tenant/invitations/{id}",
+            delete(tenants::revoke_invite),
+        )
+        .route("/api/v1/invitations/{token}", get(tenants::preview))
+        .route("/api/v1/invitations/{token}/accept", post(tenants::accept))
+        .route(
+            "/api/v1/projects/{id}/member-options",
+            get(tenants::member_options),
+        )
+        .route(
+            "/api/v1/projects/{id}/members",
+            get(tenants::project_members),
+        )
+        .route(
+            "/api/v1/projects/{id}/members/{user}",
+            put(tenants::set_project_member).delete(tenants::remove_project_member),
+        )
+        .route(
+            "/api/v1/projects/{id}/node-access",
+            put(tenants::node_access),
+        )
         .route("/api/v1/model-options", get(ai_management::model_options))
         .route(
             "/api/v1/model-profiles",
@@ -48,7 +86,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/overview", get(management::overview))
         .route(
             "/api/v1/users",
-            get(management::users).post(management::create_user),
+            get(tenants::members).post(tenants::add_member),
         )
         .route(
             "/api/v1/tokens",

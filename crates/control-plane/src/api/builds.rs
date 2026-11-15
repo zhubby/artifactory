@@ -1,3 +1,4 @@
+use crate::auth::TenantState;
 use crate::store::dto;
 use crate::{
     auth::Auth,
@@ -7,7 +8,7 @@ use crate::{
 };
 use axum::{
     Json,
-    extract::{Path, Query, State},
+    extract::{Path, Query},
     http::HeaderMap,
     response::{
         IntoResponse, Redirect, Sse,
@@ -22,7 +23,7 @@ use uuid::Uuid;
 pub use crate::store::BuildInput;
 
 pub async fn create(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(project): Path<Uuid>,
     Json(mut input): Json<BuildInput>,
@@ -97,7 +98,7 @@ fn read_scope(auth: &Auth) -> Result<()> {
 }
 
 pub async fn list(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Query(filter): Query<Filter>,
 ) -> Result<Json<Vec<dto::BuildSummary>>> {
@@ -127,7 +128,7 @@ pub async fn build_detail(state: &AppState, id: Uuid) -> Result<Value> {
 }
 
 pub async fn detail(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
@@ -136,7 +137,7 @@ pub async fn detail(
 }
 
 pub async fn cancel(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
@@ -149,7 +150,7 @@ pub async fn cancel(
 }
 
 pub async fn retry(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
@@ -167,7 +168,7 @@ pub struct PublishInput {
 }
 
 pub async fn publish(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
     Json(input): Json<PublishInput>,
@@ -189,7 +190,7 @@ pub async fn publish(
 }
 
 pub async fn artifacts(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Query(filter): Query<Filter>,
 ) -> Result<Json<Vec<dto::ArtifactSummary>>> {
@@ -206,22 +207,29 @@ pub async fn artifacts(
 }
 
 pub async fn download(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
-) -> Result<Redirect> {
+    headers: HeaderMap,
+) -> Result<axum::response::Response> {
     let artifact = state.store.artifact_download(id).await?;
     auth.project(artifact.project_id, "read")?;
     state
         .audit(auth.user_id, "artifact_downloaded", id, json!({}))
         .await?;
-    Ok(Redirect::temporary(
-        &state.storage.download_url(&artifact.object_key),
-    ))
+    let url = state.storage.download_url(&artifact.object_key);
+    if headers
+        .get("accept")
+        .and_then(|h| h.to_str().ok())
+        .is_some_and(|s| s.contains("application/json"))
+    {
+        return Ok(Json(json!({"url":url})).into_response());
+    }
+    Ok(Redirect::temporary(&url).into_response())
 }
 
 pub async fn releases(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Query(filter): Query<Filter>,
 ) -> Result<Json<Vec<dto::ReleaseSummary>>> {
@@ -238,7 +246,7 @@ pub async fn releases(
 }
 
 pub async fn release_detail(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
@@ -259,7 +267,7 @@ pub struct EventQuery {
 }
 
 pub async fn events(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
     Query(query): Query<EventQuery>,
@@ -272,9 +280,12 @@ pub async fn events(
         .and_then(|value| value.parse::<i64>().ok())
         .unwrap_or(query.after)
         .max(0);
+    let state_project = state.store.build_project(id).await?;
     let stream = async_stream::stream! {
         let started=tokio::time::Instant::now();
         loop {
+            let allowed=auth.refresh(&state).await.is_ok_and(|a|a.project(state_project,"read").is_ok());
+            if !allowed {break;}
             if let Ok(snapshot)=build_detail(&state,id).await {yield Ok::<Event,Infallible>(Event::default().event("snapshot").data(snapshot.to_string()));}
             let logs = state.store.log_chunks(id, cursor).await;
             if let Ok(logs)=logs {

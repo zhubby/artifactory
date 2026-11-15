@@ -133,7 +133,7 @@ impl ControlStore {
         let mut transaction = transaction_db.transaction().await?;
         let build = sql::record(
             &mut transaction,
-            "SELECT * FROM builds WHERE id=$1 FOR UPDATE",
+            "SELECT id,project_id,requested_ref,commit_sha,config_yaml,config_snapshot,parameters,selected_targets,status,error,release_version,publish_status,publish_error,cancel_requested,requested_by,created_at,finished_at,source_repository_url,source_credential_id,goal,target_requirements,planning_context,model_config_snapshot,source_snapshot_id,revision_count,clarification,current_plan_id,planner_backend FROM builds WHERE id=$1 FOR UPDATE",
             params![id],
             &[
                 ("id", Type::Uuid),

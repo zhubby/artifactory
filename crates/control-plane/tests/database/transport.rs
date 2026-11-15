@@ -257,7 +257,7 @@ async fn wait_connected(pool: &toasty::Db, count: i64) {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn session_registration_requires_the_claimed_nodes_current_certificate() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let certificates = Certificates::new();
     let server = Replica::start(database.state.clone(), &certificates).await;
     let first = Device::new(&database.pool, &server, &certificates).await;
@@ -330,7 +330,7 @@ async fn session_registration_requires_the_claimed_nodes_current_certificate() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn ordinary_health_rejects_superseded_revoked_and_expired_streams() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let certificates = Certificates::new();
     let first = Replica::start(database.state.clone(), &certificates).await;
     let second = Replica::start(
@@ -414,7 +414,7 @@ async fn ordinary_health_rejects_superseded_revoked_and_expired_streams() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn health_snapshots_preserve_durable_sessions_and_lease_commits() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     database.fixture().await;
     let policy: String = sql::scalar(
         &mut database.pool.clone(),
@@ -499,7 +499,7 @@ async fn health_snapshots_preserve_durable_sessions_and_lease_commits() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn mtls_owner_failover_replays_unstarted_work_and_fences_old_stream() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     database.fixture().await;
     let certificates = Certificates::new();
     let first = Replica::start(database.state.clone(), &certificates).await;
@@ -548,7 +548,7 @@ struct SlowStorage {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn blocked_reconnects_leave_pool_capacity_for_existing_heartbeats() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let certificates = Certificates::new();
     let server = Replica::start(database.state.clone(), &certificates).await;
     let mut existing = Device::new(&database.pool, &server, &certificates).await;
@@ -640,7 +640,7 @@ async fn slow_object(
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn twenty_stalled_artifact_rpcs_leave_heartbeats_and_api_responsive() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     database.fixture().await;
     let directory = tempfile::tempdir().unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -49,6 +49,7 @@ response! { TokenSummary {
 response! { PoolSummary {
     id: Uuid,
     name: String,
+    is_default: bool,
     emissary_target_release: Option<Uuid>,
     emissary_update_concurrency: i32,
     emissary_updates_paused: bool,
@@ -99,11 +100,15 @@ response! { NodeSummary {
 }}
 
 response! { Project {
+    tenant_id: Uuid,
+    node_access: Value,
+    effective_role: Option<String>,
     id: Uuid,
     name: String,
     repository_url: String,
     credential_id: Option<Uuid>,
     pool_ids: Vec<Uuid>,
+    node_ids: Vec<Uuid>,
     signing_profiles: Vec<String>,
     created_at: String,
     model_profile_id: Option<Uuid>,
@@ -119,11 +124,15 @@ response! { LastBuild {
 }}
 
 response! { ProjectSummary {
+    tenant_id: Uuid,
+    node_access: Value,
+    effective_role: Option<String>,
     id: Uuid,
     name: String,
     repository_url: String,
     credential_id: Option<Uuid>,
     pool_ids: Vec<Uuid>,
+    node_ids: Vec<Uuid>,
     signing_profiles: Vec<String>,
     created_at: String,
     model_profile_id: Option<Uuid>,
@@ -310,6 +319,7 @@ response! { Attempt {
 }}
 
 response! { Job {
+    blocked_reason: Option<String>,
     id: Uuid,
     build_id: Uuid,
     target: String,

@@ -10,6 +10,8 @@ import type {
 } from "../../src/lib/types";
 
 const created = "2026-11-10T08:30:00Z";
+export const tenantId = "11111111-1111-4111-8111-111111111111";
+export const tenantURL = (path: string, tenant = tenantId) => /^\/(?:login|register|tenants|join|docs)(?:\/|\?|$)/.test(path) ? path : `/t/${tenant}${path === "/" ? "" : path}`;
 export const artifact: Artifact = {
   id: "artifact-main",
   path: "dist/DesktopClient.zip",
@@ -26,6 +28,9 @@ export const project: Project = {
   repository_url: "https://git.example.com/team/desktop-client.git",
   credential_id: "credential-main",
   pool_ids: ["pool-main"],
+  tenant_id: tenantId,
+  effective_role: "admin",
+  node_access: {mode: "pools", ids: ["pool-main"]},
   signing_profiles: ["apple-internal"],
   build_count: 1234,
   last_build: { id: "build-main", status: "running", created_at: created },
@@ -226,6 +231,7 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.slice("/api/v1".length);
+    if (!path.startsWith("/auth/") && path !== "/tenants" && !path.startsWith("/invitations/") && !request.headers()["x-artifactory-tenant"]) return route.fulfill({status:400,json:{error:"tenant context required",code:"tenant_required"}});
     if (request.method() !== "GET") {
       events.writes.push(`${request.method()} ${path}`);
       return route.fulfill({
@@ -242,9 +248,15 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
     }
     const responses: Record<string, unknown> = {
       "/auth/config": { registration_enabled: true },
-      "/auth/me": { id: "user-main", username: "alex", role },
-      "/projects": [project],
-      [`/projects/${project.id}`]: project,
+      "/auth/me": { id: "user-main", username: "alex" },
+      "/tenants": [{id:tenantId,name:"Build Team",role:role === "admin" ? "owner" : "member",owner_id:"user-main",created_at:created}],
+      "/tenant": {tenant:{id:tenantId,name:"Build Team",role:role === "admin" ? "owner" : "member",owner_id:"user-main",created_at:created},project_roles:{[project.id]:role}},
+      "/tenant/members": [{id:"user-main",user_id:"user-main",username:"alex",role:"owner",created_at:created}],
+      "/tenant/invitations": [],
+      [`/projects/${project.id}/members`]: [],
+      [`/projects/${project.id}/member-options`]: [],
+      "/projects": [{...project,effective_role:role}],
+      [`/projects/${project.id}`]: {...project,effective_role:role},
       [`/projects/${project.id}/refs`]: repositoryRefs,
       "/builds": [
         build,
@@ -283,7 +295,7 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
       "/releases": [release],
       [`/releases/${release.id}`]: release,
       "/artifacts": [artifact],
-      "/pools": [{ id: "pool-main", name: "default" }],
+      "/pools": [{ id: "pool-main", name: "default", is_default: true }],
       "/credentials": [
         {
           id: "credential-main",

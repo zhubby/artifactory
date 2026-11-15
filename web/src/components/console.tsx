@@ -1,5 +1,9 @@
 "use client";
 
+import { tenantFromPath } from "@/lib/tenant";
+import { TenantChooser, InvitationJoin } from "@/components/tenant-chooser";
+import { ProjectMembers } from "@/components/tenant-members";
+import type { Account, TenantContext } from "@/lib/types";
 import { NodeCard } from "@/components/node-card";
 import { NodeDetailDialog } from "@/components/node-detail-dialog";
 
@@ -9,8 +13,9 @@ import { BrandMark } from "@/components/brand-mark";
 import SpotlightCard from "@/components/react-bits/SpotlightCard";
 import { useUI } from "@/components/providers";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { Link } from "@/lib/tenant";
+import { usePathname } from "next/navigation";
+import { useRouter } from "@/lib/tenant";
 import { Suspense, useEffect, useRef, useState } from "react";
 import {
   Activity,
@@ -81,6 +86,14 @@ const platform = (os: string) =>
   ({ darwin: "macOS", linux: "Linux", windows: "Windows" })[os] || os;
 
 export function Console() {
+  const path = usePathname();
+  const tenant = tenantFromPath(path);
+  if (path.startsWith("/join/")) return <InvitationJoin token={path.split("/")[2]} />;
+  if (!tenant) return <TenantChooser />;
+  return <TenantConsole key={tenant} />;
+}
+
+function TenantConsole() {
   const { t, date, number } = useUI();
   const navigation = [
     { path: "/", label: t("navigation.overview"), icon: LayoutDashboard },
@@ -90,11 +103,13 @@ export function Console() {
     { path: "/artifacts", label: t("navigation.artifacts"), icon: Boxes },
     { path: "/releases", label: t("navigation.releases"), icon: Package },
   ];
-  const pathname = usePathname();
+  const fullPath = usePathname();
+  const pathname = fullPath.replace(/^\/t\/[^/]+/, "") || "/";
   const router = useRouter();
   const pieces = pathname.split("/").filter(Boolean);
-  const userRemote = useRemote<User>("/auth/me", 60000);
-  const user = userRemote.data;
+  const userRemote = useRemote<Account>("/auth/me", 60000);
+  const context = useRemote<TenantContext>(userRemote.data ? "/tenant" : null, 10000);
+  const user: User | undefined = userRemote.data && context.data ? { ...userRemote.data, tenant_role: context.data.tenant.role, project_roles: context.data.project_roles, role: ["owner", "admin"].includes(context.data.tenant.role) ? "admin" : Object.values(context.data.project_roles).some(role => role !== "viewer") ? "operator" : "viewer" } : undefined;
   const projects = useRemote<Project[]>(user ? "/projects" : null);
   const builds = useRemote<Build[]>(user ? "/builds" : null, 5000);
   const [search, setSearch] = useState("");
@@ -178,7 +193,8 @@ export function Console() {
   if (!user)
     return (
       <main className="mx-auto max-w-6xl px-8">
-        <ErrorBox message={userRemote.error} />
+        <ErrorBox message={userRemote.error || context.error} />
+        <Link href="/tenants">{t("tenants.choose")}</Link>
         <Loading />
       </main>
     );
@@ -208,6 +224,7 @@ export function Console() {
           </span>
           Artifactory
         </Link>
+        <Link href="/tenants" className="nav-item mb-4"><Boxes size={16}/><span className="truncate">{context.data?.tenant.name}</span><span className="text-xs text-muted-foreground">{t("tenants.switch")}</span></Link>
         <div className="nav-label">{t("navigation.workspaceGroup")}</div>
         <nav>
           {navigation.map((entry) => (
@@ -271,7 +288,7 @@ export function Console() {
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs">{user.username}</p>
             <p className="mt-1 font-mono text-[9px] text-muted-foreground">
-              {t(`security.${user.role}`)}
+              {t(`tenants.${user.tenant_role || "member"}`)}
             </p>
           </div>
           <Button
@@ -345,6 +362,7 @@ export function Console() {
           <ErrorBox
             message={error || projects.error || builds.error || nodes.error}
           />
+          {user.tenant_role === "member" && projects.data?.length === 0 && <div className="notice mb-6" role="status"><strong>{t("tenants.noProjects")}</strong><p className="mt-1">{t("tenants.requestAccess")}</p></div>}
           {pathname === "/" ? (
             <>
               <PageTitle
@@ -516,7 +534,7 @@ export function Console() {
                   project ? project.repository_url : t("projects.description")
                 }
               >
-                {user.role === "admin" && (
+                {(project ? project.effective_role === "admin" : user.role === "admin") && (
                   <Button
                     variant={project ? "secondary" : "default"}
                     onClick={() => {
@@ -528,7 +546,7 @@ export function Console() {
                     {project ? t("projects.settings") : t("projects.add")}
                   </Button>
                 )}
-                {project && user.role !== "viewer" && (
+                {project && project.effective_role !== "viewer" && (
                   <Button onClick={() => router.push(`/builds/new?project=${project.id}`)}>
                     <Play />
                     {t("builds.start")}
@@ -540,9 +558,9 @@ export function Console() {
                   <>
                     <div className="build-meta">
                       <span>
-                        {t("projects.poolCount", {
-                          count: project.pool_ids.length,
-                        })}
+                        {project.node_access?.mode === "nodes"
+                          ? t("tenants.selectedDevices", { count: project.node_access.ids.length })
+                          : t("projects.poolCount", { count: project.pool_ids.length })}
                       </span>
                       <span>
                         {t("projects.signingCount", {
@@ -578,7 +596,7 @@ export function Console() {
                     title={t("projects.first")}
                     detail={t("projects.firstDetail")}
                     action={
-                      user.role === "admin" ? (
+                      project?.effective_role === "admin" ? (
                         <Button onClick={() => setNewProject(true)}>
                           <Plus />
                           {t("projects.add")}
@@ -663,7 +681,7 @@ export function Console() {
             </>
           ) : pieces[0] === "builds" ? (
             pieces[1] === "new" ? (
-              projects.data ? <Suspense fallback={<Loading />}><BuildWizard projects={projects.data} user={user} /></Suspense> : <Loading />
+              projects.data ? <Suspense fallback={<Loading />}><BuildWizard projects={projects.data.filter(project => project.effective_role !== "viewer")} user={user} /></Suspense> : <Loading />
             ) : pieces[1] ? (
               <BuildDetail id={pieces[1]} user={user} />
             ) : (
@@ -884,6 +902,7 @@ export function Console() {
               }
             />
           )}
+          {pieces[0] === "projects" && project?.effective_role === "admin" && <ProjectMembers project={project} user={user} />}
         </main>
         <footer className="flex flex-wrap justify-between gap-2 border-t border-border px-8 py-4 text-[10px] text-muted-foreground">
           <span>{t("footer.description")}</span>
@@ -898,9 +917,18 @@ export function Console() {
         }
         description={t("projects.dialogDetail")}
       >
-        {newProject && (
+        {newProject && user.role === "admin" && !pools.data ? (
+          <>
+            <ErrorBox message={pools.error} />
+            {pools.error ? (
+              <Button variant="secondary" onClick={() => void pools.reload()}>{t("common.retry")}</Button>
+            ) : <Loading />}
+          </>
+        ) : newProject && (
           <ProjectForm
             project={editingProject}
+            canManageResources={user.role === "admin"}
+            nodes={nodes.data || []}
             pools={pools.data || []}
             credentials={credentials.data || []}
             done={() => {

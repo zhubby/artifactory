@@ -1,5 +1,6 @@
 "use client";
 
+import { TenantMembers } from "@/components/tenant-members";
 import { EmissarySettings } from "@/components/emissary-ota";
 import { AISettings } from "@/components/ai-settings";
 import { useUI } from "@/components/providers";
@@ -36,12 +37,11 @@ export function Settings({
   const [adding, setAdding] = useState(false);
   const [secret, setSecret] = useState<string>();
   const [error, setError] = useState<Error>();
+  const [tokenProjects,setTokenProjects]=useState<string[]>([]);
   const remote = useRemote<unknown[]>(
-    tab === "credentials"
+    ["users","emissary","ai"].includes(tab) ? null : tab === "credentials"
       ? "/credentials"
-      : tab === "users"
-        ? "/users"
-        : tab === "audit"
+      : tab === "audit"
           ? "/audit"
           : "/tokens",
   );
@@ -57,7 +57,7 @@ export function Settings({
       ? [
           { id: "ai", label: t("ai.settings") },
           { id: "credentials", label: t("security.credentials") },
-          { id: "users", label: t("security.users") },
+          { id: "users", label: t("tenants.members") },
           { id: "audit", label: t("security.audit") },
         ]
       : []),
@@ -69,7 +69,7 @@ export function Settings({
         title={t("navigation.security")}
         description={t("security.description")}
       >
-        {tab !== "audit" && tab !== "emissary" && tab !== "ai" && (
+        {tab !== "audit" && tab !== "emissary" && tab !== "ai" && tab !== "users" && (
           <Button onClick={() => setAdding(true)}>
             <Plus />
             {tab === "tokens"
@@ -85,11 +85,21 @@ export function Settings({
           <button
             key={entry.id}
             role="tab"
+            id={`settings-tab-${entry.id}`}
+            aria-controls="settings-panel"
+            tabIndex={tab === entry.id ? 0 : -1}
             aria-selected={tab === entry.id}
             className={cn("tab", tab === entry.id && "active")}
             onClick={() => {
               setTab(entry.id);
               setAdding(false);
+            }}
+            onKeyDown={event => {
+              const index=tabs.findIndex(item => item.id===entry.id);
+              const next=event.key==="Home" ? 0 : event.key==="End" ? tabs.length-1 : event.key==="ArrowRight" ? (index+1)%tabs.length : event.key==="ArrowLeft" ? (index+tabs.length-1)%tabs.length : undefined;
+              if(next===undefined)return;
+              event.preventDefault();setTab(tabs[next].id);setAdding(false);
+              document.getElementById(`settings-tab-${tabs[next].id}`)?.focus();
             }}
           >
             {entry.label}
@@ -97,13 +107,14 @@ export function Settings({
         ))}
       </div>
       <ErrorBox message={error || remote.error} />
+      <div id="settings-panel" role="tabpanel" aria-labelledby={`settings-tab-${tab}`} tabIndex={0}>
       {tab === "credentials" && (
         <div className="notice mb-5 flex gap-3">
           <ShieldCheck className="mt-1 size-4 shrink-0" />
           <span>{t("security.credentialNotice")}</span>
         </div>
       )}
-      {tab === "emissary" ? <EmissarySettings user={user} /> : tab === "ai" ? <AISettings /> : <section className="panel">
+      {tab === "users" ? <TenantMembers user={user}/> : tab === "emissary" ? <EmissarySettings user={user} /> : tab === "ai" ? <AISettings /> : <section className="panel">
         <SectionTitle
           title={
             tabs.find((entry) => entry.id === tab)?.label ||
@@ -148,13 +159,7 @@ export function Settings({
                           t("common.createdAt"),
                           t("security.storage"),
                         ]
-                      : tab === "users"
-                        ? [
-                            t("login.username"),
-                            t("common.role"),
-                            t("security.userId"),
-                          ]
-                        : [
+                      : [
                             t("common.time"),
                             t("common.action"),
                             t("common.actor"),
@@ -233,21 +238,7 @@ export function Settings({
                           </td>
                         </tr>
                       ))
-                    : tab === "users"
-                      ? (entries as User[]).map((account) => (
-                          <tr key={account.id}>
-                            <td>{account.username}</td>
-                            <td>
-                              <span className="tag">
-                                {t(`security.${account.role}`)}
-                              </span>
-                            </td>
-                            <td className="font-mono text-xs text-muted-foreground">
-                              {short(account.id)}
-                            </td>
-                          </tr>
-                        ))
-                      : (entries as Audit[]).map((entry) => (
+                    : (entries as Audit[]).map((entry) => (
                           <tr key={entry.id}>
                             <td className="font-mono text-xs text-muted-foreground">
                               {date(entry.created_at)}
@@ -268,64 +259,24 @@ export function Settings({
           </div>
         )}
       </section>}
+      </div>
       <Modal
         open={adding}
         onOpenChange={setAdding}
         title={
           tab === "tokens"
             ? t("security.createProjectToken")
-            : tab === "credentials"
-              ? t("security.readonlyCredential")
-              : t("security.addUser")
+            : t("security.readonlyCredential")
         }
         description={
           tab === "tokens"
             ? t("security.tokenHint")
-            : tab === "credentials"
-              ? t("security.credentialHint")
-              : t("security.userHint")
+            : t("security.credentialHint")
         }
       >
         {adding &&
           (tab === "credentials" ? (
             <CredentialForm done={() => void done()} />
-          ) : tab === "users" ? (
-            <SubmitForm
-              onCancel={() => setAdding(false)}
-              onSubmit={async (form) => {
-                await mutation("/users", Object.fromEntries(form));
-                await done();
-              }}
-            >
-              <Field label={t("login.username")}>
-                <Input
-                  name="username"
-                  required
-                  maxLength={100}
-                  autoComplete="off"
-                />
-              </Field>
-              <Field
-                label={t("security.initialPassword")}
-                hint={t("security.passwordHint")}
-              >
-                <Input
-                  name="password"
-                  required
-                  type="password"
-                  minLength={12}
-                  maxLength={256}
-                  autoComplete="new-password"
-                />
-              </Field>
-              <Field label={t("common.role")}>
-                <select className="input" name="role" defaultValue="viewer">
-                  <option value="viewer">{t("security.viewer")}</option>
-                  <option value="operator">{t("security.operator")}</option>
-                  <option value="admin">{t("security.admin")}</option>
-                </select>
-              </Field>
-            </SubmitForm>
           ) : (
             <SubmitForm
               label={t("security.createToken")}
@@ -355,6 +306,8 @@ export function Settings({
                         type="checkbox"
                         name="projects"
                         value={project.id}
+                        checked={tokenProjects.includes(project.id)}
+                        onChange={event => setTokenProjects(previous => event.target.checked ? [...previous,project.id] : previous.filter(id => id !== project.id))}
                       />
                       {project.name}
                     </label>
@@ -371,7 +324,7 @@ export function Settings({
                   {t("security.scopes")}
                 </legend>
                 <div className="flex gap-5">
-                  {(user.role === "viewer"
+                  {(!tokenProjects.length || tokenProjects.some(id => projects.find(project => project.id===id)?.effective_role === "viewer")
                     ? ["read"]
                     : ["read", "build", "release"]
                   ).map((scope) => (

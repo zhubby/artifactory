@@ -40,6 +40,9 @@ class Acceptance:
             self.evidence = json.loads((self.run/'evidence.json').read_text())
         self.jar = http.cookiejar.CookieJar()
         self.http = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(self.jar))
+        self.tenant_id = '00000000-0000-0000-0000-000000000001'
+        self.http.addheaders.append(('X-Artifactory-Tenant', self.tenant_id))
+        self.evidence['tenant_id'] = self.tenant_id
         self.base = 'http://127.0.0.1:38081'
         self.origin = self.base
         self.processes = []

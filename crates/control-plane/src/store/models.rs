@@ -25,6 +25,7 @@ pub(super) struct Session {
 #[derive(Debug, toasty::Model)]
 #[table = "api_tokens"]
 pub(super) struct ApiToken {
+    pub tenant_id: Uuid,
     #[key]
     pub id: Uuid,
     pub user_id: Uuid,
@@ -40,6 +41,7 @@ pub(super) struct ApiToken {
 #[derive(Debug, toasty::Model)]
 #[table = "projects"]
 pub(super) struct Project {
+    pub tenant_id: Uuid,
     #[key]
     pub id: Uuid,
     pub name: String,
@@ -57,6 +59,7 @@ pub(super) struct Project {
 #[derive(Debug, toasty::Model)]
 #[table = "node_pools"]
 pub(super) struct NodePool {
+    pub tenant_id: Uuid,
     #[key]
     pub id: Uuid,
     pub name: String,
@@ -75,6 +78,7 @@ pub(super) struct EnrollmentToken {
 #[derive(Debug, toasty::Model)]
 #[table = "ai_enrollment_tokens"]
 pub(super) struct AiEnrollmentToken {
+    pub tenant_id: Uuid,
     #[key]
     pub id: Uuid,
     pub token_hash: String,
@@ -84,6 +88,7 @@ pub(super) struct AiEnrollmentToken {
 #[derive(Debug, toasty::Model)]
 #[table = "model_profiles"]
 pub(super) struct ModelProfile {
+    pub tenant_id: Uuid,
     #[key]
     pub id: Uuid,
     pub name: String,
@@ -264,6 +269,7 @@ pub(super) struct EmissaryUpdate {
 #[table = "emissary_releases"]
 #[key(id)]
 pub(super) struct EmissaryRelease {
+    pub tenant_id: Uuid,
     pub id: Uuid,
     #[unique]
     pub version: String,
@@ -288,6 +294,7 @@ pub(super) struct RuntimeReceipt {
 #[table = "audit_events"]
 #[key(id)]
 pub(super) struct AuditEvent {
+    pub tenant_id: Option<Uuid>,
     #[auto]
     pub id: i64,
     pub actor: String,
@@ -312,4 +319,62 @@ pub(super) struct RemoteSourceRequest {
 pub(super) struct SourceProjectRoute {
     pub project_id: Uuid,
     pub origin: String,
+}
+
+#[derive(Debug, toasty::Model)]
+#[table = "tenants"]
+pub(super) struct Tenant {
+    #[key]
+    pub id: Uuid,
+    pub name: String,
+    pub owner_id: Uuid,
+    pub created_by: Uuid,
+    pub creation_key: Uuid,
+}
+#[derive(Debug, toasty::Model)]
+#[table = "tenant_members"]
+#[key(tenant_id, user_id)]
+pub(super) struct TenantMember {
+    pub tenant_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+}
+#[derive(Debug, toasty::Model)]
+#[table = "project_members"]
+#[key(project_id, user_id)]
+pub(super) struct ProjectMember {
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+}
+#[derive(Debug, toasty::Model)]
+#[table = "tenant_invitations"]
+pub(super) struct TenantInvitation {
+    #[key]
+    pub id: Uuid,
+    pub tenant_id: Uuid,
+    pub token_hash: String,
+    pub role: String,
+    pub created_by: Uuid,
+    pub expires_at: jiff::Timestamp,
+    pub revoked_at: Option<jiff::Timestamp>,
+    pub accepted_at: Option<jiff::Timestamp>,
+    pub accepted_by: Option<Uuid>,
+}
+#[derive(Debug, toasty::Model)]
+#[table = "project_node_grants"]
+#[key(project_id, node_id)]
+pub(super) struct ProjectNodeGrant {
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub node_id: Uuid,
+}
+#[derive(Debug, toasty::Model)]
+#[table = "project_pool_grants"]
+#[key(project_id, pool_id)]
+pub(super) struct ProjectPoolGrant {
+    pub tenant_id: Uuid,
+    pub project_id: Uuid,
+    pub pool_id: Uuid,
 }

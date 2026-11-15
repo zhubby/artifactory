@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { fixtureAPI, openPreferences, closePreferences } from "./fixtures";
+import {fixtureAPI, openPreferences, closePreferences, tenantURL } from "./fixtures";
 
 for (const locale of ["zh-CN", "en"] as const)
   for (const theme of ["dark", "light"] as const) {
@@ -62,7 +62,7 @@ for (const locale of ["zh-CN", "en"] as const)
         ],
       ];
       for (const [name, path, heading] of routes) {
-        await page.goto(path);
+        await page.goto(tenantURL(path));
         await expect(page).toHaveTitle(
           locale === "en"
             ? "Artifactory · Build console"
@@ -97,13 +97,13 @@ for (const locale of ["zh-CN", "en"] as const)
       }
       const tabs =
         locale === "en"
-          ? ["Git credentials", "Users & roles", "Audit log"]
-          : ["Git 凭据", "用户与角色", "审计记录"];
+          ? ["Git credentials", "Tenant members", "Audit log"]
+          : ["Git 凭据", "租户成员", "审计记录"];
       for (const name of tabs) {
         await page.getByRole("tab", { name, exact: true }).click();
         await expect(page.locator(".error-box[role=alert]")).toHaveCount(0);
       }
-      await page.goto("/projects");
+      await page.goto(tenantURL("/projects"));
       const trigger = page.getByRole("button", {
         name: locale === "en" ? "Connect project" : "接入项目",
         exact: true,
@@ -134,7 +134,7 @@ test("preference changes preserve list filters, form drafts, target selection an
   page,
 }) => {
   const events = await fixtureAPI(page);
-  await page.goto("/projects");
+  await page.goto(tenantURL("/projects"));
   await page
     .getByRole("textbox", { name: "筛选当前列表", exact: true })
     .fill("Desktop");
@@ -155,7 +155,7 @@ test("preference changes preserve list filters, form drafts, target selection an
     "Unsubmitted draft",
   );
   await page.keyboard.press("Escape");
-  await page.goto("/builds/build-main");
+  await page.goto(tenantURL("/builds/build-main"));
   await expect(page.getByRole("log")).toContainText(
     "native compilation complete",
   );
@@ -184,14 +184,14 @@ test("localized readonly controls preserve permission boundaries", async ({
     .addCookies([
       { name: "artifactory-locale", value: "en", url: "http://127.0.0.1:3100" },
     ]);
-  await page.goto("/");
+  await page.goto(tenantURL("/"));
   await expect(
     page.getByRole("heading", { name: "Build. Sign. Deliver." }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Start build", exact: true }),
   ).toHaveCount(0);
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   await expect(
     page.getByRole("heading", { name: "Build fleet", exact: true }),
   ).toBeVisible();
@@ -212,17 +212,17 @@ test("switching settings tabs cannot render rows from a previous resource", asyn
     if (message.type() === "error") errors.push(message.text());
   });
   await fixtureAPI(page);
-  await page.route("**/api/v1/users", async (route) => {
+  await page.route("**/api/v1/tenant/members", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     await route.fulfill({
-      json: [{ id: "user-main", username: "alex", role: "admin" }],
+      json: [{ id: "user-main", user_id: "user-main", username: "alex", role: "owner" }],
     });
   });
-  await page.goto("/settings");
+  await page.goto(tenantURL("/settings"));
   await expect(
     page.getByRole("cell", { name: /^Desktop release/ }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "用户与角色", exact: true }).click();
+  await page.getByRole("tab", { name: "租户成员", exact: true }).click();
   await expect(
     page.getByRole("cell", { name: /^Desktop release/ }),
   ).toHaveCount(0);

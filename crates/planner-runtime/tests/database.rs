@@ -65,6 +65,7 @@ async fn state() -> TestRuntime {
 }
 fn intent(run: Uuid) -> RunIntent {
     RunIntent {
+        tenant_id: Uuid::from_u128(1),
         run_id: run,
         build_id: Uuid::new_v4(),
         project_id: Uuid::new_v4(),
@@ -146,6 +147,90 @@ async fn intents_are_idempotent_conflicting_payloads_fail_and_cancel_before_crea
     assert_eq!(
         server::read_run(&s, canceled).await.unwrap()["status"],
         "canceled"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn tenants_cannot_rebind_projects_and_legacy_backfill_rolls_back_unknown_projects() {
+    use artifactory_planner_runtime::store::maintenance::TenantMigration;
+    let s = state().await;
+    let first = intent(Uuid::new_v4());
+    server::put_intent(&s, serde_json::to_value(&first).unwrap())
+        .await
+        .unwrap();
+    let mut other = intent(Uuid::new_v4());
+    other.project_id = first.project_id;
+    other.tenant_id = Uuid::new_v4();
+    assert!(
+        server::put_intent(&s, serde_json::to_value(&other).unwrap())
+            .await
+            .is_err()
+    );
+    let historical = intent(Uuid::new_v4());
+    server::put_intent(&s, serde_json::to_value(&historical).unwrap())
+        .await
+        .unwrap();
+    sql::execute(
+        &mut s.pool.clone(),
+        "UPDATE runtime_runs SET tenant_id=NULL,status='failed'",
+        params![],
+    )
+    .await
+    .unwrap();
+    sql::execute(
+        &mut s.pool.clone(),
+        "DELETE FROM runtime_project_tenants",
+        params![],
+    )
+    .await
+    .unwrap();
+    let schema: String = sql::scalar(
+        &mut s.pool.clone(),
+        "SELECT current_schema()::text",
+        params![],
+    )
+    .await
+    .unwrap();
+    let url = with_options(
+        &std::env::var("ARTIFACTORY_TEST_DATABASE_URL").unwrap(),
+        &[("search_path", &schema)],
+    )
+    .unwrap();
+    let migration = TenantMigration::connect(&url).await.unwrap();
+    assert!(
+        migration
+            .backfill(&[(first.project_id, first.tenant_id)])
+            .await
+            .is_err()
+    );
+    let count: i64 = sql::scalar(
+        &mut s.pool.clone(),
+        "SELECT count(*) FROM runtime_project_tenants",
+        params![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(count, 0, "failed historical map must roll back as a unit");
+    let mapping = [
+        (first.project_id, first.tenant_id),
+        (historical.project_id, historical.tenant_id),
+    ];
+    migration.backfill(&mapping).await.unwrap();
+    migration.backfill(&mapping).await.unwrap();
+    let count: i64 = sql::scalar(
+        &mut s.pool.clone(),
+        "SELECT count(*) FROM runtime_runs WHERE tenant_id IS NOT NULL",
+        params![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(count, 2);
+    assert!(
+        migration
+            .backfill(&[(first.project_id, Uuid::new_v4())])
+            .await
+            .is_err()
     );
 }
 #[tokio::test]
@@ -440,7 +525,9 @@ async fn ten_thousand_queued_runs_admit_only_pool_capacity_even_with_concurrent_
         project_ids.push(input.project_id);
         encrypted.push(crypto::seal(&s.key, &serde_json::to_vec(&input).unwrap()).unwrap());
     }
-    sql::execute(&mut s.pool.clone(), "INSERT INTO runtime_runs(id,version,intent_hash,intent_ciphertext,project_id,pool,snapshot_id,snapshot_digest,lifecycle,status) SELECT id,1,'fixture',ciphertext,project,'default',$4,$5,$6,'queued' FROM unnest($1::uuid[],$2::text[],$3::uuid[]) AS t(id,ciphertext,project)", params![&ids, &encrypted, &project_ids, model.unwrap(), "a".repeat(64), serde_json::to_value(Lifecycle::new(2)).unwrap()]).await.unwrap();
+    let tenant = Uuid::from_u128(1);
+    sql::execute(&mut s.pool.clone(), "INSERT INTO runtime_project_tenants(project_id,tenant_id) SELECT project,$2 FROM unnest($1::uuid[]) project", params![&projects, tenant]).await.unwrap();
+    sql::execute(&mut s.pool.clone(), "INSERT INTO runtime_runs(id,version,intent_hash,intent_ciphertext,project_id,pool,snapshot_id,snapshot_digest,lifecycle,status,tenant_id) SELECT id,1,'fixture',ciphertext,project,'default',$4,$5,$6,'queued',$7 FROM unnest($1::uuid[],$2::text[],$3::uuid[]) AS t(id,ciphertext,project)", params![&ids, &encrypted, &project_ids, model.unwrap(), "a".repeat(64), serde_json::to_value(Lifecycle::new(2)).unwrap(),tenant]).await.unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/v1/queue", listener.local_addr().unwrap());
     let app = server::router(s.clone(), "x".repeat(64));

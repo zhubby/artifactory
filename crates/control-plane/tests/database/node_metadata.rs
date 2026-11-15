@@ -34,7 +34,7 @@ async fn connect_snapshot(
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn startup_ack_reconnect_replace_and_retired_process_fencing() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let certificates = Certificates::new();
     let replica = Replica::start(database.state.clone(), &certificates).await;
     let mut device = Device::new(&database.pool, &replica, &certificates).await;
@@ -201,7 +201,8 @@ async fn startup_ack_reconnect_replace_and_retired_process_fencing() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn metadata_detail_requires_a_viewer_session_and_stays_out_of_lists() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
+    database.fixture().await;
     let node = database.node().await;
     let user = Uuid::new_v4();
     let startup = Uuid::new_v4();
@@ -214,7 +215,7 @@ async fn metadata_detail_requires_a_viewer_session_and_stays_out_of_lists() {
     )
     .await
     .unwrap();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO api_tokens(id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES($1,$2,'metadata-test',$3,'{}','{read}',now()+interval '1 hour')",params![Uuid::new_v4(),user,crypto::hash("metadata-token")]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO api_tokens(tenant_id,id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES('00000000-0000-0000-0000-000000000001',$1,$2,'metadata-test',$3,'{}','{read}',now()+interval '1 hour')",params![Uuid::new_v4(),user,crypto::hash("metadata-token")]).await.unwrap();
     let app = api::router(database.state.clone());
     let uri = format!("/api/v1/nodes/{node}/metadata");
     for (header, status) in [
@@ -228,7 +229,10 @@ async fn metadata_detail_requires_a_viewer_session_and_stays_out_of_lists() {
             StatusCode::OK,
         ),
     ] {
-        let mut request = Request::builder().uri(&uri);
+        let mut request = Request::builder().uri(&uri).header(
+            "X-Artifactory-Tenant",
+            "00000000-0000-0000-0000-000000000001",
+        );
         if let Some((name, value)) = header {
             request = request.header(name, value);
         }
@@ -261,6 +265,10 @@ async fn metadata_detail_requires_a_viewer_session_and_stays_out_of_lists() {
             .oneshot(
                 Request::builder()
                     .uri(path)
+                    .header(
+                        "X-Artifactory-Tenant",
+                        "00000000-0000-0000-0000-000000000001",
+                    )
                     .header("cookie", "artifactory_session=metadata-session")
                     .body(Body::empty())
                     .unwrap(),
@@ -288,7 +296,7 @@ async fn planner(
     let (certificate, key) = certificates.device();
     let worker = Uuid::new_v4();
     let run = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(),"INSERT INTO ai_workers(id,name,certificate_hash,certificate_expires_at) VALUES($1,'test',$2,now()+interval '1 day')",params![worker,pki::certificate_hash(&certificate).unwrap()]).await.unwrap();
+    sql::execute(&mut database.pool.clone(),"INSERT INTO ai_workers(tenant_id,id,name,certificate_hash,certificate_expires_at) VALUES('00000000-0000-0000-0000-000000000001',$1,'test',$2,now()+interval '1 day')",params![worker,pki::certificate_hash(&certificate).unwrap()]).await.unwrap();
     sql::execute(&mut database.pool.clone(),"UPDATE builds SET status='planning',goal='test',planning_context=jsonb_build_object('pool_ids',jsonb_build_array('00000000-0000-0000-0000-000000000001'),'signing_profiles','[]'::jsonb) WHERE id=$1",params![build]).await.unwrap();
     sql::execute(&mut database.pool.clone(),"INSERT INTO planning_runs(id,build_id,worker_id,purpose,state,model_config,lease_hash,lease_expires_at,deadline_at) VALUES($1,$2,$3,'initial','leased','{}',$4,now()+interval '1 minute',now()+interval '5 minutes')",params![run,build,worker,crypto::hash("lease")]).await.unwrap();
     let identity = json!({"endpoint":replica.url,"ca":certificates.ca,"certificate":certificate,"key":key,"run_id":run,"lease_token":"lease"});
@@ -331,8 +339,101 @@ async fn node_tool(
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn mtls_workers_cannot_claim_other_tenant_tasks_or_use_their_leases() {
+    let database = Database::with_tenant().await;
+    let (project, build, _) = database.fixture().await;
+    let certificates = Certificates::new();
+    let replica = Replica::start(database.state.clone(), &certificates).await;
+    let (mut first, run, _) = planner(&database, &replica, &certificates, build).await;
+    let owner: Uuid = sql::scalar(
+        &mut database.pool.clone(),
+        "SELECT owner_id FROM tenants WHERE id='00000000-0000-0000-0000-000000000001'",
+        params![],
+    )
+    .await
+    .unwrap();
+    let other_tenant = database
+        .state
+        .store
+        .create_tenant(owner, "Other", Uuid::new_v4())
+        .await
+        .unwrap();
+    let (certificate, key) = certificates.device();
+    let worker = Uuid::new_v4();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO ai_workers(id,name,tenant_id,certificate_hash,certificate_expires_at) VALUES($1,'other',$2,$3,now()+interval '1 day')", params![worker,other_tenant,pki::certificate_hash(&certificate).unwrap()]).await.unwrap();
+    let channel = Channel::from_shared(replica.url.clone())
+        .unwrap()
+        .tls_config(
+            ClientTlsConfig::new()
+                .domain_name("localhost")
+                .ca_certificate(Certificate::from_pem(&certificates.ca))
+                .identity(Identity::from_pem(certificate, key)),
+        )
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let mut other = pb::planning_client::PlanningClient::new(channel);
+    let repository = Uuid::new_v4();
+    let snapshot = Uuid::new_v4();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO source_repositories(id,project_id,repository_url,cache_key) VALUES($1,$2,'https://example.com/repo.git',$3)", params![repository,project,repository.to_string()]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO source_snapshots(id,project_id,root_repository_id,commit_sha,manifest,digest) VALUES($1,$2,$3,$4,'{}',$5)", params![snapshot,project,repository,"0".repeat(40),"a".repeat(64)]).await.unwrap();
+    sql::execute(
+        &mut database.pool.clone(),
+        "UPDATE builds SET source_snapshot_id=$2 WHERE id=$1",
+        params![build, snapshot],
+    )
+    .await
+    .unwrap();
+    let secret = "tenant-a-model-secret";
+    let config = json!({"key_ciphertext":crypto::seal(&database.state.settings.master_key,secret.as_bytes()).unwrap(),"max_calls":2,"timeout_seconds":60});
+    sql::execute(&mut database.pool.clone(), "UPDATE planning_runs SET state='queued',worker_id=NULL,lease_hash=NULL,model_config=$2 WHERE id=$1", params![run,config]).await.unwrap();
+    assert!(
+        other
+            .poll(pb::PlannerPollRequest::default())
+            .await
+            .unwrap()
+            .into_inner()
+            .run_id
+            .is_empty()
+    );
+    let task = first
+        .poll(pb::PlannerPollRequest::default())
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(task.run_id, run.to_string());
+    assert_eq!(
+        serde_json::from_str::<Value>(&task.model_config_json).unwrap()["api_key"],
+        secret
+    );
+    let denied = other
+        .tool(pb::PlannerToolRequest {
+            run_id: task.run_id.clone(),
+            lease_token: task.lease_token.clone(),
+            name: "summarize_nodes".into(),
+            arguments_json: "{}".into(),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(denied.code(), tonic::Code::FailedPrecondition);
+    first
+        .tool(pb::PlannerToolRequest {
+            run_id: task.run_id,
+            lease_token: task.lease_token,
+            name: "summarize_nodes".into(),
+            arguments_json: "{}".into(),
+        })
+        .await
+        .unwrap();
+    replica.stop().await;
+    database.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn scoped_node_queries_page_and_keep_missing_telemetry_unknown() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, build, _) = database.fixture().await;
     let certificates = Certificates::new();
     let replica = Replica::start(database.state.clone(), &certificates).await;
@@ -510,7 +611,7 @@ async fn rank(database: &Database, build: Uuid, job: Uuid, ids: &[Uuid]) {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn superseded_admission_does_not_start_the_unavailable_timer() {
-    let mut database = Database::new().await;
+    let mut database = Database::with_tenant().await;
     let certificates = Certificates::new();
     let (node, _, resource) = placement_node(&database).await;
     let (_, build, job) = database.fixture().await;
@@ -577,7 +678,7 @@ async fn superseded_admission_does_not_start_the_unavailable_timer() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn ranked_placement_busy_fallback_resource_changes_and_no_unlisted_devices() {
-    let mut database = Database::new().await;
+    let mut database = Database::with_tenant().await;
     let certificates = Certificates::new();
     let (a, _, resource_a) = placement_node(&database).await;
     let (b, _, resource_b) = placement_node(&database).await;
@@ -654,7 +755,7 @@ async fn ranked_placement_busy_fallback_resource_changes_and_no_unlisted_devices
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn placement_reselection_is_bounded_and_cannot_modify_scripts() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let certificates = Certificates::new();
     let (_, build, job) = database.fixture().await;
     let (node, _, _) = placement_node(&database).await;
@@ -823,7 +924,7 @@ async fn placement_reselection_is_bounded_and_cannot_modify_scripts() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL and ARTIFACTORY_SERVICE_TOKEN"]
 async fn runtime_node_tools_authenticate_and_intersect_current_project_scope() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, build, _) = database.fixture().await;
     let node = database.node().await;
     let run = Uuid::new_v4();
@@ -899,7 +1000,7 @@ async fn runtime_node_tools_authenticate_and_intersect_current_project_scope() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn ranked_admission_rechecks_identity_permissions_health_and_both_resource_clocks() {
-    let mut database = Database::new().await;
+    let mut database = Database::with_tenant().await;
     let certificates = Certificates::new();
     let (node, startup, valid) = placement_node(&database).await;
     let resources = Arc::new(RwLock::new(vec![valid.clone()]));
@@ -1009,7 +1110,7 @@ async fn ranked_admission_rechecks_identity_permissions_health_and_both_resource
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn three_ranked_schedulers_preserve_the_node_slot_limit() {
-    let mut database = Database::new().await;
+    let mut database = Database::with_tenant().await;
     let certificates = Certificates::new();
     let (node, _, resource) = placement_node(&database).await;
     let (_directory, server) = resource_server(
@@ -1057,7 +1158,7 @@ async fn three_ranked_schedulers_preserve_the_node_slot_limit() {
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn placement_results_reject_cancellation_expiry_versions_and_running_targets() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, build, job) = database.fixture().await;
     let (node, _, _) = placement_node(&database).await;
     let certificates = Certificates::new();
@@ -1177,7 +1278,7 @@ async fn placement_results_reject_cancellation_expiry_versions_and_running_targe
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL, Node.js 24 and installed Agent Worker dependencies"]
 async fn official_mcp_sdk_initializes_lists_and_queries_over_real_mtls() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (_, build, _) = database.fixture().await;
     let node = database.node().await;
     let certificates = Certificates::new();
@@ -1240,7 +1341,7 @@ async fn mcp_probe(config: &Value) -> Value {
 async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
     use artifactory_planner_runtime::{server, store::RuntimeStore};
     use artifactory_runtime_protocol::{Execution, ModelConfiguration, RunIntent, service::Client};
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (project, build, _) = database.fixture().await;
     let node = database.node().await;
     let run = Uuid::new_v4();
@@ -1296,6 +1397,7 @@ async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
         public_url: origin.clone(),
     };
     let intent = RunIntent {
+        tenant_id: Uuid::from_u128(1),
         run_id: run,
         build_id: build,
         project_id: project,

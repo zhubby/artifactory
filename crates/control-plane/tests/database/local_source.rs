@@ -4,7 +4,7 @@ use artifactory_control_plane::source_cache;
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL and git"]
 async fn independent_source_serves_old_snapshots_to_two_empty_control_directories() {
-    let database = Database::new().await;
+    let database = Database::with_tenant().await;
     let (project, build, _) = database.fixture().await;
     let root = tempfile::tempdir().unwrap();
     let upstream = tempfile::tempdir().unwrap();

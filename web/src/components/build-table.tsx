@@ -2,7 +2,7 @@
 
 import { useUI } from "@/components/providers";
 
-import Link from "next/link";
+import { Link } from "@/lib/tenant";
 import { ArrowUpRight, GitBranch, GitCommitHorizontal } from "lucide-react";
 import { Empty, Status } from "@/components/common";
 import { elapsed, short } from "@/lib/utils";

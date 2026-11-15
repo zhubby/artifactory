@@ -1,21 +1,18 @@
+use crate::auth::TenantState;
 pub use crate::store::Target;
 use crate::store::dto;
 use crate::{
     auth::Auth,
     error::{ApiError, Result},
     ota,
-    state::AppState,
 };
-use axum::{
-    Json,
-    extract::{Path, State},
-};
+use axum::{Json, extract::Path};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 pub async fn releases(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
 ) -> Result<Json<Vec<dto::EmissaryRelease>>> {
     auth.session_role("viewer")?;
@@ -27,7 +24,7 @@ pub struct Import {
     tag: String,
 }
 pub async fn import(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Json(input): Json<Import>,
 ) -> Result<Json<Value>> {
@@ -48,7 +45,7 @@ pub async fn import(
 }
 
 pub async fn node_target(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
     Json(input): Json<Target>,
@@ -62,7 +59,7 @@ pub async fn node_target(
 }
 
 pub async fn pool_target(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
     Json(input): Json<Target>,
@@ -79,14 +76,14 @@ pub async fn pool_target(
 }
 
 pub async fn updates(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
 ) -> Result<Json<Vec<dto::EmissaryUpdate>>> {
     auth.session_role("viewer")?;
     Ok(Json(state.store.emissary_updates().await?))
 }
 pub async fn retry(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
@@ -96,7 +93,7 @@ pub async fn retry(
 }
 
 pub async fn cancel(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {

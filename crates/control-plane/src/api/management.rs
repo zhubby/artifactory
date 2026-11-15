@@ -1,69 +1,28 @@
+use crate::auth::TenantState;
 use crate::store::dto;
 pub use crate::store::{NewToken, NodeUpdate};
 use crate::{
-    auth::{self, Auth},
+    auth::Auth,
     crypto,
     error::{ApiError, Result},
     source::GitCredential,
-    state::AppState,
 };
 use axum::{
     Json,
-    extract::{Path, Query, State},
+    extract::{Path, Query},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-pub async fn overview(State(state): State<AppState>, auth: Auth) -> Result<Json<dto::Overview>> {
+pub async fn overview(TenantState(state): TenantState, auth: Auth) -> Result<Json<dto::Overview>> {
     auth.session_role("viewer")?;
     let value = state.store.overview().await?;
     Ok(Json(value))
 }
 
-pub async fn users(
-    State(state): State<AppState>,
-    auth: Auth,
-) -> Result<Json<Vec<dto::UserSummary>>> {
-    auth.session_role("admin")?;
-    Ok(Json(state.store.users().await?))
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct NewUser {
-    username: String,
-    password: String,
-    role: String,
-}
-
-pub async fn create_user(
-    State(state): State<AppState>,
-    auth: Auth,
-    Json(input): Json<NewUser>,
-) -> Result<Json<Value>> {
-    auth.session_role("admin")?;
-    if input.username.is_empty()
-        || input.username.len() > 100
-        || !["admin", "operator", "viewer"].contains(&input.role.as_str())
-    {
-        return Err(ApiError::BadRequest("invalid user".into()));
-    }
-    let password = auth::password_hash(&input.password)
-        .map_err(|error| ApiError::BadRequest(error.to_string()))?;
-    let id = Uuid::new_v4();
-    state
-        .store
-        .create_user(id, &input.username, &password, &input.role)
-        .await?;
-    state
-        .audit(auth.user_id, "user_created", id, json!({}))
-        .await?;
-    Ok(Json(json!({"id":id})))
-}
-
 pub async fn tokens(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
 ) -> Result<Json<Vec<dto::TokenSummary>>> {
     auth.session_role("viewer")?;
@@ -71,7 +30,7 @@ pub async fn tokens(
 }
 
 pub async fn create_token(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Json(input): Json<NewToken>,
 ) -> Result<Json<Value>> {
@@ -110,7 +69,7 @@ pub async fn create_token(
 }
 
 pub async fn revoke_token(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
@@ -123,7 +82,7 @@ pub async fn revoke_token(
 }
 
 pub async fn pools(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
 ) -> Result<Json<Vec<dto::PoolSummary>>> {
     auth.session_role("viewer")?;
@@ -137,7 +96,7 @@ pub struct Name {
 }
 
 pub async fn create_pool(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Json(input): Json<Name>,
 ) -> Result<Json<Value>> {
@@ -160,7 +119,7 @@ pub struct NewEnrollment {
 }
 
 pub async fn enrollment_token(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Json(input): Json<NewEnrollment>,
 ) -> Result<Json<Value>> {
@@ -196,7 +155,7 @@ fn node_page_size() -> i64 {
 }
 
 pub async fn nodes(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Query(query): Query<NodeQuery>,
 ) -> Result<Json<Vec<dto::NodeSummary>>> {
@@ -218,7 +177,7 @@ pub async fn nodes(
 }
 
 pub async fn update_node(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
     Json(input): Json<NodeUpdate>,
@@ -244,7 +203,7 @@ pub async fn update_node(
 }
 
 pub async fn credentials(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
 ) -> Result<Json<Vec<dto::CredentialSummary>>> {
     auth.session_role("admin")?;
@@ -264,7 +223,7 @@ pub struct NewCredential {
 }
 
 pub async fn create_credential(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     actor: Auth,
     Json(input): Json<NewCredential>,
 ) -> Result<Json<Value>> {
@@ -303,7 +262,7 @@ pub async fn create_credential(
 }
 
 pub async fn audit(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
 ) -> Result<Json<Vec<dto::AuditEvent>>> {
     auth.session_role("admin")?;
@@ -311,7 +270,7 @@ pub async fn audit(
 }
 
 pub async fn node_metadata(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {

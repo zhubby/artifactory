@@ -61,11 +61,11 @@ fn timeout() -> i32 {
 
 impl ControlStore {
     pub async fn model_profiles(&self) -> Result<Vec<dto::ModelProfile>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(m)-'key_ciphertext') || jsonb_build_object('has_key',key_ciphertext<>'','api_key','********') FROM model_profiles m ORDER BY created_at", params![]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(m)-'key_ciphertext') || jsonb_build_object('has_key',key_ciphertext<>'','api_key','********') FROM model_profiles m WHERE tenant_id=$1 ORDER BY created_at", params![self.tenant()?]).await?)
     }
 
     pub async fn model_options(&self) -> Result<Vec<dto::ModelOption>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT jsonb_build_object('id',id,'name',name,'enabled',enabled) FROM model_profiles WHERE enabled ORDER BY name", params![]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT jsonb_build_object('id',id,'name',name,'enabled',enabled) FROM model_profiles WHERE enabled AND tenant_id=$1 ORDER BY name", params![self.tenant()?]).await?)
     }
 
     pub async fn save_model_profile(
@@ -79,16 +79,17 @@ impl ControlStore {
         let mut tx = tx_db.transaction().await?;
         sql::execute(
             &mut tx,
-            "SELECT pg_advisory_xact_lock(724319911)",
-            params![],
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,92))",
+            params![self.tenant()?.to_string()],
         )
         .await?;
         if input.is_default {
-            ModelProfile::filter(ModelProfile::fields().is_default().eq(true))
-                .update()
-                .is_default(false)
-                .exec(&mut tx)
-                .await?;
+            sql::execute(
+                &mut tx,
+                "UPDATE model_profiles SET is_default=false WHERE tenant_id=$1 AND is_default",
+                params![self.tenant()?],
+            )
+            .await?;
         }
         let mut existing = if update {
             Some(ModelProfile::get_by_id(&mut tx, id).await?)
@@ -125,6 +126,7 @@ impl ControlStore {
                 .await?;
         } else {
             ModelProfile::create()
+                .tenant_id(self.tenant()?)
                 .id(id)
                 .name(input.name)
                 .api(input.api)
@@ -151,12 +153,16 @@ impl ControlStore {
         Ok(())
     }
 
-    pub async fn model_snapshot(&self, id: Option<Uuid>) -> anyhow::Result<Option<Value>> {
-        Ok(sql::optional_scalar(&mut self.pool.clone(), "SELECT to_jsonb(m) FROM model_profiles m WHERE enabled AND (($1::uuid IS NOT NULL AND id=$1) OR ($1::uuid IS NULL AND is_default)) LIMIT 1", params![id]).await?)
+    pub async fn model_snapshot(
+        &self,
+        id: Option<Uuid>,
+        tenant: Uuid,
+    ) -> anyhow::Result<Option<Value>> {
+        Ok(sql::optional_scalar(&mut self.pool.clone(), "SELECT to_jsonb(m) FROM model_profiles m WHERE tenant_id=$2 AND enabled AND (($1::uuid IS NOT NULL AND id=$1) OR ($1::uuid IS NULL AND is_default)) LIMIT 1", params![id,tenant]).await?)
     }
 
     pub async fn workers(&self) -> Result<Vec<dto::WorkerSummary>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(w)-'certificate_hash') || jsonb_build_object('online',last_seen>now()-interval '30 seconds','active_run',(SELECT id FROM planning_runs r WHERE r.worker_id=w.id AND r.state='leased' LIMIT 1)) FROM ai_workers w ORDER BY created_at", params![]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(w)-'certificate_hash') || jsonb_build_object('online',last_seen>now()-interval '30 seconds','active_run',(SELECT id FROM planning_runs r WHERE r.worker_id=w.id AND r.state='leased' LIMIT 1)) FROM ai_workers w WHERE tenant_id=$1 ORDER BY created_at", params![self.tenant()?]).await?)
     }
 
     pub async fn update_worker(&self, id: Uuid, input: &WorkerUpdate) -> Result<bool> {
@@ -174,12 +180,12 @@ impl ControlStore {
     }
 
     pub async fn planner_enrollment(&self, id: Uuid, hash: String) -> Result<()> {
-        sql::execute(&mut self.pool.clone(), "INSERT INTO ai_enrollment_tokens(id,token_hash,expires_at) VALUES($1,$2,now()+interval '15 minutes')", params![id, hash]).await?;
+        sql::execute(&mut self.pool.clone(), "INSERT INTO ai_enrollment_tokens(id,token_hash,expires_at,tenant_id) VALUES($1,$2,now()+interval '15 minutes',$3)", params![id, hash,self.tenant()?]).await?;
         Ok(())
     }
 
     pub async fn source_metrics(&self) -> Result<Vec<dto::SourceRepositorySummary>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(s)-'cache_key' FROM source_repositories s ORDER BY last_used_at DESC LIMIT 100", params![]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(s)-'cache_key' FROM source_repositories s WHERE tenant_id=$1 AND project_id=ANY($2) ORDER BY last_used_at DESC LIMIT 100", params![self.tenant()?,self.scoped_projects().unwrap_or_default()]).await?)
     }
 
     pub async fn clarify_build(&self, id: Uuid, answer: &str, auth: &Auth) -> Result<()> {

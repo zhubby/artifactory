@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { closePreferences, fixtureAPI, openPreferences } from "./fixtures";
+import {closePreferences, fixtureAPI, openPreferences, tenantURL } from "./fixtures";
 
 async function fillRegistration(page: Page, username = "new-reader") {
   await page.locator('input[name="username"]').fill(username);
@@ -22,15 +22,15 @@ test("login exposes registration and submits only account credentials", async ({
       json: { id: "user-reader", username: "new-reader", role: "viewer" },
     });
   });
-  await page.goto("/login");
+  await page.goto(tenantURL("/login"));
   await page.getByRole("link", { name: "创建账号", exact: true }).click();
   await expect(page).toHaveURL(/\/register$/);
   await page.locator('input[name="username"]').fill("new-reader");
   await page.locator('input[name="password"]').fill("reader-password");
   await page.locator('input[name="confirmPassword"]').fill("reader-password");
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
-  await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("heading", { name: "构建，签名，交付。" })).toBeVisible();
+  await expect(page).toHaveURL(/\/tenants$/);
+  await expect(page.getByRole("heading", { name: "选择租户" })).toBeVisible();
   expect(credentials).toEqual({ username: "new-reader", password: "reader-password" });
   await expect(page.getByRole("button", { name: "发起构建", exact: true })).toHaveCount(0);
 });
@@ -41,10 +41,10 @@ test("disabled registration hides the entry and blocks the registration form", a
   await page.route("**/api/v1/auth/config", (route) =>
     route.fulfill({ json: { registration_enabled: false } }),
   );
-  await page.goto("/login");
+  await page.goto(tenantURL("/login"));
   await expect(page.getByRole("button", { name: "进入工作空间", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "创建账号", exact: true })).toHaveCount(0);
-  await page.goto("/register");
+  await page.goto(tenantURL("/register"));
   await expect(page.getByText("当前实例已关闭自助注册。", { exact: true })).toBeVisible();
   await expect(page.locator('input[name="username"]')).toHaveCount(0);
   await expect(page.getByRole("link", { name: "返回登录", exact: true })).toBeVisible();
@@ -57,7 +57,7 @@ test("password confirmation and UTF-8 validation never send invalid credentials"
     writes++;
     return route.fulfill({ status: 409, json: { error: "resource already exists" } });
   });
-  await page.goto("/register");
+  await page.goto(tenantURL("/register"));
   await fillRegistration(page);
   await page.locator('input[name="confirmPassword"]').fill("different-password");
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
@@ -79,7 +79,7 @@ test("duplicate errors and drafts survive locale and theme changes", async ({ pa
   await page.route("**/api/v1/auth/register", (route) =>
     route.fulfill({ status: 409, json: { error: "resource already exists" } }),
   );
-  await page.goto("/register");
+  await page.goto(tenantURL("/register"));
   await fillRegistration(page, "retained-reader");
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
   await expect(page.locator(".error-box[role=alert]")).toContainText("该用户名已被使用");
@@ -112,13 +112,13 @@ test("configuration failures hide registration without preventing login and allo
   await page.route("**/api/v1/auth/login", (route) =>
     route.fulfill({ json: { id: "user-reader", username: "reader", role: "viewer" } }),
   );
-  await page.goto("/login");
+  await page.goto(tenantURL("/login"));
   await page.locator('input[name="username"]').fill("reader");
   await page.locator('input[name="password"]').fill("reader-password");
   await expect(page.getByRole("link", { name: "创建账号", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "进入工作空间", exact: true }).click();
-  await expect(page).toHaveURL(/\/$/);
-  await page.goto("/register");
+  await expect(page).toHaveURL(/\/tenants$/);
+  await page.goto(tenantURL("/register"));
   await expect(page.locator(".error-box[role=alert]")).toContainText("无法读取注册设置");
   await expect(page.locator('input[name="username"]')).toHaveCount(0);
   configAvailable = true;
@@ -142,7 +142,7 @@ test("registration errors stay on the form and can be retried after a network fa
     if (attempt === failures.length + 1) return route.abort("failed");
     return route.fulfill({ status: 201, json: { id: "user-reader", username: "new-reader", role: "viewer" } });
   });
-  await page.goto("/register");
+  await page.goto(tenantURL("/register"));
   await fillRegistration(page);
   for (const failure of failures) {
     await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
@@ -153,7 +153,7 @@ test("registration errors stay on the form and can be retried after a network fa
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
   await expect(page.locator(".error-box[role=alert]")).toContainText("无法连接服务");
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/tenants$/);
 });
 
 test("registration is keyboard accessible and suppresses repeated submissions", async ({ page }) => {
@@ -166,7 +166,7 @@ test("registration is keyboard accessible and suppresses repeated submissions", 
     await pending;
     await route.fulfill({ status: 409, json: { error: "resource already exists" } });
   });
-  await page.goto("/register");
+  await page.goto(tenantURL("/register"));
   await expect(page.locator('input[name="username"]')).toBeFocused();
   await page.keyboard.type("keyboard-reader");
   await page.keyboard.press("Tab");
@@ -194,7 +194,7 @@ test("a transient config refresh failure preserves the registration draft after 
       ? route.fulfill({ json: { registration_enabled: true } })
       : route.abort("failed"),
   );
-  await page.goto("/register");
+  await page.goto(tenantURL("/register"));
   await fillRegistration(page, "refresh-draft");
   available = false;
   await page.clock.fastForward(60000);

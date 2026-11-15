@@ -274,10 +274,17 @@ async fn concurrent_registration_limit_is_persistent_and_expires() {
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
-async fn registered_viewer_can_read_and_download_but_cannot_write_or_manage() {
+async fn registered_account_requires_membership_then_project_viewer_can_only_read() {
     let database = Database::new().await;
     let (project, _, job) = database.fixture().await;
     let node = database.node().await;
+    sql::execute(
+        &mut database.pool.clone(),
+        "DROP TRIGGER fixture_account_grants ON users",
+        params![],
+    )
+    .await
+    .unwrap();
     let attempt = Uuid::new_v4();
     let artifact = Uuid::new_v4();
     sql::execute(&mut database.pool.clone(), "INSERT INTO attempts(id,job_id,node_id,lease_token,lease_expires_at,status,command_id) VALUES($1,$2,$3,'test',now(),'succeeded',$4)", params![attempt, job, node, Uuid::new_v4()]).await.unwrap();
@@ -299,12 +306,40 @@ async fn registered_viewer_can_read_and_download_but_cannot_write_or_manage() {
         .next()
         .unwrap()
         .to_owned();
+    for tenant in [None, Some("00000000-0000-0000-0000-000000000001")] {
+        let mut req = Request::builder()
+            .uri("/api/v1/projects")
+            .header("cookie", &cookie);
+        if let Some(tenant) = tenant {
+            req = req.header("X-Artifactory-Tenant", tenant);
+        }
+        let status = router
+            .clone()
+            .oneshot(req.body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(
+            status,
+            if tenant.is_some() {
+                StatusCode::FORBIDDEN
+            } else {
+                StatusCode::BAD_REQUEST
+            }
+        );
+    }
+    sql::execute(&mut database.pool.clone(), "INSERT INTO tenant_members(tenant_id,user_id,role) SELECT '00000000-0000-0000-0000-000000000001',id,'member' FROM users WHERE username='reader'",params![]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO project_members(tenant_id,project_id,user_id,role) SELECT '00000000-0000-0000-0000-000000000001',$1,id,'viewer' FROM users WHERE username='reader'",params![project]).await.unwrap();
     for path in ["/projects", "/builds", "/artifacts", "/nodes", "/overview"] {
         let response = router
             .clone()
             .oneshot(
                 Request::builder()
                     .uri(format!("/api/v1{path}"))
+                    .header(
+                        "X-Artifactory-Tenant",
+                        "00000000-0000-0000-0000-000000000001",
+                    )
                     .header("cookie", &cookie)
                     .body(Body::empty())
                     .unwrap(),
@@ -318,6 +353,10 @@ async fn registered_viewer_can_read_and_download_but_cannot_write_or_manage() {
         .oneshot(
             Request::builder()
                 .uri(format!("/api/v1/artifacts/{artifact}/download"))
+                .header(
+                    "X-Artifactory-Tenant",
+                    "00000000-0000-0000-0000-000000000001",
+                )
                 .header("cookie", &cookie)
                 .body(Body::empty())
                 .unwrap(),
@@ -342,7 +381,7 @@ async fn registered_viewer_can_read_and_download_but_cannot_write_or_manage() {
         ),
         (
             "/users".to_owned(),
-            json!({"username":"elevated","password":"reader-password","role":"admin"}),
+            json!({"username":"elevated","role":"admin"}),
         ),
         (
             "/credentials".to_owned(),
@@ -352,6 +391,10 @@ async fn registered_viewer_can_read_and_download_but_cannot_write_or_manage() {
         let request = Request::builder()
             .method("POST")
             .uri(format!("/api/v1{path}"))
+            .header(
+                "X-Artifactory-Tenant",
+                "00000000-0000-0000-0000-000000000001",
+            )
             .header("cookie", &cookie)
             .header("content-type", "application/json")
             .header("x-artifactory-csrf", "1")
@@ -369,6 +412,10 @@ async fn registered_viewer_can_read_and_download_but_cannot_write_or_manage() {
             .oneshot(
                 Request::builder()
                     .uri(format!("/api/v1{path}"))
+                    .header(
+                        "X-Artifactory-Tenant",
+                        "00000000-0000-0000-0000-000000000001",
+                    )
                     .header("cookie", &cookie)
                     .body(Body::empty())
                     .unwrap(),

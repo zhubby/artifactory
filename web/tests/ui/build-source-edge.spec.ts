@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fixtureAPI, repositoryRefs } from "./fixtures";
+import {fixtureAPI, repositoryRefs, tenantURL } from "./fixtures";
 
 test("large reference lists keep the default and selected branch visible without losing search results", async ({ page }) => {
   await fixtureAPI(page);
@@ -12,7 +12,7 @@ test("large reference lists keep the default and selected branch visible without
   await page.route("**/api/v1/projects/project-main/refs", route => route.fulfill({ json: {
     default_ref: "refs/heads/zz-default", branches, tags: [],
   } }));
-  await page.goto("/builds/new");
+  await page.goto(tenantURL("/builds/new"));
   const defaultBranch = page.getByRole("radio", { name: "分支 zz-default", exact: true });
   await expect(defaultBranch).toBeChecked();
   await defaultBranch.focus();
@@ -39,7 +39,7 @@ test("a late initial reference response cannot replace an explicit manual source
     await route.fulfill({ json: repositoryRefs });
   });
   const requested = page.waitForRequest("**/api/v1/projects/project-main/refs");
-  await page.goto("/builds/new");
+  await page.goto(tenantURL("/builds/new"));
   await requested;
   await page.getByRole("button", { name: "手动输入", exact: true }).click();
   await page.locator('input[name="ref"]').fill("c".repeat(40));

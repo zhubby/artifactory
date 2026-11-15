@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { ArrowRight } from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";
 import { useUI } from "@/components/providers";
@@ -18,6 +18,8 @@ export default function Login() {
   const registrationEnabled = !config.error && config.data?.registration_enabled;
   const [error, setError] = useState<Error>();
   const [busy, setBusy] = useState(false);
+  const [invite, setInvite] = useState<string | null>(null);
+  useEffect(() => { setInvite(new URLSearchParams(window.location.search).get("invite")); }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -25,7 +27,8 @@ export default function Login() {
     const values = new FormData(event.currentTarget);
     try {
       await mutation("/auth/login", Object.fromEntries(values));
-      window.location.assign("/");
+      const invite = new URLSearchParams(window.location.search).get("invite");
+      window.location.assign(invite ? `/join/${encodeURIComponent(invite)}` : "/tenants");
     } catch (error) {
       setError(asError(error, "login.failed"));
     } finally {
@@ -66,7 +69,7 @@ export default function Login() {
       {registrationEnabled && (
         <p className="mt-5 text-center text-sm text-muted-foreground">
           {t("register.noAccount")} {" "}
-          <Link className="text-primary underline-offset-4 hover:underline" href="/register">
+          <Link className="text-primary underline-offset-4 hover:underline" href={invite ? `/register?invite=${encodeURIComponent(invite)}` : "/register"}>
             {t("register.createAccount")}
           </Link>
         </p>

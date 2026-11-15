@@ -293,7 +293,7 @@ impl ControlStore {
         let mut transaction_db = self.pool.clone();
         let mut transaction = transaction_db.transaction().await.map_err(internal)?;
         sql::execute(&mut transaction, "INSERT INTO uploads(id,attempt_id,path,object_key,expected_size,expected_sha256,expires_at) VALUES($1,$2,$3,$4,$5,$6,now()+interval '15 minutes') ON CONFLICT(attempt_id,path) DO NOTHING", params![id, attempt, input.path, key, input.size as i64, input.sha256]).await.map_err(internal)?;
-        let row=sql::record(&mut transaction, "SELECT u.*,EXISTS(SELECT 1 FROM artifacts a WHERE a.id=u.id) AS completed FROM uploads u WHERE attempt_id=$1 AND path=$2", params![attempt, input.path], &[("id", Type::Uuid),("attempt_id", Type::Uuid),("path", Type::String),("object_key", Type::String),("expected_size", Type::I64),("expected_sha256", Type::String),("expires_at", Type::Timestamp),("completed", Type::Bool)]).await.map_err(internal)?;
+        let row=sql::record(&mut transaction, "SELECT u.id,u.attempt_id,u.path,u.object_key,u.expected_size,u.expected_sha256,u.expires_at,EXISTS(SELECT 1 FROM artifacts a WHERE a.id=u.id) AS completed FROM uploads u WHERE attempt_id=$1 AND path=$2", params![attempt, input.path], &[("id", Type::Uuid),("attempt_id", Type::Uuid),("path", Type::String),("object_key", Type::String),("expected_size", Type::I64),("expected_sha256", Type::String),("expires_at", Type::Timestamp),("completed", Type::Bool)]).await.map_err(internal)?;
         if row.decode::<i64>("expected_size").map_err(internal)? != input.size as i64
             || row.decode::<String>("expected_sha256").map_err(internal)? != input.sha256
         {
@@ -324,7 +324,7 @@ impl ControlStore {
     {
         let row = sql::optional_record(
             &mut self.pool.clone(),
-            "SELECT * FROM uploads WHERE id=$1 AND attempt_id=$2",
+            "SELECT id,attempt_id,path,object_key,expected_size,expected_sha256,expires_at FROM uploads WHERE id=$1 AND attempt_id=$2",
             params![id, attempt],
             &[
                 ("id", Type::Uuid),
@@ -439,7 +439,7 @@ impl ControlStore {
     ) -> Result<EventReceipt, Status> {
         let mut transaction_db = self.pool.clone();
         let mut transaction = transaction_db.transaction().await.map_err(internal)?;
-        let row=sql::optional_record(&mut transaction, "SELECT a.*,j.target_config FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=$1 AND a.node_id=$2 AND a.lease_token=$3 AND a.lease_expires_at>now() FOR UPDATE OF a,j", params![id, node, event.lease_token], &[("id", Type::Uuid),("job_id", Type::Uuid),("node_id", Type::Uuid),("lease_token", Type::String),("lease_expires_at", Type::Timestamp),("status", Type::String),("command_id", Type::Uuid),("last_sequence", Type::I64),("error", Type::String),("started_at", Type::Timestamp),("finished_at", Type::Timestamp),("created_at", Type::Timestamp),("plan_revision_id", Type::Uuid),("source_snapshot_id", Type::Uuid),("failure_kind", Type::String),("target_config", Type::String)]).await.map_err(internal)?
+        let row=sql::optional_record(&mut transaction, "SELECT a.id,a.job_id,a.node_id,a.lease_token,a.lease_expires_at,a.status,a.command_id,a.last_sequence,a.error,a.started_at,a.finished_at,a.created_at,a.plan_revision_id,a.source_snapshot_id,a.failure_kind,j.target_config FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=$1 AND a.node_id=$2 AND a.lease_token=$3 AND a.lease_expires_at>now() FOR UPDATE OF a,j", params![id, node, event.lease_token], &[("id", Type::Uuid),("job_id", Type::Uuid),("node_id", Type::Uuid),("lease_token", Type::String),("lease_expires_at", Type::Timestamp),("status", Type::String),("command_id", Type::Uuid),("last_sequence", Type::I64),("error", Type::String),("started_at", Type::Timestamp),("finished_at", Type::Timestamp),("created_at", Type::Timestamp),("plan_revision_id", Type::Uuid),("source_snapshot_id", Type::Uuid),("failure_kind", Type::String),("target_config", Type::String)]).await.map_err(internal)?
         .ok_or_else(|| Status::failed_precondition("attempt lease expired or unknown"))?;
         lock_authorized_node(&mut transaction, node, session).await?;
         // Cancellation can commit while either row lock waits. Read it with the

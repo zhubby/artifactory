@@ -42,6 +42,7 @@ impl ControlStore {
         )
         .await?;
         super::models::AuditEvent::create()
+            .tenant_id(self.scope.as_ref().map(|s| s.tenant_id))
             .actor(actor.to_string())
             .action("emissary_node_target_changed")
             .resource_id(id.to_string())
@@ -61,7 +62,7 @@ impl ControlStore {
         if changed == 0 {
             return Err(ApiError::NotFound);
         }
-        super::models::AuditEvent::create().actor(actor.to_string()).action("emissary_pool_policy_changed").resource_id(id.to_string()).details(toasty::Json((json!({"release_id":input.release_id,"concurrency":input.concurrency,"paused":input.paused})).clone())).exec(&mut tx).await?;
+        super::models::AuditEvent::create().tenant_id(self.scope.as_ref().map(|s|s.tenant_id)).actor(actor.to_string()).action("emissary_pool_policy_changed").resource_id(id.to_string()).details(toasty::Json((json!({"release_id":input.release_id,"concurrency":input.concurrency,"paused":input.paused})).clone())).exec(&mut tx).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -69,7 +70,7 @@ impl ControlStore {
     pub async fn retry_update(&self, id: Uuid, actor: Uuid) -> Result<Uuid> {
         let u = sql::record(
             &mut self.pool.clone(),
-            "SELECT * FROM emissary_updates WHERE id=$1",
+            "SELECT id,generation,node_id,pool_id,release_id,previous_version,status,cancel_requested,error,retry_of,created_at,updated_at,finished_at,last_command_at FROM emissary_updates WHERE id=$1",
             params![id],
             &[
                 ("id", Type::Uuid),
@@ -167,6 +168,7 @@ impl ControlStore {
         )
         .await?;
         super::models::AuditEvent::create()
+            .tenant_id(self.scope.as_ref().map(|s| s.tenant_id))
             .actor(actor.to_string())
             .action("emissary_update_retried")
             .resource_id(new_id.to_string())
@@ -213,6 +215,7 @@ impl ControlStore {
             .await?;
         }
         super::models::AuditEvent::create()
+            .tenant_id(self.scope.as_ref().map(|s| s.tenant_id))
             .actor(actor.to_string())
             .action("emissary_update_cancel_requested")
             .resource_id(id.to_string())
@@ -226,13 +229,13 @@ impl ControlStore {
     pub async fn emissary_releases(&self) -> Result<Vec<dto::EmissaryRelease>> {
         Ok(sql::scalars(
             &mut self.pool.clone(),
-            "SELECT to_jsonb(r) FROM emissary_releases r ORDER BY created_at DESC",
-            params![],
+            "SELECT to_jsonb(r) FROM emissary_releases r WHERE r.tenant_id=$1 ORDER BY created_at DESC",
+            params![self.tenant()?],
         )
         .await?)
     }
 
     pub async fn emissary_updates(&self) -> Result<Vec<dto::EmissaryUpdate>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(u)||jsonb_build_object('version',r.version,'node_name',n.name) FROM emissary_updates u JOIN emissary_releases r ON r.id=u.release_id JOIN nodes n ON n.id=u.node_id ORDER BY u.created_at DESC LIMIT 500", params![]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(u)||jsonb_build_object('version',r.version,'node_name',n.name) FROM emissary_updates u JOIN emissary_releases r ON r.id=u.release_id JOIN nodes n ON n.id=u.node_id WHERE u.tenant_id=$1 AND ($2 OR EXISTS(SELECT 1 FROM projects p WHERE p.id=ANY($3) AND project_node_allowed(p.id,n.id))) ORDER BY u.created_at DESC LIMIT 500", params![self.tenant()?,self.scoped_admin(),self.scoped_projects().unwrap_or_default()]).await?)
     }
 }

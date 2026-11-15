@@ -1,3 +1,4 @@
+use crate::auth::TenantState;
 use crate::store::dto;
 pub use crate::store::{ProfileInput, WorkerUpdate};
 use crate::{
@@ -6,10 +7,7 @@ use crate::{
     error::{ApiError, Result},
     state::AppState,
 };
-use axum::{
-    Json,
-    extract::{Path, State},
-};
+use axum::{Json, extract::Path};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -81,7 +79,7 @@ fn validate(state: &AppState, input: &ProfileInput) -> Result<()> {
 }
 
 pub async fn profiles(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
 ) -> Result<Json<Vec<dto::ModelProfile>>> {
     auth.session_role("admin")?;
@@ -89,14 +87,14 @@ pub async fn profiles(
 }
 
 pub async fn model_options(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
 ) -> Result<Json<Vec<dto::ModelOption>>> {
-    auth.session_role("operator")?;
+    auth.session_role("viewer")?;
     Ok(Json(state.store.model_options().await?))
 }
 pub async fn create_profile(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Json(input): Json<ProfileInput>,
 ) -> Result<Json<Value>> {
@@ -116,7 +114,7 @@ pub async fn create_profile(
     Ok(Json(json!({"id":id})))
 }
 pub async fn update_profile(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
     Json(input): Json<ProfileInput>,
@@ -133,7 +131,7 @@ pub async fn update_profile(
     Ok(Json(json!({"ok":true})))
 }
 pub async fn delete_profile(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
@@ -146,7 +144,7 @@ pub async fn delete_profile(
 }
 
 pub async fn workers(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
 ) -> Result<Json<Vec<dto::WorkerSummary>>> {
     auth.session_role("admin")?;
@@ -154,7 +152,7 @@ pub async fn workers(
 }
 
 pub async fn update_worker(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
     Json(input): Json<WorkerUpdate>,
@@ -171,7 +169,7 @@ pub async fn update_worker(
         .await?;
     Ok(Json(json!({"ok":true})))
 }
-pub async fn enrollment(State(state): State<AppState>, auth: Auth) -> Result<Json<Value>> {
+pub async fn enrollment(TenantState(state): TenantState, auth: Auth) -> Result<Json<Value>> {
     auth.session_role("admin")?;
     let id = Uuid::new_v4();
     let token = crypto::token();
@@ -185,7 +183,7 @@ pub async fn enrollment(State(state): State<AppState>, auth: Auth) -> Result<Jso
     Ok(Json(json!({"id":id,"token":token,"expires_in":900})))
 }
 pub async fn source_metrics(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
 ) -> Result<Json<Vec<dto::SourceRepositorySummary>>> {
     auth.session_role("admin")?;
@@ -193,7 +191,7 @@ pub async fn source_metrics(
 }
 
 pub async fn clarify(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
     Json(input): Json<Value>,
@@ -210,7 +208,7 @@ pub async fn clarify(
     Ok(Json(json!({"ok":true})))
 }
 pub async fn plans(
-    State(state): State<AppState>,
+    TenantState(state): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<dto::BuildPlans>> {

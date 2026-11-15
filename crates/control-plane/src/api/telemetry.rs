@@ -1,3 +1,4 @@
+use crate::auth::TenantState;
 use crate::{
     auth::Auth,
     error::{ApiError, Result},
@@ -6,7 +7,7 @@ use crate::{
 use artifactory_runtime_protocol::service;
 use axum::{
     Json,
-    extract::{Path, Query, State},
+    extract::{Path, Query},
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -86,7 +87,7 @@ async fn attempt(state: &AppState, auth: &Auth, id: Uuid) -> Result<()> {
     Ok(())
 }
 pub async fn latest(
-    State(s): State<AppState>,
+    TenantState(s): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
@@ -94,7 +95,7 @@ pub async fn latest(
     fetch(&s, &format!("/v1/nodes/{id}/latest"), None).await
 }
 pub async fn inventory(
-    State(s): State<AppState>,
+    TenantState(s): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
@@ -102,7 +103,7 @@ pub async fn inventory(
     fetch(&s, &format!("/v1/nodes/{id}/inventory"), None).await
 }
 pub async fn history(
-    State(s): State<AppState>,
+    TenantState(s): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
     Query(r): Query<Range>,
@@ -111,7 +112,7 @@ pub async fn history(
     fetch(&s, &format!("/v1/nodes/{id}/history"), Some(&r)).await
 }
 pub async fn build_history(
-    State(s): State<AppState>,
+    TenantState(s): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
     Query(r): Query<Range>,
@@ -120,7 +121,7 @@ pub async fn build_history(
     fetch(&s, &format!("/v1/attempts/{id}/history"), Some(&r)).await
 }
 pub async fn processes(
-    State(s): State<AppState>,
+    TenantState(s): TenantState,
     auth: Auth,
     Path(id): Path<Uuid>,
     Query(r): Query<Range>,

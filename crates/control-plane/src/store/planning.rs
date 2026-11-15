@@ -82,7 +82,7 @@ async fn lock_run(
     )
     .await
     .map_err(internal)?;
-    sql::optional_record(tx, "SELECT r.*,b.project_id,b.source_snapshot_id,b.goal,b.target_requirements,b.planning_context,b.parameters,b.selected_targets,b.current_plan_id,b.revision_count,b.release_version FROM planning_runs r JOIN builds b ON b.id=r.build_id JOIN ai_workers w ON w.id=r.worker_id WHERE r.id=$1 AND r.worker_id=$2 AND r.lease_hash=$3 AND r.state='leased' AND r.lease_expires_at>clock_timestamp() AND r.deadline_at>clock_timestamp() AND NOT b.cancel_requested AND (b.status IN ('planning','replanning') OR (r.purpose='placement' AND b.status IN ('queued','running'))) AND NOT w.revoked AND w.certificate_expires_at>clock_timestamp()", params![id, worker, crypto::hash(token)], &[("id", Type::Uuid),("build_id", Type::Uuid),("worker_id", Type::Uuid),("purpose", Type::String),("state", Type::String),("failed_targets", Type::List(Box::new(Type::String))),("model_config", Type::String),("lease_hash", Type::String),("lease_expires_at", Type::Timestamp),("deadline_at", Type::Timestamp),("calls", Type::I32),("usage", Type::String),("error", Type::String),("created_at", Type::Timestamp),("finished_at", Type::Timestamp),("authority", Type::String),("project_id", Type::Uuid),("source_snapshot_id", Type::Uuid),("goal", Type::String),("target_requirements", Type::String),("planning_context", Type::String),("parameters", Type::String),("selected_targets", Type::List(Box::new(Type::String))),("current_plan_id", Type::Uuid),("revision_count", Type::I32),("release_version", Type::String)]).await.map_err(internal)?.ok_or_else(||Status::failed_precondition("planning lease expired, canceled or superseded"))
+    sql::optional_record(tx, "SELECT r.id,r.build_id,r.worker_id,r.purpose,r.state,r.failed_targets,r.model_config,r.lease_hash,r.lease_expires_at,r.deadline_at,r.calls,r.usage,r.error,r.created_at,r.finished_at,r.authority,r.tenant_id,b.project_id,b.source_snapshot_id,b.goal,b.target_requirements,b.planning_context,b.parameters,b.selected_targets,b.current_plan_id,b.revision_count,b.release_version FROM planning_runs r JOIN builds b ON b.id=r.build_id JOIN ai_workers w ON w.id=r.worker_id WHERE r.id=$1 AND r.worker_id=$2 AND r.lease_hash=$3 AND r.state='leased' AND r.lease_expires_at>clock_timestamp() AND r.deadline_at>clock_timestamp() AND NOT b.cancel_requested AND (b.status IN ('planning','replanning') OR (r.purpose='placement' AND b.status IN ('queued','running'))) AND r.tenant_id=b.tenant_id AND r.tenant_id=w.tenant_id AND NOT w.revoked AND w.certificate_expires_at>clock_timestamp()", params![id, worker, crypto::hash(token)], &[("id", Type::Uuid),("build_id", Type::Uuid),("worker_id", Type::Uuid),("purpose", Type::String),("state", Type::String),("failed_targets", Type::List(Box::new(Type::String))),("model_config", Type::String),("lease_hash", Type::String),("lease_expires_at", Type::Timestamp),("deadline_at", Type::Timestamp),("calls", Type::I32),("usage", Type::String),("error", Type::String),("created_at", Type::Timestamp),("finished_at", Type::Timestamp),("authority", Type::String),("tenant_id",Type::Uuid),("project_id", Type::Uuid),("source_snapshot_id", Type::Uuid),("goal", Type::String),("target_requirements", Type::String),("planning_context", Type::String),("parameters", Type::String),("selected_targets", Type::List(Box::new(Type::String))),("current_plan_id", Type::Uuid),("revision_count", Type::I32),("release_version", Type::String)]).await.map_err(internal)?.ok_or_else(||Status::failed_precondition("planning lease expired, canceled or superseded"))
 }
 
 pub(super) async fn submission_context(
@@ -185,7 +185,7 @@ impl ControlStore {
         let token = token.ok_or_else(|| Status::unauthenticated("invalid enrollment token"))?;
         let id = Uuid::new_v4();
         let certificate = issue(id).await?;
-        sql::execute(&mut tx, "INSERT INTO ai_workers(id,name,certificate_hash,certificate_expires_at) VALUES($1,$2,$3,now()+interval '29 days')", params![id, name, pki::certificate_hash(&certificate).map_err(internal)?]).await.map_err(internal)?;
+        sql::execute(&mut tx, "INSERT INTO ai_workers(id,name,certificate_hash,certificate_expires_at,tenant_id) SELECT $1,$2,$3,now()+interval '29 days',tenant_id FROM ai_enrollment_tokens WHERE id=$4", params![id, name, pki::certificate_hash(&certificate).map_err(internal)?,token]).await.map_err(internal)?;
         sql::execute(
             &mut tx,
             "UPDATE ai_enrollment_tokens SET used_at=now() WHERE id=$1",
@@ -216,8 +216,7 @@ impl ControlStore {
                         AND a.status IN ('leased','running')
                         AND a.lease_expires_at>clock_timestamp()) AS active_tasks
                 FROM builds b JOIN projects p ON p.id=b.project_id
-                JOIN nodes n ON n.pool_id=ANY(p.pool_ids)
-                    AND b.planning_context->'pool_ids' ? n.pool_id::text
+                JOIN nodes n ON build_node_allowed(b.id,n.id)
                 WHERE b.id=$1 AND NOT n.revoked
             ), groups AS (
                 SELECT pool_id,os,arch,labels,capabilities,signing_profiles,tools,
@@ -282,7 +281,7 @@ impl ControlStore {
         let mut tx = tx_db.transaction().await.map_err(internal)?;
         let draining: bool = sql::scalar(
             &mut tx,
-            "UPDATE ai_workers SET last_seen=now() WHERE id=$1 RETURNING draining",
+            "UPDATE ai_workers SET last_seen=now() WHERE id=$1 AND NOT revoked AND certificate_expires_at>clock_timestamp() RETURNING draining",
             params![worker],
         )
         .await
@@ -298,7 +297,7 @@ impl ControlStore {
             tx.commit().await.map_err(internal)?;
             return Ok(None);
         }
-        let Some(row)=sql::optional_record(&mut tx, "SELECT r.id,r.build_id,r.purpose,r.model_config,r.calls,r.usage FROM planning_runs r JOIN builds b ON b.id=r.build_id WHERE r.state='queued' AND r.authority='poll' AND NOT b.cancel_requested AND (b.status IN ('planning','replanning') OR (r.purpose='placement' AND b.status IN ('queued','running'))) ORDER BY r.created_at FOR UPDATE OF r SKIP LOCKED LIMIT 1", params![], &[("id", Type::Uuid),("build_id", Type::Uuid),("purpose", Type::String),("model_config", Type::String),("calls", Type::I32),("usage", Type::String)]).await.map_err(internal)? else { tx.commit().await.map_err(internal)?; return Ok(None); };
+        let Some(row)=sql::optional_record(&mut tx, "SELECT r.id,r.build_id,r.purpose,r.model_config,r.calls,r.usage FROM planning_runs r JOIN builds b ON b.id=r.build_id WHERE r.tenant_id=(SELECT tenant_id FROM ai_workers WHERE id=$1) AND r.state='queued' AND r.authority='poll' AND NOT b.cancel_requested AND (b.status IN ('planning','replanning') OR (r.purpose='placement' AND b.status IN ('queued','running'))) ORDER BY r.created_at FOR UPDATE OF r SKIP LOCKED LIMIT 1", params![worker], &[("id", Type::Uuid),("build_id", Type::Uuid),("purpose", Type::String),("model_config", Type::String),("calls", Type::I32),("usage", Type::String)]).await.map_err(internal)? else { tx.commit().await.map_err(internal)?; return Ok(None); };
         let id: Uuid = row.decode("id").map_err(internal)?;
         let build: Uuid = row.decode("build_id").map_err(internal)?;
         let config: Value = row.decode("model_config").map_err(internal)?;
@@ -564,7 +563,7 @@ impl ControlStore {
             )
             .await?;
             // Heartbeat may have renewed the lease while we waited for the build lock.
-            let Some(run)=sql::optional_record(&mut tx, "SELECT r.*,b.cancel_requested FROM planning_runs r JOIN builds b ON b.id=r.build_id LEFT JOIN ai_workers w ON w.id=r.worker_id WHERE r.id=$1 AND r.state='leased' AND (r.lease_expires_at<=clock_timestamp() OR r.deadline_at<=clock_timestamp() OR w.revoked OR w.certificate_expires_at<=clock_timestamp() OR b.cancel_requested) FOR UPDATE OF r", params![row.decode::<Uuid>("id")?], &[("id", Type::Uuid),("build_id", Type::Uuid),("worker_id", Type::Uuid),("purpose", Type::String),("state", Type::String),("failed_targets", Type::List(Box::new(Type::String))),("model_config", Type::String),("lease_hash", Type::String),("lease_expires_at", Type::Timestamp),("deadline_at", Type::Timestamp),("calls", Type::I32),("usage", Type::String),("error", Type::String),("created_at", Type::Timestamp),("finished_at", Type::Timestamp),("authority", Type::String),("cancel_requested", Type::Bool)]).await? else {continue;};
+            let Some(run)=sql::optional_record(&mut tx, "SELECT r.id,r.build_id,r.worker_id,r.purpose,r.state,r.failed_targets,r.model_config,r.lease_hash,r.lease_expires_at,r.deadline_at,r.calls,r.usage,r.error,r.created_at,r.finished_at,r.authority,b.cancel_requested FROM planning_runs r JOIN builds b ON b.id=r.build_id LEFT JOIN ai_workers w ON w.id=r.worker_id WHERE r.id=$1 AND r.state='leased' AND (r.lease_expires_at<=clock_timestamp() OR r.deadline_at<=clock_timestamp() OR w.revoked OR w.certificate_expires_at<=clock_timestamp() OR b.cancel_requested) FOR UPDATE OF r", params![row.decode::<Uuid>("id")?], &[("id", Type::Uuid),("build_id", Type::Uuid),("worker_id", Type::Uuid),("purpose", Type::String),("state", Type::String),("failed_targets", Type::List(Box::new(Type::String))),("model_config", Type::String),("lease_hash", Type::String),("lease_expires_at", Type::Timestamp),("deadline_at", Type::Timestamp),("calls", Type::I32),("usage", Type::String),("error", Type::String),("created_at", Type::Timestamp),("finished_at", Type::Timestamp),("authority", Type::String),("cancel_requested", Type::Bool)]).await? else {continue;};
             let expired = run
                 .decode::<Option<chrono::DateTime<chrono::Utc>>>("deadline_at")?
                 .is_none_or(|time| time <= chrono::Utc::now());

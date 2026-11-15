@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fixtureAPI, nodes } from "./fixtures";
+import {fixtureAPI, nodes, tenantURL } from "./fixtures";
 
 test("fleet pagination and search request bounded server pages", async ({
   page,
@@ -26,7 +26,7 @@ test("fleet pagination and search request bounded server pages", async ({
         }));
     await route.fulfill({ json: data });
   });
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   const previous = page.getByRole("button", { name: "Previous", exact: true });
   const next = page.getByRole("button", { name: "Next", exact: true });
   await expect(page.getByText("Device 0", { exact: true })).toBeVisible();
@@ -73,7 +73,7 @@ test("node metadata loads in its detail tab and preserves structured values", as
       },
     });
   });
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   await expect(page.getByText("Mac Studio", { exact: true })).toBeVisible();
   expect(queries).toBe(0);
   await page

@@ -71,16 +71,28 @@ export function ProjectForm({
   pools,
   credentials,
   project,
+  nodes = [],
+  canManageResources = true,
   done,
 }: {
   pools: Pool[];
   credentials: Credential[];
   project?: Project;
+  nodes?: Node[];
+  canManageResources?: boolean;
   done: () => void;
 }) {
   const { t } = useUI();
   const models = useRemote<Pick<ModelProfile,"id"|"name"|"enabled">[]>("/model-options");
   const [model, setModel] = useState(project?.model_profile_id || "");
+  const [accessMode, setAccessMode] = useState<"pools"|"nodes">(project?.node_access?.mode || "pools");
+  const [grants, setGrants] = useState<{pools:string[];nodes:string[]}>(() => ({
+    pools: project?.pool_ids || (pools.find(pool => pool.is_default) ? [pools.find(pool => pool.is_default)!.id] : []),
+    nodes: project?.node_ids || (project?.node_access?.mode === "nodes" ? project.node_access.ids : []),
+  }));
+  const [deviceQuery,setDeviceQuery]=useState("");
+  const [deviceOffset,setDeviceOffset]=useState(0);
+  const devices=useRemote<Node[]>(canManageResources && accessMode === "nodes" ? `/nodes?limit=100&offset=${deviceOffset}&q=${encodeURIComponent(deviceQuery)}` : null);
   const [bindings, setBindings] = useState(project?.source_credentials || []);
   return (
     <SubmitForm
@@ -91,12 +103,12 @@ export function ProjectForm({
           {
             name: string(form, "name"),
             repository_url: string(form, "repository_url"),
-            credential_id: string(form, "credential_id") || null,
-            pool_ids: form.getAll("pools"),
-            signing_profiles: csv(string(form, "signing_profiles")),
+            credential_id: canManageResources ? string(form, "credential_id") || null : project?.credential_id,
+            ...(canManageResources ? {node_access: {mode:accessMode, ids:grants[accessMode]}} : {}),
+            signing_profiles: canManageResources ? csv(string(form, "signing_profiles")) : project?.signing_profiles,
             model_profile_id: model || null,
             build_context: string(form, "build_context"),
-            source_credentials: bindings,
+            source_credentials: canManageResources ? bindings : project?.source_credentials,
           },
           project ? "PATCH" : "POST",
         );
@@ -123,7 +135,7 @@ export function ProjectForm({
           placeholder="https://git.example.com/team/app.git"
         />
       </Field>
-      <Field label={t("projects.credential")}>
+      <fieldset disabled={!canManageResources} className="form-stack"><Field label={t("projects.credential")}>
         <select
           name="credential_id"
           className="input"
@@ -137,28 +149,14 @@ export function ProjectForm({
           ))}
         </select>
       </Field>
-      <fieldset>
-        <legend className="mb-3 text-sm font-medium">
-          {t("projects.pools")}
-        </legend>
-        <div className="flex flex-wrap gap-4">
-          {pools.map((pool) => (
-            <label key={pool.id} className="flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                name="pools"
-                value={pool.id}
-                defaultChecked={
-                  project
-                    ? project.pool_ids.includes(pool.id)
-                    : pool.name === "default"
-                }
-              />
-              {pool.name}
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <Field label={t("tenants.deviceMode")} hint={t("tenants.deviceDetail")}><select className="input" value={accessMode} onChange={event => setAccessMode(event.target.value as "pools"|"nodes")}><option value="pools">{t("projects.pools")}</option><option value="nodes">{t("navigation.nodes")}</option></select></Field>
+      {accessMode === "nodes" && <Field label={t("search.label")}><Input value={deviceQuery} onChange={event => {setDeviceQuery(event.target.value);setDeviceOffset(0);}} /></Field>}
+      <ErrorBox message={devices.error}/>
+      {devices.error && <Button type="button" variant="secondary" onClick={() => void devices.reload()}>{t("common.retry")}</Button>}
+      <div className="grid max-h-56 gap-3 overflow-y-auto rounded-lg border border-border p-4" key={accessMode}>
+        {(accessMode === "pools" ? pools : devices.data || nodes).map(resource => <label key={resource.id} className="flex min-w-0 items-center gap-3 text-sm"><input type="checkbox" name={accessMode} value={resource.id} checked={grants[accessMode].includes(resource.id)} onChange={event => setGrants(previous => ({...previous,[accessMode]:event.target.checked ? [...previous[accessMode],resource.id] : previous[accessMode].filter(id => id !== resource.id)}))}/><span className="break-words">{resource.name}</span></label>)}
+      </div>
+      {accessMode === "nodes" && <div className="flex flex-wrap items-center justify-between gap-3 text-xs"><span>{t("tenants.selectedDevices",{count:grants.nodes.length})}</span><div className="flex gap-2"><Button type="button" variant="secondary" disabled={!deviceOffset} onClick={() => setDeviceOffset(Math.max(0,deviceOffset-100))}>{t("common.previous")}</Button><Button type="button" variant="secondary" disabled={(devices.data?.length || 0)<100} onClick={() => setDeviceOffset(deviceOffset+100)}>{t("common.next")}</Button></div></div>}
       <Field label={t("projects.signing")} hint={t("projects.signingHint")}>
         <Input
           name="signing_profiles"
@@ -166,6 +164,8 @@ export function ProjectForm({
           placeholder="apple-team, windows-release"
         />
       </Field>
+      </fieldset>
+      {!canManageResources && <p className="notice">{t("tenants.resourcesAdminOnly")}</p>}
       <Field label={t("ai.modelProfile")} hint={t("ai.projectModelHint")}>
         <select className="input" value={model} onChange={(event) => setModel(event.target.value)}>
           <option value="">{t("ai.platformDefault")}</option>
@@ -175,7 +175,7 @@ export function ProjectForm({
       <Field label={t("ai.projectContext")} hint={t("ai.projectContextHint")}>
         <Textarea name="build_context" defaultValue={project?.build_context} maxLength={16000} />
       </Field>
-      <fieldset className="space-y-3">
+      <fieldset disabled={!canManageResources} className="space-y-3">
         <legend className="text-sm font-medium">{t("ai.submoduleCredentials")}</legend>
         <p className="text-xs leading-5 text-muted-foreground">{t("ai.submoduleHint")}</p>
         {bindings.map((binding, index) => <div className="grid gap-2" key={index}>

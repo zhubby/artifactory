@@ -27,10 +27,11 @@ GIT_PORT = int(os.environ.get('ARTIFACTORY_ACCEPTANCE_GIT_PORT', '19443'))
 GIT_ORIGIN = f'https://localhost:{GIT_PORT}'
 PKI = Path(os.environ.get('ARTIFACTORY_PKI_DIR', str(ROOT / '.local/pki')))
 FIXTURE_DATABASE_URL = None
+TENANT_ID = os.environ.get('ARTIFACTORY_ACCEPTANCE_TENANT', '00000000-0000-0000-0000-000000000001')
 RUN_ID = uuid.uuid4().hex[:12]
 DIRECTORY = ROOT / '.local' / 'acceptance' / RUN_ID
 DIRECTORY.mkdir(parents=True, mode=0o700)
-EVIDENCE = {'run_id': RUN_ID, 'host': platform.platform(), 'checks': []}
+EVIDENCE = {'run_id': RUN_ID, 'tenant_id': TENANT_ID, 'host': platform.platform(), 'checks': []}
 
 
 def check(name, condition):
@@ -60,6 +61,7 @@ def wait_for(function, timeout=90):
 
 COOKIE_JAR = http.cookiejar.CookieJar()
 HTTP = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(COOKIE_JAR))
+HTTP.addheaders.append(('X-Artifactory-Tenant', TENANT_ID))
 
 
 def request(path, body=None, method=None, authenticated=True, token=None):

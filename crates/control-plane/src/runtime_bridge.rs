@@ -209,6 +209,7 @@ async fn make_intent(s: &AppState, run: Uuid) -> Result<RunIntent> {
     model.as_object_mut().unwrap().remove("key_ciphertext");
     let context = input.context;
     Ok(RunIntent {
+        tenant_id: input.tenant_id,
         run_id: run,
         build_id: build,
         project_id: input.project_id,

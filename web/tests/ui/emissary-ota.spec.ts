@@ -1,12 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { fixtureAPI, nodes } from "./fixtures";
+import {fixtureAPI, nodes, tenantURL } from "./fixtures";
 
 for (const role of ["admin", "viewer"] as const) {
   test(`${role}: OTA version import and node controls respect role`, async ({
     page,
   }) => {
     const events = await fixtureAPI(page, role);
-    await page.goto("/nodes");
+    await page.goto(tenantURL("/nodes"));
     await page
       .getByRole("button", { name: "查看 Mac Studio 的详情", exact: true })
       .click();
@@ -27,7 +27,7 @@ for (const role of ["admin", "viewer"] as const) {
       );
       await page.keyboard.press("Escape");
     }
-    await page.goto("/settings");
+    await page.goto(tenantURL("/settings"));
     await page.getByRole("tab", { name: "Emissary 自动升级" }).click();
     await expect(page.getByTestId("emissary-settings")).toContainText(
       "节点池升级策略",
@@ -89,7 +89,7 @@ test("a retried version stays visible while its configured target differs", asyn
       ],
     }),
   );
-  await page.goto("/nodes");
+  await page.goto(tenantURL("/nodes"));
   await page
     .getByRole("button", { name: "查看 Mac Studio 的详情", exact: true })
     .click();
