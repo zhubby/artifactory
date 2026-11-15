@@ -4,6 +4,11 @@ use anyhow::{Context, Result};
 use artifactory_database::{PoolSettings, connect as database, with_options};
 use artifactory_runtime_protocol::service;
 use std::{env, time::Duration};
+
+// Share Control's version contract without granting this connection migration rights.
+static BUSINESS_MIGRATIONS: toasty::migration::MigrationSet =
+    toasty::embed_migrations!("../control-plane/migrations");
+
 pub async fn connect() -> Result<Service> {
     let write = database(
         &service::required("DATABASE_URL")?,
@@ -63,49 +68,9 @@ async fn business_authorization(url: &str) -> Result<BusinessAuthorizationReposi
     )
     .await?;
     artifactory_database::require_timescale(&business).await?;
-    if artifactory_database::validate_versions(
-        &business,
-        &[
-            (2026111301, "0000_baseline.sql"),
-            (2026111401, "0001_control_replication.sql"),
-            (2026111402, "0002_node_placements.sql"),
-            (2026111501, "0003_multitenancy.sql"),
-        ],
-    )
+    artifactory_database::validate(&business, &BUSINESS_MIGRATIONS)
     .await
-    .is_ok()
-    {
-        return Ok(BusinessAuthorizationRepository::new(business));
-    }
-    if artifactory_database::validate_versions(
-        &business,
-        &[
-            (2026111301, "0000_baseline.sql"),
-            (2026111401, "0001_control_replication.sql"),
-            (2026111402, "0002_node_placements.sql"),
-        ],
-    )
-    .await
-    .is_ok()
-    {
-        return Ok(BusinessAuthorizationRepository::new(business));
-    }
-    // Authorization columns are unchanged by HA. Accept both known histories,
-    // including the baseline during an ordered Control/Telemetry upgrade.
-    if artifactory_database::validate_versions(
-        &business,
-        &[
-            (2026111301, "0000_baseline.sql"),
-            (2026111401, "0001_control_replication.sql"),
-        ],
-    )
-    .await
-    .is_err()
-    {
-        artifactory_database::validate_versions(&business, &[(2026111301, "0000_baseline.sql")])
-            .await
-            .context("validate business database version: the authorization role needs SELECT on __toasty_migrations (see docs/telemetry.md)")?;
-    }
+    .context("validate current business database version and SELECT on __toasty_migrations (see docs/telemetry.md)")?;
     Ok(BusinessAuthorizationRepository::new(business))
 }
 

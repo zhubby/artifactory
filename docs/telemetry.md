@@ -58,7 +58,7 @@ AI 查询和分配另以 `startup_resources` 保存每个节点／启动的最�
 
 Control 对节点查询要求 viewer 会话，对 attempt 查询要求所属项目的 read 权限。内部查询使用独立 bearer token 和 TLS，Emissary 无该 token。生产授权连接使用独立登录角色，所需权限为业务数据库的 `CONNECT`、业务 schema 的 `USAGE`，以及 `nodes`、`attempts`、`__toasty_migrations` 三张表的 `SELECT`。其中迁移表用于启动时校验 Business 版本；缺少权限会使启动失败。服务连接本身也设置只读模式。查询池可通过 `ARTIFACTORY_TELEMETRY_READ_DATABASE_URL` 指向专门的只读连接。
 
-先由管理员创建授权登录角色并配置凭据，在 Control 初始化 Business baseline 后，以该业务库的所有者执行最小授权脚本：
+先由管理员创建授权登录角色并配置凭据，在 Control 应用当前全部 Business 迁移后，以该业务库的所有者执行最小授权脚本。Telemetry 直接使用 Control 的迁移清单校验业务库，缺少迁移或未知版本都会阻止启动；不提供旧版本回退：
 
 ```sh
 psql "$ARTIFACTORY_BUSINESS_ADMIN_DATABASE_URL" -X -v ON_ERROR_STOP=1 \

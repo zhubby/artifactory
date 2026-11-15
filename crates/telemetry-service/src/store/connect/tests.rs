@@ -4,13 +4,19 @@ use artifactory_database::{PoolSettings, connect, migrate, params, sql, with_dat
 use toasty::migration::{MigrationFile, MigrationSet};
 use uuid::Uuid;
 
-static BUSINESS: MigrationSet = MigrationSet::new(&[MigrationFile::new(
-    2026111301,
-    "0000_baseline.sql",
-    "CREATE TABLE nodes(id uuid PRIMARY KEY,certificate_hash text,revoked boolean NOT NULL DEFAULT false,certificate_expires_at timestamptz NOT NULL DEFAULT now()+interval '1 day');
+static BUSINESS: MigrationSet = MigrationSet::new(&[
+    MigrationFile::new(
+        2026111301,
+        "0000_baseline.sql",
+        "CREATE TABLE nodes(id uuid PRIMARY KEY,certificate_hash text,revoked boolean NOT NULL DEFAULT false,certificate_expires_at timestamptz NOT NULL DEFAULT now()+interval '1 day');
      CREATE TABLE attempts(id uuid PRIMARY KEY,node_id uuid NOT NULL);
      CREATE TABLE private_business_data(secret text);",
-)]);
+    ),
+    MigrationFile::new(2026111401, "0001_control_replication.sql", "SELECT 1;"),
+    MigrationFile::new(2026111402, "0002_node_placements.sql", "SELECT 1;"),
+    MigrationFile::new(2026111501, "0003_multitenancy.sql", "SELECT 1;"),
+    MigrationFile::new(2026111503, "0004_readable_routes.sql", "SELECT 1;"),
+]);
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL on an isolated TimescaleDB administrator database"]
@@ -135,19 +141,12 @@ async fn business_authorization_starts_with_only_documented_read_grants() -> Res
                 "the documented grants must not permit {statement}"
             );
         }
-        // Control's incremental HA migration preserves these read-only columns.
-        sql::execute(&mut owner, "INSERT INTO __toasty_migrations(id,name,applied_at) VALUES(2026111401,'0001_control_replication.sql',now())", params![]).await?;
-        let upgraded = business_authorization(identity.as_str()).await?;
-        ensure!(upgraded.identify("test-certificate".into()).await? == node,
-            "the restricted role must start against the known HA history");
-        upgraded.authorize_attempts(node, &[attempt]).await?;
-        ensure!(sql::execute(&mut upgraded.pool.clone(), "UPDATE nodes SET revoked=true", params![]).await.is_err(),
-            "HA startup must preserve read-only authorization");
-        sql::execute(&mut owner, "INSERT INTO __toasty_migrations(id,name,applied_at) VALUES(2026111402,'0002_node_placements.sql',now())", params![]).await?;
-        let metadata = business_authorization(identity.as_str()).await?;
-        ensure!(metadata.identify("test-certificate".into()).await? == node,
-            "the restricted role must accept the appended metadata history");
-        metadata.authorize_attempts(node, &[attempt]).await?;
+        sql::execute(&mut owner, "DELETE FROM __toasty_migrations WHERE id=2026111503", params![]).await?;
+        ensure!(business_authorization(identity.as_str()).await.is_err(),
+            "startup requires the current coordinated business schema");
+        sql::execute(&mut owner, "INSERT INTO __toasty_migrations(id,name,applied_at) VALUES(2026111503,'0004_readable_routes.sql',now())", params![]).await?;
+        let current = business_authorization(identity.as_str()).await?;
+        current.authorize_attempts(node, &[attempt]).await?;
         sql::execute(&mut owner, "UPDATE __toasty_migrations SET id=0 WHERE id=2026111301", params![]).await?;
         ensure!(
             business_authorization(identity.as_str()).await.is_err(),
