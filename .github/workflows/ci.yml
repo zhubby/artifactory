@@ -59,6 +59,8 @@ jobs:
       - name: Rust unit, Runtime/Source, business and Timescale telemetry regressions
         run: |
           set -a; source .local/env; set +a
+          ARTIFACTORY_SERVICE_TOKEN="$(openssl rand -hex 32)"
+          export ARTIFACTORY_SERVICE_TOKEN
           cargo test --locked --workspace --all-targets -- --include-ignored --skip live_emissary_protocol --skip native_service_lifecycle --skip device_fleet_load
       - name: Generated CRDs match both release manifests
         run: |
