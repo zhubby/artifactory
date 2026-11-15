@@ -6,8 +6,10 @@ Approved 2026-11-15. Deliver the tenant hall, tenant project home and project wo
 - [x] Append lifecycle schema, durable leased operations, admission fences, archive/restore, draining and resumable scoped deletion across Control, Source, Runtime, Telemetry and object storage. Preserve identifier tombstones and unrelated resources.
 - [x] Build independent tenant hall, contextual tenant/project workspaces and management pages; move creation, builds, artifacts and releases under projects. Preserve request isolation, accessibility and unsaved edits.
 - [x] Provide a persistent bottom-right account menu and profile/security/preferences overlay. Keep existing themes, translations, reduced motion and preference persistence.
-- [ ] Validate real PostgreSQL/object-store lifecycle behavior, account races, three-replica takeover, browser navigation and visual matrices. Record actual evidence and CI limitations.
-- [ ] Merge and push main; back up and migrate in a maintenance window, deploy immutable images only in namespace artifactory, retain three Control replicas, and verify live acceptance using temporary resources.
+- [x] Validate real PostgreSQL/object-store lifecycle behavior, account races, three-replica takeover, browser navigation and visual matrices. Record actual evidence and CI limitations.
+- [x] Merge and push main; back up and migrate in a maintenance window, deploy immutable images only in namespace artifactory, retain three Control replicas, and verify live acceptance using temporary resources.
+
+Delivery receipt: [Kubernetes deployment and acceptance](../../releases/2026-11-15-workspace-hierarchy-kubernetes.md). Runtime source is `dc1594baeddf33c45d0233d83cb81b84a380a003`, Helm revision 6. The receipt records CI infrastructure failures, the separate Windows telemetry freshness failure and the exact limits of temporary-workspace acceptance; completion does not mean every external check passed.
 
 Lifecycle policy: owner manages tenant lifecycle; project admin manages project lifecycle. Archive/delete close admission and wait for accepted work, without automatically cancelling it. Archived history remains readable. Delete requires the exact slug and current password; waiting may be cancelled, purging may only be retried. Deletion inventories durable IDs/object keys before removing rows; services own their purge and shared objects survive remaining references. Restore of a tenant preserves individually archived projects. Backups retain their existing policy.
 
