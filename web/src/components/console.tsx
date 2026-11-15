@@ -1,7 +1,7 @@
 "use client";
 
-import { tenantFromPath } from "@/lib/tenant";
-import { TenantChooser, InvitationJoin } from "@/components/tenant-chooser";
+import { buildPath, projectPath, tenantFromPath } from "@/lib/routes";
+import { TenantChooser } from "@/components/tenant-chooser";
 import { ProjectMembers } from "@/components/tenant-members";
 import type { Account, TenantContext } from "@/lib/types";
 import { NodeCard } from "@/components/node-card";
@@ -86,11 +86,8 @@ const platform = (os: string) =>
   ({ darwin: "macOS", linux: "Linux", windows: "Windows" })[os] || os;
 
 export function Console() {
-  const path = usePathname();
-  const tenant = tenantFromPath(path);
-  if (path.startsWith("/join/")) return <InvitationJoin token={path.split("/")[2]} />;
-  if (!tenant) return <TenantChooser />;
-  return <TenantConsole key={tenant} />;
+  const tenant = tenantFromPath(usePathname());
+  return tenant ? <TenantConsole key={tenant} /> : <TenantChooser />;
 }
 
 function TenantConsole() {
@@ -104,13 +101,15 @@ function TenantConsole() {
     { path: "/releases", label: t("navigation.releases"), icon: Package },
   ];
   const fullPath = usePathname();
-  const pathname = fullPath.replace(/^\/t\/[^/]+/, "") || "/";
+  const pathname = fullPath.replace(/^\/tenants\/[^/]+/, "") || "/";
   const router = useRouter();
-  const pieces = pathname.split("/").filter(Boolean);
+  const pieces = pathname.split("/").filter(Boolean).map(decodeURIComponent);
   const userRemote = useRemote<Account>("/auth/me", 60000);
   const context = useRemote<TenantContext>(userRemote.data ? "/tenant" : null, 10000);
   const user: User | undefined = userRemote.data && context.data ? { ...userRemote.data, tenant_role: context.data.tenant.role, project_roles: context.data.project_roles, role: ["owner", "admin"].includes(context.data.tenant.role) ? "admin" : Object.values(context.data.project_roles).some(role => role !== "viewer") ? "operator" : "viewer" } : undefined;
   const projects = useRemote<Project[]>(user ? "/projects" : null);
+  const projectDetail = useRemote<Project>(user && pieces[0] === "projects" && pieces[1]
+    ? `/projects/by-slug/${encodeURIComponent(pieces[1])}` : null);
   const builds = useRemote<Build[]>(user ? "/builds" : null, 5000);
   const [search, setSearch] = useState("");
   const [nodeOffset, setNodeOffset] = useState(0);
@@ -180,6 +179,7 @@ function TenantConsole() {
   async function refresh() {
     await Promise.all([
       projects.reload(),
+      projectDetail.reload(),
       builds.reload(),
       nodes.reload(),
       overview.reload(),
@@ -198,7 +198,7 @@ function TenantConsole() {
         <Loading />
       </main>
     );
-  const project = projects.data?.find((project) => project.id === pieces[1]);
+  const project = projectDetail.data;
   const current =
     pieces[0] === "settings"
       ? t("navigation.security")
@@ -525,6 +525,8 @@ function TenantConsole() {
                 </div>
               </div>
             </>
+          ) : pieces[0] === "projects" && pieces[2] === "builds" ? (
+            <BuildDetail key={`${pieces[1]}:${pieces[3]}`} projectSlug={pieces[1]} number={Number(pieces[3])} user={user} />
           ) : pieces[0] === "projects" ? (
             <>
               <PageTitle
@@ -547,7 +549,7 @@ function TenantConsole() {
                   </Button>
                 )}
                 {project && project.effective_role !== "viewer" && (
-                  <Button onClick={() => router.push(`/builds/new?project=${project.id}`)}>
+                  <Button onClick={() => router.push(`/builds/new?project=${project.slug}`)}>
                     <Play />
                     {t("builds.start")}
                   </Button>
@@ -580,11 +582,8 @@ function TenantConsole() {
                       )}
                     </section>
                   </>
-                ) : projects.data ? (
-                  <Empty
-                    title={t("projects.notFound")}
-                    detail={t("projects.notFoundDetail")}
-                  />
+                ) : projectDetail.error ? (
+                  <ErrorBox message={projectDetail.error} />
                 ) : (
                   <Loading />
                 )
@@ -633,7 +632,7 @@ function TenantConsole() {
                             <tr key={project.id}>
                               <td>
                                 <Link
-                                  href={`/projects/${project.id}`}
+                                  href={projectPath(project.slug)}
                                   className="flex items-center gap-3 font-medium hover:text-primary"
                                 >
                                   <FolderGit2
@@ -663,7 +662,7 @@ function TenantConsole() {
                               </td>
                               <td>
                                 <Link
-                                  href={`/projects/${project.id}`}
+                                  href={projectPath(project.slug)}
                                   aria-label={t("projects.view", {
                                     name: project.name,
                                   })}
@@ -682,8 +681,6 @@ function TenantConsole() {
           ) : pieces[0] === "builds" ? (
             pieces[1] === "new" ? (
               projects.data ? <Suspense fallback={<Loading />}><BuildWizard projects={projects.data.filter(project => project.effective_role !== "viewer")} user={user} /></Suspense> : <Loading />
-            ) : pieces[1] ? (
-              <BuildDetail id={pieces[1]} user={user} />
             ) : (
               <>
                 <PageTitle
@@ -902,7 +899,7 @@ function TenantConsole() {
               }
             />
           )}
-          {pieces[0] === "projects" && project?.effective_role === "admin" && <ProjectMembers project={project} user={user} />}
+          {pieces[0] === "projects" && pieces.length === 2 && project?.effective_role === "admin" && <ProjectMembers project={project} user={user} />}
         </main>
         <footer className="flex flex-wrap justify-between gap-2 border-t border-border px-8 py-4 text-[10px] text-muted-foreground">
           <span>{t("footer.description")}</span>
@@ -1011,7 +1008,7 @@ function ReleaseDetail({ id }: { id: string }) {
         })}
       >
         <Button variant="secondary" asChild>
-          <Link href={`/builds/${release.build_id}`}>
+          <Link href={buildPath(release.project_slug, release.build_number)}>
             <Activity />
             {t("releases.sourceBuild")}
           </Link>

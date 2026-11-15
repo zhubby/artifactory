@@ -104,6 +104,7 @@ response! { Project {
     node_access: Value,
     effective_role: Option<String>,
     id: Uuid,
+    slug: String,
     name: String,
     repository_url: String,
     credential_id: Option<Uuid>,
@@ -119,6 +120,7 @@ response! { Project {
 
 response! { LastBuild {
     id: Uuid,
+    number: i64,
     status: String,
     created_at: String,
 }}
@@ -128,6 +130,7 @@ response! { ProjectSummary {
     node_access: Value,
     effective_role: Option<String>,
     id: Uuid,
+    slug: String,
     name: String,
     repository_url: String,
     credential_id: Option<Uuid>,
@@ -230,6 +233,8 @@ response! { JobSummary {
 
 response! { BuildSummary {
     id: Uuid,
+    number: i64,
+    project_slug: String,
     project_id: Uuid,
     requested_ref: String,
     commit_sha: Option<String>,
@@ -260,6 +265,8 @@ response! { BuildSummary {
 
 response! { BuildEnvelope {
     id: Uuid,
+    number: i64,
+    project_slug: String,
     project_id: Uuid,
     requested_ref: String,
     commit_sha: Option<String>,
@@ -388,6 +395,8 @@ response! { Release {
     id: Uuid,
     project_id: Uuid,
     build_id: Uuid,
+    build_number: i64,
+    project_slug: String,
     version: String,
     idempotency_key: String,
     commit_sha: String,

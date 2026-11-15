@@ -154,7 +154,21 @@ impl ControlStore {
     }
 
     pub async fn tenants(&self, user: Uuid) -> Result<Vec<Value>> {
-        Ok(sql::scalars(&mut self.pool.clone(),"SELECT jsonb_build_object('id',t.id,'name',t.name,'role',m.role,'owner_id',t.owner_id,'created_at',t.created_at) FROM tenants t JOIN tenant_members m ON m.tenant_id=t.id WHERE m.user_id=$1 ORDER BY t.created_at,t.id",params![user]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(),"SELECT jsonb_build_object('id',t.id,'slug',t.slug,'name',t.name,'role',m.role,'owner_id',t.owner_id,'created_at',t.created_at) FROM tenants t JOIN tenant_members m ON m.tenant_id=t.id WHERE m.user_id=$1 ORDER BY t.created_at,t.id",params![user]).await?)
+    }
+
+    /// Resolve only a current member's tenant. Unknown and inaccessible slugs are indistinguishable.
+    pub async fn tenant_by_slug(&self, user: Uuid, slug: &str) -> Result<Value> {
+        sql::optional_scalar(&mut self.pool.clone(), "SELECT jsonb_build_object('id',t.id,'slug',t.slug,'name',t.name,'role',m.role,'owner_id',t.owner_id,'created_at',t.created_at) FROM tenants t JOIN tenant_members m ON m.tenant_id=t.id WHERE m.user_id=$1 AND t.slug=$2", params![user,slug]).await?.ok_or(ApiError::NotFound)
+    }
+
+    pub async fn tenant_slug(&self, id: Uuid) -> Result<String> {
+        Ok(sql::scalar(
+            &mut self.pool.clone(),
+            "SELECT slug FROM tenants WHERE id=$1",
+            params![id],
+        )
+        .await?)
     }
 
     pub async fn create_tenant(&self, user: Uuid, name: &str, key: Uuid) -> Result<Uuid> {

@@ -41,8 +41,18 @@ pub struct ProjectSource {
 }
 
 impl ControlStore {
+    pub async fn project_by_slug(&self, slug: &str) -> Result<Uuid> {
+        sql::optional_scalar(
+            &mut self.pool.clone(),
+            "SELECT id FROM projects WHERE tenant_id=$1 AND slug=$2",
+            params![self.tenant()?, slug],
+        )
+        .await?
+        .ok_or(ApiError::NotFound)
+    }
+
     pub async fn projects(&self, visible: Option<Vec<Uuid>>) -> Result<Vec<dto::ProjectSummary>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(p) || jsonb_build_object('node_access',jsonb_build_object('mode',p.node_access_mode,'ids',CASE WHEN p.node_access_mode='pools' THEN p.pool_ids ELSE p.node_ids END),'effective_role',($3::jsonb->>p.id::text),'build_count',(SELECT count(*) FROM builds b WHERE b.project_id=p.id),'last_build',(SELECT jsonb_build_object('id',b.id,'status',b.status,'created_at',b.created_at) FROM builds b WHERE b.project_id=p.id ORDER BY created_at DESC LIMIT 1)) FROM projects p WHERE ($1::uuid[] IS NULL OR p.id=ANY($1)) AND p.tenant_id=$2 ORDER BY p.created_at DESC", params![visible,self.tenant()?,self.project_roles_json()]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(p) || jsonb_build_object('node_access',jsonb_build_object('mode',p.node_access_mode,'ids',CASE WHEN p.node_access_mode='pools' THEN p.pool_ids ELSE p.node_ids END),'effective_role',($3::jsonb->>p.id::text),'build_count',(SELECT count(*) FROM builds b WHERE b.project_id=p.id),'last_build',(SELECT jsonb_build_object('id',b.id,'number',b.number,'status',b.status,'created_at',b.created_at) FROM builds b WHERE b.project_id=p.id ORDER BY created_at DESC LIMIT 1)) FROM projects p WHERE ($1::uuid[] IS NULL OR p.id=ANY($1)) AND p.tenant_id=$2 ORDER BY p.created_at DESC", params![visible,self.tenant()?,self.project_roles_json()]).await?)
     }
 
     pub async fn project(&self, id: Uuid) -> Result<dto::Project> {

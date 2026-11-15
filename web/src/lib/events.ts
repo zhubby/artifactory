@@ -1,5 +1,5 @@
 "use client";
-import { currentTenant, tenantHeaders } from "@/lib/tenant";
+import { assertTenant, currentTenant, tenantHeaders } from "@/lib/tenant";
 
 /** Fetch-based SSE preserves the explicit tenant header and cancels on unmount. */
 export async function subscribeBuild(
@@ -13,16 +13,19 @@ export async function subscribeBuild(
   let retryMs = 1000;
   while (!signal.aborted && currentTenant() === tenant) {
     try {
+      const headers = await tenantHeaders(tenant, signal);
+      assertTenant(tenant, signal);
       const response = await fetch(`/api/v1/builds/${id}/events`, {
         signal,
         credentials: "same-origin",
         cache: "no-store",
         headers: {
-          ...tenantHeaders(),
+          ...headers,
           Accept: "text/event-stream",
           "Last-Event-ID": cursor,
         },
       });
+      assertTenant(tenant, signal);
       if (!response.ok || !response.body) {
         disconnected();
         if ([400, 401, 403, 404].includes(response.status)) return;
@@ -66,9 +69,9 @@ export async function subscribeBuild(
       }
       if (!signal.aborted && currentTenant() === tenant) disconnected();
     } catch {
-      if (!signal.aborted) disconnected();
+      if (!signal.aborted && currentTenant() === tenant) disconnected();
     }
-    if (signal.aborted) break;
+    if (signal.aborted || currentTenant() !== tenant) break;
     await new Promise<void>((resolve) => {
       const done = () => {
         clearTimeout(timer);

@@ -412,6 +412,13 @@ def main():
         wait_for(lambda: api('/builds/' + collision['id'])['publish_status'] == 'failed')
         check('same-name release conflicts without overwriting', api('/releases/' + release_id)['build_id'] == success_id)
         EVIDENCE.update({'project_id': project, 'node_id': node_id, 'build_id': success_id, 'partial_build_id': partial_id, 'failed_build_id': failed_id, 'collision_build_id': collision['id'], 'release_id': release_id, 'emissary_config': str(config_file), 'commit': commit, 'signing': 'macOS ad-hoc only' if signing else 'not tested', 'diagnostics': node['diagnostics']})
+        EVIDENCE.update({
+            'tenant_slug': api('/tenant')['tenant']['slug'],
+            'project_slug': api('/projects/' + project)['slug'],
+            'build_number': api('/builds/' + success_id)['number'],
+            'partial_build_number': api('/builds/' + partial_id)['number'],
+            'collision_build_number': collision['number'],
+        })
         (ROOT / '.local/acceptance/latest.json').write_text(json.dumps(EVIDENCE, indent=2))
         (DIRECTORY / 'evidence.json').write_text(json.dumps(EVIDENCE, indent=2))
         print('ACCEPTANCE READY', json.dumps({'checks': len(EVIDENCE['checks']), 'run_id': RUN_ID}), flush=True)

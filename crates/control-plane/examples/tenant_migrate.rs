@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     }
     if args.iter().any(|a| a == "--write-snapshots") {
         control.write_snapshot(Path::new(
-            "crates/control-plane/migrations/0003_snapshot.toml",
+            "crates/control-plane/migrations/0004_snapshot.toml",
         ))?;
         if let Some(runtime) = runtime {
             runtime.write_snapshot(Path::new(

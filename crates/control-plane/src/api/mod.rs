@@ -17,6 +17,12 @@ use axum::{
 pub fn router(state: AppState) -> Router {
     health_routes()
         .route("/api/v1/tenants", get(tenants::list).post(tenants::create))
+        .route("/api/v1/tenants/{slug}", get(tenants::resolve))
+        .route("/api/v1/projects/by-slug/{slug}", get(projects::resolve))
+        .route(
+            "/api/v1/projects/by-slug/{slug}/builds/{number}",
+            get(builds::resolve),
+        )
         .route("/api/v1/tenant", get(tenants::context))
         .route(
             "/api/v1/tenant/members",

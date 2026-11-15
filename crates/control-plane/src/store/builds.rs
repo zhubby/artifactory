@@ -45,6 +45,20 @@ fn empty_object() -> Value {
 }
 
 impl ControlStore {
+    pub async fn build_by_number(&self, project: Uuid, number: i64) -> Result<Uuid> {
+        sql::optional_scalar(
+            &mut self.pool.clone(),
+            "SELECT id FROM builds WHERE tenant_id=$1 AND project_id=$2 AND number=$3",
+            params![self.tenant()?, project, number],
+        )
+        .await?
+        .ok_or(ApiError::NotFound)
+    }
+
+    pub async fn build_route(&self, id: Uuid) -> Result<Value> {
+        Ok(sql::scalar(&mut self.pool.clone(), "SELECT jsonb_build_object('id',b.id,'number',b.number,'project_slug',p.slug) FROM builds b JOIN projects p ON p.id=b.project_id WHERE b.id=$1 AND b.tenant_id=$2", params![id,self.tenant()?]).await?)
+    }
+
     pub async fn create_build(
         &self,
         project: Uuid,
@@ -73,7 +87,7 @@ impl ControlStore {
         project: Option<Uuid>,
         visible: Option<Vec<Uuid>>,
     ) -> Result<Vec<dto::BuildSummary>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(b)-'config_yaml'-'config_snapshot'-'model_config_snapshot') || jsonb_build_object('project_name',p.name,'targets',(SELECT coalesce(jsonb_agg(jsonb_build_object('id',j.id,'target',j.target,'status',j.status)),'[]') FROM jobs j WHERE j.build_id=b.id)) FROM builds b JOIN projects p ON p.id=b.project_id WHERE ($1::uuid IS NULL OR b.project_id=$1) AND ($2::uuid[] IS NULL OR b.project_id=ANY($2)) ORDER BY b.created_at DESC LIMIT 100", params![project, visible]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(b)-'config_yaml'-'config_snapshot'-'model_config_snapshot') || jsonb_build_object('project_name',p.name,'project_slug',p.slug,'targets',(SELECT coalesce(jsonb_agg(jsonb_build_object('id',j.id,'target',j.target,'status',j.status)),'[]') FROM jobs j WHERE j.build_id=b.id)) FROM builds b JOIN projects p ON p.id=b.project_id WHERE ($1::uuid IS NULL OR b.project_id=$1) AND ($2::uuid[] IS NULL OR b.project_id=ANY($2)) ORDER BY b.created_at DESC LIMIT 100", params![project, visible]).await?)
     }
 
     pub async fn artifacts(
@@ -102,7 +116,7 @@ impl ControlStore {
     }
 
     pub async fn build_detail(&self, id: Uuid) -> Result<dto::BuildDetail> {
-        let build:dto::BuildEnvelope=sql::scalar(&mut self.pool.clone(), "SELECT (to_jsonb(b)-'model_config_snapshot') || jsonb_build_object('project_name',p.name) FROM builds b JOIN projects p ON p.id=b.project_id WHERE b.id=$1", params![id]).await?;
+        let build:dto::BuildEnvelope=sql::scalar(&mut self.pool.clone(), "SELECT (to_jsonb(b)-'model_config_snapshot') || jsonb_build_object('project_name',p.name,'project_slug',p.slug) FROM builds b JOIN projects p ON p.id=b.project_id WHERE b.id=$1", params![id]).await?;
         let jobs:Vec<dto::Job>=sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(j) || jsonb_build_object('placement',(SELECT to_jsonb(p)-'job_id' FROM job_placements p WHERE p.job_id=j.id),'attempts',(SELECT coalesce(jsonb_agg((to_jsonb(a)-'lease_token'-'command_id') || jsonb_build_object('node_name',n.name,'steps',(SELECT coalesce(jsonb_agg(to_jsonb(s) ORDER BY s.step_index),'[]') FROM step_runs s WHERE s.attempt_id=a.id)) ORDER BY a.created_at),'[]') FROM attempts a JOIN nodes n ON n.id=a.node_id WHERE a.job_id=j.id)) FROM jobs j WHERE j.build_id=$1 ORDER BY j.target", params![id]).await?;
         let artifacts:Vec<dto::BuildArtifact>=sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(ar)-'object_key') || jsonb_build_object('target',j.target,'attempt_status',a.status) FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id WHERE j.build_id=$1 ORDER BY ar.created_at", params![id]).await?;
         let publish_attempts = sql::scalars::<dto::PublishAttempt>(
@@ -229,7 +243,7 @@ impl ControlStore {
     }
 
     pub async fn release(&self, id: Uuid) -> Result<dto::Release> {
-        let release:dto::Release=sql::scalar(&mut self.pool.clone(), "SELECT to_jsonb(r) || jsonb_build_object('project_name',p.name) FROM releases r JOIN projects p ON p.id=r.project_id WHERE r.id=$1", params![id]).await?;
+        let release:dto::Release=sql::scalar(&mut self.pool.clone(), "SELECT to_jsonb(r) || jsonb_build_object('project_name',p.name,'project_slug',p.slug,'build_number',b.number) FROM releases r JOIN projects p ON p.id=r.project_id JOIN builds b ON b.id=r.build_id WHERE r.id=$1", params![id]).await?;
         Ok(release)
     }
 

@@ -310,7 +310,7 @@
     "resultDescription": "构建结果与发布结果独立记录 · {date}",
     "filteredLogs": "日志 · {step}",
     "publishError": "发布失败（构建结果保留）：{detail}",
-    "eyebrowId": "构建 / {id}",
+    "eyebrowId": "构建 #{id}",
     "pipeline": "构建 → 签名 → 校验",
     "publication": "发布",
     "placement": "节点选择",

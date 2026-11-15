@@ -47,10 +47,11 @@ interface Log {
   text: string;
 }
 
-export function BuildDetail({ id, user }: { id: string; user: User }) {
+export function BuildDetail({ projectSlug, number, user }: { projectSlug: string; number: number; user: User }) {
   const { t, date } = useUI();
-  const remote = useRemote<Build>(`/builds/${id}`);
+  const remote = useRemote<Build>(`/projects/by-slug/${encodeURIComponent(projectSlug)}/builds/${number}`);
   const build = remote.data;
+  const id = build?.id;
   const role = user.role === "admin"
     ? "admin"
     : user.project_roles?.[build?.project_id || ""] || "viewer";
@@ -68,6 +69,7 @@ export function BuildDetail({ id, user }: { id: string; user: User }) {
     setSelected(undefined);
     setFilter(undefined);
     setClipped(false);
+    if (!id) return;
     const controller = new AbortController();
     void subscribeBuild(id, controller.signal, (kind, data) => {
       if (kind === "snapshot") { remote.setData(JSON.parse(data)); setConnected(true); }
@@ -95,7 +97,7 @@ export function BuildDetail({ id, user }: { id: string; user: User }) {
       setError(asError(error));
     }
   }
-  if (!build)
+  if (!build || !id)
     return (
       <>
         <ErrorBox message={remote.error} />
@@ -123,7 +125,7 @@ export function BuildDetail({ id, user }: { id: string; user: User }) {
       </Link>
       {build.jobs?.some(job => job.blocked_reason) && <p className="notice" role="status">{build.jobs.filter(job => job.blocked_reason).map(job => `${job.target}: ${job.blocked_reason}`).join(" · ")}</p>}
       <PageTitle
-        eyebrow={t("builds.eyebrowId", { id: short(build.id) })}
+        eyebrow={t("builds.eyebrowId", { id: build.number })}
         title={build.project_name}
         description={t("builds.resultDescription", {
           date: date(build.created_at),

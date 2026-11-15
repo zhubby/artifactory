@@ -2,13 +2,14 @@ import { expect, request, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const evidence = JSON.parse(readFileSync(process.env.ARTIFACTORY_BROWSER_EVIDENCE || resolve(process.cwd(), "../.local/acceptance/latest.json"), "utf8")) as { tenant_id: string; build_id: string; project_id: string; release_id: string; partial_build_id?: string; failed_build_id?: string; collision_build_id?: string };
+const evidence = JSON.parse(readFileSync(process.env.ARTIFACTORY_BROWSER_EVIDENCE || resolve(process.cwd(), "../.local/acceptance/latest.json"), "utf8")) as { tenant_id: string; tenant_slug: string; project_slug: string; build_number: number; partial_build_number: number; collision_build_number: number; build_id: string; project_id: string; release_id: string; partial_build_id?: string; failed_build_id?: string; collision_build_id?: string };
 const username = process.env.ARTIFACTORY_BOOTSTRAP_USERNAME;
 const password = process.env.ARTIFACTORY_BOOTSTRAP_PASSWORD;
 if (!username || !password) throw new Error("Load .local/env and run scripts/acceptance.py --keep-alive first.");
-if (!evidence.tenant_id) throw new Error("Regenerate acceptance evidence with an explicit tenant context.");
+if (!evidence.tenant_id || !evidence.tenant_slug || !evidence.project_slug || !evidence.build_number) throw new Error("Regenerate acceptance evidence with readable tenant, project and build identifiers.");
 const tenantHeaders = { "X-Artifactory-Tenant": evidence.tenant_id, "x-artifactory-csrf": "1" };
-const tenantURL = (path: string) => `/t/${evidence.tenant_id}${path === "/" ? "" : path}`;
+const tenantURL = (path: string) => `/tenants/${evidence.tenant_slug}${path === "/" ? "" : path}`;
+const buildURL = (number: number) => tenantURL(`/projects/${evidence.project_slug}/builds/${number}`);
 
 async function chooseTenant(page: Page) {
   await expect(page).toHaveURL(/\/tenants$/);
@@ -83,7 +84,7 @@ test("self-registration requires explicit tenant and project grants before artif
   for (const path of ["users", "credentials"]) {
     expect((await page.request.get(`/api/v1/${path}`, { headers: tenantHeaders })).status()).toBe(403);
   }
-  await page.goto(tenantURL(`/builds/${evidence.build_id}`));
+  await page.goto(buildURL(evidence.build_number));
   const downloading = page.waitForEvent("download");
   await page.getByRole("link", { name: "下载 dist/app", exact: true }).click();
   expect(await (await downloading).failure()).toBeNull();
@@ -105,7 +106,7 @@ test("real console, native logs, artifact download and immutable release", async
     await expect(page.locator(".error-box[role=alert]")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
   }
-  await page.goto(tenantURL(`/builds/${evidence.build_id}`));
+  await page.goto(buildURL(evidence.build_number));
   await expect(page.getByRole("log", { name: "构建日志" })).toContainText("native compilation complete");
   await expect(page.getByRole("log")).toContainText("artifactory-native-ok");
   await page.screenshot({ path: testInfo.outputPath("native-build.png"), fullPage: true });
@@ -174,19 +175,19 @@ test("readonly identity cannot trigger builds or modify nodes", async ({ page })
 test("SSE reconnect and failed publication never imply overall success", async ({ page }, testInfo) => {
   await login(page);
   await page.route("**/api/v1/builds/*/events", route => route.abort("connectionfailed"));
-  await page.goto(tenantURL(`/builds/${evidence.build_id}`));
+  await page.goto(buildURL(evidence.build_number));
   await expect(page.getByText("等待连接 / 重连中", { exact: true })).toBeVisible();
   await page.unroute("**/api/v1/builds/*/events");
   await expect(page.getByRole("log")).toContainText("native compilation complete", { timeout: 25000 });
   if (evidence.partial_build_id) {
-    await page.goto(tenantURL(`/builds/${evidence.partial_build_id}`));
+    await page.goto(buildURL(evidence.partial_build_number));
     await expect(page.getByRole("heading", { name: "目标矩阵", exact: true })).toBeVisible();
     await expect(page.locator(".target-button .status-succeeded")).toHaveCount(1);
     await expect(page.locator(".target-button .status-failed")).toHaveCount(1);
     await page.screenshot({ path: testInfo.outputPath("partial-failure.png"), fullPage: true });
   }
   if (evidence.collision_build_id) {
-    await page.goto(tenantURL(`/builds/${evidence.collision_build_id}`));
+    await page.goto(buildURL(evidence.collision_build_number));
     await expect(page.locator(".error-box[role=alert]")).toContainText("发布失败（构建结果保留）");
   }
 });

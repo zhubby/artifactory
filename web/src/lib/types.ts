@@ -1,7 +1,7 @@
 export interface Account { id: string; username: string }
 export type TenantRole = "owner" | "admin" | "member";
 export type ProjectRole = "admin" | "operator" | "viewer";
-export interface Tenant { id: string; name: string; role: TenantRole; owner_id: string; created_at: string }
+export interface Tenant { id: string; slug: string; name: string; role: TenantRole; owner_id: string; created_at: string }
 export interface TenantContext { tenant: Tenant; project_roles: Record<string, ProjectRole> }
 export interface TenantMember { id: string; user_id: string; username: string; role: TenantRole; created_at: string }
 export interface ProjectMember { user_id: string; username: string; role: ProjectRole }
@@ -10,12 +10,12 @@ export interface NodeAccess { mode: "pools" | "nodes"; ids: string[] }
 export function projectRole(user: User, id: string): ProjectRole { return user.project_roles?.[id] || "viewer"; }
 export interface User { id: string; username: string; role: "admin" | "operator" | "viewer"; tenant_role?: TenantRole; project_roles?: Record<string, ProjectRole> }
 export interface AuthConfig { registration_enabled: boolean }
-export interface Project { node_ids?: string[]; tenant_id?: string; node_access?: NodeAccess; effective_role?: ProjectRole;  model_profile_id?: string | null; build_context?: string; source_credentials?: {repository_url: string; credential_id: string}[]; id: string; name: string; repository_url: string; credential_id: string | null; pool_ids: string[]; signing_profiles: string[]; build_count: number; last_build: { id: string; status: string; created_at: string } | null }
+export interface Project { node_ids?: string[]; tenant_id?: string; node_access?: NodeAccess; effective_role?: ProjectRole;  model_profile_id?: string | null; build_context?: string; source_credentials?: {repository_url: string; credential_id: string}[]; id: string; slug: string; name: string; repository_url: string; credential_id: string | null; pool_ids: string[]; signing_profiles: string[]; build_count: number; last_build: { id: string; number: number; status: string; created_at: string } | null }
 export interface StepRun { step_index: number; name: string; phase: string; status: string; exit_code: number | null; started_at: string; finished_at: string | null }
 export interface Attempt { id: string; node_id: string; node_name: string; status: string; lease_expires_at: string; error: string | null; started_at: string | null; finished_at: string | null; steps: StepRun[] }
 export interface Job { blocked_reason?: string | null; placement?: { reason: string | null; selected_node: string | null; selected_reason: string | null; placement: {candidates: {node_id: string; reason: string}[]} } | null; id: string; target: string; status: string; target_config: { os: string; arch: string; steps: { name: string; phase: string }[] }; attempts: Attempt[] }
 export interface Artifact { id: string; path: string; size: number; sha256: string; target: string; created_at: string; project_name?: string; build_id?: string; attempt_status?: string }
-export interface Build { goal?: string | null; source_snapshot_id?: string | null; current_plan_id?: string | null; revision_count?: number; clarification?: {question: string} | null; id: string; project_id: string; project_name: string; requested_ref: string; commit_sha: string | null; status: string; publish_status: string; publish_error: string | null; error: string | null; release_version: string | null; created_at: string; finished_at: string | null; jobs?: Job[]; targets?: { id: string; target: string; status: string }[]; artifacts?: Artifact[]; config_yaml?: string; config_snapshot?: Record<string, unknown>; publish_attempts?: { id: string; status: string; error: string | null }[] }
+export interface Build { number: number; project_slug: string; goal?: string | null; source_snapshot_id?: string | null; current_plan_id?: string | null; revision_count?: number; clarification?: {question: string} | null; id: string; project_id: string; project_name: string; requested_ref: string; commit_sha: string | null; status: string; publish_status: string; publish_error: string | null; error: string | null; release_version: string | null; created_at: string; finished_at: string | null; jobs?: Job[]; targets?: { id: string; target: string; status: string }[]; artifacts?: Artifact[]; config_yaml?: string; config_snapshot?: Record<string, unknown>; publish_attempts?: { id: string; status: string; error: string | null }[] }
 export interface NodeTool {
   available?: boolean | null;
   path?: string | null;
@@ -132,7 +132,7 @@ export interface NodeTelemetry {
     inventory: NodeInventory;
   } | null;
 }
-export interface Release { id: string; project_id: string; project_name: string; version: string; build_id: string; commit_sha: string; created_at: string; artifact_count: number; artifacts?: Artifact[] }
+export interface Release { project_slug: string; build_number: number; id: string; project_id: string; project_name: string; version: string; build_id: string; commit_sha: string; created_at: string; artifact_count: number; artifacts?: Artifact[] }
 export interface Pool { is_default?: boolean; id: string; name: string; emissary_target_release?: string | null; emissary_update_concurrency?: number; emissary_updates_paused?: boolean }
 export interface Credential { id: string; name: string; kind: string; created_at: string }
 export interface Token { id: string; name: string; scopes: string[]; project_ids: string[]; expires_at: string; revoked: boolean }

@@ -5,6 +5,9 @@ use serde_json::{Value, json};
 #[path = "tenancy_regressions.rs"]
 mod regressions;
 
+#[path = "readable_routes.rs"]
+mod readable_routes;
+
 async fn account(db: &Database, name: &str, legacy_role: &str) -> (Uuid, String) {
     let id = Uuid::new_v4();
     let cookie = format!("artifactory_session={}", Uuid::new_v4());

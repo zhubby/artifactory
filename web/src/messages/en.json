@@ -310,7 +310,7 @@
     "resultDescription": "Build and publication results are recorded separately · {date}",
     "filteredLogs": "Logs · {step}",
     "publishError": "Publication failed (build results retained): {detail}",
-    "eyebrowId": "Build / {id}",
+    "eyebrowId": "Build #{id}",
     "pipeline": "Build → Sign → Verify",
     "publication": "Publication",
     "placement": "Node placement",

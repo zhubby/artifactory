@@ -82,7 +82,7 @@ pub async fn create(
             json!({"project_id":project,"ref":input.reference}),
         )
         .await?;
-    Ok(Json(json!({"id":id})))
+    Ok(Json(state.store.build_route(id).await?))
 }
 
 #[derive(Deserialize, Default)]
@@ -133,6 +133,20 @@ pub async fn detail(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
     auth.project(state.store.build_project(id).await?, "read")?;
+    Ok(Json(build_detail(&state, id).await?))
+}
+
+pub async fn resolve(
+    TenantState(state): TenantState,
+    auth: Auth,
+    Path((slug, number)): Path<(String, i64)>,
+) -> Result<Json<Value>> {
+    let project = state.store.project_by_slug(&slug).await?;
+    auth.project(project, "read")?;
+    if !(1..=9_007_199_254_740_991).contains(&number) {
+        return Err(ApiError::NotFound);
+    }
+    let id = state.store.build_by_number(project, number).await?;
     Ok(Json(build_detail(&state, id).await?))
 }
 

@@ -79,16 +79,16 @@ function Choice({ name, value, checked, onChange, label, children }: {
 
 export function BuildWizard({ projects, user }: { projects: Project[]; user: User }) {
   const searchParams = useSearchParams();
-  const initialProjectID = searchParams.get("project") || "";
-  return <Wizard key={initialProjectID} projects={projects} user={user} initialProjectID={initialProjectID} />;
+  const initialProjectSlug = searchParams.get("project") || "";
+  return <Wizard key={initialProjectSlug} projects={projects} user={user} initialProjectSlug={initialProjectSlug} />;
 }
 
-function Wizard({ projects, user, initialProjectID }: { projects: Project[]; user: User; initialProjectID: string }) {
+function Wizard({ projects, user, initialProjectSlug }: { projects: Project[]; user: User; initialProjectSlug: string }) {
   const { t, locale } = useUI();
   const { motion } = usePreferences();
   const router = useRouter();
-  const initialProject = initialProjectID
-    ? projects.find(project => project.id === initialProjectID)
+  const initialProject = initialProjectSlug
+    ? projects.find(project => project.slug === initialProjectSlug)
     : projects.length === 1 ? projects[0] : undefined;
   const [projectID, setProjectID] = useState(initialProject?.id || "");
   const [step, setStep] = useState(initialProject ? 1 : 0);
@@ -115,7 +115,7 @@ function Wizard({ projects, user, initialProjectID }: { projects: Project[]; use
   const refs = useRepositoryRefs(user.role === "viewer" ? "" : projectID);
   const project = projects.find(project => project.id === projectID);
   const reference = (sourceMode === "manual" ? manualRef : selectedRef).trim();
-  const cancelPath = initialProjectID && initialProject ? `/projects/${initialProjectID}` : "/builds";
+  const cancelPath = initialProject ? `/projects/${initialProject.slug}` : "/builds";
 
   useEffect(() => {
     if (!refs.data || sourceInitialized.current) return;
@@ -196,7 +196,7 @@ function Wizard({ projects, user, initialProjectID }: { projects: Project[]; use
       busyRef.current = true;
       setBusy(true);
       setError(undefined);
-      const result = await mutation<{ id: string }>(`/projects/${projectID}/builds`, {
+      const result = await mutation<{ id: string; project_slug: string; number: number }>(`/projects/${projectID}/builds`, {
         ref: reference,
         goal: goal.trim(),
         target_requirements: automaticPlatforms ? [] : selectedPlatforms.map(value => {
@@ -206,7 +206,7 @@ function Wizard({ projects, user, initialProjectID }: { projects: Project[]; use
         parameters: parsed,
         release_version: publish ? version.trim() : null,
       });
-      router.replace(`/builds/${result.id}`);
+      router.replace(`/projects/${result.project_slug}/builds/${result.number}`);
     } catch (error) {
       busyRef.current = false;
       setBusy(false);
@@ -253,7 +253,7 @@ function Wizard({ projects, user, initialProjectID }: { projects: Project[]; use
           <p className="mb-6 mt-3 text-sm leading-6 text-muted-foreground">{t(`wizard.${hints[step]}`)}</p>
           <ErrorBox message={error} />
           {step === 0 && <fieldset className="wizard-options" aria-label={t("projects.project")}>
-            {initialProjectID && !initialProject && <p className="text-sm text-destructive">{t("wizard.invalidProject")}</p>}
+            {initialProjectSlug && !initialProject && <p className="text-sm text-destructive">{t("wizard.invalidProject")}</p>}
             {projects.map(candidate => <Choice key={candidate.id} name="project_id" value={candidate.id} checked={projectID === candidate.id} onChange={() => selectProject(candidate.id)} label={candidate.name}>
               <span className="wizard-choice-detail break-all">{candidate.repository_url}</span>
             </Choice>)}

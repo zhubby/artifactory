@@ -44,9 +44,9 @@ for (const locale of ["zh-CN", "en"] as const)
           locale === "en" ? "Build. Sign. Deliver." : "构建，签名，交付。",
         ],
         ["projects", "/projects", locale === "en" ? "Projects" : "项目空间"],
-        ["project-detail", "/projects/project-main", "Desktop Client"],
+        ["project-detail", "/projects/desktop-client", "Desktop Client"],
         ["builds", "/builds", locale === "en" ? "Build runs" : "构建记录"],
-        ["build-detail", "/builds/build-main", "Desktop Client"],
+        ["build-detail", "/projects/desktop-client/builds/128", "Desktop Client"],
         ["nodes", "/nodes", locale === "en" ? "Build fleet" : "构建节点"],
         ["artifacts", "/artifacts", locale === "en" ? "Artifacts" : "制品仓库"],
         [
@@ -155,7 +155,7 @@ test("preference changes preserve list filters, form drafts, target selection an
     "Unsubmitted draft",
   );
   await page.keyboard.press("Escape");
-  await page.goto(tenantURL("/builds/build-main"));
+  await page.goto(tenantURL("/projects/desktop-client/builds/128"));
   await expect(page.getByRole("log")).toContainText(
     "native compilation complete",
   );

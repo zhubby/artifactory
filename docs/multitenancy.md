@@ -1,6 +1,19 @@
 # 多租户与共享构建设备
 
-账号是全局登录身份。每次登录后必须选择租户；新账号没有租户时创建租户，也可以先通过邀请加入。业务页面使用 `/t/{tenant_id}/...`，不同浏览器页签可以选择不同租户。
+账号是全局登录身份。每次登录后必须选择租户；新账号没有租户时创建租户，也可以先通过邀请加入。业务页面使用 `/tenants/{tenant-slug}/...`，不同浏览器页签可以选择不同租户。
+
+## 页面地址
+
+| 页面 | 示例 |
+| --- | --- |
+| 租户首页 | `/tenants/default` |
+| 项目详情 | `/tenants/default/projects/desktop-app` |
+| 构建详情 | `/tenants/default/projects/desktop-app/builds/128` |
+| 租户设置 | `/tenants/default/settings` |
+
+租户和项目的 `slug` 在创建时从名称生成，使用小写英文字母、数字和连字符，最长 63 字符。同名时依次增加 `-2`、`-3`；名称没有可用英文或数字时使用 `tenant`、`project`。租户标识全局唯一，项目标识在租户内唯一，修改显示名称不会改变地址。构建使用项目内从 1 开始的编号，数据库按项目串行分配，删除构建后不复用已分配编号。已有开发数据按创建时间和 UUID 顺序补齐标识及编号，保留全部内部身份。
+
+直接切换新地址，不保留旧 `/t/{uuid}`、UUID 构建页面、重定向或双路由。浏览器通过当前成员可访问的租户标识解析 UUID，再发送 `X-Artifactory-Tenant`；缓存只保存稳定标识映射，业务权限仍逐次校验。未知路径和非法构建编号返回 404。
 
 ## 权限
 
@@ -21,6 +34,9 @@ Session 业务请求必须携带 `X-Artifactory-Tenant`，服务端每次读取�
 | 接口 | 用途 |
 | --- | --- |
 | `GET /tenants`、`POST /tenants` | 当前账号租户、幂等创建租户和默认池 |
+| `GET /tenants/{slug}` | 当前账号成员可访问的租户；未知或非成员均为 404 |
+| `GET /projects/by-slug/{slug}` | 当前租户内项目，继续校验项目角色和 Token 范围 |
+| `GET /projects/by-slug/{slug}/builds/{number}` | 当前租户及项目内编号解析构建，继续校验读取权限 |
 | `GET /tenant` | 当前租户及有效项目角色 |
 | `GET /tenant/members`、`POST /tenant/members` | 成员列表、按准确用户名添加已有账号 |
 | `PATCH /tenant/members/{user_id}`、`DELETE /tenant/members/{user_id}` | 更改角色、移除成员 |
@@ -33,6 +49,8 @@ Session 业务请求必须携带 `X-Artifactory-Tenant`，服务端每次读取�
 | `PUT /projects/{id}/node-access` | 租户管理员提交 `{mode: "pools" \| "nodes", ids: [...]}` |
 
 创建租户提交 `{name, idempotency_key}`，失败重试复用同一 UUID。邀请有效期 72 小时，单次消费；数据库只保存令牌摘要。完整邀请链接只在创建时返回，之后仅能查看状态或撤销。`/users` 是租户成员接口的兼容入口，不枚举全站账号，不接受初始密码。
+
+租户和项目响应包含稳定的 `slug`，创建响应返回 `{id, slug}`。邀请确认响应包含 `tenant_slug`。构建列表、详情和创建响应包含 `number`、`project_slug`，用于生成页面地址；内部操作、事件流及资源关联继续使用 UUID。
 
 项目响应包含 `node_access`、`node_ids`、`pool_ids` 和 `effective_role`。`pool_ids` 保留为节点池模式兼容字段；与 `node_access` 同时提交时必须与其模式及 ID 完全一致。
 

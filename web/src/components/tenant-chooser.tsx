@@ -48,7 +48,7 @@ export function TenantChooser() {
             {tenants.data.map((tenant) => (
               <Link
                 key={tenant.id}
-                href={`/t/${tenant.id}`}
+                href={`/tenants/${tenant.slug}`}
                 className="flex min-w-0 items-center gap-4 rounded-xl border border-border bg-background/70 p-4 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-primary"
               >
                 <Building2 className="shrink-0 text-primary" />
@@ -75,11 +75,11 @@ export function TenantChooser() {
               <SubmitForm
                 label={t("tenants.create")}
                 onSubmit={async (form) => {
-                  const result = await mutation<{ id: string }>("/tenants", {
+                  const result = await mutation<{ id: string; slug: string }>("/tenants", {
                     name: form.get("name"),
                     idempotency_key: key,
                   });
-                  window.location.assign(`/t/${result.id}`);
+                  window.location.assign(`/tenants/${result.slug}`);
                 }}
               >
                 <Field label={t("tenants.name")}>
@@ -185,11 +185,11 @@ export function InvitationJoin({ token }: { token: string }) {
                 setBusy(true);
                 setError(undefined);
                 try {
-                  const result = await mutation<{ tenant_id: string }>(
+                  const result = await mutation<{ tenant_id: string; tenant_slug: string }>(
                     `/invitations/${encodeURIComponent(token)}/accept`,
                     {},
                   );
-                  window.location.assign(`/t/${result.tenant_id}`);
+                  window.location.assign(`/tenants/${result.tenant_slug}`);
                 } catch (error) {
                   setError(asError(error));
                   setBusy(false);

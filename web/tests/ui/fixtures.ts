@@ -11,7 +11,8 @@ import type {
 
 const created = "2026-11-10T08:30:00Z";
 export const tenantId = "11111111-1111-4111-8111-111111111111";
-export const tenantURL = (path: string, tenant = tenantId) => /^\/(?:login|register|tenants|join|docs)(?:\/|\?|$)/.test(path) ? path : `/t/${tenant}${path === "/" ? "" : path}`;
+export const tenantSlug = "build-team";
+export const tenantURL = (path: string, tenant = tenantSlug) => /^\/(?:login|register|tenants|join|docs)(?:\/|\?|$)/.test(path) ? path : `/tenants/${tenant}${path === "/" ? "" : path}`;
 export const artifact: Artifact = {
   id: "artifact-main",
   path: "dist/DesktopClient.zip",
@@ -24,6 +25,7 @@ export const artifact: Artifact = {
 };
 export const project: Project = {
   id: "project-main",
+  slug: "desktop-client",
   name: "Desktop Client",
   repository_url: "https://git.example.com/team/desktop-client.git",
   credential_id: "credential-main",
@@ -33,7 +35,7 @@ export const project: Project = {
   node_access: {mode: "pools", ids: ["pool-main"]},
   signing_profiles: ["apple-internal"],
   build_count: 1234,
-  last_build: { id: "build-main", status: "running", created_at: created },
+  last_build: { id: "build-main", number: 128, status: "running", created_at: created },
 };
 export const repositoryRefs = {
   default_ref: "refs/heads/main",
@@ -45,6 +47,8 @@ export const repositoryRefs = {
 };
 export const build: Build = {
   id: "build-main",
+  number: 128,
+  project_slug: project.slug,
   project_id: project.id,
   project_name: project.name,
   requested_ref: "main",
@@ -215,6 +219,8 @@ export const nodeTelemetry: NodeTelemetry = {
   },
 };
 const release: Release = {
+  project_slug: project.slug,
+  build_number: build.number,
   id: "release-main",
   project_id: project.id,
   project_name: project.name,
@@ -231,7 +237,7 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.slice("/api/v1".length);
-    if (!path.startsWith("/auth/") && path !== "/tenants" && !path.startsWith("/invitations/") && !request.headers()["x-artifactory-tenant"]) return route.fulfill({status:400,json:{error:"tenant context required",code:"tenant_required"}});
+    if (!path.startsWith("/auth/") && !path.startsWith("/tenants") && !path.startsWith("/invitations/") && !request.headers()["x-artifactory-tenant"]) return route.fulfill({status:400,json:{error:"tenant context required",code:"tenant_required"}});
     if (request.method() !== "GET") {
       events.writes.push(`${request.method()} ${path}`);
       return route.fulfill({
@@ -249,13 +255,15 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
     const responses: Record<string, unknown> = {
       "/auth/config": { registration_enabled: true },
       "/auth/me": { id: "user-main", username: "alex" },
-      "/tenants": [{id:tenantId,name:"Build Team",role:role === "admin" ? "owner" : "member",owner_id:"user-main",created_at:created}],
-      "/tenant": {tenant:{id:tenantId,name:"Build Team",role:role === "admin" ? "owner" : "member",owner_id:"user-main",created_at:created},project_roles:{[project.id]:role}},
+      "/tenants": [{id:tenantId,slug:tenantSlug,name:"Build Team",role:role === "admin" ? "owner" : "member",owner_id:"user-main",created_at:created}],
+      [`/tenants/${tenantSlug}`]: {id:tenantId,slug:tenantSlug,name:"Build Team",role:role === "admin" ? "owner" : "member",owner_id:"user-main",created_at:created},
+      "/tenant": {tenant:{id:tenantId,slug:tenantSlug,name:"Build Team",role:role === "admin" ? "owner" : "member",owner_id:"user-main",created_at:created},project_roles:{[project.id]:role}},
       "/tenant/members": [{id:"user-main",user_id:"user-main",username:"alex",role:"owner",created_at:created}],
       "/tenant/invitations": [],
       [`/projects/${project.id}/members`]: [],
       [`/projects/${project.id}/member-options`]: [],
       "/projects": [{...project,effective_role:role}],
+      [`/projects/by-slug/${project.slug}`]: {...project,effective_role:role},
       [`/projects/${project.id}`]: {...project,effective_role:role},
       [`/projects/${project.id}/refs`]: repositoryRefs,
       "/builds": [
@@ -263,12 +271,14 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
         {
           ...build,
           id: "build-complete",
+          number: 127,
           status: "succeeded",
           publish_status: "succeeded",
           finished_at: "2026-11-10T08:32:30Z",
           release_version: release.version,
         },
       ],
+      [`/projects/by-slug/${project.slug}/builds/${build.number}`]: build,
       [`/builds/${build.id}`]: build,
       "/nodes": nodes,
       [`/nodes/${nodes[0].id}/telemetry`]: {

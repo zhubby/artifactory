@@ -7,7 +7,7 @@ import {
   useState,
   type SetStateAction,
 } from "react";
-import { currentTenant, tenantHeaders } from "@/lib/tenant";
+import { assertTenant, currentTenant, tenantHeaders } from "@/lib/tenant";
 import { asError, LocalizedError } from "@/lib/errors";
 
 export async function api<Type>(
@@ -15,6 +15,9 @@ export async function api<Type>(
   init: RequestInit = {},
 ): Promise<Type> {
   const tenant = currentTenant();
+  const headers = /^\/(?:auth|tenants|invitations)(?:\/|$)/.test(path)
+    ? {} : await tenantHeaders(tenant, init.signal);
+  assertTenant(tenant, init.signal);
   let response: Response;
   try {
     response = await fetch(`/api/v1${path}`, {
@@ -23,20 +26,19 @@ export async function api<Type>(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        ...tenantHeaders(),
+        ...headers,
         "x-artifactory-csrf": "1",
         ...init.headers,
       },
       cache: "no-store",
     });
   } catch {
+    assertTenant(tenant, init.signal);
     throw new LocalizedError("common.networkFailed");
   }
-  if (tenant !== currentTenant())
-    throw new DOMException("Tenant changed", "AbortError");
+  assertTenant(tenant, init.signal);
   const body = await response.json().catch(() => undefined);
-  if (tenant !== currentTenant())
-    throw new DOMException("Tenant changed", "AbortError");
+  assertTenant(tenant, init.signal);
   if (!response.ok) {
     if (
       response.status === 401 &&

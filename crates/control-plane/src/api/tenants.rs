@@ -50,6 +50,13 @@ fn project_role(role: &str) -> Result<()> {
 pub async fn list(State(s): State<AppState>, account: AccountAuth) -> Result<Json<Vec<Value>>> {
     Ok(Json(s.store.tenants(account.user_id).await?))
 }
+pub async fn resolve(
+    State(s): State<AppState>,
+    account: AccountAuth,
+    Path(slug): Path<String>,
+) -> Result<Json<Value>> {
+    Ok(Json(s.store.tenant_by_slug(account.user_id, &slug).await?))
+}
 pub async fn create(
     State(s): State<AppState>,
     account: AccountAuth,
@@ -63,7 +70,7 @@ pub async fn create(
         .store
         .create_tenant(account.user_id, name, input.idempotency_key)
         .await?;
-    Ok(Json(json!({"id":id})))
+    Ok(Json(json!({"id":id,"slug":s.store.tenant_slug(id).await?})))
 }
 pub async fn context(TenantState(s): TenantState, auth: Auth) -> Result<Json<Value>> {
     let tenant = s
@@ -182,8 +189,9 @@ pub async fn accept(
     if token.len() > 256 {
         return Err(ApiError::NotFound);
     }
+    let tenant = s.store.accept_invitation(&token, account.user_id).await?;
     Ok(Json(
-        json!({"tenant_id":s.store.accept_invitation(&token,account.user_id).await?}),
+        json!({"tenant_id":tenant,"tenant_slug":s.store.tenant_slug(tenant).await?}),
     ))
 }
 pub async fn project_members(

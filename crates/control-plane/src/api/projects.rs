@@ -30,6 +30,16 @@ pub async fn detail(
     Ok(Json(state.store.project(id).await?))
 }
 
+pub async fn resolve(
+    TenantState(state): TenantState,
+    auth: Auth,
+    Path(slug): Path<String>,
+) -> Result<Json<dto::Project>> {
+    let id = state.store.project_by_slug(&slug).await?;
+    auth.project(id, "read")?;
+    Ok(Json(state.store.project(id).await?))
+}
+
 pub async fn refs(
     TenantState(state): TenantState,
     auth: Auth,
@@ -103,10 +113,11 @@ pub async fn create(
     validate(&state, &input).await?;
     let id = Uuid::new_v4();
     state.store.create_project(id, &input).await?;
+    let slug = state.store.project(id).await?.slug;
     state
         .audit(auth.user_id, "project_created", id, json!({}))
         .await?;
-    Ok(Json(json!({"id":id})))
+    Ok(Json(json!({"id":id,"slug":slug})))
 }
 
 pub async fn update(

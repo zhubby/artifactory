@@ -3,6 +3,7 @@
 import { useUI } from "@/components/providers";
 
 import { Link } from "@/lib/tenant";
+import { buildPath } from "@/lib/routes";
 import { ArrowUpRight, GitBranch, GitCommitHorizontal } from "lucide-react";
 import { Empty, Status } from "@/components/common";
 import { elapsed, short } from "@/lib/utils";
@@ -31,13 +32,13 @@ export function BuildTable({ builds }: { builds: Build[] }) {
             <tr key={build.id}>
               <td>
                 <Link
-                  href={`/builds/${build.id}`}
+                  href={buildPath(build.project_slug, build.number)}
                   className="font-medium hover:text-primary"
                 >
                   {build.project_name}
                 </Link>
                 <div className="mt-1.5 font-mono text-[10px] text-muted-foreground">
-                  #{short(build.id)}
+                  #{build.number}
                   {build.release_version && (
                     <span className="ml-2 text-primary">
                       {build.release_version}
@@ -70,8 +71,8 @@ export function BuildTable({ builds }: { builds: Build[] }) {
               <td>
                 <Link
                   className="inline-flex rounded p-1 text-muted-foreground hover:text-primary"
-                  href={`/builds/${build.id}`}
-                  aria-label={t("builds.view", { id: short(build.id) })}
+                  href={buildPath(build.project_slug, build.number)}
+                  aria-label={t("builds.view", { id: build.number })}
                 >
                   <ArrowUpRight size={16} />
                 </Link>

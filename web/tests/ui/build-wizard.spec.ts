@@ -21,10 +21,10 @@ test("all build entry points open the dedicated wizard without treating new as a
   page.on("request", request => {
     if (new URL(request.url()).pathname === "/api/v1/builds/new") detailRequests.push(request.url());
   });
-  for (const path of ["/", "/builds", `/projects/${project.id}`]) {
+  for (const path of ["/", "/builds", `/projects/${project.slug}`]) {
     await page.goto(tenantURL(path));
     await page.getByRole("button", { name: "发起构建", exact: true }).click();
-    await expect(page).toHaveURL(path.startsWith("/projects/") ? /\/builds\/new\?project=project-main$/ : /\/builds\/new$/);
+    await expect(page).toHaveURL(path.startsWith("/projects/") ? /\/builds\/new\?project=desktop-client$/ : /\/builds\/new$/);
     await expect(page.getByRole("heading", { name: "要构建哪份源码？", exact: true })).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
   }
@@ -37,14 +37,14 @@ test("only final confirmation creates a build with the existing request contract
   const requests: Record<string, unknown>[] = [];
   await page.route("**/api/v1/projects/project-main/builds", async route => {
     requests.push(route.request().postDataJSON());
-    await route.fulfill({ json: { id: "build-main" } });
+    await route.fulfill({ json: { id: "build-main", project_slug: project.slug, number: 128 } });
   });
-  await page.goto(tenantURL("/builds/new?project=project-main"));
+  await page.goto(tenantURL("/builds/new?project=desktop-client"));
   await reachReview(page);
   expect(events.writes).toEqual([]);
   expect(requests).toEqual([]);
   await page.getByRole("button", { name: "发起构建", exact: true }).click();
-  await expect(page).toHaveURL(/\/builds\/build-main$/);
+  await expect(page).toHaveURL(/\/projects\/desktop-client\/builds\/128$/);
   expect(requests).toEqual([{
     ref: "refs/heads/main",
     goal: "构建本项目，并收集所选平台的可分发产物。",
@@ -263,7 +263,7 @@ for (const locale of ["zh-CN", "en"] as const) {
       page.on("pageerror", error => failures.push(error.message));
       await page.context().addCookies([{ name: "artifactory-locale", value: locale, url: "http://127.0.0.1:3100" }]);
       await page.addInitScript(value => localStorage.setItem("artifactory-theme", value), theme);
-      await page.goto(tenantURL("/builds/new?project=project-main"));
+      await page.goto(tenantURL("/builds/new?project=desktop-client"));
       await expect(page.getByRole("radio", { name: locale === "en" ? "Branch main" : "分支 main", exact: true })).toBeChecked();
       const continueButton = page.getByRole("button", { name: locale === "en" ? "Continue" : "继续", exact: true });
       await continueButton.click();
@@ -295,12 +295,12 @@ test("missing projects and invalid preselected projects cannot bypass selection"
 
 test("cancelling and refreshing discard the in-memory draft without persistence", async ({ page }) => {
   const events = await fixtureAPI(page);
-  await page.goto(tenantURL("/builds/new?project=project-main"));
+  await page.goto(tenantURL("/builds/new?project=desktop-client"));
   await expect(page.getByRole("radio", { name: "分支 main", exact: true })).toBeChecked();
   await next(page);
   await page.locator('textarea[name="goal"]').fill("Do not persist this draft");
   await page.getByRole("button", { name: "取消并返回", exact: true }).click();
-  await expect(page).toHaveURL(/\/projects\/project-main$/);
+  await expect(page).toHaveURL(/\/projects\/desktop-client$/);
   await page.getByRole("button", { name: "发起构建", exact: true }).click();
   await expect(page.locator(".wizard-summary")).not.toContainText("Do not persist this draft");
   await expect(page.getByRole("radio", { name: "分支 main", exact: true })).toBeChecked();

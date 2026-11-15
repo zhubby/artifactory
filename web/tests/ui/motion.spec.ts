@@ -74,7 +74,7 @@ test("offscreen and visibility changes pause actual WebGL draws and resume on re
   await instrumentDraws(page);
   await fixtureAPI(page);
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.goto(tenantURL("/builds/build-main"));
+  await page.goto(tenantURL("/projects/desktop-client/builds/128"));
   await expect(page.getByRole("log")).toContainText(
     "native compilation complete",
   );

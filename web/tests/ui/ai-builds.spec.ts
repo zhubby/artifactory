@@ -13,7 +13,7 @@ for (const locale of ["zh-CN", "en"] as const) {
         os: "darwin", arch: "arm64", artifacts: ["dist/app"], steps: [{name: "Compile", phase: "build", run: "cc src/main.c -o dist/app"}],
       }}},
     }};
-    await page.route("**/api/v1/builds/build-main", route => route.fulfill({json: aiBuild}));
+    await page.route("**/api/v1/projects/by-slug/desktop-client/builds/128", route => route.fulfill({json: aiBuild}));
     await page.route("**/api/v1/builds/build-main/events", route => route.fulfill({contentType: "text/event-stream", body: `retry: 600000\nevent: snapshot\ndata: ${JSON.stringify(aiBuild)}\n\n`}));
     await page.route("**/api/v1/builds/build-main/plans", route => route.fulfill({json: {plans: [plan], runs: [{id: "run-v1", state: "needs_input", calls: 7, usage: {totalTokens: 1234}}], events: []}}));
     let answer = "";
@@ -21,7 +21,7 @@ for (const locale of ["zh-CN", "en"] as const) {
       answer = (route.request().postDataJSON() as {answer: string}).answer;
       await route.fulfill({json: {ok: true}});
     });
-    await page.goto(tenantURL("/builds/build-main"));
+    await page.goto(tenantURL("/projects/desktop-client/builds/128"));
     await expect(page.getByText("Which application should be built?", {exact: true})).toBeVisible();
     await expect(page.getByText("snapshot-pinned", {exact: false})).toBeVisible();
     await page.locator('textarea[name="answer"]').fill("The desktop client");
@@ -43,9 +43,9 @@ for (const locale of ["zh-CN", "en"] as const) {
     await expect(page.locator('input[name="timeout_seconds"]')).toHaveValue("600");
     await page.screenshot({path: info.outputPath(`${locale}-ai-model.png`), fullPage: true});
     await page.keyboard.press("Escape");
-    await page.goto(tenantURL("/projects/project-main"));
+    await page.goto(tenantURL("/projects/desktop-client"));
     await page.getByRole("button", {name: locale === "en" ? "Start build" : "发起构建", exact: true}).click();
-    await expect(page).toHaveURL(/\/builds\/new\?project=project-main$/);
+    await expect(page).toHaveURL(/\/builds\/new\?project=desktop-client$/);
     await expect(page.getByRole("radio", {name: locale === "en" ? "Branch main" : "分支 main", exact: true})).toBeChecked();
     await page.getByRole("button", {name: locale === "en" ? "Continue" : "继续", exact: true}).click();
     await expect(page.locator('textarea[name="goal"]')).toBeVisible();
