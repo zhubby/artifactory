@@ -29,12 +29,16 @@ async fn critical_store_latency() {
         .await
         .unwrap();
     let store = ControlStore::new(pool.clone());
+    store
+        .bootstrap_admin("perf-owner".into(), "unused".into())
+        .await
+        .unwrap();
     let project = Uuid::new_v4();
     let build = Uuid::new_v4();
     let node = Uuid::new_v4();
     let session = Uuid::new_v4();
     let target = json!({"os":"linux","arch":"amd64","steps":[{"name":"compile","run":"true"}],"artifacts":[]});
-    sql::execute(&mut pool.clone(), "INSERT INTO projects(id,name,repository_url) VALUES($1,'perf','https://example.invalid/repo.git')", params![project]).await.unwrap();
+    sql::execute(&mut pool.clone(), "INSERT INTO projects(id,tenant_id,name,repository_url,pool_ids) VALUES($1,'00000000-0000-0000-0000-000000000001','perf','https://example.invalid/repo.git','{00000000-0000-0000-0000-000000000001}')", params![project]).await.unwrap();
     sql::execute(&mut pool.clone(), "INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url) VALUES($1,$2,'main','queued','https://example.invalid/repo.git')", params![build, project])
     .await
     .unwrap();
