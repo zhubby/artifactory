@@ -9,6 +9,8 @@ pub(super) struct User {
     pub id: Uuid,
     #[unique]
     pub username: String,
+    #[default(String::new())]
+    pub display_name: String,
     pub password_hash: String,
     pub role: String,
 }
@@ -45,6 +47,9 @@ pub(super) struct Project {
     #[key]
     pub id: Uuid,
     pub name: String,
+    #[default("active".to_owned())]
+    pub status: String,
+    pub archived_at: Option<jiff::Timestamp>,
     pub repository_url: String,
     pub credential_id: Option<Uuid>,
     pub pool_ids: Vec<Uuid>,
@@ -327,6 +332,9 @@ pub(super) struct Tenant {
     #[key]
     pub id: Uuid,
     pub name: String,
+    #[default("active".to_owned())]
+    pub status: String,
+    pub archived_at: Option<jiff::Timestamp>,
     pub owner_id: Uuid,
     pub created_by: Uuid,
     pub creation_key: Uuid,

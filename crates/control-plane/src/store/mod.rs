@@ -2,6 +2,8 @@
 use artifactory_database::{params, sql};
 
 mod auth;
+pub mod lifecycle;
+mod lifecycle_cleanup;
 mod tenancy;
 pub use tenancy::{NodeAccess, NodeAccessMode};
 pub mod dto;

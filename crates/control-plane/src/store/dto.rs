@@ -100,6 +100,8 @@ response! { NodeSummary {
 }}
 
 response! { Project {
+    status: String,
+    archived_at: Option<String>,
     tenant_id: Uuid,
     node_access: Value,
     effective_role: Option<String>,
@@ -126,6 +128,8 @@ response! { LastBuild {
 }}
 
 response! { ProjectSummary {
+    status: String,
+    archived_at: Option<String>,
     tenant_id: Uuid,
     node_access: Value,
     effective_role: Option<String>,

@@ -219,6 +219,7 @@ impl FromRequestParts<AppState> for TenantState {
             .strip_prefix("/api/v1/")
             .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("unexpected tenant route")))?;
         let mut segments = route.split('/');
+        let mut resource = None;
         if let (Some(kind), Some("{id}")) = (segments.next(), segments.next()) {
             // Use Axum's decoded parameters, exactly as the handler's Path extractor does.
             let parameters = RawPathParams::from_request_parts(parts, state)
@@ -230,6 +231,17 @@ impl FromRequestParts<AppState> for TenantState {
                 .and_then(|value| Uuid::parse_str(value).ok())
                 .ok_or_else(|| ApiError::BadRequest("invalid resource ID".into()))?;
             state.store.authorize_resource(kind, id, &auth).await?;
+            resource = Some((kind, id));
+        }
+        if ![Method::GET, Method::HEAD, Method::OPTIONS].contains(&parts.method)
+            && !["/cancel", "/lifecycle", "/clarifications"]
+                .iter()
+                .any(|suffix| route.ends_with(suffix))
+        {
+            state
+                .store
+                .ensure_writable(auth.tenant_id, resource.map(|r| r.0), resource.map(|r| r.1))
+                .await?;
         }
         let mut scoped = state.clone();
         scoped.store = state.store.for_auth(&auth);
@@ -329,7 +341,7 @@ pub async fn register(
             header::SET_COOKIE,
             session_cookie(&token, state.settings.insecure_dev),
         )],
-        Json(json!({"id":user_id,"username":username})),
+        Json(state.store.account_profile(user_id).await?),
     ))
 }
 
@@ -381,7 +393,7 @@ pub async fn login(
     let token = crypto::token();
     state
         .store
-        .create_session(&crypto::hash(&token), user_id)
+        .create_verified_session(&crypto::hash(&token), user_id, &row.password_hash)
         .await?;
     state.audit(user_id, "login", user_id, json!({})).await?;
     Ok((
@@ -389,7 +401,7 @@ pub async fn login(
             header::SET_COOKIE,
             session_cookie(&token, state.settings.insecure_dev),
         )],
-        Json(json!({"id":user_id,"username":input.username})),
+        Json(state.store.account_profile(user_id).await?),
     ))
 }
 
@@ -410,6 +422,101 @@ pub async fn logout(
     ))
 }
 
-pub async fn me(auth: AccountAuth) -> Json<Value> {
-    Json(json!({"id":auth.user_id,"username":auth.username}))
+pub async fn me(State(state): State<AppState>, auth: AccountAuth) -> Result<Json<Value>> {
+    Ok(Json(state.store.account_profile(auth.user_id).await?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileInput {
+    display_name: String,
+}
+
+pub async fn update_profile(
+    State(state): State<AppState>,
+    auth: AccountAuth,
+    input: std::result::Result<Json<ProfileInput>, JsonRejection>,
+) -> Result<Json<Value>> {
+    let Json(input) = input.map_err(|_| ApiError::BadRequest("invalid profile fields".into()))?;
+    let name = input.display_name.trim();
+    if name.is_empty() || name.chars().count() > 100 || name.chars().any(char::is_control) {
+        return Err(ApiError::BadRequest(
+            "display name must contain 1..100 visible characters".into(),
+        ));
+    }
+    Ok(Json(
+        state
+            .store
+            .update_account_profile(auth.user_id, name)
+            .await?,
+    ))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PasswordInput {
+    current_password: String,
+    new_password: String,
+}
+
+/// Verify account credentials for a password change or destructive lifecycle request.
+pub async fn verify_current_password(
+    state: &AppState,
+    user: Uuid,
+    username: &str,
+    password: String,
+) -> Result<String> {
+    state.store.reserve_security_attempt(user).await?;
+    if password.len() > 256 {
+        return Err(ApiError::BadRequest("current password is incorrect".into()));
+    }
+    let account = state
+        .store
+        .login_account(username)
+        .await?
+        .ok_or(ApiError::Unauthorized)?;
+    let encoded = account.password_hash;
+    let verified = encoded.clone();
+    let valid = tokio::task::spawn_blocking(move || {
+        PasswordHash::new(&encoded).is_ok_and(|hash| {
+            Argon2::default()
+                .verify_password(password.as_bytes(), &hash)
+                .is_ok()
+        })
+    })
+    .await
+    .map_err(anyhow::Error::from)?;
+    if !valid {
+        return Err(ApiError::BadRequest("current password is incorrect".into()));
+    }
+    Ok(verified)
+}
+
+pub async fn change_password(
+    State(state): State<AppState>,
+    auth: AccountAuth,
+    Json(input): Json<PasswordInput>,
+) -> Result<impl IntoResponse> {
+    if !(12..=256).contains(&input.new_password.len()) {
+        return Err(ApiError::BadRequest(
+            "password must contain 12..256 bytes".into(),
+        ));
+    }
+    let verified =
+        verify_current_password(&state, auth.user_id, &auth.username, input.current_password)
+            .await?;
+    let replacement = tokio::task::spawn_blocking(move || password_hash(&input.new_password))
+        .await
+        .map_err(anyhow::Error::from)??;
+    state
+        .store
+        .replace_password(auth.user_id, &verified, &replacement)
+        .await?;
+    Ok((
+        [(
+            header::SET_COOKIE,
+            "artifactory_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0",
+        )],
+        Json(json!({"ok":true})),
+    ))
 }

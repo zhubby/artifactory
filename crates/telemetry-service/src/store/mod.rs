@@ -3,6 +3,7 @@ use artifactory_database::{params, sql};
 mod history;
 mod ingest;
 mod models;
+mod purge;
 use crate::internal;
 pub use history::{HistoryPage, LatestTelemetry};
 pub use ingest::ingest;

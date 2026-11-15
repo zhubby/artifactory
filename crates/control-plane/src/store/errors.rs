@@ -4,6 +4,7 @@ impl From<Error> for ApiError {
     fn from(error: Error) -> Self {
         match artifactory_database::constraint(&error) {
             Some(Constraint::Unique) => Self::Conflict("resource already exists".into()),
+            Some(Constraint::ObjectState) => Self::Conflict("workspace is read only".into()),
             Some(Constraint::ForeignKey | Constraint::Check | Constraint::NotNull) => {
                 Self::BadRequest("invalid resource reference or value".into())
             }

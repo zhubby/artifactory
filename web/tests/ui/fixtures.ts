@@ -12,7 +12,10 @@ import type {
 const created = "2026-11-10T08:30:00Z";
 export const tenantId = "11111111-1111-4111-8111-111111111111";
 export const tenantSlug = "build-team";
-export const tenantURL = (path: string, tenant = tenantSlug) => /^\/(?:login|register|tenants|join|docs)(?:\/|\?|$)/.test(path) ? path : `/tenants/${tenant}${path === "/" ? "" : path}`;
+export const tenantURL = (path: string, tenant = tenantSlug) =>
+  /^\/(?:login|register|tenants|join|docs)(?:\/|\?|$)/.test(path)
+    ? path
+    : `/tenants/${tenant}${path === "/" ? "" : path}`;
 export const artifact: Artifact = {
   id: "artifact-main",
   path: "dist/DesktopClient.zip",
@@ -24,6 +27,8 @@ export const artifact: Artifact = {
   build_id: "build-main",
 };
 export const project: Project = {
+  status: "active",
+  archived_at: null,
   id: "project-main",
   slug: "desktop-client",
   name: "Desktop Client",
@@ -32,10 +37,15 @@ export const project: Project = {
   pool_ids: ["pool-main"],
   tenant_id: tenantId,
   effective_role: "admin",
-  node_access: {mode: "pools", ids: ["pool-main"]},
+  node_access: { mode: "pools", ids: ["pool-main"] },
   signing_profiles: ["apple-internal"],
   build_count: 1234,
-  last_build: { id: "build-main", number: 128, status: "running", created_at: created },
+  last_build: {
+    id: "build-main",
+    number: 128,
+    status: "running",
+    created_at: created,
+  },
 };
 export const repositoryRefs = {
   default_ref: "refs/heads/main",
@@ -198,30 +208,73 @@ export const nodeTelemetry: NodeTelemetry = {
       swap_used_bytes: 0,
       load_one: 1.25,
       active_attempts: 1,
-      disks: [{ device: "disk3s1", mount: "/Volumes/Build", total_bytes: 1099511627776, available_bytes: 73014444032, read_bytes: 123456789, written_bytes: 987654321 }],
-      networks: [{ interface: "en0", received_bytes: 12345678, transmitted_bytes: 23456789, receive_errors: 0, transmit_errors: 0 }],
-      accelerators: [{ id: "gpu-0", utilization_percent: 12.5, memory_used_bytes: 1073741824 }],
+      disks: [
+        {
+          device: "disk3s1",
+          mount: "/Volumes/Build",
+          total_bytes: 1099511627776,
+          available_bytes: 73014444032,
+          read_bytes: 123456789,
+          written_bytes: 987654321,
+        },
+      ],
+      networks: [
+        {
+          interface: "en0",
+          received_bytes: 12345678,
+          transmitted_bytes: 23456789,
+          receive_errors: 0,
+          transmit_errors: 0,
+        },
+      ],
+      accelerators: [
+        {
+          id: "gpu-0",
+          utilization_percent: 12.5,
+          memory_used_bytes: 1073741824,
+        },
+      ],
     },
   },
   inventory: {
     sampled_at: created,
     digest: "inventory-main",
     inventory: {
-      os: "darwin", arch: "arm64", os_version: "macOS 26.1", kernel_version: "Darwin 25.1",
-      cpu_model: "Apple M4 Max", physical_cores: 12, logical_cpus: 12,
-      physical_memory_bytes: 68719476736, effective_cpu_limit: 12,
-      effective_memory_limit_bytes: 68719476736, container: null, virtualization: null,
-      tools: { xcode: { available: true, version: "Xcode 26.0" }, cargo: { available: false, version: null } },
-      capabilities: nodes[0].capabilities, signing_profile_refs: ["apple-internal"],
+      os: "darwin",
+      arch: "arm64",
+      os_version: "macOS 26.1",
+      kernel_version: "Darwin 25.1",
+      cpu_model: "Apple M4 Max",
+      physical_cores: 12,
+      logical_cpus: 12,
+      physical_memory_bytes: 68719476736,
+      effective_cpu_limit: 12,
+      effective_memory_limit_bytes: 68719476736,
+      container: null,
+      virtualization: null,
+      tools: {
+        xcode: { available: true, version: "Xcode 26.0" },
+        cargo: { available: false, version: null },
+      },
+      capabilities: nodes[0].capabilities,
+      signing_profile_refs: ["apple-internal"],
       collectors: { host: "sysinfo" },
-      accelerators: [{ id: "gpu-0", vendor: "Apple", model: "Apple GPU", driver: null, memory_total_bytes: 68719476736 }],
+      accelerators: [
+        {
+          id: "gpu-0",
+          vendor: "Apple",
+          model: "Apple GPU",
+          driver: null,
+          memory_total_bytes: 68719476736,
+        },
+      ],
     },
   },
 };
 const release: Release = {
   project_slug: project.slug,
   build_number: build.number,
-  id: "release-main",
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   project_id: project.id,
   project_name: project.name,
   version: "v1.2.0-internal",
@@ -237,7 +290,14 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.slice("/api/v1".length);
-    if (!path.startsWith("/auth/") && !path.startsWith("/tenants") && !path.startsWith("/invitations/") && !request.headers()["x-artifactory-tenant"]) return route.fulfill({status:400,json:{error:"tenant context required",code:"tenant_required"}});
+    if (
+      !/^\/(auth|tenants|invitations|operations)(\/|$)/.test(path) &&
+      !request.headers()["x-artifactory-tenant"]
+    )
+      return route.fulfill({
+        status: 400,
+        json: { error: "tenant context required", code: "tenant_required" },
+      });
     if (request.method() !== "GET") {
       events.writes.push(`${request.method()} ${path}`);
       return route.fulfill({
@@ -254,17 +314,73 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
     }
     const responses: Record<string, unknown> = {
       "/auth/config": { registration_enabled: true },
-      "/auth/me": { id: "user-main", username: "alex" },
-      "/tenants": [{id:tenantId,slug:tenantSlug,name:"Build Team",role:role === "admin" ? "owner" : "member",owner_id:"user-main",created_at:created}],
-      [`/tenants/${tenantSlug}`]: {id:tenantId,slug:tenantSlug,name:"Build Team",role:role === "admin" ? "owner" : "member",owner_id:"user-main",created_at:created},
-      "/tenant": {tenant:{id:tenantId,slug:tenantSlug,name:"Build Team",role:role === "admin" ? "owner" : "member",owner_id:"user-main",created_at:created},project_roles:{[project.id]:role}},
-      "/tenant/members": [{id:"user-main",user_id:"user-main",username:"alex",role:"owner",created_at:created}],
+      "/auth/me": { id: "user-main", username: "alex", display_name: "Alex" },
+      "/operations": [],
+      "/tenant/lifecycle": {
+        projects: 1,
+        builds: 1234,
+        artifacts: 5,
+        devices: 2,
+      },
+      [`/projects/${project.id}/lifecycle`]: {
+        projects: 1,
+        builds: 1234,
+        artifacts: 5,
+        devices: 0,
+      },
+      "/tenants": [
+        {
+          id: tenantId,
+          slug: tenantSlug,
+          name: "Build Team",
+          role: role === "admin" ? "owner" : "member",
+          owner_id: "user-main",
+          created_at: created,
+          status: "active",
+          archived_at: null,
+        },
+      ],
+      [`/tenants/${tenantSlug}`]: {
+        id: tenantId,
+        slug: tenantSlug,
+        name: "Build Team",
+        role: role === "admin" ? "owner" : "member",
+        owner_id: "user-main",
+        created_at: created,
+        status: "active",
+        archived_at: null,
+      },
+      "/tenant": {
+        tenant: {
+          id: tenantId,
+          slug: tenantSlug,
+          name: "Build Team",
+          role: role === "admin" ? "owner" : "member",
+          owner_id: "user-main",
+          created_at: created,
+          status: "active",
+          archived_at: null,
+        },
+        project_roles: { [project.id]: role },
+      },
+      "/tenant/members": [
+        {
+          id: "user-main",
+          user_id: "user-main",
+          username: "alex",
+          role: "owner",
+          created_at: created,
+        },
+      ],
       "/tenant/invitations": [],
       [`/projects/${project.id}/members`]: [],
       [`/projects/${project.id}/member-options`]: [],
-      "/projects": [{...project,effective_role:role}],
-      [`/projects/by-slug/${project.slug}`]: {...project,effective_role:role},
-      [`/projects/${project.id}`]: {...project,effective_role:role},
+      "/projects": [{ ...project, effective_role: role }],
+      [`/projects/by-slug/${project.slug}`]: {
+        ...project,
+        effective_role: role,
+      },
+      [`/projects/${project.id}`]: { ...project, effective_role: role },
       [`/projects/${project.id}/refs`]: repositoryRefs,
       "/builds": [
         build,
@@ -290,8 +406,22 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
         },
       },
       [`/nodes/${nodes[1].id}/telemetry`]: { host: null, inventory: null },
-      [`/nodes/${nodes[0].id}/metadata`]: { node_id: nodes[0].id, startup_id: "startup-main", digest: "a".repeat(64), received_at: created, metadata: { "custom.site": "lab", "tools.cargo": { available: false, version: null } } },
-      [`/nodes/${nodes[1].id}/metadata`]: { startup_id: null, digest: null, received_at: null, metadata: {} },
+      [`/nodes/${nodes[0].id}/metadata`]: {
+        node_id: nodes[0].id,
+        startup_id: "startup-main",
+        digest: "a".repeat(64),
+        received_at: created,
+        metadata: {
+          "custom.site": "lab",
+          "tools.cargo": { available: false, version: null },
+        },
+      },
+      [`/nodes/${nodes[1].id}/metadata`]: {
+        startup_id: null,
+        digest: null,
+        received_at: null,
+        metadata: {},
+      },
       "/emissary-releases": [],
       "/emissary-updates": [],
       "/overview": {
@@ -327,7 +457,7 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
       "/model-options": [],
       "/model-profiles": [],
       "/ai-workers": [],
-      [`/builds/${build.id}/plans`]: {plans: [], runs: [], events: []},
+      [`/builds/${build.id}/plans`]: { plans: [], runs: [], events: [] },
       "/users": [{ id: "user-main", username: "alex", role }],
       "/audit": [
         {
@@ -350,6 +480,16 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
 }
 
 export async function openPreferences(page: Page) {
+  const personal = page.locator(".account-trigger");
+  if (new URL(page.url()).pathname.startsWith("/tenants"))
+    await personal.waitFor({state: "visible"});
+  if (await personal.isVisible()) {
+    await personal.click();
+    await page
+      .getByRole("menuitem", { name: /^(个人设置|Personal settings)$/ })
+      .click();
+    return;
+  }
   const trigger = page.getByRole("button", {
     name: /^(界面偏好|Interface preferences)$/,
   });

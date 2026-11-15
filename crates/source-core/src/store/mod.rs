@@ -59,6 +59,8 @@ impl SourceStore {
         }
     }
     pub async fn manifest(&self, id: Uuid) -> Result<Value> {
+        let available: bool = sql::scalar(&mut self.pool.clone(), "SELECT EXISTS(SELECT 1 FROM source_snapshots s WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM source_deleted_projects d WHERE d.project_id=s.project_id))", params![id]).await?;
+        ensure!(available, "source snapshot retired or unknown");
         Ok(models::Snapshot::filter_by_id(id)
             .select(models::Snapshot::fields().manifest())
             .one()
@@ -167,6 +169,13 @@ impl SourceStore {
             params![project.to_string()],
         )
         .await?;
+        let retired: bool = sql::scalar(
+            &mut protection,
+            "SELECT EXISTS(SELECT 1 FROM source_deleted_projects WHERE project_id=$1)",
+            params![project],
+        )
+        .await?;
+        ensure!(!retired, "project retired");
         let result = capture().await?;
         protection.commit().await?;
         Ok(result)
@@ -188,6 +197,7 @@ impl SourceStore {
         Fut: Future<Output = Result<T>>,
     {
         let row = models::Repository::get_by_id(&mut self.pool.clone(), id).await?;
+        let project = row.project_id;
         let access = RepositoryAccess {
             repository_url: row.repository_url,
             credential_id: row.credential_id,
@@ -201,7 +211,7 @@ impl SourceStore {
             params![&access.cache_key],
         )
         .await?;
-        let result = restore(access).await?;
+        let result = self.capture_sources(project, || restore(access)).await?;
         tx.commit().await?;
         Ok(result)
     }
@@ -223,8 +233,27 @@ impl SourceStore {
         tokio::spawn(async move {
             let mut tx_db = store.pool.clone();
             let protected = async {
+                let project: Uuid = sql::scalar(
+                    &mut store.pool.clone(),
+                    "SELECT project_id FROM source_repositories WHERE id=$1",
+                    params![repository],
+                )
+                .await?;
                 let key = store.cache_key(repository).await?;
                 let mut tx = tx_db.transaction().await?;
+                sql::execute(
+                    &mut tx,
+                    "SELECT pg_advisory_xact_lock_shared(hashtextextended($1,1))",
+                    params![project.to_string()],
+                )
+                .await?;
+                let retired: bool = sql::scalar(
+                    &mut tx,
+                    "SELECT EXISTS(SELECT 1 FROM source_deleted_projects WHERE project_id=$1)",
+                    params![project],
+                )
+                .await?;
+                ensure!(!retired, "project retired");
                 sql::execute(
                     &mut tx,
                     "SELECT pg_advisory_xact_lock_shared(hashtextextended($1,0))",
@@ -299,7 +328,9 @@ impl SourceStore {
     }
 }
 
+mod purge;
 mod service;
+pub use purge::purge_cache;
 pub use service::SourceMetrics;
 
 pub fn shared_models() -> toasty::schema::app::ModelSet {

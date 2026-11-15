@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import {fixtureAPI, nodes, tenantURL } from "./fixtures";
+import { fixtureAPI, nodes, tenantURL } from "./fixtures";
 
 for (const role of ["admin", "viewer"] as const) {
   test(`${role}: OTA version import and node controls respect role`, async ({
@@ -27,11 +27,17 @@ for (const role of ["admin", "viewer"] as const) {
       );
       await page.keyboard.press("Escape");
     }
-    await page.goto(tenantURL("/settings"));
-    await page.getByRole("tab", { name: "Emissary 自动升级" }).click();
-    await expect(page.getByTestId("emissary-settings")).toContainText(
-      "节点池升级策略",
-    );
+    await page.goto(tenantURL("/settings/emissary"));
+    if (role === "admin") {
+      await expect(page.getByTestId("emissary-settings")).toContainText(
+        "节点池升级策略",
+      );
+    } else {
+      await expect(
+        page.getByText("此页面需要管理员权限。", { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByTestId("emissary-settings")).toHaveCount(0);
+    }
     await expect(
       page.getByRole("button", { name: "导入版本", exact: true }),
     ).toHaveCount(role === "admin" ? 1 : 0);
@@ -39,6 +45,9 @@ for (const role of ["admin", "viewer"] as const) {
       page.getByRole("spinbutton", { name: "同时升级节点数" }),
     ).toHaveCount(role === "admin" ? 1 : 0);
     if (role === "admin") {
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+      ).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
       await page
         .getByRole("textbox", { name: "GitHub Release 标签" })
         .fill("v-test");

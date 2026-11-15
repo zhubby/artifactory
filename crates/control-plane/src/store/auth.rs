@@ -21,6 +21,114 @@ pub struct LoginAccount {
 }
 
 impl ControlStore {
+    pub async fn account_profile(&self, id: Uuid) -> Result<serde_json::Value> {
+        sql::optional_scalar(&mut self.pool.clone(), "SELECT jsonb_build_object('id',id,'username',username,'display_name',display_name) FROM users WHERE id=$1", params![id]).await?.ok_or(ApiError::Unauthorized)
+    }
+
+    pub async fn update_account_profile(&self, id: Uuid, name: &str) -> Result<serde_json::Value> {
+        sql::execute(
+            &mut self.pool.clone(),
+            "UPDATE users SET display_name=$2 WHERE id=$1",
+            params![id, name],
+        )
+        .await?;
+        self.account_profile(id).await
+    }
+
+    /// Reserve an account-wide password verification attempt before expensive hashing.
+    pub async fn reserve_security_attempt(&self, id: Uuid) -> Result<()> {
+        let mut db = self.pool.clone();
+        let mut tx = db.transaction().await?;
+        sql::execute(
+            &mut tx,
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,104))",
+            params![id.to_string()],
+        )
+        .await?;
+        sql::execute(&mut tx, "DELETE FROM account_security_attempts WHERE user_id=$1 AND attempted_at<clock_timestamp()-interval '5 minutes'", params![id]).await?;
+        let count: i64 = sql::scalar(
+            &mut tx,
+            "SELECT count(*) FROM account_security_attempts WHERE user_id=$1",
+            params![id],
+        )
+        .await?;
+        if count >= 10 {
+            return Err(ApiError::TooManyRequests(300));
+        }
+        sql::execute(
+            &mut tx,
+            "INSERT INTO account_security_attempts(user_id) VALUES($1)",
+            params![id],
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Serialize login with password replacement; a verified old hash cannot create a session.
+    pub async fn create_verified_session(
+        &self,
+        hash: &str,
+        user: Uuid,
+        verified: &str,
+    ) -> Result<()> {
+        let mut db = self.pool.clone();
+        let mut tx = db.transaction().await?;
+        let current: String = sql::scalar(
+            &mut tx,
+            "SELECT password_hash FROM users WHERE id=$1 FOR UPDATE",
+            params![user],
+        )
+        .await?;
+        if current != verified {
+            return Err(ApiError::Unauthorized);
+        }
+        sql::execute(&mut tx,"INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '24 hours')",params![hash,user]).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn replace_password(
+        &self,
+        user: Uuid,
+        verified: &str,
+        replacement: &str,
+    ) -> Result<()> {
+        let mut db = self.pool.clone();
+        let mut tx = db.transaction().await?;
+        let current: String = sql::scalar(
+            &mut tx,
+            "SELECT password_hash FROM users WHERE id=$1 FOR UPDATE",
+            params![user],
+        )
+        .await?;
+        if current != verified {
+            return Err(ApiError::Conflict(
+                "account credentials changed; sign in again".into(),
+            ));
+        }
+        sql::execute(
+            &mut tx,
+            "UPDATE users SET password_hash=$2 WHERE id=$1",
+            params![user, replacement],
+        )
+        .await?;
+        sql::execute(
+            &mut tx,
+            "DELETE FROM sessions WHERE user_id=$1",
+            params![user],
+        )
+        .await?;
+        sql::execute(
+            &mut tx,
+            "INSERT INTO audit_events(actor,action,resource_id) VALUES($1,'password_changed',$1)",
+            params![user.to_string()],
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn authenticate_token(&self, hash: &str) -> Result<Option<Auth>> {
         let row = sql::optional_record(&mut self.pool.clone(), "SELECT u.id,u.username,t.tenant_id,t.project_ids,t.scopes FROM api_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=$1 AND NOT t.revoked AND t.expires_at>now()", params![hash], &[("id", Type::Uuid),("username", Type::String),("tenant_id", Type::Uuid),("project_ids", Type::List(Box::new(Type::Uuid))),("scopes", Type::List(Box::new(Type::String)))]).await?;
         Ok(row

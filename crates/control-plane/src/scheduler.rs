@@ -258,7 +258,8 @@ pub async fn tick(state: &AppState) -> Result<()> {
         crate::dispatch::deliver_ota(state).await?;
     }
     dispatch_work(state).await?;
-    maintain(state).await
+    maintain(state).await?;
+    crate::lifecycle::tick(state).await
 }
 
 async fn dispatch_work(state: &AppState) -> Result<()> {

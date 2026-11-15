@@ -21,6 +21,17 @@ pub async fn ingest(
 ) -> Result<bool, Status> {
     let mut tx_db = pool.clone();
     let mut tx = tx_db.transaction().await.map_err(internal)?;
+    sql::execute(
+        &mut tx,
+        "SELECT pg_advisory_xact_lock_shared(438284731022932)",
+        params![],
+    )
+    .await
+    .map_err(internal)?;
+    let retired:bool=sql::scalar(&mut tx,"SELECT EXISTS(SELECT 1 FROM telemetry_deleted_identities WHERE (kind='node' AND id=$1) OR (kind='attempt' AND id=ANY($2)))",params![node,b.processes.iter().map(|p|p.attempt_id).collect::<Vec<_>>()]).await.map_err(internal)?;
+    if retired {
+        return Err(Status::permission_denied("telemetry identity retired"));
+    }
     let digest = crypto::hash(bytes);
     let inserted = models::TelemetryBatch::upsert_by_node_id_and_batch_id(node, b.id)
         .digest(&digest)

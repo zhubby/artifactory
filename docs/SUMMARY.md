@@ -6,6 +6,7 @@
 
 - [零侵入 AI 构建](ai-builds.md)
 - [多租户、项目权限与共享设备](multitenancy.md)
+- [租户与项目工作台、个人设置及生命周期](workspaces.md)
 - [节点元数据、MCP 与 AI 选机](node-placement.md)
 - [执行配方与历史配置](configuration.md)
 - [控制台语言、主题与动效](frontend-experience.md)
@@ -56,6 +57,7 @@
 - [Toasty 数据访问迁移计划 · 2026-11-13](plans/2026-11-13-toasty-data-access.md)
 - [多租户实施与审查修复 · 2026-11-15](plans/2026-11-15-multitenancy.md)
 - [可读租户、项目与构建路由计划 · 2026-11-15](superpowers/plans/2026-11-15-readable-routes.md)
+- [租户与项目工作台实施计划 · 2026-11-15](superpowers/plans/2026-11-15-workspace-hierarchy.md)
 
 # 品牌与变更记录
 

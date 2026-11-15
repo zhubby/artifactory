@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { resolve } from "node:path";
 import { mkdirSync } from "node:fs";
-import { fixtureAPI } from "../ui/fixtures";
+import { fixtureAPI, tenantURL } from "../ui/fixtures";
 
 test("anonymous docs routes, nested chapters, assets and 404", async ({
   request,
@@ -15,6 +15,9 @@ test("anonymous docs routes, nested chapters, assets and 404", async ({
   const chapter = await request.get("/docs/acceptance/emissary/2026-11-13.html");
   expect(chapter.status()).toBe(200);
   expect(await chapter.text()).toContain("Rust Artifactory Emissary 验收记录");
+  const workspaces = await request.get("/docs/workspaces.html");
+  expect(workspaces.status()).toBe(200);
+  expect(await workspaces.text()).toContain("租户与项目工作台");
   for (const [path, type] of [
     ["/docs/brand/artifactory-assembly-a.png", "image/png"],
     ["/docs/brand/artifactory-logo-kit.zip", "application/zip"],
@@ -104,7 +107,7 @@ for (const [locale, label] of [["zh-CN", "文档"], ["en", "Documentation"]]) {
   test(`${locale}: console link opens the static book`, async ({ page, baseURL }) => {
     await fixtureAPI(page);
     await page.context().addCookies([{ name: "artifactory-locale", value: locale, url: baseURL! }]);
-    await page.goto("/");
+    await page.goto(tenantURL("/"));
     if (test.info().project.name === "mobile") {
       await page.getByRole("button", { name: locale === "en" ? "Open navigation" : "打开导航" }).click();
     }

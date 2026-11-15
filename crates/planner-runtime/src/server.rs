@@ -48,6 +48,7 @@ pub fn router(state: Runtime, token: String) -> Router {
         .route("/v1/validate", post(validate))
         .route("/v1/queue", post(queue))
         .route("/v1/reconcile", post(reconcile))
+        .route("/v1/purge", post(purge))
         .with_state(state.clone());
     let runner = Router::new()
         .route("/healthz", get(|| async { "ok" }))
@@ -61,6 +62,10 @@ pub fn router(state: Runtime, token: String) -> Router {
     runner
         .merge(service::protected(internal, token))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
+}
+async fn purge(State(s): State<Runtime>, Json(v): Json<Value>) -> ApiResult<Value> {
+    s.store.purge_project(id(&v, "project_id")?).await?;
+    Ok(Json(json!({"ok":true})))
 }
 async fn metrics(State(s): State<Runtime>) -> artifactory_runtime_protocol::error::Result<String> {
     let mut output = artifactory_runtime_protocol::metrics::render();

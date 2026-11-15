@@ -59,6 +59,7 @@ pub fn router(state: Service, token: String) -> Router {
         Router::new()
             .route("/metrics", get(|| async { crate::metrics() }))
             .route("/v1/resources", post(resources))
+            .route("/v1/purge", post(purge))
             .route("/v1/nodes/{id}/latest", get(latest))
             .route("/v1/nodes/{id}/history", get(history))
             .route("/v1/nodes/{id}/inventory", get(inventory))
@@ -67,6 +68,20 @@ pub fn router(state: Service, token: String) -> Router {
             .with_state(state),
         token,
     )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Purge {
+    nodes: Vec<Uuid>,
+    attempts: Vec<Uuid>,
+}
+async fn purge(State(s): State<Service>, Json(v): Json<Purge>) -> Result<Json<Value>> {
+    if v.nodes.len() > 512 || v.attempts.len() > 10000 {
+        return Err(ApiError::BadRequest("purge batch too large".into()));
+    }
+    s.store.purge(&v.nodes, &v.attempts).await?;
+    Ok(Json(serde_json::json!({"ok":true})))
 }
 
 async fn resources(

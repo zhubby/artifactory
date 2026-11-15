@@ -34,6 +34,24 @@ pub struct Owner {
     user_id: Uuid,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Rename {
+    name: String,
+}
+pub async fn rename(
+    TenantState(s): TenantState,
+    auth: Auth,
+    Json(input): Json<Rename>,
+) -> Result<Json<Value>> {
+    auth.session_role("admin")?;
+    let name = input.name.trim();
+    if name.is_empty() || name.chars().count() > 100 || name.chars().any(char::is_control) {
+        return Err(ApiError::BadRequest("invalid tenant name".into()));
+    }
+    Ok(Json(s.store.rename_tenant(name).await?))
+}
+
 fn tenant_role(role: &str) -> Result<()> {
     if !matches!(role, "admin" | "member") {
         return Err(ApiError::BadRequest("role must be admin or member".into()));

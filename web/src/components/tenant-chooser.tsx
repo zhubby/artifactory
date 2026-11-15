@@ -1,8 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import { useAccount } from "@/components/account";
+import { BrandMark } from "@/components/brand-mark";
+import { OperationHistory } from "@/components/lifecycle";
+import { Modal } from "@/components/ui/dialog";
+import { Status } from "@/components/common";
 import { useState } from "react";
-import { ArrowRight, Building2, LogOut, Plus, RefreshCw } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Building2,
+  Plus,
+  Search,
+  Settings2,
+} from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";
 import { useUI } from "@/components/providers";
 import { Empty, ErrorBox, Field, Loading } from "@/components/common";
@@ -15,108 +27,162 @@ import type { Account, Tenant } from "@/lib/types";
 
 export function TenantChooser() {
   const { t } = useUI();
-  const account = useRemote<Account>("/auth/me", 60000);
-  const tenants = useRemote<Tenant[]>(account.data ? "/tenants" : null, 30000);
+  const account = useAccount();
+  const tenants = useRemote<Tenant[]>(account.data ? "/tenants" : null, 5000);
+  const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
-  const [key] = useState(() => crypto.randomUUID());
+  const [key, setKey] = useState("");
+  const filtered = tenants.data?.filter((tenant) =>
+    `${tenant.name} ${tenant.slug}`.toLowerCase().includes(query.toLowerCase()),
+  );
   return (
-    <AuthShell
-      title={t("tenants.choose")}
-      description={t("tenants.chooseDetail")}
-      notice={t("tenants.isolation")}
-    >
-      <ErrorBox message={account.error || tenants.error} />
-      {(account.error || tenants.error) && (
-        <Button
-          variant="secondary"
-          onClick={() =>
-            void (account.error ? account.reload() : tenants.reload())
-          }
-        >
-          <RefreshCw />
-          {t("common.retry")}
-        </Button>
-      )}
-      {!account.data || !tenants.data ? (
-        !account.error && !tenants.error && <Loading />
-      ) : (
-        <>
-          <p className="mb-5 text-sm text-muted-foreground">
-            {account.data.username}
-          </p>
-          <div className="grid gap-3">
-            {tenants.data.map((tenant) => (
-              <Link
-                key={tenant.id}
-                href={`/tenants/${tenant.slug}`}
-                className="flex min-w-0 items-center gap-4 rounded-xl border border-border bg-background/70 p-4 transition-colors hover:border-primary focus-visible:outline-2 focus-visible:outline-primary"
-              >
-                <Building2 className="shrink-0 text-primary" />
-                <span className="min-w-0 flex-1">
-                  <span className="block break-words font-medium">
-                    {tenant.name}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {t(`tenants.${tenant.role}`)}
-                  </span>
-                </span>
-                <ArrowRight className="shrink-0" size={18} />
-              </Link>
-            ))}
+    <div className="tenant-hall">
+      <header className="hall-header">
+        <Link href="/tenants" className="brand">
+          <span className="brand-mark">
+            <BrandMark />
+          </span>
+          Artifactory
+        </Link>
+        <a href="/docs">{t("navigation.docs")} ↗</a>
+      </header>
+      <main className="hall-main space-enter">
+        <div className="hall-heading">
+          <div>
+            <p className="eyebrow">{t("workspace.tenantHall")}</p>
+            <h1>
+              {t("workspace.welcome", {
+                name: account.data?.display_name || "",
+              })}
+            </h1>
+            <p>{t("workspace.hallDescription")}</p>
           </div>
-          {!tenants.data.length && (
-            <Empty
-              title={t("tenants.welcome")}
-              detail={t("tenants.createDetail")}
+          <Button
+            onClick={() => {
+              setKey(crypto.randomUUID());
+              setCreating(true);
+            }}
+          >
+            <Plus />
+            {t("tenants.create")}
+          </Button>
+        </div>
+        <div className="workspace-section-heading">
+          <div>
+            <h2>{t("tenants.choose")}</h2>
+            <span>{tenants.data?.length ?? "—"}</span>
+          </div>
+          <label className="workspace-filter">
+            <Search size={16} />
+            <input
+              aria-label={t("workspace.searchTenant")}
+              placeholder={t("workspace.searchTenant")}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
             />
-          )}
-          {creating || !tenants.data.length ? (
-            <div className="mt-6 border-t border-border pt-5">
-              <SubmitForm
-                label={t("tenants.create")}
-                onSubmit={async (form) => {
-                  const result = await mutation<{ id: string; slug: string }>("/tenants", {
-                    name: form.get("name"),
-                    idempotency_key: key,
-                  });
-                  window.location.assign(`/tenants/${result.slug}`);
+          </label>
+        </div>
+        <ErrorBox message={account.error || tenants.error} />
+        {!filtered ? (
+          <Loading />
+        ) : !filtered.length ? (
+          <section className="hall-empty">
+            <Building2 size={35} />
+            <h2>
+              {t(
+                tenants.data?.length
+                  ? "workspace.noResults"
+                  : "tenants.welcome",
+              )}
+            </h2>
+            <p>
+              {t(
+                tenants.data?.length
+                  ? "workspace.trySearch"
+                  : "workspace.emptyHall",
+              )}
+            </p>
+            {!tenants.data?.length && (
+              <Button
+                onClick={() => {
+                  setKey(crypto.randomUUID());
+                  setCreating(true);
                 }}
               >
-                <Field label={t("tenants.name")}>
-                  <Input
-                    name="name"
-                    required
-                    maxLength={100}
-                    autoComplete="organization"
-                  />
-                </Field>
-              </SubmitForm>
-            </div>
-          ) : (
-            <Button
-              className="mt-5 w-full"
-              variant="secondary"
-              onClick={() => setCreating(true)}
-            >
-              <Plus />
-              {t("tenants.create")}
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            className="mt-4 w-full"
-            onClick={() =>
-              void mutation("/auth/logout", {}).then(() =>
-                window.location.assign("/login"),
-              )
-            }
-          >
-            <LogOut />
-            {t("navigation.logout")}
-          </Button>
-        </>
-      )}
-    </AuthShell>
+                <Plus />
+                {t("tenants.create")}
+              </Button>
+            )}
+          </section>
+        ) : (
+          <div className="tenant-grid">
+            {filtered.map((tenant) => (
+              <article key={tenant.id} className="tenant-card">
+                <div className="tenant-card-top">
+                  <span className="tenant-glyph">
+                    <Building2 size={24} />
+                  </span>
+                  <Status small value={tenant.status} />
+                </div>
+                <Link
+                  href={`/tenants/${tenant.slug}`}
+                  className="tenant-card-title"
+                >
+                  {tenant.name}
+                  <ArrowUpRight size={19} />
+                </Link>
+                <p className="tenant-card-role">
+                  {t(`tenants.${tenant.role}`)}
+                </p>
+                <div className="tenant-card-footer">
+                  <code>{tenant.slug}</code>
+                  {["owner", "admin"].includes(tenant.role) && (
+                    <Link
+                      href={`/tenants/${tenant.slug}/settings`}
+                      aria-label={t("workspace.manageTenantNamed", {
+                        name: tenant.name,
+                      })}
+                    >
+                      <Settings2 size={16} />
+                      {t("workspace.manage")}
+                    </Link>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+        <OperationHistory />
+      </main>
+      <Modal
+        open={creating}
+        onOpenChange={setCreating}
+        title={t("tenants.create")}
+        description={t("tenants.createDetail")}
+      >
+        <SubmitForm
+          key={key}
+          label={t("tenants.create")}
+          onSubmit={async (form, markSaved) => {
+            const result = await mutation<{ id: string; slug: string }>(
+              "/tenants",
+              { name: form.get("name"), idempotency_key: key },
+            );
+            markSaved();
+            window.location.assign(`/tenants/${result.slug}`);
+          }}
+        >
+          <Field label={t("tenants.name")}>
+            <Input
+              name="name"
+              required
+              maxLength={100}
+              autoComplete="organization"
+            />
+          </Field>
+        </SubmitForm>
+      </Modal>
+    </div>
   );
 }
 
@@ -185,10 +251,10 @@ export function InvitationJoin({ token }: { token: string }) {
                 setBusy(true);
                 setError(undefined);
                 try {
-                  const result = await mutation<{ tenant_id: string; tenant_slug: string }>(
-                    `/invitations/${encodeURIComponent(token)}/accept`,
-                    {},
-                  );
+                  const result = await mutation<{
+                    tenant_id: string;
+                    tenant_slug: string;
+                  }>(`/invitations/${encodeURIComponent(token)}/accept`, {});
                   window.location.assign(`/tenants/${result.tenant_slug}`);
                 } catch (error) {
                   setError(asError(error));

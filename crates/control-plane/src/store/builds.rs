@@ -173,6 +173,7 @@ impl ControlStore {
     pub async fn retry_job(&self, id: Uuid, auth: &Auth) -> Result<()> {
         let mut transaction_db = self.pool.clone();
         let mut transaction = transaction_db.transaction().await?;
+        sql::execute(&mut transaction,"SELECT require_active_project(b.project_id) FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1",params![id]).await?;
         let row=sql::record(&mut transaction, "SELECT j.status,b.status AS build_status,b.id,b.project_id,b.release_version,EXISTS(SELECT 1 FROM releases r WHERE r.build_id=b.id) AS published FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1 FOR UPDATE OF j,b", params![id], &[("status", Type::String),("build_status", Type::String),("id", Type::Uuid),("project_id", Type::Uuid),("release_version", Type::String),("published", Type::Bool)]).await?;
         auth.project(row.decode("project_id")?, "build")?;
         if row.decode::<Option<String>>("release_version")?.is_some() {
@@ -201,6 +202,12 @@ impl ControlStore {
     pub async fn request_publication(&self, id: Uuid, version: Option<String>) -> Result<()> {
         let mut transaction_db = self.pool.clone();
         let mut transaction = transaction_db.transaction().await?;
+        sql::execute(
+            &mut transaction,
+            "SELECT require_active_project(project_id) FROM builds WHERE id=$1",
+            params![id],
+        )
+        .await?;
         let row = sql::record(
             &mut transaction,
             "SELECT status,release_version FROM builds WHERE id=$1 FOR UPDATE",

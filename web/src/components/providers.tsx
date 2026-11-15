@@ -19,6 +19,7 @@ import {
   type Locale,
 } from "@/lib/preferences";
 import { date as formatDate } from "@/lib/utils";
+import { AccountProvider } from "@/components/account";
 
 const PreferencesContext = createContext<{
   locale: Locale;
@@ -115,7 +116,7 @@ export function Providers({
           messages={locale === "en" ? en : zh}
           timeZone="UTC"
         >
-          {children}
+          <AccountProvider>{children}</AccountProvider>
         </NextIntlClientProvider>
       </PreferencesContext.Provider>
     </ThemeProvider>

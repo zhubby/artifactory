@@ -30,9 +30,21 @@ export function Modal({
   const { t } = useUI();
   const depth = useContext(ModalDepth);
   const previousFocus = useRef<HTMLElement | null>(null);
+  const content = useRef<HTMLElement | null>(null);
+  function change(value: boolean) {
+    if (
+      !value &&
+      content.current?.querySelector(
+        'form[data-dirty="true"], [data-unsaved="true"]',
+      ) &&
+      !window.confirm(t("workspace.unsaved"))
+    )
+      return;
+    onOpenChange(value);
+  }
   return (
     <ModalDepth.Provider value={depth + 1}>
-      <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Root open={open} onOpenChange={change}>
         <Dialog.Portal>
           <Dialog.Overlay
             className="fixed inset-0 z-40 bg-black/65 backdrop-blur-xs"
@@ -42,7 +54,8 @@ export function Modal({
             data-app-modal=""
             style={{ zIndex: 50 + depth * 20 }}
             ref={(element) => {
-              if (element) modalClosers.set(element, () => onOpenChange(false));
+              content.current = element;
+              if (element) modalClosers.set(element, () => change(false));
             }}
             className={cn(
               "modal-panel fixed top-1/2 left-1/2 z-50 max-h-[90dvh] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card shadow-2xl",

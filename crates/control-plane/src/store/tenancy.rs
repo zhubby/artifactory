@@ -154,12 +154,12 @@ impl ControlStore {
     }
 
     pub async fn tenants(&self, user: Uuid) -> Result<Vec<Value>> {
-        Ok(sql::scalars(&mut self.pool.clone(),"SELECT jsonb_build_object('id',t.id,'slug',t.slug,'name',t.name,'role',m.role,'owner_id',t.owner_id,'created_at',t.created_at) FROM tenants t JOIN tenant_members m ON m.tenant_id=t.id WHERE m.user_id=$1 ORDER BY t.created_at,t.id",params![user]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(),"SELECT jsonb_build_object('id',t.id,'slug',t.slug,'name',t.name,'role',m.role,'owner_id',t.owner_id,'status',t.status,'archived_at',t.archived_at,'created_at',t.created_at) FROM tenants t JOIN tenant_members m ON m.tenant_id=t.id WHERE m.user_id=$1 ORDER BY t.created_at,t.id",params![user]).await?)
     }
 
     /// Resolve only a current member's tenant. Unknown and inaccessible slugs are indistinguishable.
     pub async fn tenant_by_slug(&self, user: Uuid, slug: &str) -> Result<Value> {
-        sql::optional_scalar(&mut self.pool.clone(), "SELECT jsonb_build_object('id',t.id,'slug',t.slug,'name',t.name,'role',m.role,'owner_id',t.owner_id,'created_at',t.created_at) FROM tenants t JOIN tenant_members m ON m.tenant_id=t.id WHERE m.user_id=$1 AND t.slug=$2", params![user,slug]).await?.ok_or(ApiError::NotFound)
+        sql::optional_scalar(&mut self.pool.clone(), "SELECT jsonb_build_object('id',t.id,'slug',t.slug,'name',t.name,'role',m.role,'owner_id',t.owner_id,'status',t.status,'archived_at',t.archived_at,'created_at',t.created_at) FROM tenants t JOIN tenant_members m ON m.tenant_id=t.id WHERE m.user_id=$1 AND t.slug=$2", params![user,slug]).await?.ok_or(ApiError::NotFound)
     }
 
     pub async fn tenant_slug(&self, id: Uuid) -> Result<String> {
@@ -223,6 +223,11 @@ impl ControlStore {
             params![],
         )
         .await?;
+        let retired: bool = sql::scalar(&mut tx,"SELECT EXISTS(SELECT 1 FROM deleted_tenants WHERE id='00000000-0000-0000-0000-000000000001')",params![]).await?;
+        if retired {
+            tx.commit().await?;
+            return Ok(());
+        }
         let user: Uuid = sql::scalar(
             &mut tx,
             "SELECT id FROM users WHERE username=$1",
@@ -231,8 +236,8 @@ impl ControlStore {
         .await?;
         sql::execute(&mut tx,"INSERT INTO tenants(id,name,owner_id,created_by,creation_key) VALUES('00000000-0000-0000-0000-000000000001','Default',$1,$1,'00000000-0000-0000-0000-000000000001') ON CONFLICT(id) DO NOTHING",params![user]).await?;
         // Only the initial bootstrap account is added. Subsequent startup cannot restore revoked authority.
-        sql::execute(&mut tx,"INSERT INTO tenant_members(tenant_id,user_id,role) SELECT id,owner_id,'owner' FROM tenants t WHERE t.owner_id=$1 AND NOT EXISTS(SELECT 1 FROM tenant_members m WHERE m.tenant_id=t.id) ON CONFLICT DO NOTHING",params![user]).await?;
-        sql::execute(&mut tx,"INSERT INTO node_pools(id,tenant_id,name,is_default) VALUES('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','Default',true) ON CONFLICT(id) DO NOTHING",params![]).await?;
+        sql::execute(&mut tx,"INSERT INTO tenant_members(tenant_id,user_id,role) SELECT id,owner_id,'owner' FROM tenants t WHERE t.id='00000000-0000-0000-0000-000000000001' AND t.owner_id=$1 AND t.status='active' AND NOT EXISTS(SELECT 1 FROM tenant_members m WHERE m.tenant_id=t.id) ON CONFLICT DO NOTHING",params![user]).await?;
+        sql::execute(&mut tx,"INSERT INTO node_pools(id,tenant_id,name,is_default) SELECT '00000000-0000-0000-0000-000000000001',id,'Default',true FROM tenants t WHERE t.id='00000000-0000-0000-0000-000000000001' AND t.status='active' AND NOT EXISTS(SELECT 1 FROM node_pools p WHERE p.id='00000000-0000-0000-0000-000000000001') ON CONFLICT(id) DO NOTHING",params![]).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -267,6 +272,12 @@ impl ControlStore {
             params![self.tenant()?],
         )
         .await?;
+        sql::execute(
+            tx,
+            "SELECT require_active_tenant($1)",
+            params![self.tenant()?],
+        )
+        .await?;
         let allowed:bool=sql::scalar(tx,"SELECT EXISTS(SELECT 1 FROM tenant_members WHERE tenant_id=$1 AND user_id=$2 AND role IN ('owner','admin'))",params![self.tenant()?,user]).await?;
         if !allowed {
             return Err(ApiError::Forbidden);
@@ -298,6 +309,7 @@ impl ControlStore {
         if found.is_none() {
             return Err(ApiError::NotFound);
         }
+        sql::execute(tx, "SELECT require_active_project($1)", params![project]).await?;
         let role: Option<String> = sql::optional_scalar(
             tx,
             "SELECT CASE WHEN t.role IN ('owner','admin') THEN 'tenant_admin' ELSE m.role END FROM tenant_members t LEFT JOIN project_members m ON m.tenant_id=t.tenant_id AND m.user_id=t.user_id AND m.project_id=$3 WHERE t.tenant_id=$1 AND t.user_id=$2 AND (t.role IN ('owner','admin') OR m.role='admin')",

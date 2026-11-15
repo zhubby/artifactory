@@ -189,4 +189,101 @@ async fn pvc_loss_restores_exact_commit_tag_and_lfs_without_upstream_and_tools_s
         .await
         .unwrap();
     assert!(restore(&state, &snapshot).await.is_err());
+    let other = Uuid::new_v4();
+    let shared = Uuid::new_v4();
+    let private = Uuid::new_v4();
+    for (owner, id) in [(project, shared), (other, shared), (project, private)] {
+        state
+            .store
+            .save_credential(owner, id, &"a".repeat(64), "encrypted".into())
+            .await
+            .unwrap();
+    }
+    let sentinel = format!("sources/{other}/sentinel");
+    state
+        .objects
+        .put(&sentinel, b"other project".to_vec())
+        .await
+        .unwrap();
+    let inventory = state.store.prepare_purge(project).await.unwrap();
+    assert_eq!(
+        inventory["credentials"].as_array().unwrap().len(),
+        2,
+        "refs-only credentials are inventoried"
+    );
+    assert!(
+        state
+            .store
+            .capture_sources(project, || async { Ok(()) })
+            .await
+            .is_err()
+    );
+    let router = artifactory_source_service::service::router(state.clone(), "x".repeat(64));
+    for _ in 0..2 {
+        let response = router
+            .clone()
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri("/v1/purge")
+                    .header("authorization", format!("Bearer {}", "x".repeat(64)))
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        json!({"project_id":project}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+    }
+    assert!(!repo.exists());
+    let downloaded = directory.path().join("deleted-object");
+    assert!(
+        state
+            .objects
+            .get_file(
+                &format!("sources/{}/manifest.json", snapshot.id),
+                &downloaded,
+                65536
+            )
+            .await
+            .is_err()
+    );
+    state
+        .objects
+        .get_file(&sentinel, &downloaded, 65536)
+        .await
+        .unwrap();
+    assert_eq!(
+        tokio::fs::read(&downloaded).await.unwrap(),
+        b"other project"
+    );
+    let retained: Vec<Uuid> =
+        sql::scalars(&mut pool.clone(), "SELECT id FROM credentials", params![])
+            .await
+            .unwrap();
+    assert_eq!(retained, vec![shared]);
+    assert!(
+        state
+            .store
+            .save_snapshot(
+                Uuid::new_v4(),
+                project,
+                repository,
+                &commit,
+                json!({}),
+                "retired".into()
+            )
+            .await
+            .is_err()
+    );
+    state.objects.delete(&sentinel).await.unwrap();
+    sql::execute(
+        &mut admin.clone(),
+        &format!("DROP SCHEMA {schema} CASCADE"),
+        params![],
+    )
+    .await
+    .unwrap();
 }

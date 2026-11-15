@@ -1,247 +1,281 @@
 "use client";
-
-import { buildPath, projectPath, tenantFromPath } from "@/lib/routes";
-import { TenantChooser } from "@/components/tenant-chooser";
-import { ProjectMembers } from "@/components/tenant-members";
-import type { Account, TenantContext } from "@/lib/types";
-import { NodeCard } from "@/components/node-card";
-import { NodeDetailDialog } from "@/components/node-detail-dialog";
-
-import { PreferencesControls } from "@/components/preferences-controls";
-import { Atmosphere } from "@/components/atmosphere";
-import { BrandMark } from "@/components/brand-mark";
-import SpotlightCard from "@/components/react-bits/SpotlightCard";
-import { useUI } from "@/components/providers";
-
-import { Link } from "@/lib/tenant";
-import { usePathname } from "next/navigation";
-import { useRouter } from "@/lib/tenant";
 import { Suspense, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import {
   Activity,
+  ArrowLeft,
   ArrowRight,
   ArrowUpRight,
-  Boxes,
   BookOpen,
-  CheckCircle2,
-  ChevronRight,
-  CircleDot,
-  Cpu,
+  Boxes,
   FolderGit2,
-  GitBranch,
-  KeyRound,
   LayoutDashboard,
-  LogOut,
   Menu,
-  Monitor,
   Package,
   Play,
   Plus,
-  RefreshCw,
   Search,
   Server,
   Settings2,
-  ShieldCheck,
-  Terminal,
   X,
+  GitBranch,
 } from "lucide-react";
+import { useUI } from "@/components/providers";
+import { useAccount } from "@/components/account";
+import { BrandMark } from "@/components/brand-mark";
+import { SpaceSwitcher } from "@/components/space-switcher";
+import { WorkspaceManagement } from "@/components/workspace-management";
+import { NodesWorkspace } from "@/components/nodes-workspace";
+import { OperationHistory } from "@/components/lifecycle";
+import { BuildTable } from "@/components/build-table";
+import { BuildDetail } from "@/components/build-detail";
+import { BuildWizard } from "@/components/build-wizard";
+import { ReleaseDetail } from "@/components/release-detail";
+import { ProjectForm } from "@/components/forms";
+import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/dialog";
 import {
   ArtifactTable,
   Empty,
   ErrorBox,
-  Field,
   Loading,
   PageTitle,
   SectionTitle,
   Status,
 } from "@/components/common";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Modal } from "@/components/ui/dialog";
-import {
-  ProjectForm,
-  SecretDialog,
-  SubmitForm,
-} from "@/components/forms";
-import { BuildDetail } from "@/components/build-detail";
-import { BuildTable } from "@/components/build-table";
-import { BuildWizard } from "@/components/build-wizard";
-import { Settings } from "@/components/settings";
-import { mutation, useRemote } from "@/lib/api";
-import { asError } from "@/lib/errors";
+import { useRemote, cancelBusinessRequests } from "@/lib/api";
+import { Link } from "@/lib/tenant";
+import { projectFromPath, tenantFromPath, projectPath } from "@/lib/routes";
 import type {
-  Artifact,
-  Build,
-  Credential,
-  Node,
-  Overview,
-  Pool,
-  Project,
-  Release,
+  TenantContext,
   User,
+  Project,
+  Build,
+  Artifact,
+  Release,
+  Credential,
+  Pool,
 } from "@/lib/types";
 import { cn, short } from "@/lib/utils";
 
-const platform = (os: string) =>
-  ({ darwin: "macOS", linux: "Linux", windows: "Windows" })[os] || os;
-
 export function Console() {
-  const tenant = tenantFromPath(usePathname());
-  return tenant ? <TenantConsole key={tenant} /> : <TenantChooser />;
+  const pathname = usePathname();
+  const tenant = tenantFromPath(pathname)!;
+  const project = projectFromPath(pathname);
+  return (
+    <Workspace
+      key={`${tenant}/${project || ""}`}
+      tenant={tenant}
+      projectSlug={project}
+    />
+  );
 }
-
-function TenantConsole() {
-  const { t, date, number } = useUI();
-  const navigation = [
-    { path: "/", label: t("navigation.overview"), icon: LayoutDashboard },
-    { path: "/projects", label: t("navigation.projects"), icon: FolderGit2 },
-    { path: "/builds", label: t("navigation.builds"), icon: Activity },
-    { path: "/nodes", label: t("navigation.nodes"), icon: Server },
-    { path: "/artifacts", label: t("navigation.artifacts"), icon: Boxes },
-    { path: "/releases", label: t("navigation.releases"), icon: Package },
-  ];
-  const fullPath = usePathname();
-  const pathname = fullPath.replace(/^\/tenants\/[^/]+/, "") || "/";
-  const router = useRouter();
-  const pieces = pathname.split("/").filter(Boolean).map(decodeURIComponent);
-  const userRemote = useRemote<Account>("/auth/me", 60000);
-  const context = useRemote<TenantContext>(userRemote.data ? "/tenant" : null, 10000);
-  const user: User | undefined = userRemote.data && context.data ? { ...userRemote.data, tenant_role: context.data.tenant.role, project_roles: context.data.project_roles, role: ["owner", "admin"].includes(context.data.tenant.role) ? "admin" : Object.values(context.data.project_roles).some(role => role !== "viewer") ? "operator" : "viewer" } : undefined;
-  const projects = useRemote<Project[]>(user ? "/projects" : null);
-  const projectDetail = useRemote<Project>(user && pieces[0] === "projects" && pieces[1]
-    ? `/projects/by-slug/${encodeURIComponent(pieces[1])}` : null);
-  const builds = useRemote<Build[]>(user ? "/builds" : null, 5000);
-  const [search, setSearch] = useState("");
-  const [nodeOffset, setNodeOffset] = useState(0);
-  const nodeSearch = pieces[0] === "nodes" ? search : "";
-  const nodes = useRemote<Node[]>(user ? `/nodes?limit=100&offset=${nodeOffset}&q=${encodeURIComponent(nodeSearch)}` : null);
-  const overview = useRemote<Overview>(user ? "/overview" : null);
-  const releases = useRemote<Release[]>(user ? "/releases" : null);
-  const artifacts = useRemote<Artifact[]>(
-    user && pieces[0] === "artifacts" ? "/artifacts" : null,
+function Workspace({
+  tenant,
+  projectSlug,
+}: {
+  tenant: string;
+  projectSlug?: string;
+}) {
+  const { t } = useUI();
+  const account = useAccount();
+  const pathname = usePathname();
+  const relative = pathname.replace(/^\/tenants\/[^/]+/, "") || "/";
+  const pieces = relative.split("/").filter(Boolean);
+  const context = useRemote<TenantContext>(
+    account.data ? "/tenant" : null,
+    5000,
   );
-  const pools = useRemote<Pool[]>(user ? "/pools" : null);
-  const credentials = useRemote<Credential[]>(
-    user?.role === "admin" ? "/credentials" : null,
+  const projects = useRemote<Project[]>(
+    context.data ? "/projects" : null,
+    10000,
   );
-  const searchRef = useRef<HTMLInputElement>(null);
+  const detail = useRemote<Project>(
+    context.data && projectSlug ? `/projects/by-slug/${projectSlug}` : null,
+    5000,
+  );
   const [mobile, setMobile] = useState(false);
-  const [newProject, setNewProject] = useState(false);
-  const [editingProject, setEditingProject] = useState<Project>();
-  const [nodeSelection, setNodeSelection] = useState<{
-    id: string;
-    search: string;
-    offset: number;
-    pathname: string;
-  }>();
-  const [nodeRemoved, setNodeRemoved] = useState(false);
-  const [enrolling, setEnrolling] = useState(false);
-  const [secret, setSecret] = useState<string>();
-  const [error, setError] = useState<Error>();
-  const currentSelection =
-    nodeSelection?.search === nodeSearch &&
-    nodeSelection.offset === nodeOffset &&
-    nodeSelection.pathname === pathname
-      ? nodeSelection
-      : undefined;
-  const selectedNode =
-    currentSelection && nodes.data?.find(node => node.id === currentSelection.id);
+  const navigationRef = useRef<HTMLElement>(null);
+  const space = `${tenant}/${projectSlug || ""}`;
+  useEffect(() => () => cancelBusinessRequests(space), [space]);
   useEffect(() => {
-    setNodeSelection(undefined);
-    setNodeRemoved(false);
-  }, [nodeSearch, nodeOffset, pathname]);
-  useEffect(() => {
-    if (
-      currentSelection &&
-      nodes.data &&
-      !nodes.data.some(node => node.id === currentSelection.id)
-    ) {
-      setNodeSelection(undefined);
-      setNodeRemoved(true);
-    }
-  }, [currentSelection, nodes.data]);
-  useEffect(() => { setNodeOffset(0); }, [nodeSearch, pathname]);
-  useEffect(() => {
-    setSearch("");
     setMobile(false);
   }, [pathname]);
   useEffect(() => {
-    function key(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key === "k") {
-        event.preventDefault();
-        searchRef.current?.focus();
-      }
-      if (event.key === "Escape") setMobile(false);
-    }
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, []);
-  async function refresh() {
-    await Promise.all([
-      projects.reload(),
-      projectDetail.reload(),
-      builds.reload(),
-      nodes.reload(),
-      overview.reload(),
-      releases.reload(),
-      artifacts.reload(),
-      credentials.reload(),
-    ]);
-  }
-  const contains = (...values: (string | null | undefined)[]) =>
-    values.some((value) => value?.toLowerCase().includes(search.toLowerCase()));
-  if (!user)
-    return (
-      <main className="mx-auto max-w-6xl px-8">
-        <ErrorBox message={userRemote.error || context.error} />
-        <Link href="/tenants">{t("tenants.choose")}</Link>
-        <Loading />
-      </main>
+    if (!mobile) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const regions = Array.from(
+      document.querySelectorAll<HTMLElement>(".workspace,.account-anchor"),
     );
-  const project = projectDetail.data;
-  const current =
-    pieces[0] === "settings"
-      ? t("navigation.security")
-      : navigation.find(
-          (entry) => entry.path === (pieces[0] ? `/${pieces[0]}` : "/"),
-        )?.label || t("common.workspace");
+    const overflow = document.body.style.overflow;
+    regions.forEach((element) => (element.inert = true));
+    document.body.style.overflow = "hidden";
+    navigationRef.current?.querySelector<HTMLElement>("a,button")?.focus();
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobile(false);
+      }
+      if (event.key !== "Tab") return;
+      const items = Array.from(
+        navigationRef.current?.querySelectorAll<HTMLElement>(
+          "a[href],button",
+        ) || [],
+      ).filter((element) => element.getClientRects().length);
+      const first = items[0],
+        last = items.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    const wide = window.matchMedia("(min-width: 1024px)");
+    const resize = () => {
+      if (wide.matches) setMobile(false);
+    };
+    window.addEventListener("keydown", key);
+    wide.addEventListener("change", resize);
+    return () => {
+      regions.forEach((element) => (element.inert = false));
+      document.body.style.overflow = overflow;
+      window.removeEventListener("keydown", key);
+      wide.removeEventListener("change", resize);
+      previous?.focus();
+    };
+  }, [mobile]);
+  const user: User | undefined =
+    account.data && context.data
+      ? {
+          ...account.data,
+          tenant_role: context.data.tenant.role,
+          project_roles: context.data.project_roles,
+          role: ["owner", "admin"].includes(context.data.tenant.role)
+            ? "admin"
+            : Object.values(context.data.project_roles).some(
+                  (role) => role !== "viewer",
+                )
+              ? "operator"
+              : "viewer",
+        }
+      : undefined;
+  const project = detail.data;
+  const base = projectSlug ? projectPath(projectSlug) : "";
+  const nav = projectSlug
+    ? [
+        { path: base, label: t("navigation.overview"), icon: LayoutDashboard },
+        {
+          path: `${base}/builds`,
+          label: t("navigation.builds"),
+          icon: Activity,
+        },
+        {
+          path: `${base}/artifacts`,
+          label: t("navigation.artifacts"),
+          icon: Boxes,
+        },
+        {
+          path: `${base}/releases`,
+          label: t("navigation.releases"),
+          icon: Package,
+        },
+        ...(project?.effective_role === "admin"
+          ? [
+              {
+                path: `${base}/settings`,
+                label: t("workspace.manageProject"),
+                icon: Settings2,
+              },
+            ]
+          : []),
+      ]
+    : [
+        { path: "/", label: t("workspace.allProjects"), icon: FolderGit2 },
+        { path: "/nodes", label: t("workspace.sharedDevices"), icon: Server },
+        ...(user?.role === "admin"
+          ? [
+              {
+                path: "/settings",
+                label: t("workspace.manageTenant"),
+                icon: Settings2,
+              },
+            ]
+          : [
+              {
+                path: "/settings/security",
+                label: t("security.tokens"),
+                icon: Settings2,
+              },
+            ]),
+      ];
+  const readOnly = context.data?.tenant.status !== "active";
   return (
-    <div className="app-shell">
+    <div className="app-shell workspace-shell">
       {mobile && (
         <button
-          className="fixed inset-0 z-30 bg-black/60 md:hidden"
+          className="workspace-nav-dismiss"
           aria-label={t("navigation.close")}
           onClick={() => setMobile(false)}
         />
       )}
       <aside
+        ref={navigationRef}
+        id="workspace-navigation"
+        role={mobile ? "dialog" : undefined}
+        aria-modal={mobile ? true : undefined}
         className={cn("sidebar", mobile && "open")}
         aria-label={t("navigation.main")}
       >
-        <Link href="/" className="brand">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="mobile-menu sidebar-close"
+          aria-label={t("navigation.close")}
+          onClick={() => setMobile(false)}
+        >
+          <X />
+        </Button>
+        <Link href="/tenants" className="brand">
           <span className="brand-mark">
             <BrandMark />
           </span>
           Artifactory
         </Link>
-        <Link href="/tenants" className="nav-item mb-4"><Boxes size={16}/><span className="truncate">{context.data?.tenant.name}</span><span className="text-xs text-muted-foreground">{t("tenants.switch")}</span></Link>
-        <div className="nav-label">{t("navigation.workspaceGroup")}</div>
+        {projectSlug && (
+          <Link href="/" className="sidebar-back">
+            <ArrowLeft size={14} />
+            {t("workspace.allProjects")}
+          </Link>
+        )}
+        <div className="sidebar-space">
+          <small>
+            {t(projectSlug ? "workspace.project" : "workspace.tenant")}
+          </small>
+          <strong>{project?.name || context.data?.tenant.name || "…"}</strong>
+          <span>{projectSlug || tenant}</span>
+        </div>
         <nav>
-          {navigation.map((entry) => (
+          {nav.map((entry) => (
             <Link
               key={entry.path}
               href={entry.path}
               className={cn(
                 "nav-item",
                 (entry.path === "/"
-                  ? pathname === "/"
-                  : pathname.startsWith(entry.path)) && "active",
+                  ? relative === "/"
+                  : relative === entry.path ||
+                    (entry.path !== base &&
+                      relative.startsWith(`${entry.path}/`))) && "active",
               )}
               aria-current={
                 (
                   entry.path === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(entry.path)
+                    ? relative === "/"
+                    : relative === entry.path ||
+                      (entry.path !== base &&
+                        relative.startsWith(`${entry.path}/`))
                 )
                   ? "page"
                   : undefined
@@ -249,791 +283,510 @@ function TenantConsole() {
             >
               <entry.icon />
               {entry.label}
-              {entry.path === "/nodes" && (
-                <span className="nav-count">
-                  {overview.data?.nodes_online ?? "—"}
-                </span>
-              )}
-              {entry.path === "/builds" && !!overview.data?.running && (
-                <span className="nav-count">{overview.data.running}</span>
-              )}
             </Link>
           ))}
         </nav>
-        <a href="/docs" className="nav-item">
-          <BookOpen />
-          {t("navigation.docs")}
-        </a>
-        <div className="nav-label mt-5">{t("navigation.adminGroup")}</div>
-        <Link
-          href="/settings"
-          className={cn("nav-item", pathname === "/settings" && "active")}
-        >
-          <KeyRound />
-          {t("navigation.security")}
-        </Link>
-        <div className="sidebar-note">
-          <div className="mb-2 flex items-center gap-2 text-foreground">
-            <ShieldCheck size={13} />
-            {t("navigation.trusted")}
-          </div>
-          {t("navigation.toolchains")}
-          <br />
-          {t("navigation.leases")}
-        </div>
-        <div className="flex items-center gap-3 border-t border-border px-3 pt-4">
-          <span className="flex size-8 items-center justify-center rounded bg-secondary text-xs uppercase text-primary">
-            {user.username.slice(0, 2)}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs">{user.username}</p>
-            <p className="mt-1 font-mono text-[9px] text-muted-foreground">
-              {t(`tenants.${user.tenant_role || "member"}`)}
-            </p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t("navigation.logout")}
-            onClick={() =>
-              void mutation("/auth/logout", {}).then(() =>
-                window.location.assign("/login"),
-              )
-            }
-          >
-            <LogOut />
-          </Button>
+        <div className="sidebar-bottom">
+          <Link href="/tenants" className="nav-item">
+            <Boxes />
+            {t("tenants.choose")}
+          </Link>
+          <a className="nav-item" href="/docs">
+            <BookOpen />
+            {t("navigation.docs")}
+          </a>
         </div>
       </aside>
       <div className="workspace">
-        <Atmosphere className="console-atmosphere" />
-        <header className="topbar">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="mobile-menu"
-              aria-label={t("navigation.open")}
-              aria-expanded={mobile}
-              onClick={() => setMobile(!mobile)}
-            >
-              {mobile ? <X /> : <Menu />}
-            </Button>
-            <div className="hidden items-center gap-3 text-xs text-muted-foreground sm:flex">
-              <span>{t("common.workspace")}</span>
-              <ChevronRight size={12} />
-              <span className="text-foreground">{current}</span>
-            </div>
-          </div>
-          <div className="search">
-            <Search size={15} />
-            <input
-              ref={searchRef}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              aria-label={t("search.label")}
-              placeholder={t("search.placeholder")}
+        <header className="topbar workspace-topbar">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="mobile-menu"
+            aria-label={t("navigation.open")}
+            aria-controls="workspace-navigation"
+            aria-expanded={mobile}
+            onClick={() => setMobile(!mobile)}
+          >
+            {mobile ? <X /> : <Menu />}
+          </Button>
+          {context.data ? (
+            <SpaceSwitcher
+              tenant={context.data.tenant}
+              project={project}
+              projects={projects.data || []}
             />
-            <kbd>⌘ K</kbd>
-          </div>
-          <div className="connection-info hidden items-center gap-2 text-[10px] text-muted-foreground lg:flex">
-            <span
-              className={cn(
-                "size-1.5 rounded-full",
-                overview.error
-                  ? "bg-destructive"
-                  : overview.data
-                    ? "bg-success"
-                    : "bg-muted-foreground",
-              )}
-            />
-            {overview.error
-              ? t("connection.error")
-              : overview.data
-                ? t("connection.connected")
-                : t("connection.connecting")}
-            <span className="ml-2 border-l border-border pl-3 font-mono">
-              v0.1.0
-            </span>
-          </div>
-          <PreferencesControls />
+          ) : (
+            <span className="text-sm text-muted-foreground">Artifactory</span>
+          )}
         </header>
-        <main className="main">
+        <main className="main space-enter" id="workspace-content">
           <ErrorBox
-            message={error || projects.error || builds.error || nodes.error}
+            message={
+              account.error || context.error || projects.error || detail.error
+            }
           />
-          {user.tenant_role === "member" && projects.data?.length === 0 && <div className="notice mb-6" role="status"><strong>{t("tenants.noProjects")}</strong><p className="mt-1">{t("tenants.requestAccess")}</p></div>}
-          {pathname === "/" ? (
+          {!user || !context.data || (projectSlug && !project) ? (
+            <Loading />
+          ) : (
             <>
-              <PageTitle
-                eyebrow={t("overview.eyebrow")}
-                title={t("overview.title")}
-                description={t("overview.description")}
-              >
-                <Button
-                  variant="secondary"
-                  aria-label={t("overview.refresh")}
-                  onClick={() => void refresh()}
-                >
-                  <RefreshCw />
-                  {t("common.refresh")}
-                </Button>
-                {user.role !== "viewer" && (
-                  <Button
-                    disabled={!projects.data?.length}
-                    onClick={() => router.push("/builds/new")}
-                  >
-                    <Play />
-                    {t("builds.start")}
-                  </Button>
-                )}
-              </PageTitle>
-              <div className="stats">
-                {[
-                  {
-                    label: t("overview.running"),
-                    value: overview.data?.running,
-                    icon: Activity,
-                    foot: overview.data
-                      ? t("overview.queued", { count: overview.data.queued })
-                      : t("common.awaitingData"),
-                  },
-                  {
-                    label: t("overview.nodes"),
-                    value: overview.data?.nodes_online,
-                    icon: Server,
-                    foot: nodes.data
-                      ? t("overview.registered", { count: overview.data?.nodes_registered ?? nodes.data.length })
-                      : t("common.awaitingData"),
-                  },
-                  {
-                    label: t("overview.today"),
-                    value: overview.data?.builds_today,
-                    icon: GitBranch,
-                    foot: t("overview.byTime"),
-                  },
-                  {
-                    label: t("overview.releases"),
-                    value: overview.data?.releases,
-                    icon: Package,
-                    foot: t("overview.immutable"),
-                  },
-                ].map((stat) => (
-                  <SpotlightCard
-                    className="stat"
-                    key={stat.icon.displayName || stat.icon.name}
-                  >
-                    <div className="stat-label">
-                      {stat.label}
-                      <stat.icon size={15} />
-                    </div>
-                    <div className="stat-value">
-                      {stat.value === undefined ? "—" : number(stat.value)}
-                    </div>
-                    <div className="stat-foot">{stat.foot}</div>
-                  </SpotlightCard>
-                ))}
-              </div>
-              <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_285px]">
-                <section className="panel min-w-0">
-                  <SectionTitle
-                    title={t("overview.recent")}
-                    detail={t("overview.latestRuns")}
-                  >
-                    <Link
-                      href="/builds"
-                      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary"
-                    >
-                      {t("builds.all")}
-                      <ArrowUpRight size={13} />
-                    </Link>
-                  </SectionTitle>
-                  {builds.data ? (
-                    <BuildTable builds={builds.data.slice(0, 6)} />
-                  ) : (
-                    <div className="px-6">
-                      <Loading />
-                    </div>
-                  )}
-                </section>
-                <section className="panel">
-                  <SectionTitle
-                    title={t("overview.resources")}
-                    detail={t("common.live")}
-                  />
-                  {nodes.data?.length ? (
-                    nodes.data.slice(0, 5).map((node) => (
-                      <Link
-                        key={node.id}
-                        href="/nodes"
-                        className="flex items-center gap-3 border-b border-border px-5 py-4 last:border-0"
-                      >
-                        <span className="rounded border border-border bg-secondary p-2">
-                          <Monitor
-                            size={16}
-                            className="text-muted-foreground"
-                          />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs">{node.name}</p>
-                          <p className="mt-1 font-mono text-[9px] text-muted-foreground">
-                            {platform(node.os)} · {node.arch}
-                          </p>
-                        </div>
-                        <Status
-                          small
-                          value={
-                            node.revoked
-                              ? "revoked"
-                              : node.draining
-                                ? "draining"
-                                : node.online
-                                  ? "online"
-                                  : "offline"
-                          }
-                        />
-                      </Link>
-                    ))
-                  ) : (
-                    <div className="px-5 py-8 text-xs leading-7 text-muted-foreground">
-                      {t("overview.noNodes")}
-                      <br />
-                      {t("overview.installEmissary")}
-                    </div>
-                  )}
-                  <Link
-                    href="/nodes"
-                    className="flex items-center justify-between border-t border-border px-5 py-4 text-xs text-primary"
-                  >
-                    {t("overview.manageNodes")}
-                    <ArrowRight size={14} />
-                  </Link>
-                </section>
-              </div>
-              <div className="notice mt-6 flex items-start gap-3">
-                <Terminal className="mt-1 size-4 shrink-0" />
-                <div>
-                  <span className="text-foreground">
-                    {t("overview.traceable")}
-                  </span>
-                  <br />
-                  {t("overview.configPrefix")}{" "}
-                  <code className="text-xs text-primary">
-                    ExecutionPlan v1
-                  </code>{" "}
-                  {t("overview.configSuffix")}
-                </div>
-              </div>
-            </>
-          ) : pieces[0] === "projects" && pieces[2] === "builds" ? (
-            <BuildDetail key={`${pieces[1]}:${pieces[3]}`} projectSlug={pieces[1]} number={Number(pieces[3])} user={user} />
-          ) : pieces[0] === "projects" ? (
-            <>
-              <PageTitle
-                eyebrow={t("projects.eyebrow")}
-                title={project?.name || t("navigation.projects")}
-                description={
-                  project ? project.repository_url : t("projects.description")
-                }
-              >
-                {(project ? project.effective_role === "admin" : user.role === "admin") && (
-                  <Button
-                    variant={project ? "secondary" : "default"}
-                    onClick={() => {
-                      setEditingProject(project);
-                      setNewProject(true);
-                    }}
-                  >
-                    {project ? <Settings2 /> : <Plus />}
-                    {project ? t("projects.settings") : t("projects.add")}
-                  </Button>
-                )}
-                {project && project.effective_role !== "viewer" && (
-                  <Button onClick={() => router.push(`/builds/new?project=${project.slug}`)}>
-                    <Play />
-                    {t("builds.start")}
-                  </Button>
-                )}
-              </PageTitle>
-              {pieces[1] ? (
-                project ? (
-                  <>
-                    <div className="build-meta">
-                      <span>
-                        {project.node_access?.mode === "nodes"
-                          ? t("tenants.selectedDevices", { count: project.node_access.ids.length })
-                          : t("projects.poolCount", { count: project.pool_ids.length })}
-                      </span>
-                      <span>
-                        {t("projects.signingCount", {
-                          count: project.signing_profiles.length,
-                        })}
-                      </span>
-                      <span>{t("projects.config")}</span>
-                    </div>
-                    <section className="panel">
-                      <SectionTitle title={t("projects.builds")} />
-                      {builds.data && (
-                        <BuildTable
-                          builds={builds.data.filter(
-                            (build) => build.project_id === project.id,
-                          )}
-                        />
-                      )}
-                    </section>
-                  </>
-                ) : projectDetail.error ? (
-                  <ErrorBox message={projectDetail.error} />
-                ) : (
-                  <Loading />
-                )
-              ) : !projects.data ? (
-                <Loading />
-              ) : projects.data.length === 0 ? (
-                <section className="panel">
-                  <Empty
-                    title={t("projects.first")}
-                    detail={t("projects.firstDetail")}
-                    action={
-                      project?.effective_role === "admin" ? (
-                        <Button onClick={() => setNewProject(true)}>
-                          <Plus />
-                          {t("projects.add")}
-                        </Button>
-                      ) : undefined
+              {(readOnly || (project && project.status !== "active")) && (
+                <div className="workspace-state" role="status">
+                  <Status
+                    value={
+                      readOnly ? context.data.tenant.status : project!.status
                     }
                   />
-                </section>
-              ) : (
-                <section className="panel">
-                  <SectionTitle
-                    title={t("projects.all")}
-                    detail={t("common.projectCount", {
-                      count: projects.data.length,
-                    })}
-                  />
-                  <div className="table-scroll">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>{t("projects.project")}</th>
-                          <th>{t("projects.repository")}</th>
-                          <th>{t("projects.buildCount")}</th>
-                          <th>{t("overview.recent")}</th>
-                          <th />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {projects.data
-                          .filter((project) =>
-                            contains(project.name, project.repository_url),
-                          )
-                          .map((project) => (
-                            <tr key={project.id}>
-                              <td>
-                                <Link
-                                  href={projectPath(project.slug)}
-                                  className="flex items-center gap-3 font-medium hover:text-primary"
-                                >
-                                  <FolderGit2
-                                    size={17}
-                                    className="text-muted-foreground"
-                                  />
-                                  {project.name}
-                                </Link>
-                              </td>
-                              <td
-                                className="max-w-[320px] truncate font-mono text-[11px] text-muted-foreground"
-                                title={project.repository_url}
-                              >
-                                {project.repository_url}
-                              </td>
-                              <td className="font-mono text-xs">
-                                {number(project.build_count)}
-                              </td>
-                              <td>
-                                {project.last_build ? (
-                                  <Status value={project.last_build.status} />
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">
-                                    {t("projects.noBuilds")}
-                                  </span>
-                                )}
-                              </td>
-                              <td>
-                                <Link
-                                  href={projectPath(project.slug)}
-                                  aria-label={t("projects.view", {
-                                    name: project.name,
-                                  })}
-                                >
-                                  <ArrowUpRight size={15} />
-                                </Link>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              )}
-            </>
-          ) : pieces[0] === "builds" ? (
-            pieces[1] === "new" ? (
-              projects.data ? <Suspense fallback={<Loading />}><BuildWizard projects={projects.data.filter(project => project.effective_role !== "viewer")} user={user} /></Suspense> : <Loading />
-            ) : (
-              <>
-                <PageTitle
-                  eyebrow={t("builds.eyebrow")}
-                  title={t("navigation.builds")}
-                  description={t("builds.description")}
-                >
-                  {user.role !== "viewer" && (
-                    <Button
-                      disabled={!projects.data?.length}
-                      onClick={() => router.push("/builds/new")}
-                    >
-                      <Play />
-                      {t("builds.start")}
-                    </Button>
-                  )}
-                </PageTitle>
-                <section className="panel">
-                  <SectionTitle
-                    title={t("builds.all")}
-                    detail={t("builds.latest")}
-                  />
-                  {builds.data ? (
-                    <BuildTable
-                      builds={builds.data.filter((build) =>
-                        contains(
-                          build.project_name,
-                          build.requested_ref,
-                          build.id,
-                          build.release_version,
-                        ),
-                      )}
-                    />
-                  ) : (
-                    <div className="px-6">
-                      <Loading />
-                    </div>
-                  )}
-                </section>
-              </>
-            )
-          ) : pieces[0] === "nodes" ? (
-            <>
-              <PageTitle
-                eyebrow={t("nodes.eyebrow")}
-                title={t("navigation.nodes")}
-                description={t("nodes.description")}
-              >
-                {user.role === "admin" && (
-                  <Button onClick={() => setEnrolling(true)}>
-                    <Plus />
-                    {t("nodes.register")}
-                  </Button>
-                )}
-              </PageTitle>
-              {nodeRemoved && (
-                <p className="notice" role="status">{t("nodes.noLongerListed")}</p>
-              )}
-              {!nodes.data ? (
-                <Loading />
-              ) : nodes.data.length === 0 ? (
-                <section className="panel">
-                  <Empty
-                    title={t("nodes.empty")}
-                    detail={t("nodes.emptyDetail")}
-                  />
-                </section>
-              ) : (
-                <div className="node-grid">
-                  {nodes.data.map((node) => (
-                    <NodeCard
-                      key={node.id}
-                      node={node}
-                      onDetails={() => {
-                        setNodeRemoved(false);
-                        setNodeSelection({
-                          id: node.id,
-                          search: nodeSearch,
-                          offset: nodeOffset,
-                          pathname,
-                        });
-                      }}
-                    />
-                  ))}
+                  <p>{t("workspace.readOnly")}</p>
+                  <Link
+                    href={
+                      project
+                        ? `${base}/settings/lifecycle`
+                        : "/settings/lifecycle"
+                    }
+                  >
+                    {t("lifecycle.operations")}
+                    <ArrowRight size={14} />
+                  </Link>
                 </div>
               )}
-              <nav className="flex items-center justify-end gap-3" aria-label={t("nodes.pages")}>
-                <Button variant="secondary" disabled={nodeOffset === 0 || !nodes.data} onClick={() => setNodeOffset((offset) => Math.max(0, offset - 100))}>{t("nodes.previous")}</Button>
-                <span className="text-sm text-muted-foreground">{t("nodes.page", { page: nodeOffset / 100 + 1 })}</span>
-                <Button variant="secondary" disabled={!nodes.data || nodes.data.length < 100} onClick={() => setNodeOffset((offset) => offset + 100)}>{t("nodes.next")}</Button>
-              </nav>
-            </>
-          ) : pieces[0] === "artifacts" ? (
-            <>
-              <PageTitle
-                eyebrow={t("artifacts.eyebrow")}
-                title={t("navigation.artifacts")}
-                description={t("artifacts.description")}
-              />
-              <section className="panel">
-                <SectionTitle
-                  title={t("artifacts.files")}
-                  detail={t("artifacts.latest")}
+              {project ? (
+                <ProjectWorkspace
+                  project={project}
+                  user={user}
+                  context={context.data}
+                  projects={projects.data || []}
+                  pieces={pieces.slice(2)}
+                  readOnly={readOnly || project.status !== "active"}
+                  reload={() => {
+                    void detail.reload();
+                    void context.reload();
+                    void projects.reload();
+                  }}
                 />
-                {!artifacts.data ? (
-                  <div className="px-6">
-                    <Loading />
-                  </div>
-                ) : artifacts.data.length ? (
-                  <ArtifactTable
-                    artifacts={artifacts.data.filter((artifact) =>
-                      contains(
-                        artifact.path,
-                        artifact.target,
-                        artifact.project_name,
-                      ),
-                    )}
-                  />
-                ) : (
-                  <Empty
-                    title={t("artifacts.empty")}
-                    detail={t("artifacts.emptyDetail")}
-                  />
-                )}
-              </section>
-            </>
-          ) : pieces[0] === "releases" ? (
-            pieces[1] ? (
-              <ReleaseDetail id={pieces[1]} />
-            ) : (
-              <>
-                <PageTitle
-                  eyebrow={t("releases.eyebrow")}
-                  title={t("navigation.releases")}
-                  description={t("releases.description")}
+              ) : pieces[0] === "nodes" ? (
+                <NodesWorkspace user={user} readOnly={readOnly} />
+              ) : pieces[0] === "settings" ? (
+                <WorkspaceManagement
+                  context={context.data}
+                  user={user}
+                  projects={projects.data || []}
+                  section={pieces[1]}
+                  reload={() => {
+                    void context.reload();
+                    void projects.reload();
+                  }}
                 />
-                <section className="panel">
-                  <SectionTitle title={t("releases.catalog")} />
-                  {!releases.data ? (
-                    <div className="px-6">
-                      <Loading />
-                    </div>
-                  ) : releases.data.length ? (
-                    <div className="table-scroll">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>{t("releases.versionProject")}</th>
-                            <th>{t("releases.commit")}</th>
-                            <th>{t("releases.artifacts")}</th>
-                            <th>{t("releases.publishedAt")}</th>
-                            <th />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {releases.data
-                            .filter((release) =>
-                              contains(release.version, release.project_name),
-                            )
-                            .map((release) => (
-                              <tr key={release.id}>
-                                <td>
-                                  <Link
-                                    href={`/releases/${release.id}`}
-                                    className="font-medium text-primary hover:underline"
-                                  >
-                                    {release.version}
-                                  </Link>
-                                  <div className="mt-1 text-xs text-muted-foreground">
-                                    {release.project_name}
-                                  </div>
-                                </td>
-                                <td className="font-mono text-xs text-muted-foreground">
-                                  {short(release.commit_sha)}
-                                </td>
-                                <td className="font-mono text-xs">
-                                  {number(release.artifact_count)}
-                                </td>
-                                <td className="font-mono text-xs text-muted-foreground">
-                                  {date(release.created_at)}
-                                </td>
-                                <td>
-                                  <Link
-                                    href={`/releases/${release.id}`}
-                                    aria-label={t("releases.view", {
-                                      version: release.version,
-                                    })}
-                                  >
-                                    <ArrowUpRight size={15} />
-                                  </Link>
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <Empty
-                      title={t("releases.empty")}
-                      detail={t("releases.emptyDetail")}
-                    />
-                  )}
-                </section>
-              </>
-            )
-          ) : pieces[0] === "settings" ? (
-            <Settings user={user} projects={projects.data || []} />
-          ) : (
-            <Empty
-              title={t("notFound.title")}
-              detail={t("notFound.description")}
-              action={
-                <Button asChild>
-                  <Link href="/">{t("notFound.back")}</Link>
-                </Button>
-              }
-            />
+              ) : (
+                <TenantHome
+                  context={context.data}
+                  user={user}
+                  projects={projects.data}
+                  reload={projects.reload}
+                />
+              )}
+            </>
           )}
-          {pieces[0] === "projects" && pieces.length === 2 && project?.effective_role === "admin" && <ProjectMembers project={project} user={user} />}
         </main>
-        <footer className="flex flex-wrap justify-between gap-2 border-t border-border px-8 py-4 text-[10px] text-muted-foreground">
-          <span>{t("footer.description")}</span>
-          <span className="font-mono">{t("footer.technical")}</span>
+        <footer className="workspace-footer">
+          <span>Artifactory</span>
+          <span>
+            {context.data?.tenant.name}
+            {project && ` / ${project.name}`}
+          </span>
         </footer>
       </div>
-      <Modal
-        open={newProject}
-        onOpenChange={setNewProject}
-        title={
-          editingProject ? t("projects.settings") : t("projects.dialogTitle")
-        }
-        description={t("projects.dialogDetail")}
-      >
-        {newProject && user.role === "admin" && !pools.data ? (
-          <>
-            <ErrorBox message={pools.error} />
-            {pools.error ? (
-              <Button variant="secondary" onClick={() => void pools.reload()}>{t("common.retry")}</Button>
-            ) : <Loading />}
-          </>
-        ) : newProject && (
-          <ProjectForm
-            project={editingProject}
-            canManageResources={user.role === "admin"}
-            nodes={nodes.data || []}
-            pools={pools.data || []}
-            credentials={credentials.data || []}
-            done={() => {
-              setNewProject(false);
-              setEditingProject(undefined);
-              void refresh();
-            }}
-          />
-        )}
-      </Modal>
-      {selectedNode && (
-        <NodeDetailDialog
-          key={selectedNode.id}
-          node={selectedNode}
-          user={user}
-          pools={pools.data || []}
-          onClose={() => setNodeSelection(undefined)}
-          reload={nodes.reload}
-        />
-      )}
-      <Modal
-        open={enrolling}
-        onOpenChange={setEnrolling}
-        title={t("nodes.enroll")}
-        description={t("nodes.enrollHint")}
-      >
-        {enrolling && (
-          <SubmitForm
-            label={t("nodes.generateToken")}
-            onSubmit={async (form) => {
-              const result = await mutation<{ token: string }>(
-                "/enrollment-tokens",
-                { pool_id: form.get("pool_id") },
-              );
-              setEnrolling(false);
-              setSecret(result.token);
-            }}
-          >
-            <Field label={t("nodes.joinPool")}>
-              <select className="input" name="pool_id">
-                {pools.data?.map((pool) => (
-                  <option key={pool.id} value={pool.id}>
-                    {pool.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <div className="notice">{t("nodes.install")}</div>
-          </SubmitForm>
-        )}
-      </Modal>
-      <SecretDialog
-        value={secret}
-        title={t("nodes.saveToken")}
-        close={() => setSecret(undefined)}
-      />
     </div>
   );
 }
 
-function ReleaseDetail({ id }: { id: string }) {
-  const { t, date } = useUI();
-  const remote = useRemote<Release>(`/releases/${id}`);
-  const release = remote.data;
-  if (!release)
-    return (
-      <>
-        <ErrorBox message={remote.error} />
-        <Loading />
-      </>
-    );
+function TenantHome({
+  context,
+  user,
+  projects,
+  reload,
+}: {
+  context: TenantContext;
+  user: User;
+  projects?: Project[];
+  reload: () => Promise<void>;
+}) {
+  const { t, date, number } = useUI();
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const pools = useRemote<Pool[]>(creating ? "/pools" : null);
+  const credentials = useRemote<Credential[]>(creating ? "/credentials" : null);
+  const activity = useRemote<Build[]>("/builds", 10000);
+  const filtered = projects?.filter((project) =>
+    `${project.name} ${project.slug} ${project.repository_url}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
   return (
     <>
       <PageTitle
-        eyebrow={t("releases.detailEyebrow")}
-        title={release.version}
-        description={t("releases.resultDescription", {
-          name: release.project_name,
-          date: date(release.created_at),
-        })}
+        eyebrow={t("workspace.tenantWorkbench")}
+        title={context.tenant.name}
+        description={t("workspace.projectsDescription")}
       >
-        <Button variant="secondary" asChild>
-          <Link href={buildPath(release.project_slug, release.build_number)}>
-            <Activity />
-            {t("releases.sourceBuild")}
-          </Link>
-        </Button>
+        {user.role === "admin" && context.tenant.status === "active" && (
+          <Button onClick={() => setCreating(true)}>
+            <Plus />
+            {t("projects.add")}
+          </Button>
+        )}
       </PageTitle>
-      <div className="build-meta">
-        <span className="meta-item">
-          <GitBranch size={14} />
-          {release.commit_sha}
-        </span>
-        <span className="meta-item">
-          <ShieldCheck size={14} />
-          {t("releases.immutable")}
-        </span>
+      <div className="workspace-section-heading">
+        <div>
+          <h2>{t("workspace.allProjects")}</h2>
+          <span>{projects ? number(projects.length) : "—"}</span>
+        </div>
+        <label className="workspace-filter">
+          <Search size={16} />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label={t("workspace.searchProject")}
+            placeholder={t("workspace.searchProject")}
+          />
+        </label>
       </div>
-      <section className="panel">
-        <SectionTitle
-          title={t("builds.publish")}
-          detail={t("common.artifactCount", {
-            count: release.artifacts?.length || 0,
-          })}
-        />
-        <ArtifactTable artifacts={release.artifacts || []} />
+      {!filtered ? (
+        <Loading />
+      ) : !filtered.length ? (
+        <section className="panel">
+          <Empty
+            title={
+              projects?.length
+                ? t("workspace.noResults")
+                : t(
+                    user.role === "admin"
+                      ? "projects.first"
+                      : "tenants.noProjects",
+                  )
+            }
+            detail={
+              projects?.length
+                ? t("workspace.trySearch")
+                : user.role === "admin"
+                  ? t("projects.firstDetail")
+                  : t("tenants.requestAccess")
+            }
+          />
+        </section>
+      ) : (
+        <div className="project-grid">
+          {filtered.map((project) => (
+            <article className="project-card" key={project.id}>
+              <div className="project-card-top">
+                <span className="project-glyph">
+                  <FolderGit2 size={21} />
+                </span>
+                <Status small value={project.status} />
+              </div>
+              <Link
+                className="project-card-title"
+                href={projectPath(project.slug)}
+              >
+                {project.name}
+                <ArrowUpRight size={18} />
+              </Link>
+              <p
+                className="project-card-repository"
+                title={project.repository_url}
+              >
+                {project.repository_url}
+              </p>
+              <div className="project-card-metrics">
+                <span>
+                  <strong>{number(project.build_count)}</strong>
+                  {t("navigation.builds")}
+                </span>
+                <span>
+                  {project.last_build ? (
+                    <>
+                      <Status small value={project.last_build.status} />
+                      <small>{date(project.last_build.created_at)}</small>
+                    </>
+                  ) : (
+                    t("projects.noBuilds")
+                  )}
+                </span>
+              </div>
+              <div className="project-card-footer">
+                <code>{project.slug}</code>
+                {project.effective_role === "admin" && (
+                  <Link
+                    href={`${projectPath(project.slug)}/settings`}
+                    aria-label={t("projects.settingsNamed", {
+                      name: project.name,
+                    })}
+                  >
+                    <Settings2 size={16} />
+                  </Link>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      <section className="panel tenant-activity">
+        <SectionTitle title={t("workspace.recentActivity")} />
+        {activity.data ? (
+          <BuildTable builds={activity.data.slice(0, 5)} />
+        ) : (
+          <Loading />
+        )}
       </section>
-      <div className="notice mt-5">{t("releases.notice")}</div>
+      <OperationHistory tenant={context.tenant.id} />
+      <Modal
+        open={creating}
+        onOpenChange={setCreating}
+        title={t("projects.dialogTitle")}
+        description={t("projects.dialogDetail")}
+      >
+        <ErrorBox message={pools.error || credentials.error} />
+        {!pools.data || !credentials.data ? (
+          <Loading />
+        ) : (
+          <ProjectForm
+            pools={pools.data}
+            credentials={credentials.data}
+            done={() => {
+              setCreating(false);
+              void reload();
+            }}
+          />
+        )}
+      </Modal>
+    </>
+  );
+}
+
+function ProjectWorkspace({
+  project,
+  user,
+  context,
+  projects,
+  pieces,
+  readOnly,
+  reload,
+}: {
+  project: Project;
+  user: User;
+  context: TenantContext;
+  projects: Project[];
+  pieces: string[];
+  readOnly: boolean;
+  reload: () => void;
+}) {
+  const { t, date } = useUI();
+  const [query, setQuery] = useState("");
+  const column = pieces[0] || "overview";
+  const base = projectPath(project.slug);
+  const builds = useRemote<Build[]>(
+    ["overview", "builds"].includes(column) && !pieces[1]
+      ? `/builds?project_id=${project.id}`
+      : null,
+    5000,
+  );
+  const artifacts = useRemote<Artifact[]>(
+    column === "artifacts" ? `/artifacts?project_id=${project.id}` : null,
+  );
+  const releases = useRemote<Release[]>(
+    column === "releases" && !pieces[1]
+      ? `/releases?project_id=${project.id}`
+      : null,
+  );
+  useEffect(() => setQuery(""), [column]);
+  if (column === "settings")
+    return (
+      <WorkspaceManagement
+        project={project}
+        user={user}
+        context={context}
+        projects={projects}
+        section={pieces[1]}
+        reload={reload}
+      />
+    );
+  if (column === "builds" && pieces[1] === "new")
+    return readOnly ? (
+      <p className="notice">{t("workspace.readOnly")}</p>
+    ) : (
+      <Suspense fallback={<Loading />}>
+        <BuildWizard projects={[project]} user={user} />
+      </Suspense>
+    );
+  if (column === "builds" && pieces[1])
+    return (
+      <BuildDetail
+        key={pieces[1]}
+        projectSlug={project.slug}
+        number={Number(pieces[1])}
+        user={user}
+        readOnly={readOnly}
+      />
+    );
+  if (column === "releases" && pieces[1])
+    return <ReleaseDetail id={pieces[1]} projectId={project.id} />;
+  const matches = (...values: (string | null | undefined)[]) =>
+    values.some((value) => value?.toLowerCase().includes(query.toLowerCase()));
+  return (
+    <>
+      <PageTitle
+        eyebrow={t("workspace.projectWorkbench")}
+        title={column === "overview" ? project.name : t(`navigation.${column}`)}
+        description={
+          column === "overview" ? project.repository_url : project.name
+        }
+      >
+        {!readOnly &&
+          project.effective_role !== "viewer" &&
+          ["overview", "builds"].includes(column) && (
+            <Button asChild>
+              <Link href={`${base}/builds/new`}>
+                <Play />
+                {t("builds.start")}
+              </Link>
+            </Button>
+          )}
+      </PageTitle>
+      {column === "overview" ? (
+        <>
+          <div className="project-identity-strip">
+            <span>
+              <GitBranch size={15} />
+              {project.slug}
+            </span>
+            <span>
+              {t("projects.signingCount", {
+                count: project.signing_profiles.length,
+              })}
+            </span>
+            <Status small value={project.status} />
+          </div>
+          <section className="panel">
+            <SectionTitle title={t("projects.builds")}>
+              <Link href={`${base}/builds`} className="text-xs text-primary">
+                {t("builds.all")} ↗
+              </Link>
+            </SectionTitle>
+            <ErrorBox message={builds.error} />
+            {builds.data ? (
+              <BuildTable builds={builds.data.slice(0, 10)} />
+            ) : (
+              <Loading />
+            )}
+          </section>
+          <div className="project-shortcuts">
+            <Link href={`${base}/artifacts`}>
+              <Boxes />
+              <div>
+                <strong>{t("navigation.artifacts")}</strong>
+                <span>{t("workspace.artifactShortcut")}</span>
+              </div>
+              <ArrowRight />
+            </Link>
+            <Link href={`${base}/releases`}>
+              <Package />
+              <div>
+                <strong>{t("navigation.releases")}</strong>
+                <span>{t("workspace.releaseShortcut")}</span>
+              </div>
+              <ArrowRight />
+            </Link>
+          </div>
+        </>
+      ) : (
+        <>
+          <label className="workspace-filter mb-5">
+            <Search size={16} />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("search.placeholder")}
+              aria-label={t("search.label")}
+            />
+          </label>
+          <ErrorBox
+            message={builds.error || artifacts.error || releases.error}
+          />
+          <section className="panel">
+            {column === "builds" ? (
+              builds.data ? (
+                <BuildTable
+                  builds={builds.data.filter((build) =>
+                    matches(
+                      String(build.number),
+                      build.requested_ref,
+                      build.release_version,
+                      build.status,
+                    ),
+                  )}
+                />
+              ) : (
+                <Loading />
+              )
+            ) : column === "artifacts" ? (
+              artifacts.data ? (
+                <ArtifactTable
+                  artifacts={artifacts.data.filter((artifact) =>
+                    matches(artifact.path, artifact.target),
+                  )}
+                />
+              ) : (
+                <Loading />
+              )
+            ) : releases.data ? (
+              releases.data.length ? (
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>{t("releases.versionProject")}</th>
+                        <th>{t("releases.commit")}</th>
+                        <th>{t("releases.artifacts")}</th>
+                        <th>{t("releases.publishedAt")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {releases.data
+                        .filter((release) =>
+                          matches(release.version, release.commit_sha),
+                        )
+                        .map((release) => (
+                          <tr key={release.id}>
+                            <td>
+                              <Link
+                                className="text-primary"
+                                href={`${base}/releases/${release.id}`}
+                              >
+                                {release.version}
+                              </Link>
+                            </td>
+                            <td className="font-mono">
+                              {short(release.commit_sha)}
+                            </td>
+                            <td>{release.artifact_count}</td>
+                            <td>{date(release.created_at)}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <Empty
+                  title={t("releases.empty")}
+                  detail={t("releases.emptyDetail")}
+                />
+              )
+            ) : (
+              <Loading />
+            )}
+          </section>
+        </>
+      )}
     </>
   );
 }

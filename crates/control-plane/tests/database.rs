@@ -820,11 +820,35 @@ impl Database {
             sql::execute(&mut self.pool.clone(),"INSERT INTO users(id,username,password_hash,role) VALUES('ffffffff-ffff-ffff-ffff-ffffffffffff','fixture-owner','unused','admin') ON CONFLICT DO NOTHING",params![]).await.unwrap();
             return;
         }
-        self.state
-            .store
-            .bootstrap_admin("fixture-owner".into(), "unused".into())
-            .await
-            .unwrap();
+        let lifecycle: bool = sql::scalar(
+            &mut self.pool.clone(),
+            "SELECT to_regclass(current_schema()||'.deleted_tenants') IS NOT NULL",
+            params![],
+        )
+        .await
+        .unwrap();
+        if lifecycle {
+            self.state
+                .store
+                .bootstrap_admin("fixture-owner".into(), "unused".into())
+                .await
+                .unwrap();
+        } else {
+            // Historical-schema fixtures must be initialized by historical SQL.
+            let mut connection = self.pool.clone();
+            let mut transaction = connection.transaction().await.unwrap();
+            for statement in [
+                "INSERT INTO users(id,username,password_hash,role) VALUES('ffffffff-ffff-ffff-ffff-ffffffffffff','fixture-owner','unused','admin') ON CONFLICT DO NOTHING",
+                "INSERT INTO tenants(id,name,owner_id,created_by,creation_key) VALUES('00000000-0000-0000-0000-000000000001','Default','ffffffff-ffff-ffff-ffff-ffffffffffff','ffffffff-ffff-ffff-ffff-ffffffffffff','00000000-0000-0000-0000-000000000001') ON CONFLICT DO NOTHING",
+                "INSERT INTO tenant_members(tenant_id,user_id,role) VALUES('00000000-0000-0000-0000-000000000001','ffffffff-ffff-ffff-ffff-ffffffffffff','owner') ON CONFLICT DO NOTHING",
+                "INSERT INTO node_pools(id,tenant_id,name,is_default) VALUES('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','Default',true) ON CONFLICT DO NOTHING",
+            ] {
+                sql::execute(&mut transaction, statement, params![])
+                    .await
+                    .unwrap();
+            }
+            transaction.commit().await.unwrap();
+        }
         sql::execute(&mut self.pool.clone(),"CREATE OR REPLACE FUNCTION grant_legacy_fixture_account() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO tenant_members(tenant_id,user_id,role) VALUES('00000000-0000-0000-0000-000000000001',NEW.id,CASE WHEN NEW.role='admin' THEN 'admin' ELSE 'member' END) ON CONFLICT DO NOTHING; INSERT INTO project_members(tenant_id,project_id,user_id,role) SELECT tenant_id,id,NEW.id,NEW.role FROM projects ON CONFLICT DO NOTHING; RETURN NEW; END $$",params![]).await.unwrap();
         sql::execute(
             &mut self.pool.clone(),
@@ -870,12 +894,14 @@ impl Database {
             pki_dir: ".local/pki".into(),
             data_dir: std::env::temp_dir(),
             master_key: [1; 32],
-            s3_endpoint: "http://localhost:19000".into(),
-            s3_public_endpoint: "http://localhost:19000".into(),
-            s3_bucket: "test".into(),
+            s3_endpoint: std::env::var("ARTIFACTORY_S3_ENDPOINT")
+                .unwrap_or("http://localhost:19000".into()),
+            s3_public_endpoint: std::env::var("ARTIFACTORY_S3_ENDPOINT")
+                .unwrap_or("http://localhost:19000".into()),
+            s3_bucket: std::env::var("ARTIFACTORY_S3_BUCKET").unwrap_or("test".into()),
             s3_region: "us-east-1".into(),
-            s3_access_key: "test".into(),
-            s3_secret_key: "test".into(),
+            s3_access_key: std::env::var("ARTIFACTORY_S3_ACCESS_KEY").unwrap_or("test".into()),
+            s3_secret_key: std::env::var("ARTIFACTORY_S3_SECRET_KEY").unwrap_or("test".into()),
             telemetry: None,
             local_source_url: None,
             control: Default::default(),

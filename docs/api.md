@@ -6,12 +6,14 @@
 
 - `POST /auth/login`：`{username,password}`，设置 HttpOnly / SameSite=Strict cookie，生产添加 Secure。
 - `GET /auth/config`：无需登录，返回 `{registration_enabled}`；响应禁止缓存。
-- `POST /auth/register`：无需登录，仅接受 `{username,password}`，用户名去除首尾空白后为 1–100 UTF-8 字节，区分大小写且不能包含 NUL；密码为 12–256 UTF-8 字节。未知字段（包括 `role`、确认密码）被拒绝。新账号固定为 `viewer`，可读取本实例全部项目、构建和产物，不具备构建或管理权限。
-- 注册成功返回 `201 {id,username,role}`，创建与登录相同的 24 小时会话。用户、会话与 `user_registered` 审计原子提交；密码仅以 Argon2 哈希保存。无效输入返回 `400`，注册关闭或 CSRF 不符合要求返回 `403`，用户名冲突返回 `409`。
+- `POST /auth/register`：无需登录，仅接受 `{username,password}`，用户名去除首尾空白后为 1–100 UTF-8 字节，区分大小写且不能包含 NUL；密码为 12–256 UTF-8 字节。未知字段（包括 `role`、确认密码）被拒绝。新账号是独立全局身份，没有租户或项目权限，需要创建租户或接受邀请。
+- 注册成功返回 `201 {id,username,display_name}`，创建与登录相同的 24 小时会话。用户、会话与 `user_registered` 审计原子提交；密码仅以 Argon2 哈希保存。无效输入返回 `400`，注册关闭或 CSRF 不符合要求返回 `403`，用户名冲突返回 `409`。
 - 注册在参数校验后、密码哈希前消耗限流额度：每实例滚动 5 分钟最多受理 10 次有效格式的尝试，重复用户名和后续失败也消耗额度；额度持久化在 `registration_attempt` 审计中，通过数据库事务锁防止并发越限。超限返回 `429` 和 `Retry-After`（秒）；重启不会重置额度，其他接口和登录限流不受影响。
-- `GET /auth/me`、`POST /auth/logout`。
+- `GET /auth/me` 返回 `{id,username,display_name}`；`PATCH /auth/me` 接收 `{display_name}`，去除首尾空白后为 1–100 个字符，用户名不可修改。仅 Session，账号接口不依赖租户 header。
+- `POST /auth/password` 接收 `{current_password,new_password}`，新密码为 12–256 UTF-8 字节。当前密码错误返回 `400`，不会注销当前会话；成功返回 `{ok:true}` 并注销账号全部会话。密码校验尝试按账号持久化限流，5 分钟最多 10 次，超限 `429`。登录和改密原子复核已验证的密码哈希，阻止旧凭据会话竞态。
+- `POST /auth/logout` 注销当前 Session。
 - Cookie 写请求需要 `x-artifactory-csrf: 1`，有 Origin 时必须精确匹配 `ARTIFACTORY_PUBLIC_URL`。Bearer Token 不使用 cookie 身份。
-- 管理员：账户、项目授权、凭据、节点池、Emissary 注册与节点管理。操作者：构建、取消、重试和内部发布。只读：查询与下载。
+- 业务请求必须携带 `X-Artifactory-Tenant`，租户所有者和管理员管理共享配置；普通成员按项目 admin/operator/viewer 授权。租户生命周期仅所有者可操作，项目生命周期允许项目管理员。账号历史角色不授予跨租户权限。
 - API Token 明确绑定项目 ID 列表与 `read/build/release` scopes，同时不能超过所属账户角色；不能调用管理 API 或再创建 Token。
 - session 有效期 24 小时；Token 有效期 1 到 365 天。登录失败按账号持久化限流，反向代理仍应部署连接 / IP 级保护。
 
@@ -20,7 +22,12 @@
 | 方法 / 路径 | 输入 / 说明 |
 |---|---|
 | `GET /overview` | 概览统计，仅会话 |
-| `GET, POST /users` | 创建 `{username,password,role}`，密码 12 到 256 UTF-8 字节 |
+| `GET, POST /tenant/members` | 当前租户成员；添加已有账号 `{username,role}`，不创建全局账号 |
+| `GET, PATCH /tenant` | 读取租户上下文；PATCH `{name}` 改名并保持 slug |
+| `GET /tenant/lifecycle`、`GET /projects/{id}/lifecycle` | 返回受影响项目、构建、制品和设备数量 |
+| `POST /tenant/lifecycle`、`POST /projects/{id}/lifecycle` | `{action,idempotency_key,slug?,current_password?}`；action 为 archive/restore/delete，删除必填完整 slug 和当前密码，返回 `202` 操作记录 |
+| `GET /operations`、`GET /operations/{id}` | 仅账号 Session，查询本人持久操作记录，无需租户 header |
+| `POST /operations/{id}/cancel`、`POST /operations/{id}/retry` | 空对象；撤销排空等待，或重试失败步骤，返回操作记录 |
 | `GET, POST /tokens` | 创建 `{name,project_ids,scopes,days}`，仅本次返回明文 |
 | `DELETE /tokens/{id}` | 吊销当前用户的 Token |
 | `GET, POST /pools` | 创建 `{name}` |
@@ -58,7 +65,7 @@
 | `GET /releases` | 可按项目过滤 |
 | `GET /releases/{id}` | 不可变版本与制品目录 |
 
-创建资源返回 `{id}`；Token 类创建还返回明文值；修改操作通常返回 `{ok:true}`。所有查询使用真实数据库，不返回演示对象。
+创建租户和项目返回 `{id,slug}`，构建返回 `{id,number,project_slug}`；其他资源创建通常返回 `{id}`；Token 类创建还返回明文值；修改操作通常返回 `{ok:true}`。所有查询使用真实数据库，不返回演示对象。
 
 遥测历史使用 ISO 8601 `from/to` 左闭右开区间，`resolution=raw|minute|hour`，默认 minute；单次范围分别限 6 小时、2 天、31 天，并受数据保留期约束。历史及清单查询返回 `{"samples":[],"truncated":false}`，结果超过行数或字节预算时标记截断。采集范围、未知值、权限和保留策略见 [时序观测](telemetry.md)。
 
@@ -74,6 +81,8 @@ curl --fail-with-body -X POST 'https://build.example.com/api/v1/projects/PROJECT
 发布版本的请求与会重新启用自动发布的 retry 均需要 release scope。更改项目仓库不会改变已经创建的构建源地址。凭据轮换应创建新的引用并修改项目；历史构建不静默切换凭据。
 
 未指定 goal 时使用项目平台侧 build_context；两者均为空时拒绝。项目模型为空时继承平台默认值，创建构建固定该配置版本。`target_requirements` 是 `{os,arch}` 数组；`targets` 若提供则固定目标名集合。人工 job 重试使用原提交与计划，规划中不可重试。状态为 resolving / planning / needs_input / replanning / queued / running / succeeded / failed / canceled / lost。执行失败最多两次自动修订，权限、认证和源码凭据错误不自动修订，详见 [AI 构建](ai-builds.md)。
+
+生命周期状态、清理顺序和管理页面见[工作台](workspaces.md)。操作记录与目标业务行独立保存，状态为 waiting/running/succeeded/failed/canceled；等待阶段可取消，实际清理开始后只能查询或重试。归档保持查询下载，禁止新增业务写入。
 
 当前列表为内部小团队规模的有界查询，并未提供全量导出、复杂分页或外部商店发布 API；Webhook / OIDC / 多实例并非隐藏开启的功能。
 

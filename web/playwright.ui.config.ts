@@ -11,11 +11,21 @@ export default defineConfig({
   workers: 1,
   reporter: [
     ["list"],
-    ["html", { outputFolder: process.env.ARTIFACTORY_UI_REPORT || "playwright-report/ui", open: "never" }],
+    [
+      "html",
+      {
+        outputFolder:
+          process.env.ARTIFACTORY_UI_REPORT || "playwright-report/ui",
+        open: "never",
+      },
+    ],
   ],
   outputDir: process.env.ARTIFACTORY_UI_OUTPUT || "test-results/ui",
   use: {
     baseURL: process.env.ARTIFACTORY_UI_URL || localURL,
+    // Keep functional/visual assertions deterministic on software-rendered CI.
+    // motion.spec.ts explicitly enables and verifies real animation frames.
+    reducedMotion: "reduce",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },

@@ -57,6 +57,7 @@ pub fn router(state: AppState, token: String) -> Router {
         .route("/v1/inspect", post(inspect))
         .route("/v1/refs", post(refs))
         .route("/v1/retain", post(retain))
+        .route("/v1/purge", post(purge))
         .with_state(state.clone());
     let public = Router::new()
         .route("/healthz", get(|| async { "ok" }))
@@ -101,48 +102,58 @@ pub async fn capture_operation(state: &AppState, input: Capture) -> Result<Value
     let hash = crypto::hash(serde_json::to_vec(&input)?);
     let snapshot = state
         .store
-        .capture_operation(input.operation_id, hash, |existing| async move {
-            let snapshot = if let Some(id) = existing {
-                core::load(state, id).await?
-            } else {
-                for credential in &input.credentials {
-                    ensure!(
-                        credential.revision.len() == 64,
-                        "invalid credential revision"
-                    );
-                    let ciphertext = crypto::seal(
-                        &state.settings.master_key,
-                        &serde_json::to_vec(&credential.value)?,
-                    )?;
-                    let existing = state
-                        .store
-                        .save_credential(credential.id, &credential.revision, ciphertext)
-                        .await?;
-                    ensure!(
-                        existing == credential.revision,
-                        "credential revision conflict"
-                    );
-                }
-                let snapshot = core::capture(
-                    state,
-                    input.project_id,
-                    &input.repository_url,
-                    &input.reference,
-                    input.credential_id,
-                    input.bindings,
-                    input.operation_id,
-                )
-                .await?;
-                // Persist the exact manifest before publishing Ready. A lost acknowledgement reuses it.
-                state
-                    .store
-                    .record_operation_snapshot(input.operation_id, snapshot.id)
+        .capture_operation(
+            input.operation_id,
+            input.project_id,
+            hash,
+            |existing| async move {
+                let snapshot = if let Some(id) = existing {
+                    core::load(state, id).await?
+                } else {
+                    for credential in &input.credentials {
+                        ensure!(
+                            credential.revision.len() == 64,
+                            "invalid credential revision"
+                        );
+                        let ciphertext = crypto::seal(
+                            &state.settings.master_key,
+                            &serde_json::to_vec(&credential.value)?,
+                        )?;
+                        let existing = state
+                            .store
+                            .save_credential(
+                                input.project_id,
+                                credential.id,
+                                &credential.revision,
+                                ciphertext,
+                            )
+                            .await?;
+                        ensure!(
+                            existing == credential.revision,
+                            "credential revision conflict"
+                        );
+                    }
+                    let snapshot = core::capture(
+                        state,
+                        input.project_id,
+                        &input.repository_url,
+                        &input.reference,
+                        input.credential_id,
+                        input.bindings,
+                        input.operation_id,
+                    )
                     .await?;
-                snapshot
-            };
-            persist(state, &snapshot).await?;
-            Ok(snapshot)
-        })
+                    // Persist the exact manifest before publishing Ready. A lost acknowledgement reuses it.
+                    state
+                        .store
+                        .record_operation_snapshot(input.operation_id, snapshot.id)
+                        .await?;
+                    snapshot
+                };
+                persist(state, &snapshot).await?;
+                Ok(snapshot)
+            },
+        )
         .await?;
     describe(state, &snapshot).await
 }
@@ -221,19 +232,66 @@ async fn tool(State(state): State<AppState>, Json(value): Json<Value>) -> ApiRes
     }))
 }
 async fn refs(State(state): State<AppState>, Json(input): Json<Capture>) -> ApiResult<Value> {
-    for auth in input.credentials {
-        let encrypted = crypto::seal(
-            &state.settings.master_key,
-            &serde_json::to_vec(&auth.value)?,
-        )?;
-        state
-            .store
-            .save_credential(auth.id, &auth.revision, encrypted)
+    let store = state.store.clone();
+    let result = store
+        .capture_sources(input.project_id, || async {
+            for auth in input.credentials {
+                let encrypted = crypto::seal(
+                    &state.settings.master_key,
+                    &serde_json::to_vec(&auth.value)?,
+                )?;
+                state
+                    .store
+                    .save_credential(input.project_id, auth.id, &auth.revision, encrypted)
+                    .await?;
+            }
+            Ok(serde_json::to_value(
+                core::list_refs(&state, &input.repository_url, input.credential_id).await?,
+            )?)
+        })
+        .await?;
+    Ok(Json(result))
+}
+
+async fn purge(State(s): State<AppState>, Json(v): Json<Value>) -> ApiResult<Value> {
+    let project = id(&v, "project_id")?;
+    let inventory = s.store.prepare_purge(project).await?;
+    if inventory["completed"] == true {
+        return Ok(Json(json!({"ok":true})));
+    }
+    for manifest in inventory["snapshots"]
+        .as_array()
+        .context("missing source inventory")?
+    {
+        let snapshot: Snapshot = serde_json::from_value(manifest.clone())?;
+        for entry in &snapshot.repositories {
+            s.objects
+                .delete(&format!(
+                    "sources/{}/{}/source.bundle",
+                    snapshot.id, entry.id
+                ))
+                .await?;
+            for lfs in &entry.lfs {
+                s.objects
+                    .delete(&format!(
+                        "sources/{}/{}/lfs/{}",
+                        snapshot.id, entry.id, lfs.oid
+                    ))
+                    .await?;
+            }
+        }
+        s.objects
+            .delete(&format!("sources/{}/manifest.json", snapshot.id))
             .await?;
     }
-    Ok(Json(serde_json::to_value(
-        core::list_refs(&state, &input.repository_url, input.credential_id).await?,
-    )?))
+    core::store::purge_cache(&s.core, &inventory).await?;
+    s.store
+        .finish_purge(
+            project,
+            serde_json::from_value(inventory["credentials"].clone())?,
+        )
+        .await?;
+    Ok(Json(json!({"ok":true})))
 }
 async fn retain(State(state): State<AppState>, Json(value): Json<Value>) -> ApiResult<Value> {
     state

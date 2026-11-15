@@ -6,10 +6,14 @@
 
 | 页面 | 示例 |
 | --- | --- |
+| 租户大厅 | `/tenants` |
 | 租户首页 | `/tenants/default` |
 | 项目详情 | `/tenants/default/projects/desktop-app` |
 | 构建详情 | `/tenants/default/projects/desktop-app/builds/128` |
 | 租户设置 | `/tenants/default/settings` |
+| 项目设置 | `/tenants/default/projects/desktop-app/settings` |
+
+进入租户后先展示项目列表；构建、制品和发布统一属于项目路径。双级搜索切换器、单侧栏、独立管理页面、右下角个人设置及生命周期见[租户与项目工作台](workspaces.md)。
 
 租户和项目的 `slug` 在创建时从名称生成，使用小写英文字母、数字和连字符，最长 63 字符。同名时依次增加 `-2`、`-3`；名称没有可用英文或数字时使用 `tenant`、`project`。租户标识全局唯一，项目标识在租户内唯一，修改显示名称不会改变地址。构建使用项目内从 1 开始的编号，数据库按项目串行分配，删除构建后不复用已分配编号。已有开发数据按创建时间和 UUID 顺序补齐标识及编号，保留全部内部身份。
 
@@ -37,7 +41,10 @@ Session 业务请求必须携带 `X-Artifactory-Tenant`，服务端每次读取�
 | `GET /tenants/{slug}` | 当前账号成员可访问的租户；未知或非成员均为 404 |
 | `GET /projects/by-slug/{slug}` | 当前租户内项目，继续校验项目角色和 Token 范围 |
 | `GET /projects/by-slug/{slug}/builds/{number}` | 当前租户及项目内编号解析构建，继续校验读取权限 |
-| `GET /tenant` | 当前租户及有效项目角色 |
+| `GET /tenant`、`PATCH /tenant` | 当前租户及有效项目角色；PATCH `{name}` 改名，slug 不变 |
+| `GET, POST /tenant/lifecycle`、`GET, POST /projects/{id}/lifecycle` | 影响数量；归档、恢复或删除 |
+| `GET /operations`、`GET /operations/{id}` | 账号级持久操作记录，不需要租户上下文 |
+| `POST /operations/{id}/cancel`、`POST /operations/{id}/retry` | 撤销等待阶段操作、重试失败步骤 |
 | `GET /tenant/members`、`POST /tenant/members` | 成员列表、按准确用户名添加已有账号 |
 | `PATCH /tenant/members/{user_id}`、`DELETE /tenant/members/{user_id}` | 更改角色、移除成员 |
 | `POST /tenant/owner` | 当前所有者转移所有权，提交 `{user_id}` |

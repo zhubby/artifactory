@@ -1,6 +1,7 @@
 pub(crate) mod ai_management;
 mod builds;
 mod emissary_updates;
+mod lifecycle;
 mod management;
 mod projects;
 mod source_http;
@@ -23,7 +24,22 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/projects/by-slug/{slug}/builds/{number}",
             get(builds::resolve),
         )
-        .route("/api/v1/tenant", get(tenants::context))
+        .route(
+            "/api/v1/tenant",
+            get(tenants::context).patch(tenants::rename),
+        )
+        .route(
+            "/api/v1/tenant/lifecycle",
+            get(lifecycle::tenant_impact).post(lifecycle::tenant),
+        )
+        .route(
+            "/api/v1/projects/{id}/lifecycle",
+            get(lifecycle::project_impact).post(lifecycle::project),
+        )
+        .route("/api/v1/operations", get(lifecycle::list))
+        .route("/api/v1/operations/{id}", get(lifecycle::detail))
+        .route("/api/v1/operations/{id}/cancel", post(lifecycle::cancel))
+        .route("/api/v1/operations/{id}/retry", post(lifecycle::retry))
         .route(
             "/api/v1/tenant/members",
             get(tenants::members).post(tenants::add_member),
@@ -88,7 +104,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/auth/config", get(auth::registration_config))
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/logout", post(auth::logout))
-        .route("/api/v1/auth/me", get(auth::me))
+        .route("/api/v1/auth/me", get(auth::me).patch(auth::update_profile))
+        .route("/api/v1/auth/password", post(auth::change_password))
         .route("/api/v1/overview", get(management::overview))
         .route(
             "/api/v1/users",

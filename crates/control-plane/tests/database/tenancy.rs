@@ -8,6 +8,12 @@ mod regressions;
 #[path = "readable_routes.rs"]
 mod readable_routes;
 
+#[path = "account_settings.rs"]
+mod account_settings;
+
+#[path = "workspace_lifecycle.rs"]
+mod workspace_lifecycle;
+
 async fn account(db: &Database, name: &str, legacy_role: &str) -> (Uuid, String) {
     let id = Uuid::new_v4();
     let cookie = format!("artifactory_session={}", Uuid::new_v4());

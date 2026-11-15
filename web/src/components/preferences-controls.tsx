@@ -15,7 +15,7 @@ import { Modal } from "@/components/ui/dialog";
 import { usePreferences, useUI } from "@/components/providers";
 import { isLocale } from "@/lib/preferences";
 
-function PreferenceFields({ expanded = false }: { expanded?: boolean }) {
+export function PreferenceFields({ expanded = false }: { expanded?: boolean }) {
   const { t } = useUI();
   const { locale, setLocale, effects, setEffects, ready, reduced } =
     usePreferences();

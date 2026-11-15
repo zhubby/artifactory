@@ -12,6 +12,7 @@ import { Atmosphere } from "@/components/atmosphere";
 import { BrandMark } from "@/components/brand-mark";
 import { PreferencesControls } from "@/components/preferences-controls";
 import { useUI } from "@/components/providers";
+import { useAccount } from "@/components/account";
 import AnimatedContent from "@/components/react-bits/AnimatedContent";
 
 export function AuthShell({
@@ -26,11 +27,14 @@ export function AuthShell({
   children: ReactNode;
 }) {
   const { t: translate } = useUI();
+  const account = useAccount();
   return (
     <div className="login-grid">
-      <div className="login-preferences">
-        <PreferencesControls />
-      </div>
+      {!account.data && (
+        <div className="login-preferences">
+          <PreferencesControls />
+        </div>
+      )}
       <Atmosphere className="login-atmosphere" />
       <aside className="login-story">
         <div className="flex items-center gap-3 text-xl font-medium">

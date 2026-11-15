@@ -8,74 +8,113 @@ import {
   type SetStateAction,
 } from "react";
 import { assertTenant, currentTenant, tenantHeaders } from "@/lib/tenant";
+import { projectFromPath } from "@/lib/routes";
 import { asError, LocalizedError } from "@/lib/errors";
 
+const scopedRequests = new Map<AbortController, string>();
+function currentScope() {
+  return `${currentTenant() || ""}/${typeof window !== "undefined" ? projectFromPath(location.pathname) || "" : ""}`;
+}
+export function cancelBusinessRequests(scope: string) {
+  for (const [controller, key] of scopedRequests) {
+    if (key === scope) {
+      controller.abort();
+      scopedRequests.delete(controller);
+    }
+  }
+}
 export async function api<Type>(
   path: string,
   init: RequestInit = {},
 ): Promise<Type> {
   const tenant = currentTenant();
-  const headers = /^\/(?:auth|tenants|invitations)(?:\/|$)/.test(path)
-    ? {} : await tenantHeaders(tenant, init.signal);
-  assertTenant(tenant, init.signal);
-  let response: Response;
+  const independent = /^\/(?:auth|tenants|invitations|operations)(?:\/|$)/.test(
+    path,
+  );
+  const scope = currentScope();
+  const controller = new AbortController();
+  const signal = init.signal
+    ? AbortSignal.any([init.signal, controller.signal])
+    : controller.signal;
+  const check = () => {
+    if (signal.aborted || (!independent && scope !== currentScope()))
+      throw new DOMException(
+        "Workspace changed or request aborted",
+        "AbortError",
+      );
+  };
+  const headers = independent ? {} : await tenantHeaders(tenant, signal);
+  check();
+  if (!independent) scopedRequests.set(controller, scope);
   try {
-    response = await fetch(`/api/v1${path}`, {
-      ...init,
-      credentials: "same-origin",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...headers,
-        "x-artifactory-csrf": "1",
-        ...init.headers,
-      },
-      cache: "no-store",
-    });
-  } catch {
-    assertTenant(tenant, init.signal);
-    throw new LocalizedError("common.networkFailed");
-  }
-  assertTenant(tenant, init.signal);
-  const body = await response.json().catch(() => undefined);
-  assertTenant(tenant, init.signal);
-  if (!response.ok) {
-    if (
-      response.status === 401 &&
-      !["/auth/login", "/auth/register", "/auth/config"].includes(path) &&
-      typeof window !== "undefined"
-    ) {
-      if (!window.location.pathname.startsWith("/join/"))
-        window.location.replace("/login");
+    let response: Response;
+    try {
+      response = await fetch(`/api/v1${path}`, {
+        ...init,
+        signal,
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...headers,
+          "x-artifactory-csrf": "1",
+          ...init.headers,
+        },
+        cache: "no-store",
+      });
+    } catch {
+      check();
+      throw new LocalizedError("common.networkFailed");
     }
-    if (body?.code === "tenant_required" && typeof window !== "undefined")
-      window.location.replace("/tenants");
-    if (path === "/auth/config")
-      throw new LocalizedError("register.configFailed");
-    if (path === "/auth/register") {
-      if (response.status === 400) {
-        if (body?.error === "username must contain 1..100 bytes")
-          throw new LocalizedError("register.invalidUsername");
-        if (body?.error === "password must contain 12..256 bytes")
-          throw new LocalizedError("register.invalidPassword");
-        throw new LocalizedError("register.invalidFields");
+    check();
+    const body = await response.json().catch(() => undefined);
+    check();
+    if (!response.ok) {
+      if (
+        response.status === 401 &&
+        !["/auth/login", "/auth/register", "/auth/config"].includes(path) &&
+        typeof window !== "undefined"
+      ) {
+        if (!window.location.pathname.startsWith("/join/"))
+          window.location.replace("/login");
       }
-      if (response.status === 403)
-        throw new LocalizedError("register.forbidden");
-      if (response.status === 409)
-        throw new LocalizedError("register.usernameTaken");
-      if (response.status === 429)
-        throw new LocalizedError("register.rateLimited");
-      throw new LocalizedError("register.failed");
+      if (body?.code === "tenant_required" && typeof window !== "undefined")
+        window.location.replace("/tenants");
+      if (path === "/auth/config")
+        throw new LocalizedError("register.configFailed");
+      if (path === "/auth/register") {
+        if (response.status === 400) {
+          if (body?.error === "username must contain 1..100 bytes")
+            throw new LocalizedError("register.invalidUsername");
+          if (body?.error === "password must contain 12..256 bytes")
+            throw new LocalizedError("register.invalidPassword");
+          throw new LocalizedError("register.invalidFields");
+        }
+        if (response.status === 403)
+          throw new LocalizedError("register.forbidden");
+        if (response.status === 409)
+          throw new LocalizedError("register.usernameTaken");
+        if (response.status === 429)
+          throw new LocalizedError("register.rateLimited");
+        throw new LocalizedError("register.failed");
+      }
+      if (typeof body?.error === "string" && body.error)
+        throw new Error(body.error);
+      throw new LocalizedError("common.httpFailed", {
+        status: response.status,
+      });
     }
-    if (typeof body?.error === "string" && body.error)
-      throw new Error(body.error);
-    throw new LocalizedError("common.httpFailed", { status: response.status });
+    return body as Type;
+  } finally {
+    scopedRequests.delete(controller);
   }
-  return body as Type;
 }
 
-export function mutation<Type>(path: string, body: unknown, method = "POST") {
+export async function mutation<Type>(
+  path: string,
+  body: unknown,
+  method = "POST",
+) {
   return api<Type>(path, { method, body: JSON.stringify(body) });
 }
 

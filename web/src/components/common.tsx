@@ -33,6 +33,10 @@ export function Status({
 }) {
   const { t } = useUI();
   const labels: Record<string, string> = {
+    active: t("status.active"),
+    archived: t("status.archived"),
+    deleting: t("status.deleting"),
+    waiting: t("status.waiting"),
     resolving: t("status.resolving"),
     planning: t("status.planning"),
     replanning: t("status.replanning"),
@@ -221,54 +225,65 @@ export function CopyButton({ value }: { value: string }) {
 }
 export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
   const { t } = useUI();
-  const [error,setError]=useState<Error>();
+  const [error, setError] = useState<Error>();
   return (
-    <div><ErrorBox message={error}/><div className="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>{t("artifacts.target")}</th>
-            <th>{t("common.size")}</th>
-            <th>SHA-256</th>
-            <th className="text-right">{t("common.download")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {artifacts.map((artifact) => (
-            <tr key={artifact.id}>
-              <td>
-                <div className="font-medium">{artifact.path}</div>
-                <div className="mt-1 font-mono text-xs text-muted-foreground">
-                  {artifact.target}
-                </div>
-              </td>
-              <td className="font-mono text-xs">{bytes(artifact.size)}</td>
-              <td>
-                <span
-                  title={artifact.sha256}
-                  className="font-mono text-xs text-muted-foreground"
-                >
-                  {short(artifact.sha256)}…{artifact.sha256.slice(-8)}
-                </span>
-              </td>
-              <td className="text-right">
-                <Button variant="ghost" size="icon" asChild>
-                  <a
-                    href="#"
-                    onClick={(event) => { event.preventDefault(); setError(undefined); void api<{url:string}>(`/artifacts/${artifact.id}/download`).then(result => window.location.assign(result.url)).catch(error => setError(asError(error))); }}
-                    aria-label={t("artifacts.download", {
-                      path: artifact.path,
-                    })}
-                  >
-                    <Download />
-                  </a>
-                </Button>
-              </td>
+    <div>
+      <ErrorBox message={error} />
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>{t("artifacts.target")}</th>
+              <th>{t("common.size")}</th>
+              <th>SHA-256</th>
+              <th className="text-right">{t("common.download")}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div></div>
+          </thead>
+          <tbody>
+            {artifacts.map((artifact) => (
+              <tr key={artifact.id}>
+                <td>
+                  <div className="font-medium">{artifact.path}</div>
+                  <div className="mt-1 font-mono text-xs text-muted-foreground">
+                    {artifact.target}
+                  </div>
+                </td>
+                <td className="font-mono text-xs">{bytes(artifact.size)}</td>
+                <td>
+                  <span
+                    title={artifact.sha256}
+                    className="font-mono text-xs text-muted-foreground"
+                  >
+                    {short(artifact.sha256)}…{artifact.sha256.slice(-8)}
+                  </span>
+                </td>
+                <td className="text-right">
+                  <Button variant="ghost" size="icon" asChild>
+                    <a
+                      href="#"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setError(undefined);
+                        void api<{ url: string }>(
+                          `/artifacts/${artifact.id}/download`,
+                        )
+                          .then((result) => window.location.assign(result.url))
+                          .catch((error) => setError(asError(error)));
+                      }}
+                      aria-label={t("artifacts.download", {
+                        path: artifact.path,
+                      })}
+                    >
+                      <Download />
+                    </a>
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 export function StepIcon({ status }: { status?: string }) {

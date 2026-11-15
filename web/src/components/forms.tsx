@@ -9,7 +9,13 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Modal } from "@/components/ui/dialog";
 import { mutation, useRemote } from "@/lib/api";
 import { asError, LocalizedError } from "@/lib/errors";
-import type { Credential, ModelProfile, Node, Pool, Project } from "@/lib/types";
+import type {
+  Credential,
+  ModelProfile,
+  Node,
+  Pool,
+  Project,
+} from "@/lib/types";
 
 export function SubmitForm({
   children,
@@ -18,7 +24,7 @@ export function SubmitForm({
   onCancel,
 }: {
   children: ReactNode;
-  onSubmit: (form: FormData) => Promise<void>;
+  onSubmit: (form: FormData, markSaved: () => void) => Promise<void>;
   label?: string;
   onCancel?: () => void;
 }) {
@@ -27,11 +33,16 @@ export function SubmitForm({
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const element = event.currentTarget;
+    element.dataset.submitting = "true";
     const form = new FormData(event.currentTarget);
     setBusy(true);
     setError(undefined);
     try {
-      await onSubmit(form);
+      await onSubmit(form, () => {
+        element.dataset.dirty = "false";
+      });
+      element.dataset.dirty = "false";
     } catch (error) {
       setError(
         error instanceof SyntaxError
@@ -39,11 +50,18 @@ export function SubmitForm({
           : asError(error),
       );
     } finally {
+      element.dataset.submitting = "false";
       setBusy(false);
     }
   }
   return (
-    <form onSubmit={submit} className="form-stack">
+    <form
+      onSubmit={submit}
+      onChange={(event) => {
+        event.currentTarget.dataset.dirty = "true";
+      }}
+      className="form-stack"
+    >
       <ErrorBox message={error} />
       {children}
       <div className="form-footer">
@@ -73,6 +91,7 @@ export function ProjectForm({
   project,
   nodes = [],
   canManageResources = true,
+  section = "all",
   done,
 }: {
   pools: Pool[];
@@ -80,19 +99,40 @@ export function ProjectForm({
   project?: Project;
   nodes?: Node[];
   canManageResources?: boolean;
+  section?: "all" | "general" | "resources";
   done: () => void;
 }) {
   const { t } = useUI();
-  const models = useRemote<Pick<ModelProfile,"id"|"name"|"enabled">[]>("/model-options");
+  const general = section !== "resources";
+  const resources = section !== "general";
+  const grantsEditable = canManageResources && resources;
+  const models =
+    useRemote<Pick<ModelProfile, "id" | "name" | "enabled">[]>(
+      "/model-options",
+    );
   const [model, setModel] = useState(project?.model_profile_id || "");
-  const [accessMode, setAccessMode] = useState<"pools"|"nodes">(project?.node_access?.mode || "pools");
-  const [grants, setGrants] = useState<{pools:string[];nodes:string[]}>(() => ({
-    pools: project?.pool_ids || (pools.find(pool => pool.is_default) ? [pools.find(pool => pool.is_default)!.id] : []),
-    nodes: project?.node_ids || (project?.node_access?.mode === "nodes" ? project.node_access.ids : []),
-  }));
-  const [deviceQuery,setDeviceQuery]=useState("");
-  const [deviceOffset,setDeviceOffset]=useState(0);
-  const devices=useRemote<Node[]>(canManageResources && accessMode === "nodes" ? `/nodes?limit=100&offset=${deviceOffset}&q=${encodeURIComponent(deviceQuery)}` : null);
+  const [accessMode, setAccessMode] = useState<"pools" | "nodes">(
+    project?.node_access?.mode || "pools",
+  );
+  const [grants, setGrants] = useState<{ pools: string[]; nodes: string[] }>(
+    () => ({
+      pools:
+        project?.pool_ids ||
+        (pools.find((pool) => pool.is_default)
+          ? [pools.find((pool) => pool.is_default)!.id]
+          : []),
+      nodes:
+        project?.node_ids ||
+        (project?.node_access?.mode === "nodes" ? project.node_access.ids : []),
+    }),
+  );
+  const [deviceQuery, setDeviceQuery] = useState("");
+  const [deviceOffset, setDeviceOffset] = useState(0);
+  const devices = useRemote<Node[]>(
+    canManageResources && accessMode === "nodes"
+      ? `/nodes?limit=100&offset=${deviceOffset}&q=${encodeURIComponent(deviceQuery)}`
+      : null,
+  );
   const [bindings, setBindings] = useState(project?.source_credentials || []);
   return (
     <SubmitForm
@@ -101,95 +141,280 @@ export function ProjectForm({
         await mutation(
           project ? `/projects/${project.id}` : "/projects",
           {
-            name: string(form, "name"),
-            repository_url: string(form, "repository_url"),
-            credential_id: canManageResources ? string(form, "credential_id") || null : project?.credential_id,
-            ...(canManageResources ? {node_access: {mode:accessMode, ids:grants[accessMode]}} : {}),
-            signing_profiles: canManageResources ? csv(string(form, "signing_profiles")) : project?.signing_profiles,
+            name: general ? string(form, "name") : project!.name,
+            repository_url: general
+              ? string(form, "repository_url")
+              : project!.repository_url,
+            credential_id: grantsEditable
+              ? string(form, "credential_id") || null
+              : project?.credential_id,
+            ...(grantsEditable
+              ? { node_access: { mode: accessMode, ids: grants[accessMode] } }
+              : {}),
+            signing_profiles: grantsEditable
+              ? csv(string(form, "signing_profiles"))
+              : project?.signing_profiles,
             model_profile_id: model || null,
-            build_context: string(form, "build_context"),
-            source_credentials: canManageResources ? bindings : project?.source_credentials,
+            build_context: general
+              ? string(form, "build_context")
+              : project?.build_context || "",
+            source_credentials: grantsEditable
+              ? bindings
+              : project?.source_credentials,
           },
           project ? "PATCH" : "POST",
         );
         done();
       }}
     >
-      <Field label={t("projects.name")}>
-        <Input
-          name="name"
-          defaultValue={project?.name}
-          required
-          maxLength={100}
-          placeholder={t("projects.namePlaceholder")}
-        />
-      </Field>
-      <Field
-        label={t("projects.repository")}
-        hint={t("projects.repositoryHint")}
-      >
-        <Input
-          name="repository_url"
-          defaultValue={project?.repository_url}
-          required
-          placeholder="https://git.example.com/team/app.git"
-        />
-      </Field>
-      <fieldset disabled={!canManageResources} className="form-stack"><Field label={t("projects.credential")}>
-        <select
-          name="credential_id"
-          className="input"
-          defaultValue={project?.credential_id || ""}
-        >
-          <option value="">{t("projects.anonymous")}</option>
-          {credentials.map((credential) => (
-            <option value={credential.id} key={credential.id}>
-              {credential.name} · {credential.kind}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label={t("tenants.deviceMode")} hint={t("tenants.deviceDetail")}><select className="input" value={accessMode} onChange={event => setAccessMode(event.target.value as "pools"|"nodes")}><option value="pools">{t("projects.pools")}</option><option value="nodes">{t("navigation.nodes")}</option></select></Field>
-      {accessMode === "nodes" && <Field label={t("search.label")}><Input value={deviceQuery} onChange={event => {setDeviceQuery(event.target.value);setDeviceOffset(0);}} /></Field>}
-      <ErrorBox message={devices.error}/>
-      {devices.error && <Button type="button" variant="secondary" onClick={() => void devices.reload()}>{t("common.retry")}</Button>}
-      <div className="grid max-h-56 gap-3 overflow-y-auto rounded-lg border border-border p-4" key={accessMode}>
-        {(accessMode === "pools" ? pools : devices.data || nodes).map(resource => <label key={resource.id} className="flex min-w-0 items-center gap-3 text-sm"><input type="checkbox" name={accessMode} value={resource.id} checked={grants[accessMode].includes(resource.id)} onChange={event => setGrants(previous => ({...previous,[accessMode]:event.target.checked ? [...previous[accessMode],resource.id] : previous[accessMode].filter(id => id !== resource.id)}))}/><span className="break-words">{resource.name}</span></label>)}
-      </div>
-      {accessMode === "nodes" && <div className="flex flex-wrap items-center justify-between gap-3 text-xs"><span>{t("tenants.selectedDevices",{count:grants.nodes.length})}</span><div className="flex gap-2"><Button type="button" variant="secondary" disabled={!deviceOffset} onClick={() => setDeviceOffset(Math.max(0,deviceOffset-100))}>{t("common.previous")}</Button><Button type="button" variant="secondary" disabled={(devices.data?.length || 0)<100} onClick={() => setDeviceOffset(deviceOffset+100)}>{t("common.next")}</Button></div></div>}
-      <Field label={t("projects.signing")} hint={t("projects.signingHint")}>
-        <Input
-          name="signing_profiles"
-          defaultValue={project?.signing_profiles.join(", ")}
-          placeholder="apple-team, windows-release"
-        />
-      </Field>
-      </fieldset>
-      {!canManageResources && <p className="notice">{t("tenants.resourcesAdminOnly")}</p>}
-      <Field label={t("ai.modelProfile")} hint={t("ai.projectModelHint")}>
-        <select className="input" value={model} onChange={(event) => setModel(event.target.value)}>
-          <option value="">{t("ai.platformDefault")}</option>
-          {(models.data || []).map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
-        </select>
-      </Field>
-      <Field label={t("ai.projectContext")} hint={t("ai.projectContextHint")}>
-        <Textarea name="build_context" defaultValue={project?.build_context} maxLength={16000} />
-      </Field>
-      <fieldset disabled={!canManageResources} className="space-y-3">
-        <legend className="text-sm font-medium">{t("ai.submoduleCredentials")}</legend>
-        <p className="text-xs leading-5 text-muted-foreground">{t("ai.submoduleHint")}</p>
-        {bindings.map((binding, index) => <div className="grid gap-2" key={index}>
-          <Input aria-label={t("projects.repository")} placeholder="https://git.example.com/team/library.git" value={binding.repository_url} onChange={(event) => setBindings(bindings.map((entry, i) => i === index ? {...entry, repository_url: event.target.value} : entry))} required />
-          <div className="flex gap-2">
-            <select className="input min-w-0 flex-1" aria-label={t("projects.credential")} required value={binding.credential_id} onChange={(event) => setBindings(bindings.map((entry, i) => i === index ? {...entry, credential_id: event.target.value} : entry))}>
-              <option value="">{t("projects.credential")}</option>
-              {credentials.map((credential) => <option key={credential.id} value={credential.id}>{credential.name}</option>)}
+      {general && (
+        <>
+          <Field label={t("projects.name")}>
+            <Input
+              name="name"
+              defaultValue={project?.name}
+              required
+              maxLength={100}
+              placeholder={t("projects.namePlaceholder")}
+            />
+          </Field>
+          <Field
+            label={t("projects.repository")}
+            hint={t("projects.repositoryHint")}
+          >
+            <Input
+              name="repository_url"
+              defaultValue={project?.repository_url}
+              required
+              placeholder="https://git.example.com/team/app.git"
+            />
+          </Field>
+        </>
+      )}
+      {resources && (
+        <fieldset disabled={!canManageResources} className="form-stack">
+          <Field label={t("projects.credential")}>
+            <select
+              name="credential_id"
+              className="input"
+              defaultValue={project?.credential_id || ""}
+            >
+              <option value="">{t("projects.anonymous")}</option>
+              {credentials.map((credential) => (
+                <option value={credential.id} key={credential.id}>
+                  {credential.name} · {credential.kind}
+                </option>
+              ))}
             </select>
-            <Button type="button" variant="ghost" onClick={() => setBindings(bindings.filter((_, i) => i !== index))}>{t("ai.remove")}</Button>
+          </Field>
+          <Field
+            label={t("tenants.deviceMode")}
+            hint={t("tenants.deviceDetail")}
+          >
+            <select
+              className="input"
+              value={accessMode}
+              onChange={(event) =>
+                setAccessMode(event.target.value as "pools" | "nodes")
+              }
+            >
+              <option value="pools">{t("projects.pools")}</option>
+              <option value="nodes">{t("navigation.nodes")}</option>
+            </select>
+          </Field>
+          {accessMode === "nodes" && (
+            <Field label={t("search.label")}>
+              <Input
+                value={deviceQuery}
+                onChange={(event) => {
+                  setDeviceQuery(event.target.value);
+                  setDeviceOffset(0);
+                }}
+              />
+            </Field>
+          )}
+          <ErrorBox message={devices.error} />
+          {devices.error && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void devices.reload()}
+            >
+              {t("common.retry")}
+            </Button>
+          )}
+          <div
+            className="grid max-h-56 gap-3 overflow-y-auto rounded-lg border border-border p-4"
+            key={accessMode}
+          >
+            {(accessMode === "pools" ? pools : devices.data || nodes).map(
+              (resource) => (
+                <label
+                  key={resource.id}
+                  className="flex min-w-0 items-center gap-3 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    name={accessMode}
+                    value={resource.id}
+                    checked={grants[accessMode].includes(resource.id)}
+                    onChange={(event) =>
+                      setGrants((previous) => ({
+                        ...previous,
+                        [accessMode]: event.target.checked
+                          ? [...previous[accessMode], resource.id]
+                          : previous[accessMode].filter(
+                              (id) => id !== resource.id,
+                            ),
+                      }))
+                    }
+                  />
+                  <span className="break-words">{resource.name}</span>
+                </label>
+              ),
+            )}
           </div>
-        </div>)}
-        <Button type="button" variant="secondary" onClick={() => setBindings([...bindings, {repository_url: "", credential_id: ""}])}>{t("ai.addBinding")}</Button>
-      </fieldset>
+          {accessMode === "nodes" && (
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+              <span>
+                {t("tenants.selectedDevices", { count: grants.nodes.length })}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={!deviceOffset}
+                  onClick={() =>
+                    setDeviceOffset(Math.max(0, deviceOffset - 100))
+                  }
+                >
+                  {t("common.previous")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={(devices.data?.length || 0) < 100}
+                  onClick={() => setDeviceOffset(deviceOffset + 100)}
+                >
+                  {t("common.next")}
+                </Button>
+              </div>
+            </div>
+          )}
+          <Field label={t("projects.signing")} hint={t("projects.signingHint")}>
+            <Input
+              name="signing_profiles"
+              defaultValue={project?.signing_profiles.join(", ")}
+              placeholder="apple-team, windows-release"
+            />
+          </Field>
+        </fieldset>
+      )}
+      {resources && !canManageResources && (
+        <p className="notice">{t("tenants.resourcesAdminOnly")}</p>
+      )}
+      {general && (
+        <>
+          <Field label={t("ai.modelProfile")} hint={t("ai.projectModelHint")}>
+            <select
+              className="input"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+            >
+              <option value="">{t("ai.platformDefault")}</option>
+              {(models.data || []).map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
+            label={t("ai.projectContext")}
+            hint={t("ai.projectContextHint")}
+          >
+            <Textarea
+              name="build_context"
+              defaultValue={project?.build_context}
+              maxLength={16000}
+            />
+          </Field>
+        </>
+      )}
+      {resources && (
+        <fieldset disabled={!canManageResources} className="space-y-3">
+          <legend className="text-sm font-medium">
+            {t("ai.submoduleCredentials")}
+          </legend>
+          <p className="text-xs leading-5 text-muted-foreground">
+            {t("ai.submoduleHint")}
+          </p>
+          {bindings.map((binding, index) => (
+            <div className="grid gap-2" key={index}>
+              <Input
+                aria-label={t("projects.repository")}
+                placeholder="https://git.example.com/team/library.git"
+                value={binding.repository_url}
+                onChange={(event) =>
+                  setBindings(
+                    bindings.map((entry, i) =>
+                      i === index
+                        ? { ...entry, repository_url: event.target.value }
+                        : entry,
+                    ),
+                  )
+                }
+                required
+              />
+              <div className="flex gap-2">
+                <select
+                  className="input min-w-0 flex-1"
+                  aria-label={t("projects.credential")}
+                  required
+                  value={binding.credential_id}
+                  onChange={(event) =>
+                    setBindings(
+                      bindings.map((entry, i) =>
+                        i === index
+                          ? { ...entry, credential_id: event.target.value }
+                          : entry,
+                      ),
+                    )
+                  }
+                >
+                  <option value="">{t("projects.credential")}</option>
+                  {credentials.map((credential) => (
+                    <option key={credential.id} value={credential.id}>
+                      {credential.name}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() =>
+                    setBindings(bindings.filter((_, i) => i !== index))
+                  }
+                >
+                  {t("ai.remove")}
+                </Button>
+              </div>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() =>
+              setBindings([
+                ...bindings,
+                { repository_url: "", credential_id: "" },
+              ])
+            }
+          >
+            {t("ai.addBinding")}
+          </Button>
+        </fieldset>
+      )}
     </SubmitForm>
   );
 }

@@ -302,6 +302,7 @@ impl ControlStore {
             ));
         }
         lock_artifact_attempt(&mut transaction, node, attempt, input.lease_token).await?;
+        sql::execute(&mut transaction,"UPDATE uploads SET expires_at=clock_timestamp()+interval '16 minutes' WHERE attempt_id=$1 AND path=$2",params![attempt,input.path]).await.map_err(internal)?;
         transaction.commit().await.map_err(internal)?;
         Ok(PreparedUpload {
             id: row.decode("id").map_err(internal)?,

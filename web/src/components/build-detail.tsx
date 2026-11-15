@@ -47,14 +47,27 @@ interface Log {
   text: string;
 }
 
-export function BuildDetail({ projectSlug, number, user }: { projectSlug: string; number: number; user: User }) {
+export function BuildDetail({
+  projectSlug,
+  number,
+  user,
+  readOnly = false,
+}: {
+  projectSlug: string;
+  number: number;
+  user: User;
+  readOnly?: boolean;
+}) {
   const { t, date } = useUI();
-  const remote = useRemote<Build>(`/projects/by-slug/${encodeURIComponent(projectSlug)}/builds/${number}`);
+  const remote = useRemote<Build>(
+    `/projects/by-slug/${encodeURIComponent(projectSlug)}/builds/${number}`,
+  );
   const build = remote.data;
   const id = build?.id;
-  const role = user.role === "admin"
-    ? "admin"
-    : user.project_roles?.[build?.project_id || ""] || "viewer";
+  const role =
+    user.role === "admin"
+      ? "admin"
+      : user.project_roles?.[build?.project_id || ""] || "viewer";
   const [logs, setLogs] = useState<Log[]>([]);
   const [selected, setSelected] = useState<string>();
   const [filter, setFilter] = useState<string>();
@@ -71,17 +84,25 @@ export function BuildDetail({ projectSlug, number, user }: { projectSlug: string
     setClipped(false);
     if (!id) return;
     const controller = new AbortController();
-    void subscribeBuild(id, controller.signal, (kind, data) => {
-      if (kind === "snapshot") { remote.setData(JSON.parse(data)); setConnected(true); }
-      if (kind === "log") {
-        const log: Log = JSON.parse(data);
-        setLogs(previous => {
-          if (previous.some(entry => entry.id === log.id)) return previous;
-          if (previous.length >= 3000) setClipped(true);
-          return [...previous,log].slice(-3000);
-        });
-      }
-    }, () => setConnected(false));
+    void subscribeBuild(
+      id,
+      controller.signal,
+      (kind, data) => {
+        if (kind === "snapshot") {
+          remote.setData(JSON.parse(data));
+          setConnected(true);
+        }
+        if (kind === "log") {
+          const log: Log = JSON.parse(data);
+          setLogs((previous) => {
+            if (previous.some((entry) => entry.id === log.id)) return previous;
+            if (previous.length >= 3000) setClipped(true);
+            return [...previous, log].slice(-3000);
+          });
+        }
+      },
+      () => setConnected(false),
+    );
     return () => controller.abort();
   }, [id, remote.setData]);
   useEffect(() => {
@@ -111,19 +132,32 @@ export function BuildDetail({ projectSlug, number, user }: { projectSlug: string
       (!attempt || log.attempt_id === attempt.id) &&
       (!filter || log.step === filter),
   );
-  const active = ["resolving", "planning", "replanning", "needs_input", "queued", "running", "canceling"].includes(
-    build.status,
-  );
+  const active = [
+    "resolving",
+    "planning",
+    "replanning",
+    "needs_input",
+    "queued",
+    "running",
+    "canceling",
+  ].includes(build.status);
   return (
     <>
       <Link
-        href="/builds"
+        href={`/projects/${projectSlug}/builds`}
         className="mb-5 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-primary"
       >
         <ArrowLeft size={13} />
         {t("builds.all")}
       </Link>
-      {build.jobs?.some(job => job.blocked_reason) && <p className="notice" role="status">{build.jobs.filter(job => job.blocked_reason).map(job => `${job.target}: ${job.blocked_reason}`).join(" · ")}</p>}
+      {build.jobs?.some((job) => job.blocked_reason) && (
+        <p className="notice" role="status">
+          {build.jobs
+            .filter((job) => job.blocked_reason)
+            .map((job) => `${job.target}: ${job.blocked_reason}`)
+            .join(" · ")}
+        </p>
+      )}
       <PageTitle
         eyebrow={t("builds.eyebrowId", { id: build.number })}
         title={build.project_name}
@@ -141,7 +175,8 @@ export function BuildDetail({ projectSlug, number, user }: { projectSlug: string
             {t("builds.cancel")}
           </Button>
         )}
-        {role !== "viewer" &&
+        {!readOnly &&
+          role !== "viewer" &&
           build.status === "succeeded" &&
           build.publish_status !== "succeeded" && (
             <Button onClick={() => setPublish(true)}>
@@ -174,7 +209,9 @@ export function BuildDetail({ projectSlug, number, user }: { projectSlug: string
           </span>
         )}
       </div>
-      {build.goal && <BuildPlanning build={build} user={user} refresh={remote.reload} />}
+      {build.goal && (
+        <BuildPlanning build={build} user={user} refresh={remote.reload} />
+      )}
       <div className="build-layout">
         <section className="panel self-start">
           <SectionTitle
@@ -262,10 +299,24 @@ export function BuildDetail({ projectSlug, number, user }: { projectSlug: string
                 </button>
               );
             })}
-            {job?.placement && <div className="space-y-2 border-t border-border p-4 text-xs text-muted-foreground">
-              <p>{t("builds.placement")} · {job.placement.selected_reason || job.placement.reason || t("builds.placementQueued")}</p>
-              <ol className="list-inside list-decimal space-y-1">{job.placement.placement.candidates.map(candidate => <li key={candidate.node_id} className="break-all"><code>{short(candidate.node_id)}</code> · {candidate.reason}</li>)}</ol>
-            </div>}
+            {job?.placement && (
+              <div className="space-y-2 border-t border-border p-4 text-xs text-muted-foreground">
+                <p>
+                  {t("builds.placement")} ·{" "}
+                  {job.placement.selected_reason ||
+                    job.placement.reason ||
+                    t("builds.placementQueued")}
+                </p>
+                <ol className="list-inside list-decimal space-y-1">
+                  {job.placement.placement.candidates.map((candidate) => (
+                    <li key={candidate.node_id} className="break-all">
+                      <code>{short(candidate.node_id)}</code> ·{" "}
+                      {candidate.reason}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
             {attempt?.error && (
               <div className="p-4">
                 <ErrorBox message={attempt.error} />
@@ -273,7 +324,10 @@ export function BuildDetail({ projectSlug, number, user }: { projectSlug: string
             )}
             {job &&
               ["failed", "lost", "canceled"].includes(job.status) &&
-              !["planning", "replanning", "needs_input"].includes(build.status) &&
+              !["planning", "replanning", "needs_input"].includes(
+                build.status,
+              ) &&
+              !readOnly &&
               role !== "viewer" && (
                 <div className="p-4">
                   <Button
@@ -372,7 +426,10 @@ export function BuildDetail({ projectSlug, number, user }: { projectSlug: string
           {t("builds.snapshot")}
         </summary>
         <pre className="log-console min-h-0">
-          {build.config_yaml || (build.config_snapshot ? JSON.stringify(build.config_snapshot,null,2) : t("builds.noConfig"))}
+          {build.config_yaml ||
+            (build.config_snapshot
+              ? JSON.stringify(build.config_snapshot, null, 2)
+              : t("builds.noConfig"))}
         </pre>
       </details>
       <Modal

@@ -1,5 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import {fixtureAPI, openPreferences, closePreferences, tenantURL } from "./fixtures";
+import {
+  fixtureAPI,
+  openPreferences,
+  closePreferences,
+  tenantURL,
+} from "./fixtures";
 
 async function instrumentDraws(page: Page) {
   await page.addInitScript(() => {
@@ -79,11 +84,13 @@ test("offscreen and visibility changes pause actual WebGL draws and resume on re
     "native compilation complete",
   );
   await expect.poll(() => draws(page)).toBeGreaterThan(2);
-  await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+  await page.locator(".workspace-atmosphere").evaluate((element) => {
+    (element as HTMLElement).style.transform = "translateY(-200vh)";
+  });
   await expect
     .poll(() =>
       page
-        .locator(".console-atmosphere")
+        .locator(".workspace-atmosphere")
         .evaluate((element) => element.getBoundingClientRect().bottom < 0),
     )
     .toBe(true);
@@ -103,7 +110,9 @@ test("offscreen and visibility changes pause actual WebGL draws and resume on re
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.waitForTimeout(100);
   expect(await draws(page)).toBe(offscreen);
-  await page.evaluate(() => scrollTo(0, 0));
+  await page.locator(".workspace-atmosphere").evaluate((element) => {
+    (element as HTMLElement).style.transform = "";
+  });
   await expect.poll(() => draws(page)).toBeGreaterThan(offscreen);
   // Exercise the native visibility event handler; headless pages do not expose real tab minimization.
   await page.evaluate(() => {
@@ -126,6 +135,7 @@ test("offscreen and visibility changes pause actual WebGL draws and resume on re
 test("WebGL failure keeps a static atmosphere and an accessible working form", async ({
   page,
 }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.addInitScript(() => {
     const original = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = function (
@@ -161,25 +171,26 @@ test("WebGL failure keeps a static atmosphere and an accessible working form", a
 test("polling and locale updates preserve the title element and do not restart its entrance", async ({
   page,
 }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await fixtureAPI(page);
   await page.goto(tenantURL("/"));
   const title = page.locator(".page-title");
   await expect(
-    page.getByRole("heading", { name: "构建，签名，交付。" }),
+    page.getByRole("heading", { name: "Build Team", exact: true }),
   ).toBeVisible();
   await expect(title).toHaveCSS("transform", "none");
   await title.evaluate((node) => {
     (window as typeof window & { __originalTitle: Element }).__originalTitle =
       node;
   });
-  await page.getByRole("button", { name: "刷新控制台" }).click();
+  await page.waitForTimeout(5100);
   await openPreferences(page);
   await page
     .getByRole("combobox", { name: "界面语言", exact: true })
     .selectOption("en");
   await closePreferences(page);
   await expect(
-    page.getByRole("heading", { name: "Build. Sign. Deliver." }),
+    page.getByRole("heading", { name: "Build Team", exact: true }),
   ).toBeVisible();
   expect(
     await title.evaluate(

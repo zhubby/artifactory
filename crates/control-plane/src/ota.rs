@@ -152,6 +152,19 @@ async fn bounded(response: reqwest::Response, limit: usize) -> Result<Vec<u8>> {
 }
 
 pub async fn import_tag(state: &AppState, tag: &str) -> Result<Uuid> {
+    let task = state
+        .store
+        .begin_workspace_task("release_import", None)
+        .await?;
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(600),
+        import_tag_task(state, tag, task),
+    )
+    .await;
+    state.store.end_workspace_task(task).await?;
+    result.map_err(|_| anyhow::anyhow!("release import timed out"))?
+}
+async fn import_tag_task(state: &AppState, tag: &str, task: Uuid) -> Result<Uuid> {
     ensure!(safe_tag(tag), "invalid release tag");
     let source = ReleaseSource::load(state).await?;
     let origin = url::Url::parse(&source.api_base)?;
@@ -253,6 +266,7 @@ pub async fn import_tag(state: &AppState, tag: &str) -> Result<Uuid> {
     if let Some(id) = state.store.existing_emissary_release(tag, &hash).await? {
         return Ok(id);
     }
+    state.store.bind_task_object(task, &hash).await?;
     let temp = tempfile::tempdir()?;
     for asset in &manifest.assets {
         let body = bounded(

@@ -139,6 +139,46 @@ async fn enqueue(
     Ok(event)
 }
 impl RuntimeStore {
+    pub async fn purge_project(&self, project: Uuid) -> Result<()> {
+        let mut db = self.pool.clone();
+        let mut tx = db.transaction().await?;
+        sql::execute(
+            &mut tx,
+            "SELECT pg_advisory_xact_lock(hashtextextended('runtime-project:'||$1::text,96))",
+            params![project],
+        )
+        .await?;
+        let live:bool=sql::scalar(&mut tx,"SELECT EXISTS(SELECT 1 FROM runtime_runs WHERE project_id=$1 AND status IN ('queued','provisioning','running'))",params![project]).await?;
+        ensure!(!live, "runtime still has accepted work");
+        sql::execute(
+            &mut tx,
+            "INSERT INTO runtime_deleted_projects(project_id) VALUES($1) ON CONFLICT DO NOTHING",
+            params![project],
+        )
+        .await?;
+        for table in [
+            "runtime_model_requests",
+            "runtime_reports",
+            "runtime_proposals",
+            "runtime_outbox",
+        ] {
+            sql::execute(&mut tx,&format!("DELETE FROM {table} WHERE run_id IN (SELECT id FROM runtime_runs WHERE project_id=$1)"),params![project]).await?;
+        }
+        sql::execute(
+            &mut tx,
+            "DELETE FROM runtime_runs WHERE project_id=$1",
+            params![project],
+        )
+        .await?;
+        sql::execute(
+            &mut tx,
+            "DELETE FROM runtime_project_tenants WHERE project_id=$1",
+            params![project],
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
     pub fn new(pool: toasty::Db, key: Arc<[u8; 32]>) -> Self {
         Self { pool, key }
     }

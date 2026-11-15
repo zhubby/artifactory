@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
-import {fixtureAPI, openPreferences, closePreferences, tenantURL } from "./fixtures";
+import {
+  fixtureAPI,
+  openPreferences,
+  closePreferences,
+  tenantURL,
+} from "./fixtures";
 
 test("local network failures translate live without clearing the login draft", async ({
   page,
@@ -58,18 +63,20 @@ test("invalid JSON is a localized form error and never reaches the backend", asy
   page,
 }) => {
   const events = await fixtureAPI(page);
-  await page.goto(tenantURL("/"));
-  await page.getByRole("button", { name: "发起构建", exact: true }).click();
-  await expect(page.getByRole("radio", { name: "分支 main", exact: true })).toBeChecked();
+  await page.goto(tenantURL("/projects/desktop-client"));
+  await page.getByRole("link", { name: "发起构建", exact: true }).click();
+  await expect(
+    page.getByRole("radio", { name: "分支 main", exact: true }),
+  ).toBeChecked();
   await page.getByRole("button", { name: "继续", exact: true }).click();
-  await page.locator('textarea[name="goal"]').fill("Build the desktop executable");
+  await page
+    .locator('textarea[name="goal"]')
+    .fill("Build the desktop executable");
   await page.getByRole("button", { name: "继续", exact: true }).click();
   await page.getByRole("button", { name: "继续", exact: true }).click();
   await page.getByText("高级参数（可选）", { exact: true }).click();
   await page.locator('textarea[name="parameters"]').fill('{"unfinished":');
-  await page
-    .getByRole("button", { name: "发起构建", exact: true })
-    .click();
+  await page.getByRole("button", { name: "发起构建", exact: true }).click();
   await expect(page.locator(".error-box")).toContainText(
     "JSON 格式无效，请检查后重试",
   );

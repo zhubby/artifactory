@@ -107,6 +107,11 @@ impl ControlStore {
         )
         .await?;
         if update.is_none() {
+            let active:bool=sql::scalar(&mut tx,"SELECT status='active' FROM tenants WHERE id=(SELECT tenant_id FROM nodes WHERE id=$1) FOR SHARE",params![node]).await?;
+            if !active {
+                tx.rollback().await?;
+                return Ok(None);
+            }
             let Some(target) = n.decode::<Option<Uuid>>("desired")? else {
                 tx.rollback().await?;
                 return Ok(None);

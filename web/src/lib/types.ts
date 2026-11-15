@@ -1,21 +1,196 @@
-export interface Account { id: string; username: string }
+export interface Account {
+  id: string;
+  username: string;
+  display_name: string;
+}
+export type WorkspaceStatus = "active" | "draining" | "archived" | "deleting";
+export interface LifecycleOperation {
+  id: string;
+  tenant_id: string;
+  project_id: string | null;
+  slug: string;
+  action: "archive" | "restore" | "delete";
+  state: "waiting" | "running" | "succeeded" | "failed" | "canceled";
+  phase: string;
+  blockers: (
+    | {
+        kind: "build";
+        id: string;
+        status: string;
+        tenant_slug: string;
+        project_slug: string;
+        number: number;
+      }
+    | {
+        kind:
+          | "publication"
+          | "planning"
+          | "attempt"
+          | "device_update"
+          | "source_refs"
+          | "release_import";
+        id: string;
+        status: string;
+      }
+  )[];
+  counts: Record<string, number>;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
 export type TenantRole = "owner" | "admin" | "member";
 export type ProjectRole = "admin" | "operator" | "viewer";
-export interface Tenant { id: string; slug: string; name: string; role: TenantRole; owner_id: string; created_at: string }
-export interface TenantContext { tenant: Tenant; project_roles: Record<string, ProjectRole> }
-export interface TenantMember { id: string; user_id: string; username: string; role: TenantRole; created_at: string }
-export interface ProjectMember { user_id: string; username: string; role: ProjectRole }
-export interface Invitation { id: string; role: "admin" | "member"; expires_at: string; revoked_at: string | null; accepted_at: string | null }
-export interface NodeAccess { mode: "pools" | "nodes"; ids: string[] }
-export function projectRole(user: User, id: string): ProjectRole { return user.project_roles?.[id] || "viewer"; }
-export interface User { id: string; username: string; role: "admin" | "operator" | "viewer"; tenant_role?: TenantRole; project_roles?: Record<string, ProjectRole> }
-export interface AuthConfig { registration_enabled: boolean }
-export interface Project { node_ids?: string[]; tenant_id?: string; node_access?: NodeAccess; effective_role?: ProjectRole;  model_profile_id?: string | null; build_context?: string; source_credentials?: {repository_url: string; credential_id: string}[]; id: string; slug: string; name: string; repository_url: string; credential_id: string | null; pool_ids: string[]; signing_profiles: string[]; build_count: number; last_build: { id: string; number: number; status: string; created_at: string } | null }
-export interface StepRun { step_index: number; name: string; phase: string; status: string; exit_code: number | null; started_at: string; finished_at: string | null }
-export interface Attempt { id: string; node_id: string; node_name: string; status: string; lease_expires_at: string; error: string | null; started_at: string | null; finished_at: string | null; steps: StepRun[] }
-export interface Job { blocked_reason?: string | null; placement?: { reason: string | null; selected_node: string | null; selected_reason: string | null; placement: {candidates: {node_id: string; reason: string}[]} } | null; id: string; target: string; status: string; target_config: { os: string; arch: string; steps: { name: string; phase: string }[] }; attempts: Attempt[] }
-export interface Artifact { id: string; path: string; size: number; sha256: string; target: string; created_at: string; project_name?: string; build_id?: string; attempt_status?: string }
-export interface Build { number: number; project_slug: string; goal?: string | null; source_snapshot_id?: string | null; current_plan_id?: string | null; revision_count?: number; clarification?: {question: string} | null; id: string; project_id: string; project_name: string; requested_ref: string; commit_sha: string | null; status: string; publish_status: string; publish_error: string | null; error: string | null; release_version: string | null; created_at: string; finished_at: string | null; jobs?: Job[]; targets?: { id: string; target: string; status: string }[]; artifacts?: Artifact[]; config_yaml?: string; config_snapshot?: Record<string, unknown>; publish_attempts?: { id: string; status: string; error: string | null }[] }
+export interface Tenant {
+  id: string;
+  slug: string;
+  name: string;
+  role: TenantRole;
+  owner_id: string;
+  status: WorkspaceStatus;
+  archived_at: string | null;
+  created_at: string;
+}
+export interface TenantContext {
+  tenant: Tenant;
+  project_roles: Record<string, ProjectRole>;
+}
+export interface TenantMember {
+  id: string;
+  user_id: string;
+  username: string;
+  role: TenantRole;
+  created_at: string;
+}
+export interface ProjectMember {
+  user_id: string;
+  username: string;
+  role: ProjectRole;
+}
+export interface Invitation {
+  id: string;
+  role: "admin" | "member";
+  expires_at: string;
+  revoked_at: string | null;
+  accepted_at: string | null;
+}
+export interface NodeAccess {
+  mode: "pools" | "nodes";
+  ids: string[];
+}
+export function projectRole(user: User, id: string): ProjectRole {
+  return user.project_roles?.[id] || "viewer";
+}
+export interface User {
+  id: string;
+  username: string;
+  role: "admin" | "operator" | "viewer";
+  tenant_role?: TenantRole;
+  project_roles?: Record<string, ProjectRole>;
+}
+export interface AuthConfig {
+  registration_enabled: boolean;
+}
+export interface Project {
+  status: WorkspaceStatus;
+  archived_at: string | null;
+  node_ids?: string[];
+  tenant_id?: string;
+  node_access?: NodeAccess;
+  effective_role?: ProjectRole;
+  model_profile_id?: string | null;
+  build_context?: string;
+  source_credentials?: { repository_url: string; credential_id: string }[];
+  id: string;
+  slug: string;
+  name: string;
+  repository_url: string;
+  credential_id: string | null;
+  pool_ids: string[];
+  signing_profiles: string[];
+  build_count: number;
+  last_build: {
+    id: string;
+    number: number;
+    status: string;
+    created_at: string;
+  } | null;
+}
+export interface StepRun {
+  step_index: number;
+  name: string;
+  phase: string;
+  status: string;
+  exit_code: number | null;
+  started_at: string;
+  finished_at: string | null;
+}
+export interface Attempt {
+  id: string;
+  node_id: string;
+  node_name: string;
+  status: string;
+  lease_expires_at: string;
+  error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  steps: StepRun[];
+}
+export interface Job {
+  blocked_reason?: string | null;
+  placement?: {
+    reason: string | null;
+    selected_node: string | null;
+    selected_reason: string | null;
+    placement: { candidates: { node_id: string; reason: string }[] };
+  } | null;
+  id: string;
+  target: string;
+  status: string;
+  target_config: {
+    os: string;
+    arch: string;
+    steps: { name: string; phase: string }[];
+  };
+  attempts: Attempt[];
+}
+export interface Artifact {
+  id: string;
+  path: string;
+  size: number;
+  sha256: string;
+  target: string;
+  created_at: string;
+  project_name?: string;
+  build_id?: string;
+  attempt_status?: string;
+}
+export interface Build {
+  number: number;
+  project_slug: string;
+  goal?: string | null;
+  source_snapshot_id?: string | null;
+  current_plan_id?: string | null;
+  revision_count?: number;
+  clarification?: { question: string } | null;
+  id: string;
+  project_id: string;
+  project_name: string;
+  requested_ref: string;
+  commit_sha: string | null;
+  status: string;
+  publish_status: string;
+  publish_error: string | null;
+  error: string | null;
+  release_version: string | null;
+  created_at: string;
+  finished_at: string | null;
+  jobs?: Job[];
+  targets?: { id: string; target: string; status: string }[];
+  artifacts?: Artifact[];
+  config_yaml?: string;
+  config_snapshot?: Record<string, unknown>;
+  publish_attempts?: { id: string; status: string; error: string | null }[];
+}
 export interface NodeTool {
   available?: boolean | null;
   path?: string | null;
@@ -110,9 +285,26 @@ export interface NodeHostSample {
   swap_used_bytes?: number | null;
   load_one?: number | null;
   active_attempts?: number | null;
-  disks?: { device: string; mount: string; total_bytes?: number | null; available_bytes?: number | null; read_bytes?: number | null; written_bytes?: number | null }[];
-  networks?: { interface: string; received_bytes?: number | null; transmitted_bytes?: number | null; receive_errors?: number | null; transmit_errors?: number | null }[];
-  accelerators?: { id: string; utilization_percent?: number | null; memory_used_bytes?: number | null }[];
+  disks?: {
+    device: string;
+    mount: string;
+    total_bytes?: number | null;
+    available_bytes?: number | null;
+    read_bytes?: number | null;
+    written_bytes?: number | null;
+  }[];
+  networks?: {
+    interface: string;
+    received_bytes?: number | null;
+    transmitted_bytes?: number | null;
+    receive_errors?: number | null;
+    transmit_errors?: number | null;
+  }[];
+  accelerators?: {
+    id: string;
+    utilization_percent?: number | null;
+    memory_used_bytes?: number | null;
+  }[];
 }
 export interface NodeTelemetry {
   host: {
@@ -132,17 +324,141 @@ export interface NodeTelemetry {
     inventory: NodeInventory;
   } | null;
 }
-export interface Release { project_slug: string; build_number: number; id: string; project_id: string; project_name: string; version: string; build_id: string; commit_sha: string; created_at: string; artifact_count: number; artifacts?: Artifact[] }
-export interface Pool { is_default?: boolean; id: string; name: string; emissary_target_release?: string | null; emissary_update_concurrency?: number; emissary_updates_paused?: boolean }
-export interface Credential { id: string; name: string; kind: string; created_at: string }
-export interface Token { id: string; name: string; scopes: string[]; project_ids: string[]; expires_at: string; revoked: boolean }
-export interface Audit { id: number; actor: string; action: string; resource_id: string; created_at: string }
-export interface Overview { nodes_registered?: number; projects: number; nodes_online: number; running: number; queued: number; releases: number; builds_today: number }
+export interface Release {
+  project_slug: string;
+  build_number: number;
+  id: string;
+  project_id: string;
+  project_name: string;
+  version: string;
+  build_id: string;
+  commit_sha: string;
+  created_at: string;
+  artifact_count: number;
+  artifacts?: Artifact[];
+}
+export interface Pool {
+  is_default?: boolean;
+  id: string;
+  name: string;
+  emissary_target_release?: string | null;
+  emissary_update_concurrency?: number;
+  emissary_updates_paused?: boolean;
+}
+export interface Credential {
+  id: string;
+  name: string;
+  kind: string;
+  created_at: string;
+}
+export interface Token {
+  id: string;
+  name: string;
+  scopes: string[];
+  project_ids: string[];
+  expires_at: string;
+  revoked: boolean;
+}
+export interface Audit {
+  id: number;
+  actor: string;
+  action: string;
+  resource_id: string;
+  created_at: string;
+}
+export interface Overview {
+  nodes_registered?: number;
+  projects: number;
+  nodes_online: number;
+  running: number;
+  queued: number;
+  releases: number;
+  builds_today: number;
+}
 
-export interface EmissaryRelease { id: string; version: string; created_at: string }
-export interface EmissaryUpdate { id: string; node_id: string; node_name: string; version: string; previous_version: string | null; status: string; error: string | null; cancel_requested: boolean; finished_at: string | null; updated_at: string }
+export interface EmissaryRelease {
+  id: string;
+  version: string;
+  created_at: string;
+}
+export interface EmissaryUpdate {
+  id: string;
+  node_id: string;
+  node_name: string;
+  version: string;
+  previous_version: string | null;
+  status: string;
+  error: string | null;
+  cancel_requested: boolean;
+  finished_at: string | null;
+  updated_at: string;
+}
 
-export interface ModelProfile { id: string; name: string; api: string; base_url: string; model: string; has_key: boolean; enabled: boolean; is_default: boolean; max_calls: number; timeout_seconds: number; revision: number; parameters: { context_window?: number; max_tokens?: number; thinking_level?: string; temperature?: number; requests_per_minute?: number } }
-export interface AIWorker { id: string; name: string; online: boolean; draining: boolean; revoked: boolean; active_run: string | null; last_seen: string | null; certificate_expires_at: string }
-export interface PlanRevision { id: string; revision: number; sha256: string; created_at: string; contents: { summary: string; evidence: {path: string; reason: string}[]; scripts: {name: string; content: string}[]; recipe: {targets: Record<string, {os: string; arch: string; steps: {name: string; phase: string; run: string}[]}>} } }
-export interface PlanningHistory { plans: PlanRevision[]; runs: {id: string; state: string; purpose: string; calls: number; error: string | null; usage: {totalTokens?: number; cost?: number}}[]; events: {id: number; kind: string; payload: Record<string, unknown>; created_at: string}[] }
+export interface ModelProfile {
+  id: string;
+  name: string;
+  api: string;
+  base_url: string;
+  model: string;
+  has_key: boolean;
+  enabled: boolean;
+  is_default: boolean;
+  max_calls: number;
+  timeout_seconds: number;
+  revision: number;
+  parameters: {
+    context_window?: number;
+    max_tokens?: number;
+    thinking_level?: string;
+    temperature?: number;
+    requests_per_minute?: number;
+  };
+}
+export interface AIWorker {
+  id: string;
+  name: string;
+  online: boolean;
+  draining: boolean;
+  revoked: boolean;
+  active_run: string | null;
+  last_seen: string | null;
+  certificate_expires_at: string;
+}
+export interface PlanRevision {
+  id: string;
+  revision: number;
+  sha256: string;
+  created_at: string;
+  contents: {
+    summary: string;
+    evidence: { path: string; reason: string }[];
+    scripts: { name: string; content: string }[];
+    recipe: {
+      targets: Record<
+        string,
+        {
+          os: string;
+          arch: string;
+          steps: { name: string; phase: string; run: string }[];
+        }
+      >;
+    };
+  };
+}
+export interface PlanningHistory {
+  plans: PlanRevision[];
+  runs: {
+    id: string;
+    state: string;
+    purpose: string;
+    calls: number;
+    error: string | null;
+    usage: { totalTokens?: number; cost?: number };
+  }[];
+  events: {
+    id: number;
+    kind: string;
+    payload: Record<string, unknown>;
+    created_at: string;
+  }[];
+}

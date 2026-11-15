@@ -51,6 +51,7 @@ pub(super) struct Snapshot {
 pub(super) struct Operation {
     #[key]
     pub id: Uuid,
+    pub project_id: Option<Uuid>,
     pub input_hash: String,
     pub root_commit: Option<String>,
     pub snapshot_id: Option<Uuid>,

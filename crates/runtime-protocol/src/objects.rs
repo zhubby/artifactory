@@ -13,6 +13,18 @@ pub struct Objects {
     http: reqwest::Client,
 }
 impl Objects {
+    pub async fn delete(&self, key: &str) -> Result<()> {
+        self.http
+            .delete(
+                self.bucket
+                    .delete_object(Some(&self.credentials), key)
+                    .sign(Duration::from_secs(60)),
+            )
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
     pub async fn initialize(&self) -> Result<()> {
         let response = self
             .http

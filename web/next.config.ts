@@ -1,14 +1,22 @@
 import type { NextConfig } from "next";
 
 const config: NextConfig = {
+  distDir: process.env.ARTIFACTORY_NEXT_DIST_DIR || ".next",
   output: "standalone",
   poweredByHeader: false,
   compress: false,
   async redirects() {
-    return [{ source: "/docs", destination: "/docs/index.html", permanent: true }];
+    return [
+      { source: "/docs", destination: "/docs/index.html", permanent: true },
+    ];
   },
   async rewrites() {
-    return [{ source: "/api/:path*", destination: `${process.env.ARTIFACTORY_API_URL || "http://127.0.0.1:8080"}/api/:path*` }];
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${process.env.ARTIFACTORY_API_URL || "http://127.0.0.1:8080"}/api/:path*`,
+      },
+    ];
   },
 };
 

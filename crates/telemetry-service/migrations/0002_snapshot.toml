@@ -1,0 +1,108 @@
+version = 1
+
+[schema]
+
+[[schema.tables]]
+id = 0
+name = "telemetry_batches"
+primary_key = { columns = [{ table = 0, index = 0 }, { table = 0, index = 1 }], index = { table = 0, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 0, index = 0 }
+name = "node_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 0, index = 1 }
+name = "batch_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 0, index = 2 }
+name = "digest"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.columns]]
+id = { table = 0, index = 3 }
+name = "received_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+
+[[schema.tables.indices]]
+id = { table = 0, index = 0 }
+name = "index_telemetry_batches_by_node_id_and_batch_id"
+on = 0
+columns = [{ column = { table = 0, index = 0 }, op = "Eq", scope = "Partition" }, { column = { table = 0, index = 1 }, op = "Eq", scope = "Local" }]
+unique = true
+primary_key = true
+
+[[schema.tables]]
+id = 1
+name = "inventory_versions"
+primary_key = { columns = [{ table = 1, index = 0 }, { table = 1, index = 1 }], index = { table = 1, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 1, index = 0 }
+name = "node_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 1, index = 1 }
+name = "digest"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.columns]]
+id = { table = 1, index = 2 }
+name = "first_seen"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+
+[[schema.tables.columns]]
+id = { table = 1, index = 3 }
+name = "inventory"
+ty = "String"
+storage_ty = "Jsonb"
+
+[[schema.tables.indices]]
+id = { table = 1, index = 0 }
+name = "index_inventory_versions_by_node_id_and_digest"
+on = 1
+columns = [{ column = { table = 1, index = 0 }, op = "Eq", scope = "Partition" }, { column = { table = 1, index = 1 }, op = "Eq", scope = "Local" }]
+unique = true
+primary_key = true
+
+[[schema.tables]]
+id = 2
+name = "inventory_observations"
+primary_key = { columns = [{ table = 2, index = 0 }, { table = 2, index = 1 }], index = { table = 2, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 2, index = 0 }
+name = "node_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 2, index = 1 }
+name = "sampled_at"
+ty = "Timestamp"
+storage_ty = { Timestamp = 6 }
+
+[[schema.tables.columns]]
+id = { table = 2, index = 2 }
+name = "digest"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.indices]]
+id = { table = 2, index = 0 }
+name = "index_inventory_observations_by_node_id_and_sampled_at"
+on = 2
+columns = [{ column = { table = 2, index = 0 }, op = "Eq", scope = "Partition" }, { column = { table = 2, index = 1 }, op = "Eq", scope = "Local" }]
+unique = true
+primary_key = true

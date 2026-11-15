@@ -34,11 +34,11 @@ async fn main() -> Result<()> {
     }
     if args.iter().any(|a| a == "--write-snapshots") {
         control.write_snapshot(Path::new(
-            "crates/control-plane/migrations/0004_snapshot.toml",
+            "crates/control-plane/migrations/0006_snapshot.toml",
         ))?;
         if let Some(runtime) = runtime {
             runtime.write_snapshot(Path::new(
-                "crates/planner-runtime/migrations/0001_snapshot.toml",
+                "crates/planner-runtime/migrations/0002_snapshot.toml",
             ))?;
         }
         println!(

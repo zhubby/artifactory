@@ -16,6 +16,8 @@ static BUSINESS: MigrationSet = MigrationSet::new(&[
     MigrationFile::new(2026111402, "0002_node_placements.sql", "SELECT 1;"),
     MigrationFile::new(2026111501, "0003_multitenancy.sql", "SELECT 1;"),
     MigrationFile::new(2026111503, "0004_readable_routes.sql", "SELECT 1;"),
+    MigrationFile::new(2026111504, "0005_account_settings.sql", "SELECT 1;"),
+    MigrationFile::new(2026111505, "0006_workspace_lifecycle.sql", "SELECT 1;"),
 ]);
 
 #[tokio::test]

@@ -46,38 +46,56 @@ pub async fn refs(
     Path(id): Path<Uuid>,
 ) -> Result<Json<source_cache::RepositoryRefs>> {
     auth.project(id, "read")?;
-    let project = state.store.project_source(id).await?;
-    if project.planner_backend == "kubernetes" {
-        let result = crate::runtime_bridge::remote_refs(
-            &state,
-            id,
-            &project.repository_url,
-            project.credential_id,
-        )
-        .await
-        .map_err(|_| ApiError::BadGateway("Source Service reference query failed".into()))?;
-        return Ok(Json(
-            serde_json::from_value(result).map_err(anyhow::Error::from)?,
-        ));
-    }
-    if let Some(client) = crate::local_source::client(&state).await? {
-        let result = client
-            .post(
-                "/internal/local-source",
-                &json!({"operation":"refs","project_id":id}),
+    let task = state
+        .store
+        .begin_workspace_task("source_refs", Some(id))
+        .await?;
+    let result = async {
+        let project = state.store.project_source(id).await?;
+        if project.planner_backend == "kubernetes" {
+            let result = crate::runtime_bridge::remote_refs(
+                &state,
+                id,
+                &project.repository_url,
+                project.credential_id,
             )
-            .await?;
-        return Ok(Json(
-            serde_json::from_value(result).map_err(anyhow::Error::from)?,
-        ));
+            .await
+            .map_err(|_| ApiError::BadGateway("Source Service reference query failed".into()))?;
+            return Ok(Json(
+                serde_json::from_value(result).map_err(anyhow::Error::from)?,
+            ));
+        }
+        if let Some(client) = crate::local_source::client(&state).await? {
+            let result = client
+                .post(
+                    "/internal/local-source",
+                    &json!({"operation":"refs","project_id":id}),
+                )
+                .await?;
+            return Ok(Json(
+                serde_json::from_value(result).map_err(anyhow::Error::from)?,
+            ));
+        }
+        state
+            .store
+            .source
+            .capture_sources(id, || async {
+                Ok(
+                    source_cache::list_refs(&state, &project.repository_url, project.credential_id)
+                        .await?,
+                )
+            })
+            .await
+            .map(Json)
+            .map_err(|_| {
+                ApiError::BadGateway(
+                    "Source reference query failed; check repository access".into(),
+                )
+            })
     }
-    source_cache::list_refs(&state, &project.repository_url, project.credential_id)
-        .await
-        .map(Json)
-        .map_err(|error| match error {
-            source_cache::RefQueryError::Timeout => ApiError::GatewayTimeout(error.to_string()),
-            _ => ApiError::BadGateway(error.to_string()),
-        })
+    .await;
+    state.store.end_workspace_task(task).await?;
+    result
 }
 
 async fn validate(_state: &AppState, input: &ProjectInput) -> Result<()> {

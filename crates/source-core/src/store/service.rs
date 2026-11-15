@@ -25,6 +25,7 @@ impl SourceStore {
     pub async fn capture_operation<F, Fut>(
         &self,
         operation: Uuid,
+        project: Uuid,
         hash: String,
         capture: F,
     ) -> Result<crate::Snapshot>
@@ -32,13 +33,27 @@ impl SourceStore {
         F: FnOnce(Option<Uuid>) -> Fut,
         Fut: Future<Output = Result<crate::Snapshot>>,
     {
+        let mut lock_db = self.pool.clone();
+        let mut lock = lock_db.transaction().await?;
+        sql::execute(
+            &mut lock,
+            "SELECT pg_advisory_xact_lock_shared(hashtextextended($1,1))",
+            params![project.to_string()],
+        )
+        .await?;
+        let retired: bool = sql::scalar(
+            &mut lock,
+            "SELECT EXISTS(SELECT 1 FROM source_deleted_projects WHERE project_id=$1)",
+            params![project],
+        )
+        .await?;
+        ensure!(!retired, "project retired");
         models::Operation::upsert_by_id(operation)
+            .project_id(Some(project))
             .input_hash(&hash)
             .or_ignore()
             .exec(&mut self.pool.clone())
             .await?;
-        let mut lock_db = self.pool.clone();
-        let mut lock = lock_db.transaction().await?;
         sql::execute(
             &mut lock,
             "SELECT pg_advisory_xact_lock(hashtextextended($1,2))",
@@ -119,6 +134,7 @@ impl SourceStore {
     }
     pub async fn save_credential(
         &self,
+        project: Uuid,
         id: Uuid,
         revision: &str,
         ciphertext: String,
@@ -129,6 +145,7 @@ impl SourceStore {
             .or_ignore()
             .exec(&mut self.pool.clone())
             .await?;
+        sql::execute(&mut self.pool.clone(), "INSERT INTO source_project_credentials(project_id,credential_id) VALUES($1,$2) ON CONFLICT DO NOTHING", params![project,id]).await?;
         self.credential_revision(id).await
     }
     pub async fn persist_repository<F, Fut>(&self, key: &str, persist: F) -> Result<()>

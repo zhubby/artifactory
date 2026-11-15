@@ -15,6 +15,53 @@ pub struct Storage {
 }
 
 impl Storage {
+    pub async fn delete_prefix(&self, prefix: &str) -> Result<()> {
+        let mut continuation = None;
+        loop {
+            let mut action = self.bucket.list_objects_v2(Some(&self.credentials));
+            action.with_prefix(prefix);
+            if let Some(token) = &continuation {
+                action.with_continuation_token(token);
+            }
+            let body = self
+                .client
+                .get(action.sign(Duration::from_secs(60)))
+                .send()
+                .await
+                .map_err(reqwest::Error::without_url)?
+                .error_for_status()
+                .map_err(reqwest::Error::without_url)?
+                .text()
+                .await?;
+            let page = rusty_s3::actions::ListObjectsV2::parse_response(&body)?;
+            for object in page.contents {
+                ensure!(
+                    object.key.starts_with(prefix),
+                    "object listing escaped prefix"
+                );
+                self.delete(&object.key).await?;
+            }
+            continuation = page.next_continuation_token;
+            if continuation.is_none() {
+                break;
+            }
+        }
+        Ok(())
+    }
+    pub async fn delete(&self, key: &str) -> Result<()> {
+        self.client
+            .delete(
+                self.bucket
+                    .delete_object(Some(&self.credentials), key)
+                    .sign(Duration::from_secs(60)),
+            )
+            .send()
+            .await
+            .map_err(reqwest::Error::without_url)?
+            .error_for_status()
+            .map_err(reqwest::Error::without_url)?;
+        Ok(())
+    }
     pub fn new(settings: &Settings) -> Result<Self> {
         Ok(Self {
             verifications: tokio::sync::Semaphore::new(settings.control.artifact_verifications),

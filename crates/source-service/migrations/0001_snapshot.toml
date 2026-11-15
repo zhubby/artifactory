@@ -1,0 +1,242 @@
+version = 1
+
+[schema]
+
+[[schema.tables]]
+id = 0
+name = "source_repositories"
+primary_key = { columns = [{ table = 0, index = 0 }], index = { table = 0, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 0, index = 0 }
+name = "id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 0, index = 1 }
+name = "project_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 0, index = 2 }
+name = "repository_url"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.columns]]
+id = { table = 0, index = 3 }
+name = "credential_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+nullable = true
+
+[[schema.tables.columns]]
+id = { table = 0, index = 4 }
+name = "cache_key"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.indices]]
+id = { table = 0, index = 0 }
+name = "index_source_repositories_by_id"
+on = 0
+columns = [{ column = { table = 0, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables.indices]]
+id = { table = 0, index = 1 }
+name = "index_source_repositories_by_cache_key"
+on = 0
+columns = [{ column = { table = 0, index = 4 }, op = "Eq", scope = "Partition" }]
+unique = true
+
+[[schema.tables]]
+id = 1
+name = "source_snapshots"
+primary_key = { columns = [{ table = 1, index = 0 }], index = { table = 1, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 1, index = 0 }
+name = "id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 1, index = 1 }
+name = "project_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 1, index = 2 }
+name = "root_repository_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 1, index = 3 }
+name = "commit_sha"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.columns]]
+id = { table = 1, index = 4 }
+name = "manifest"
+ty = "String"
+storage_ty = "Jsonb"
+
+[[schema.tables.columns]]
+id = { table = 1, index = 5 }
+name = "digest"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.columns]]
+id = { table = 1, index = 6 }
+name = "durable"
+ty = "Bool"
+storage_ty = "Boolean"
+
+[[schema.tables.indices]]
+id = { table = 1, index = 0 }
+name = "index_source_snapshots_by_id"
+on = 1
+columns = [{ column = { table = 1, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables]]
+id = 2
+name = "source_operations"
+primary_key = { columns = [{ table = 2, index = 0 }], index = { table = 2, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 2, index = 0 }
+name = "id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 2, index = 1 }
+name = "project_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+nullable = true
+
+[[schema.tables.columns]]
+id = { table = 2, index = 2 }
+name = "input_hash"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.columns]]
+id = { table = 2, index = 3 }
+name = "root_commit"
+ty = "String"
+storage_ty = "Text"
+nullable = true
+
+[[schema.tables.columns]]
+id = { table = 2, index = 4 }
+name = "snapshot_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+nullable = true
+
+[[schema.tables.indices]]
+id = { table = 2, index = 0 }
+name = "index_source_operations_by_id"
+on = 2
+columns = [{ column = { table = 2, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true
+
+[[schema.tables]]
+id = 3
+name = "source_operation_repos"
+primary_key = { columns = [{ table = 3, index = 0 }, { table = 3, index = 1 }], index = { table = 3, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 3, index = 0 }
+name = "operation_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 3, index = 1 }
+name = "path"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.columns]]
+id = { table = 3, index = 2 }
+name = "tags"
+ty = "String"
+storage_ty = "Jsonb"
+
+[[schema.tables.indices]]
+id = { table = 3, index = 0 }
+name = "index_source_operation_repos_by_operation_id_and_path"
+on = 3
+columns = [{ column = { table = 3, index = 0 }, op = "Eq", scope = "Partition" }, { column = { table = 3, index = 1 }, op = "Eq", scope = "Local" }]
+unique = true
+primary_key = true
+
+[[schema.tables]]
+id = 4
+name = "source_retentions"
+primary_key = { columns = [{ table = 4, index = 0 }, { table = 4, index = 1 }], index = { table = 4, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 4, index = 0 }
+name = "snapshot_id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 4, index = 1 }
+name = "owner"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.indices]]
+id = { table = 4, index = 0 }
+name = "index_source_retentions_by_snapshot_id_and_owner"
+on = 4
+columns = [{ column = { table = 4, index = 0 }, op = "Eq", scope = "Partition" }, { column = { table = 4, index = 1 }, op = "Eq", scope = "Local" }]
+unique = true
+primary_key = true
+
+[[schema.tables]]
+id = 5
+name = "credentials"
+primary_key = { columns = [{ table = 5, index = 0 }], index = { table = 5, index = 0 } }
+
+[[schema.tables.columns]]
+id = { table = 5, index = 0 }
+name = "id"
+ty = "Uuid"
+storage_ty = "Uuid"
+
+[[schema.tables.columns]]
+id = { table = 5, index = 1 }
+name = "revision"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.columns]]
+id = { table = 5, index = 2 }
+name = "ciphertext"
+ty = "String"
+storage_ty = "Text"
+
+[[schema.tables.indices]]
+id = { table = 5, index = 0 }
+name = "index_credentials_by_id"
+on = 5
+columns = [{ column = { table = 5, index = 0 }, op = "Eq", scope = "Partition" }]
+unique = true
+primary_key = true

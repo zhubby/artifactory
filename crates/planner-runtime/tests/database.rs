@@ -86,6 +86,45 @@ fn intent(run: Uuid) -> RunIntent {
         },
     }
 }
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn retired_project_purge_waits_for_work_preserves_other_projects_and_blocks_recreation() {
+    let state = state().await;
+    let target = intent(Uuid::new_v4());
+    let other = intent(Uuid::new_v4());
+    server::put_intent(&state, serde_json::to_value(&target).unwrap())
+        .await
+        .unwrap();
+    server::put_intent(&state, serde_json::to_value(&other).unwrap())
+        .await
+        .unwrap();
+    assert!(state.store.purge_project(target.project_id).await.is_err());
+    sql::execute(
+        &mut state.pool.clone(),
+        "UPDATE runtime_runs SET status='failed' WHERE id=$1",
+        params![target.run_id],
+    )
+    .await
+    .unwrap();
+    state.store.purge_project(target.project_id).await.unwrap();
+    state.store.purge_project(target.project_id).await.unwrap();
+    let remaining: Vec<Uuid> = sql::scalars(
+        &mut state.pool.clone(),
+        "SELECT id FROM runtime_runs",
+        params![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(remaining, vec![other.run_id]);
+    let mut late = target.clone();
+    late.run_id = Uuid::new_v4();
+    assert!(
+        server::put_intent(&state, serde_json::to_value(late).unwrap())
+            .await
+            .is_err()
+    );
+}
 async fn owner(s: &TestRuntime, run: Uuid) -> Lease {
     let execution = Execution {
         run_id: run,

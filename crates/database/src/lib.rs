@@ -23,6 +23,7 @@ pub enum Constraint {
     ForeignKey,
     Check,
     NotNull,
+    ObjectState,
 }
 /// Read PostgreSQL SQLSTATE from the typed driver cause, never from message text.
 pub fn constraint(error: &(dyn std::error::Error + 'static)) -> Option<Constraint> {
@@ -36,6 +37,7 @@ pub fn constraint(error: &(dyn std::error::Error + 'static)) -> Option<Constrain
                 "23503" => Some(Constraint::ForeignKey),
                 "23514" => Some(Constraint::Check),
                 "23502" => Some(Constraint::NotNull),
+                "55000" => Some(Constraint::ObjectState),
                 _ => None,
             };
         }
