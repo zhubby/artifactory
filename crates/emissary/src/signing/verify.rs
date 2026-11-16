@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖最终制品副本、固定证书元数据和原生验签工具。
+//! [INPUT]: 依赖最终制品副本、固定证书元数据和原生证书链提取。
 //! [OUTPUT]: 提供绑定 SHA-256 的证据并向控制平面登记。
 //! [POS]: 上传前验签并回收挂载；堆缓冲区限制 Worker 异步帧。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -21,6 +21,10 @@ use std::{
 };
 use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
+
+#[cfg(all(test, target_os = "macos"))]
+#[path = "native_macos_tests.rs"]
+mod native_macos_tests;
 
 /// Upload uses these same copies. Subsequent source mutations cannot change evidence.
 pub async fn verify_outputs(
@@ -259,11 +263,15 @@ async fn check_bundle(
     native(
         cfg,
         "codesign",
-        &["--display", "--extract-certificates", prefix, bundle],
+        &[
+            "--display",
+            &format!("--extract-certificates={prefix}"),
+            bundle,
+        ],
         cancel,
     )
     .await?;
-    let mut trust_args = vec!["verify-cert".to_owned(), "-p".into(), "codesigning".into()];
+    let mut trust_args = vec!["verify-cert".to_owned(), "-p".into(), "codeSign".into()];
     for index in 0..16 {
         let path = format!("{prefix}{index}");
         if !Path::new(&path).exists() {

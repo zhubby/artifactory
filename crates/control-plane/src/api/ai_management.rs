@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖租户鉴权、模型配置存储与规划状态。
+//! [OUTPUT]: 提供模型、Worker、注册令牌、澄清和计划查询接口。
+//! [POS]: AI 规划的管理入口；构建执行由独立节点负责。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::auth::TenantState;
 use crate::store::dto;
 pub use crate::store::{ProfileInput, WorkerUpdate};

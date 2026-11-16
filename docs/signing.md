@@ -155,6 +155,10 @@ AAB 使用 `jarsigner -storepass:env 变量名 -keypass:env 变量名`。
 先对齐 APK，再签名；签名后不改变包内容。
 macOS 使用 `codesign --keychain "$ARTIFACTORY_APPLE_KEYCHAIN"`，
 并启用 hardened runtime 和安全时间戳。
+后台服务账号不要求已有默认 Keychain。
+提取证书链使用 `codesign --display --extract-certificates=前缀`。
+该选项的前缀必须通过等号连接。
+证书链信任使用 `security verify-cert -p codeSign`。
 
 方案要求公证时，sign 脚本须使用 `xcrun notarytool submit --wait`，
 确认 Accepted，再对 `.app` 装订，最后生成最终 ZIP 或 DMG。
@@ -187,3 +191,5 @@ DMG 还须通过镜像自身的装订票据校验。
 
 生产 Developer ID 公证和真实 Android 覆盖升级，
 分别需要正式账户材料与对应设备验收。
+
+[PROTOCOL]: Update this header on change, then check AGENTS.md

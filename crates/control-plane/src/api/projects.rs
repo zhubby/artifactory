@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖租户鉴权、项目存储与源码引用查询。
+//! [OUTPUT]: 提供项目查询、配置写入和仓库引用接口。
+//! [POS]: 项目 HTTP 权限边界；签名默认方案由 signing 接口写入。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::auth::TenantState;
 pub use crate::store::ProjectInput;
 use crate::store::dto;

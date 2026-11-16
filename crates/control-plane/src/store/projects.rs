@@ -1,4 +1,7 @@
-//! Project persistence and source configuration projections.
+//! [INPUT]: 依赖 Toasty 项目模型、节点授权与源码凭据绑定。
+//! [OUTPUT]: 提供项目输入、配置持久化与源码路由投影。
+//! [POS]: 项目存储边界；保留未提交的节点授权和签名默认方案。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::dto;
 use artifactory_database::{params, sql};
 

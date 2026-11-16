@@ -2,7 +2,7 @@
 > L2 | Parent: ../AGENTS.md
 
 mod.rs: 组合 HTTP 路由、会话入口与请求约束。
-ai_management.rs: 提供模型配置与 AI Worker 接口。
+ai_management.rs: 提供模型配置、AI Worker、澄清与计划接口。
 builds.rs: 校验构建权限，提供规划、发布、下载与事件接口。
 emissary_updates.rs: 提供 Emissary 升级包与升级请求接口。
 lifecycle.rs: 提供工作区生命周期任务接口。
