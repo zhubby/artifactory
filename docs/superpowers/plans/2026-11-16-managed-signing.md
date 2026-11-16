@@ -38,6 +38,8 @@
 - 签名与构建向导桌面及移动端 38 项全部通过；启用签名 Secret 的 Helm strict lint 通过。
 - 真实 CI 发现 SDK Action 默认安装已下架的 `tools` 包。改为显式安装平台工具、Build Tools 36.0.0 和 Android 36。
 - Windows 原生 CI 发现文件锁冲突返回错误 33。清扫改用 fs2 的平台错误契约，保留活动材料和闭锁标记。
+- Linux ARM CI 发现继承的文件描述符延长签名锁寿命。清理和 Drop 均显式解锁；保留继承描述符的回归先失败、修复后通过。
 - 现场服务端 dry-run 拒绝缺少资源预算的密钥环 init 容器。初始化改为沿用 Control 的资源预算，避免增加 Pod 峰值配额。
 - 异步验签帧内嵌 64 KiB 摘要缓冲区。改用堆缓冲区，并为原生 Worker 加入异步帧栈预算回归。
+- Windows amd64、Windows ARM、Linux amd64 和 macOS ARM 原生 CI 已通过服务生命周期验收。
 - 现场部署另行记录源提交、不可变镜像、数据库备份恢复和 Kubernetes 验收。

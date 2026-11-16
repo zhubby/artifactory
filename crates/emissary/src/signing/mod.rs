@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定签名绑定、mTLS 领取、跨平台文件锁和原生工具。
-//! [OUTPUT]: 提供签名阶段材料、临时 Keychain、清理闭锁及独立验签。
+//! [OUTPUT]: 提供签名材料、临时 Keychain、显式解锁和清理闭锁。
 //! [POS]: 同一构建节点上的任务签名生命周期；不向源码目录写入密钥。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub mod redact;
@@ -273,6 +273,12 @@ impl Materials {
     fn set(&mut self, name: &str, value: impl AsRef<std::ffi::OsStr>) {
         self.environment.insert(name.into(), value.as_ref().into());
     }
+    fn release_lock(&mut self) -> Result<()> {
+        if let Some(file) = self.lock.take() {
+            fs2::FileExt::unlock(&file).context("release signing material lock")?;
+        }
+        Ok(())
+    }
     pub async fn cleanup(&mut self, cfg: &Config) -> Result<()> {
         let result = async {
             if self.keychain && self.directory.join("identity.keychain-db").exists() {
@@ -294,7 +300,7 @@ impl Materials {
                 fs::remove_dir_all(&self.directory)?;
             }
             self.environment.clear();
-            self.lock.take();
+            self.release_lock()?;
             Ok::<_, anyhow::Error>(())
         }
         .await;
@@ -317,6 +323,9 @@ impl Drop for Materials {
                 );
             }
         }
+        if self.release_lock().is_err() {
+            let _ = private_write(&self.root.join("blocked"), b"unlock failed", false, false);
+        }
     }
 }
 pub(super) async fn native(
@@ -335,6 +344,40 @@ pub(super) async fn native(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cleanup_releases_locks_while_an_inherited_descriptor_is_open() {
+        for explicit_cleanup in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let cfg = Config {
+                root: directory.path().into(),
+                ..Default::default()
+            };
+            let root = signing_root(&cfg).unwrap();
+            let id = uuid::Uuid::new_v4().to_string();
+            let path = root.join("materials").join(&id);
+            private_dir(&path).unwrap();
+            let file = lock(&root, &id).unwrap();
+            file.try_lock_exclusive().unwrap();
+            let inherited = file.try_clone().unwrap();
+            let mut material = Materials {
+                directory: path,
+                root: root.clone(),
+                environment: BTreeMap::new(),
+                secrets: Default::default(),
+                lock: Some(file),
+                keychain: false,
+            };
+            if explicit_cleanup {
+                material.cleanup(&cfg).await.unwrap();
+            }
+            drop(material);
+            let next = lock(&root, &id).unwrap();
+            next.try_lock_exclusive()
+                .expect("completed signing still holds its inherited lock");
+            drop(inherited);
+        }
+    }
     #[tokio::test]
     async fn recovery_preserves_active_material_and_removes_unlocked_orphans() {
         let directory = tempfile::tempdir().unwrap();
@@ -356,6 +399,7 @@ mod tests {
         assert!(sweep(&cfg).await.is_err());
         assert!(root.join("blocked").exists());
         assert!(material.join("private.key").exists());
+        fs2::FileExt::unlock(&file).unwrap();
         drop(file);
         sweep(&cfg).await.unwrap();
         assert!(!material.exists());
