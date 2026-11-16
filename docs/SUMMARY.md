@@ -33,6 +33,8 @@
 # 验收记录
 
 - [实施与验收总览](acceptance.md)
+- [AI-Workspace macOS 托管证书签名 · 2026-11-17](ai-workspace-signing-acceptance-2026-11-17.md)
+- [AI-Workspace 双平台真实构建 · 2026-11-16](ai-workspace-build-acceptance-2026-11-16.md)
 - [节点元数据、MCP 与 AI 选机 · 2026-11-14](acceptance/nodes/2026-11-14.md)
 - [控制平面 HA 与 Toasty · 2026-11-14](acceptance/control-ha/2026-11-14-toasty.md)
 - [控制平面 HA · SQLx 阶段归档](acceptance/control-ha/2026-11-14.md)
@@ -71,3 +73,10 @@
 - [托管应用签名 Kubernetes 升级记录 · 2026-11-16](releases/2026-11-16-managed-signing-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)
+
+# 文档维护地图
+
+- [文档模块地图](AGENTS.md)
+- [交付记录模块地图](releases/AGENTS.md)
+- [设计与计划模块地图](superpowers/AGENTS.md)
+- [实施计划模块地图](superpowers/plans/AGENTS.md)

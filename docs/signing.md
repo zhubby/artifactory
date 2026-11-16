@@ -192,4 +192,7 @@ DMG 还须通过镜像自身的装订票据校验。
 生产 Developer ID 公证和真实 Android 覆盖升级，
 分别需要正式账户材料与对应设备验收。
 
+真实证书链路见 [AI-Workspace macOS 托管签名验收](ai-workspace-signing-acceptance-2026-11-17.md)。
+该记录覆盖正式签名、S3 下载验签、材料清理和未公证状态。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

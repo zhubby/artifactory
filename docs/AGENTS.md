@@ -10,6 +10,7 @@ agent-ota-acceptance-2026-11-11.md: 记录旧 Agent OTA 验收。
 ai-builds.md: 定义仓库接入、AI 规划与构建发布流程。
 ai-builds-acceptance-2026-11-11.md: 记录零侵入 AI 构建验收。
 ai-workspace-build-acceptance-2026-11-16.md: 记录固定源码的双平台真实构建、故障修复与内部发布证据。
+ai-workspace-signing-acceptance-2026-11-17.md: 记录真实 Developer ID 托管签名、制品读回、材料清理及公证边界。
 api.md: 定义 HTTP API 输入、权限和返回值。
 artifactory-rename-2026-11-11.md: 记录产品命名迁移。
 signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。

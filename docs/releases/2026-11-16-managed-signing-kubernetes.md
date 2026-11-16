@@ -104,3 +104,11 @@
 正式 Developer ID 公证、Gatekeeper 在线判定和 Android 真机覆盖升级未验收。手机页面使用 Chromium 视口模拟。三副本仅指应用 Control；PostgreSQL、S3、Source、Telemetry 和 Worker 仍为单副本。
 
 本记录和最终验收状态在部署后追加到 main。运行镜像保持上述 `6ce851d` 源码；后续节点清理和文档提交不改变这些服务端组件。
+
+## 后续真实证书验收
+
+2026-11-17 完成 [AI-Workspace macOS 托管证书签名验收](../ai-workspace-signing-acceptance-2026-11-17.md)。
+指定 Mac 节点已升级到包含 `cf14d16` 原生验签修复的运行时。
+第 8 次构建的正式签名、两项 S3 下载验签和材料清理通过。
+原服务端镜像保持不变，三个 Control 及命名空间内全部 10 个 Pod 均 Ready。
+该后续结果不包含 Apple 公证或人工安装验收。

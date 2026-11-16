@@ -1,5 +1,7 @@
 # 实施与验收记录
 
+2026-11-17 新增 [AI-Workspace macOS 托管证书签名验收](ai-workspace-signing-acceptance-2026-11-17.md)：第 8 次真实构建完成 Developer ID 签名，129 项 Mach-O、两项 S3 下载制品及临时材料清理通过。未公证，Gatekeeper 当前拒绝分发。
+
 记录日期：2026-11-10，Asia/Shanghai。此记录区分源代码实现、实际自动化结果、运行环境和外部验收；**不是三类实体宿主、五种应用目标的最终验收证明**。
 
 2026-11-13 新增 [Rust Emissary 链路真实供应商复验](acceptance/provider/2026-11-13.md)：修复 sh 能力误判后，最新链路以真实 Qwen 完成 7 个 Build、29 项检查，覆盖流式工具、受控 429 恢复、共享限流、规划 / 设备取消和调用 / 期限预算。
