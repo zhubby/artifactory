@@ -59,6 +59,7 @@
 - [多租户实施与审查修复 · 2026-11-15](plans/2026-11-15-multitenancy.md)
 - [可读租户、项目与构建路由计划 · 2026-11-15](superpowers/plans/2026-11-15-readable-routes.md)
 - [租户与项目工作台实施计划 · 2026-11-15](superpowers/plans/2026-11-15-workspace-hierarchy.md)
+- [托管应用签名实施计划 · 2026-11-16](superpowers/plans/2026-11-16-managed-signing.md)
 
 # 品牌与变更记录
 
@@ -67,5 +68,6 @@
 - [多租户 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-multitenancy-kubernetes.md)
 - [可读路由 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-readable-routes-kubernetes.md)
 - [租户与项目工作台 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-workspace-hierarchy-kubernetes.md)
+- [托管应用签名 Kubernetes 升级记录 · 2026-11-16](releases/2026-11-16-managed-signing-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)
