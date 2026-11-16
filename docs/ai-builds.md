@@ -1,8 +1,17 @@
 # 零侵入 AI 构建
 
+<!--
+[INPUT]: 读取源码快照、Worker 与 Emissary 的执行契约。
+[OUTPUT]: 定义仓库接入、AI 规划、构建与内部发布流程。
+[POS]: 用户构建指南，连接控制台操作与运行时约束。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
+
 节点启动元数据、资源查询 MCP、有序候选分配与有限重选的启用方式见 [AI 选机](node-placement.md)。选机开关按构建固定，旧任务继续使用原调度方式。
 
 新构建只需仓库引用、构建目标和可选的平台约束。原仓库只读接入，平台不添加 `artifactory.yaml`、`.pi` 或 CI 文件，不创建分支、提交、标签或推送。构建说明、分析记录、执行计划及外置脚本保存在 Artifactory。历史 YAML 任务保留原快照及重试方式。
+
+仓库支持 HTTPS、SSH 和用户指定的 HTTP 地址。HTTP 入口用于没有 HTTPS 服务的内网 Git。HTTP/HTTPS URL 禁止携带用户名、密码、查询参数或片段；认证信息使用独立凭据引用。相对子模块保留父仓库协议，只有协议、主机和端口一致时才继承父仓库凭据。
 
 ## 对话式发起构建
 
@@ -56,6 +65,8 @@ Compose 包含 worker 服务，首次启动等待注册：`docker compose --env-
 
 DashScope 可选择 OpenAI Chat Completions，地址为 `https://dashscope.aliyuncs.com/compatible-mode/v1`，模型标识为 `qwen3.8-max`。Qwen3 系列通过 `enable_thinking` 传递推理开关，并使用该接口支持的 `system` 消息角色。`thinking_level: off` 会明确关闭思考模式，避免仅生成思考内容而耗尽输出预算；真实调用仍受所选模型的账户额度约束。
 
+`planning deadline reached` 仅表示 Worker 的规划总时限已到。供应商连接或请求超时使用独立的脱敏错误，要求检查 Worker 到模型端点的网络。模型连通性检查必须在 Worker 所在环境执行；浏览器或管理电脑能够访问端点，不能证明集群 Worker 能够访问。
+
 ## 源码与缓存
 
 下述控制平面缓存规则适用于旧 Poll 路径。Kubernetes 路径的 Git/LFS、引用查询和源码工具转到独立 Rust Source；每个分片使用自己的 PVC，固定 bundle/LFS/manifest 在 Ready 前写入 S3。设备 descriptor 直接指向 Source，不经过业务控制平面传输源码。原始缓存指标 API 不包含 Source 独立库，应采集 Source `/metrics` 和数据库下载计数。新路径首期保守保留对象，不执行旧 LRU 的破坏性 GC。
@@ -65,6 +76,8 @@ DashScope 可选择 OpenAI Chat Completions，地址为 `https://dashscope.aliyu
 Emissary 通过平台 HTTPS 的只读 Git Smart HTTP 和 LFS 获取对象。临时凭证绑定有效 attempt，取消、租约到期、节点吊销后不能开始新的下载；无 Git 写接口。生产网关将 `/api/*` 直接转给控制平面，源码不经过 Next 请求体缓冲。开发时也应让 Emissary 使用实际可达的控制平面 URL。
 
 Emissary 的 Git/LFS 缓存优先命中已有对象，每次 attempt 创建独立工作目录。工作目录与持久缓存没有可写硬链接或共享 LFS 目录。子模块及 LFS 下载地址通过任务专属 Git 配置覆盖，`.gitmodules` 和 `.lfsconfig` 保持原样。每步检查 tracked 内容、文件模式、固定提交及子模块状态，变化即以 `source_modified` 终止。允许普通未跟踪生成文件。
+
+Windows 文件系统不表示 Unix 执行权限位，源码校验不比较该权限位。Unix 节点继续检查权限位。所有节点均检查已跟踪内容、固定提交和子模块状态。
 
 控制平面 `ARTIFACTORY_SOURCE_CACHE_BYTES` 和 Emissary 配置 `source_cache_bytes` 默认各为 20 GiB。平台按仓库 LRU 回收，保护非终态构建和活动下载，保留快照元数据。历史重试只恢复原 commit/tag/OID；上游删除对象且缓存已回收时明确失败。npm、Cargo、Maven 等依赖的离线镜像不在本期范围。
 
