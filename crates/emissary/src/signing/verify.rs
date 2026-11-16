@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖最终制品副本、固定证书元数据和原生验签工具。
 //! [OUTPUT]: 提供绑定 SHA-256 的证据并向控制平面登记。
-//! [POS]: 上传前校验应用、DMG 装订票据和摘要，并回收挂载。
+//! [POS]: 上传前验签并回收挂载；堆缓冲区限制 Worker 异步帧。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{Assignment, native};
 use crate::{
@@ -56,7 +56,7 @@ pub async fn verify_outputs(
         }
         let mut file = artifacts::open(directory.path(), &output.path)?;
         let mut hash = Sha256::new();
-        let mut buffer = [0; 65536];
+        let mut buffer = vec![0; 65536];
         loop {
             let count = file.read(&mut buffer)?;
             if count == 0 {

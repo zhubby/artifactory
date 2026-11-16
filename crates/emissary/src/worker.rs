@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定任务、租约、私有配置和日志事件管道。
-//! [OUTPUT]: 提供原生步骤执行、签名生命周期和制品上传。
+//! [OUTPUT]: 提供受栈预算约束的步骤执行、签名生命周期和制品上传。
 //! [POS]: 每任务子进程；签名材料只进入 sign 步骤。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -541,5 +541,32 @@ impl Workspace {
 impl Drop for Workspace {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+#[cfg(test)]
+mod stack_budget_tests {
+    use super::*;
+    #[test]
+    fn worker_future_fits_native_stack_budget() {
+        let input = Input::default();
+        let cancel = CancellationToken::new();
+        let (emit, _events) = Emitter::channel();
+        let execute_future = execute(&input, &cancel, &emit);
+        let run_future = run(
+            BufReader::new(tokio::io::empty()),
+            tokio::io::sink(),
+            cancel.clone(),
+        );
+        // Windows 原生服务的线程栈较小。异步帧不内嵌制品缓冲区。
+        for bytes in [
+            std::mem::size_of_val(&execute_future),
+            std::mem::size_of_val(&run_future),
+        ] {
+            assert!(
+                bytes < 64 * 1024,
+                "worker future exceeds the native stack budget: {bytes}"
+            );
+        }
     }
 }
