@@ -1,7 +1,7 @@
 # .github/workflows/
 > L2 | Parent: ../AGENTS.md
 
-ci.yml: 验证版本、原生签名和跨平台服务契约。
+ci.yml: 验证版本、原生签名和跨平台服务契约，显式安装所需 Android 包。
 deployment-images.yml: 按源码 SHA 发布 Kubernetes amd64 镜像。
 emissary-release.yml: 生成 Emissary 各平台发布产物。
 release-images.yml: 发布完整版本的不可变镜像。

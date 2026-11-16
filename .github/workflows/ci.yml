@@ -1,4 +1,4 @@
-# [INPUT]: 依赖提交源码、平台工具链及隔离服务。
+# [INPUT]: 依赖提交源码、固定 Android 包及隔离服务。
 # [OUTPUT]: 验证版本、原生签名与跨服务契约。
 # [POS]: 合并交付的自动化验证入口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -53,10 +53,11 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
-      - name: Install native Android signing test tools
+        with:
+          packages: 'platform-tools build-tools;36.0.0 platforms;android-36'
+      - name: Configure native Android signing test paths
         shell: bash
         run: |
-          sdkmanager "build-tools;36.0.0" "platforms;android-36"
           {
             echo "ARTIFACTORY_TEST_ANDROID_BUILD_TOOLS=$ANDROID_HOME/build-tools/36.0.0"
             echo "ARTIFACTORY_TEST_ANDROID_PLATFORM=$ANDROID_HOME/platforms/android-36/android.jar"
