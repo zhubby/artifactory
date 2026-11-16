@@ -1,4 +1,8 @@
 //! Immutable source snapshots backed by project-scoped Git/LFS object caches.
+//! [INPUT]: 依赖共享仓库校验、源码存储和 Git/LFS 命令。
+//! [OUTPUT]: 提供固定提交快照、子模块解析与文件证据。
+//! [POS]: 独立源码服务的缓存层，按来源隔离仓库凭据。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{AppState, crypto, source, validate_path};
 use anyhow::{Context, Result, bail, ensure};
 use chrono::Utc;
@@ -74,7 +78,10 @@ pub async fn repository_path(state: &AppState, id: Uuid) -> Result<PathBuf> {
 }
 
 fn origin(repository: &str) -> Option<String> {
-    let url = if repository.starts_with("https://") || repository.starts_with("ssh://") {
+    let url = if repository.starts_with("http://")
+        || repository.starts_with("https://")
+        || repository.starts_with("ssh://")
+    {
         url::Url::parse(repository).ok()?
     } else {
         let (host, path) = repository.split_once(':')?;
@@ -953,6 +960,22 @@ pub async fn inspect_tool(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn http_submodules_preserve_origin_and_credential_boundaries() {
+        let parent = "http://example.com/org/app.git";
+        let child = resolve_submodule(parent, "../lib.git").unwrap();
+        assert_eq!(child, "http://example.com/org/lib.git");
+        assert_eq!(origin(parent), Some("http://example.com:80".into()));
+        assert_eq!(origin(parent), origin(&child));
+        for other in [
+            "https://example.com/org/lib.git",
+            "http://other.example.com/org/lib.git",
+            "http://example.com:8080/org/lib.git",
+        ] {
+            assert_ne!(origin(parent), origin(other), "{other}");
+        }
+    }
+
     #[test]
     fn git_relative_urls_resolve_against_repository_directory() {
         assert_eq!(

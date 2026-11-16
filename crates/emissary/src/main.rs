@@ -1,3 +1,7 @@
+// [INPUT]: 依赖节点配置、服务控制与运行时库。
+// [OUTPUT]: 提供注册、诊断、服务与更新初始化命令。
+// [POS]: 原生节点的 CLI 入口，不承载构建业务。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
 use artifactory_emissary::{self as emissary, config::Config};
 use clap::{Args, Parser, Subcommand};

@@ -1,3 +1,8 @@
+//! [INPUT]: 依赖租户鉴权、构建存储与私有制品存储。
+//! [OUTPUT]: 提供构建、规划、发布、制品下载和事件接口。
+//! [POS]: HTTP 输入边界，权限检查后调用业务与存储层。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
+
 use crate::auth::TenantState;
 use crate::store::dto;
 use crate::{

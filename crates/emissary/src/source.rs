@@ -1,3 +1,7 @@
+// [INPUT]: 依赖任务源码描述、Git/LFS 与隔离进程能力。
+// [OUTPUT]: 提供固定快照检出、缓存与源码完整性校验。
+// [POS]: Worker 的源码边界；按宿主文件系统检查权限。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     config::{Config, private_dir},
     process,
@@ -549,7 +553,11 @@ pub async fn verify(
                     &env,
                     &[
                         "-c",
-                        "core.filemode=true",
+                        if cfg!(windows) {
+                            "core.filemode=false"
+                        } else {
+                            "core.filemode=true"
+                        },
                         "-c",
                         "core.fsmonitor=false",
                         "-C",

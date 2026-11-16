@@ -1,3 +1,7 @@
+// [INPUT]: 依赖源码边界、真实 Git 与本机 HTTP 夹具。
+// [OUTPUT]: 验证缓存隔离、文件系统权限与内容校验。
+// [POS]: 源码生命周期在原生宿主上的行为回归。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_emissary::{
     config::Config,
     protocol::{Assignment, SourceDescriptor, SourceRepository},
@@ -207,4 +211,41 @@ fn build_environment_and_lfs_files_are_independent() {
     source::copy_lfs(&cache, &attempt).unwrap();
     fs::write(attempt.join("object"), "changed").unwrap();
     assert_eq!(fs::read(cache.join("object")).unwrap(), b"original");
+}
+
+#[tokio::test]
+async fn executable_snapshot_preserves_native_permissions_and_content_checks() {
+    let root = tempfile::tempdir().unwrap();
+    git(root.path(), &["init", "-b", "source"]);
+    let script = root.path().join("build.sh");
+    fs::write(&script, "#!/bin/sh\nprintf 'source\\n'\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    git(root.path(), &["add", "build.sh"]);
+    git(root.path(), &["update-index", "--chmod=+x", "build.sh"]);
+    git(root.path(), &["commit", "-m", "executable source"]);
+    let commit = git(root.path(), &["rev-parse", "HEAD"]);
+    let assignment = Assignment {
+        commit_sha: commit.clone(),
+        source: Some(SourceDescriptor {
+            repositories: vec![SourceRepository {
+                commit_sha: commit,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let cancel = CancellationToken::new();
+    source::verify(&Config::default(), &assignment, root.path(), &cancel)
+        .await
+        .expect("a clean executable snapshot must verify on its native filesystem");
+    fs::write(&script, "changed source\n").unwrap();
+    let error = source::verify(&Config::default(), &assignment, root.path(), &cancel)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("source_modified"));
 }

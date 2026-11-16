@@ -1,4 +1,7 @@
-//! Artifactory device runtime: isolated builds, leases, logs, artifacts and OTA.
+//! [INPUT]: 依赖节点会话、隔离执行与 OTA 监督器。
+//! [OUTPUT]: 导出节点能力、平台标识与配置启动入口。
+//! [POS]: CLI 与节点子模块之间的公共运行时边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub use artifactory_emissary_protocol as protocol;
 pub mod artifacts;
 pub mod client;

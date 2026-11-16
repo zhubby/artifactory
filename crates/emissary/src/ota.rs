@@ -1,3 +1,7 @@
+// [INPUT]: 依赖签名清单、节点配置与受限下载通道。
+// [OUTPUT]: 校验更新镜像并监督运行时激活与回滚。
+// [POS]: 原生服务启动器与受信运行时之间的更新边界。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     config::{atomic_json, private_dir, read_json},
     process, source,

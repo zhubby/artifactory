@@ -1,5 +1,10 @@
+//! [INPUT]: 依赖共享仓库校验、业务存储和凭据加密。
+//! [OUTPUT]: 导出仓库校验、凭据读取和历史配方解析。
+//! [POS]: 控制平面兼容入口，仓库输入规则归 source-core 所有。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{crypto, state::AppState};
 use anyhow::{Context, Result, ensure};
+pub use artifactory_source_core::source::validate_repository;
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
@@ -12,44 +17,6 @@ pub struct GitCredential {
     pub secret: String,
     #[serde(default)]
     pub known_hosts: String,
-}
-
-pub fn validate_repository(repository: &str) -> Result<()> {
-    ensure!(
-        repository.len() <= 2048 && !repository.contains(['\0', '\n', '\r']),
-        "invalid repository URL"
-    );
-    if repository.starts_with("https://") || repository.starts_with("ssh://") {
-        let url = url::Url::parse(repository)?;
-        ensure!(
-            url.host_str().is_some()
-                && url.password().is_none()
-                && url.query().is_none()
-                && url.fragment().is_none(),
-            "invalid repository URL"
-        );
-        ensure!(
-            url.scheme() != "https" || url.username().is_empty(),
-            "use a credential reference, not URL credentials"
-        );
-    } else {
-        let (host, path) = repository
-            .split_once(':')
-            .context("only SSH and HTTPS Git repositories are supported")?;
-        ensure!(
-            host.contains('@')
-                && !host.starts_with('-')
-                && host
-                    .bytes()
-                    .all(|value| value.is_ascii_alphanumeric() || b"@._-".contains(&value)),
-            "invalid SSH repository"
-        );
-        ensure!(
-            !path.is_empty() && !path.starts_with('-'),
-            "invalid SSH path"
-        );
-    }
-    Ok(())
 }
 
 pub async fn credential(state: &AppState, id: Option<uuid::Uuid>) -> Result<Option<GitCredential>> {
