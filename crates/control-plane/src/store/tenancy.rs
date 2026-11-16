@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖租户成员、项目范围和行锁。
+//! [OUTPUT]: 提供授权锁、资源范围及工作区读取。
+//! [POS]: 签名和其他管理写入共用的租户边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Tenant authority and membership. No request may choose a default tenant implicitly.
 use super::ControlStore;
 use crate::{
@@ -263,7 +267,7 @@ impl ControlStore {
         Ok(user)
     }
 
-    async fn lock_admin(&self, tx: &mut toasty::db::Transaction<'_>) -> Result<()> {
+    pub(super) async fn lock_admin(&self, tx: &mut toasty::db::Transaction<'_>) -> Result<()> {
         let user = self.scope.as_ref().ok_or(ApiError::TenantRequired)?.user_id;
         sql::execute(
             tx,

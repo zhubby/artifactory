@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖工作区删除租约和资源清单。
+//! [OUTPUT]: 删除项目状态与租户签名密文。
+//! [POS]: 持久化生命周期清理的数据库阶段。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{ControlStore, lifecycle::Lease};
 use crate::error::{ApiError, Result};
 use artifactory_database::{params, sql};
@@ -170,6 +174,8 @@ impl ControlStore {
         sql::execute(&mut tx,"UPDATE api_tokens SET project_ids=ARRAY(SELECT p FROM unnest(project_ids) p WHERE NOT p=ANY($1)) WHERE tenant_id=$2 AND project_ids && $1",params![&projects,lease.tenant_id]).await?;
         if lease.project_id.is_none() {
             for table in [
+                "signing_profiles",
+                "signing_credentials",
                 "emissary_updates",
                 "enrollment_tokens",
                 "ai_enrollment_tokens",

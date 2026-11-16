@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖固定任务、租约、私有配置和日志事件管道。
+//! [OUTPUT]: 提供原生步骤执行、签名生命周期和制品上传。
+//! [POS]: 每任务子进程；签名材料只进入 sign 步骤。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     artifacts, client,
     config::{Config, private_dir, private_write},
@@ -33,6 +37,7 @@ pub struct Input {
     pub lease_seconds: u32,
     pub assignment: Option<pb::Assignment>,
     pub reason: String,
+    pub signing_session_id: String,
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -132,8 +137,17 @@ pub async fn run(
     let mut tick = tokio::time::interval(Duration::from_millis(100));
     let deadline = tokio::time::Instant::now() + Duration::from_secs(assignment_timeout.into());
     let mut reason = None;
+    let session = crate::signing::Assignment::parse(
+        &initial
+            .assignment
+            .as_ref()
+            .context("missing assignment")?
+            .managed_signing_json,
+    )?
+    .session_id;
+    let (sessions, session_updates) = tokio::sync::watch::channel(session);
     let result = {
-        let result = execute(&initial, &cancel, &emit);
+        let result = execute_with_session(&initial, &cancel, &emit, session_updates);
         tokio::pin!(result);
         loop {
             tokio::select! {
@@ -142,6 +156,7 @@ pub async fn run(
                     match line {
                         Ok(Some(line)) => match serde_json::from_str::<Input>(&line) {
                             Ok(message) if message.kind=="renew" => {
+                                if !message.signing_session_id.is_empty() { sessions.send_replace(message.signing_session_id); }
                                 let now=Instant::now();
                                 if !lease.renew(now,now,message.lease_seconds) {reason=Some("execution lease expired".to_string());cancel.cancel();}
                             },
@@ -190,7 +205,41 @@ pub async fn run(
 }
 
 pub async fn execute(input: &Input, cancel: &CancellationToken, emit: &Emitter) -> Result<()> {
+    let session = crate::signing::Assignment::parse(
+        &input
+            .assignment
+            .as_ref()
+            .context("missing assignment")?
+            .managed_signing_json,
+    )?
+    .session_id;
+    let (_, sessions) = tokio::sync::watch::channel(session);
+    execute_with_session(input, cancel, emit, sessions).await
+}
+async fn execute_with_session(
+    input: &Input,
+    cancel: &CancellationToken,
+    emit: &Emitter,
+    sessions: tokio::sync::watch::Receiver<String>,
+) -> Result<()> {
+    let mut materials = None;
+    let result = execute_inner(input, cancel, emit, &mut materials, sessions).await;
+    if let Some(materials) = &mut materials {
+        materials.cleanup(&input.config).await?;
+    }
+    result
+}
+async fn execute_inner(
+    input: &Input,
+    cancel: &CancellationToken,
+    emit: &Emitter,
+    materials: &mut Option<crate::signing::Materials>,
+    sessions: tokio::sync::watch::Receiver<String>,
+) -> Result<()> {
     let assignment = input.assignment.as_ref().context("missing assignment")?;
+    let mut managed = crate::signing::Assignment::parse(&assignment.managed_signing_json)?;
+    managed.sessions = Some(sessions);
+    let mut secrets = crate::signing::redact::Secrets::default();
     let work = input.config.root.join("work");
     private_dir(&work)?;
     let base = work.join(&input.attempt_id);
@@ -250,8 +299,38 @@ pub async fn execute(input: &Input, cancel: &CancellationToken, emit: &Emitter) 
         ] {
             env.insert(key.into(), value.into());
         }
-        if matches!(step.phase.as_str(), "sign" | "verify") {
+        emit.send(Event {
+            kind: "step_started".into(),
+            payload: json!({"index":index}),
+            ..Default::default()
+        })
+        .await?;
+        if step.phase != "sign"
+            && let Some(mut active) = materials.take()
+        {
+            active.cleanup(&input.config).await?;
+        }
+        if step.phase == "sign" && !managed.bindings.is_empty() {
+            if materials.is_none() {
+                let active = crate::signing::Materials::acquire(input, &managed, index, cancel)
+                    .await
+                    .map_err(|e| Failure::wrap("authorization", e))?;
+                secrets.0.extend(active.secrets.0.clone());
+                *materials = Some(active);
+            }
+            env.extend(
+                materials
+                    .as_ref()
+                    .context("signing material missing")?
+                    .environment
+                    .clone(),
+            );
+        } else if managed.bindings.is_empty() && matches!(step.phase.as_str(), "sign" | "verify") {
             for name in &assignment.signing_profiles {
+                ensure!(
+                    !name.starts_with("managed:"),
+                    "managed profile requires fixed credential binding"
+                );
                 let profile = input
                     .config
                     .signing_profiles
@@ -259,14 +338,11 @@ pub async fn execute(input: &Input, cancel: &CancellationToken, emit: &Emitter) 
                     .with_context(|| format!("local signing profile unavailable: {name}"))
                     .map_err(|e| Failure::wrap("authorization", e))?;
                 env.extend(profile.iter().map(|(k, v)| (k.into(), v.into())));
+                for value in profile.values() {
+                    secrets.add(value);
+                }
             }
         }
-        emit.send(Event {
-            kind: "step_started".into(),
-            payload: json!({"index":index}),
-            ..Default::default()
-        })
-        .await?;
         let mut command = shell(&input.config, &step.shell, &step.run, base.path(), index)?;
         command
             .current_dir(&workspace)
@@ -282,12 +358,18 @@ pub async fn execute(input: &Input, cancel: &CancellationToken, emit: &Emitter) 
         let out = {
             let emit = emit.clone();
             let name = step.name.clone();
-            tokio::spawn(async move { process::read_log(stdout, &name, emit).await })
+            let secrets = secrets.clone();
+            tokio::spawn(async move {
+                crate::signing::redact::read_log(stdout, &name, emit, secrets).await
+            })
         };
         let err = {
             let emit = emit.clone();
             let name = step.name.clone();
-            tokio::spawn(async move { process::read_log(stderr, &name, emit).await })
+            let secrets = secrets.clone();
+            tokio::spawn(async move {
+                crate::signing::redact::read_log(stderr, &name, emit, secrets).await
+            })
         };
         let result = process::wait(
             &mut *child,
@@ -311,13 +393,22 @@ pub async fn execute(input: &Input, cancel: &CancellationToken, emit: &Emitter) 
             step.name
         );
     }
+    if let Some(mut active) = materials.take() {
+        active.cleanup(&input.config).await?;
+    }
     let paths = artifacts::collect(&workspace, &assignment.artifacts)?;
+    let verified = if managed.bindings.is_empty() {
+        None
+    } else {
+        Some(crate::signing::verify_outputs(input, &managed, &workspace, cancel).await?)
+    };
+    let upload_root = verified.as_ref().map(|v| v.path()).unwrap_or(&workspace);
     if !paths.is_empty() {
         let mut control = client::control(&input.config).await?;
         for path in paths {
             tokio::select! {
                 _=cancel.cancelled()=>anyhow::bail!("artifact upload canceled"),
-                result=upload(input,&mut control,&workspace,&path)=>result.map_err(|e|Failure::wrap("artifact_transport",e))?,
+                result=upload(input,&mut control,upload_root,&path)=>result.map_err(|e|Failure::wrap("artifact_transport",e))?,
             }
         }
     }

@@ -43,6 +43,7 @@ services:
       ARTIFACTORY_REGISTRATION_ENABLED: ${ARTIFACTORY_REGISTRATION_ENABLED:-true}
       ARTIFACTORY_AI_PLACEMENT: ${ARTIFACTORY_AI_PLACEMENT:-false}
       ARTIFACTORY_MASTER_KEY: ${ARTIFACTORY_MASTER_KEY:?run scripts/init-deploy.sh}
+      ARTIFACTORY_SIGNING_KEYS_FILE: ${ARTIFACTORY_SIGNING_KEYS_FILE:-}
       ARTIFACTORY_PKI_DIR: /run/artifactory-pki
       ARTIFACTORY_DATA_DIR: /var/lib/artifactory
       ARTIFACTORY_S3_ENDPOINT: https://${ARTIFACTORY_S3_DOMAIN:?set ARTIFACTORY_S3_DOMAIN}
@@ -59,6 +60,7 @@ services:
     volumes:
       - ./.deploy/pki:/run/artifactory-pki:ro
       - ./.deploy/control-plane:/var/lib/artifactory
+      - ./.deploy/signing:/run/artifactory-signing:ro
     ports:
       - ${ARTIFACTORY_GRPC_LISTEN:-0.0.0.0}:8443:8443
     security_opt: [no-new-privileges:true]

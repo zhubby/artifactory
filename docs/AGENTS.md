@@ -12,6 +12,7 @@ ai-builds-acceptance-2026-11-11.md: 记录零侵入 AI 构建验收。
 ai-workspace-build-acceptance-2026-11-16.md: 记录固定源码的双平台真实构建、故障修复与内部发布证据。
 api.md: 定义 HTTP API 输入、权限和返回值。
 artifactory-rename-2026-11-11.md: 记录产品命名迁移。
+signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。
 configuration.md: 定义历史执行配方及其兼容边界。
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。

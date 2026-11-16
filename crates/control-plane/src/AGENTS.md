@@ -21,6 +21,7 @@ planning.rs: 驱动 AI 规划租约与执行计划提交。
 recipe.rs: 校验历史 YAML 配方和执行步骤。
 runtime_bridge.rs: 在业务状态与独立运行时之间传递规划意图。
 scheduler.rs: 将待执行任务分配给授权设备。
+signing/: 提供托管材料加密、导入和默认签名约束。
 settings.rs: 读取启动配置与密钥路径。
 source.rs: 复用共享仓库校验并读取历史配方。
 source_cache.rs: 固定兼容后端的 Git/LFS 快照与凭据来源。

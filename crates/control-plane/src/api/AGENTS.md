@@ -8,6 +8,7 @@ emissary_updates.rs: 提供 Emissary 升级包与升级请求接口。
 lifecycle.rs: 提供工作区生命周期任务接口。
 management.rs: 提供凭据、设备与设备池接口。
 projects.rs: 提供项目配置与源码引用查询接口。
+signing.rs: 提供租户凭据、签名方案和项目默认设置。
 source_http.rs: 向规划任务和执行节点提供只读源码内容。
 telemetry.rs: 提供设备与构建时序查询接口。
 tenants.rs: 提供租户、成员与项目授权接口。

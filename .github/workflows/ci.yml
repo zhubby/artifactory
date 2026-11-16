@@ -1,3 +1,7 @@
+# [INPUT]: 依赖提交源码、平台工具链及隔离服务。
+# [OUTPUT]: 验证版本、原生签名与跨服务契约。
+# [POS]: 合并交付的自动化验证入口。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: platform-contracts
 on: [push, pull_request, workflow_dispatch]
 permissions:
@@ -44,6 +48,19 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install native Android signing test tools
+        shell: bash
+        run: |
+          sdkmanager "build-tools;36.0.0" "platforms;android-36"
+          {
+            echo "ARTIFACTORY_TEST_ANDROID_BUILD_TOOLS=$ANDROID_HOME/build-tools/36.0.0"
+            echo "ARTIFACTORY_TEST_ANDROID_PLATFORM=$ANDROID_HOME/platforms/android-36/android.jar"
+          } >> "$GITHUB_ENV"
       - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler openssh-server postgresql-client rclone git-lfs && sudo mkdir -p /run/sshd
       - run: npm ci && npm run check && npm test
         working-directory: packages/agent-worker

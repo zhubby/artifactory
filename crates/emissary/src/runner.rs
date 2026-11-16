@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖 mTLS 会话、持久化事件队列和节点配置。
+//! [OUTPUT]: 提供任务领取、租约续期和 Worker 监督。
+//! [POS]: 节点主进程；向 Worker 仅交付被授权的本机方案。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     client,
     config::{Config, atomic_json, private_dir},
@@ -322,6 +326,15 @@ impl State {
                 }
                 if command.kind == "start" && !task.started {
                     task.started = true;
+                    {
+                        let assignment = &mut task.assignment;
+                        if !assignment.managed_signing_json.is_empty() {
+                            let mut signing: Value =
+                                serde_json::from_str(&assignment.managed_signing_json)?;
+                            signing["session_id"] = json!(command.signing_session_id);
+                            assignment.managed_signing_json = signing.to_string();
+                        }
+                    }
                     Ok(vec![Action::Start(id, seconds)])
                 } else {
                     Ok(vec![Action::Control(
@@ -329,6 +342,7 @@ impl State {
                         Box::new(Input {
                             kind: "renew".into(),
                             lease_seconds: seconds,
+                            signing_session_id: command.signing_session_id.clone(),
                             ..Default::default()
                         }),
                     )])
@@ -502,7 +516,7 @@ async fn connect(
     let _ = send.send(Message::Disconnected(session)).await;
 }
 async fn worker_task(
-    cfg: Config,
+    mut cfg: Config,
     id: String,
     token: String,
     assignment: pb::Assignment,
@@ -510,6 +524,10 @@ async fn worker_task(
     (mut controls, registry): (mpsc::Receiver<Input>, crate::telemetry::Registry),
     send: mpsc::Sender<Message>,
 ) -> Result<()> {
+    crate::signing::ready(&cfg)?;
+    cfg.signing_profiles.retain(|name, _| {
+        assignment.managed_signing_json.is_empty() && assignment.signing_profiles.contains(name)
+    });
     let mut command = Command::new(std::env::current_exe()?);
     command
         .arg("worker")
@@ -572,6 +590,7 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
         "Emissary must be registered first"
     );
     private_dir(&cfg.root)?;
+    crate::signing::sweep(&cfg).await?;
     let (diagnostics, mut capabilities) = doctor::doctor(&cfg).await;
     if std::env::var_os("ARTIFACTORY_OTA_DIRECTORY").is_some() {
         capabilities.push("emissary-ota-v1".into());
@@ -628,6 +647,7 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
         tokio::select! {
             _=cancel.cancelled(),if shutdown.is_none()=>{state.stop();shutdown=Some(Instant::now()+Duration::from_secs(5));},
             _=tick.tick()=>{
+                crate::signing::ready(&cfg)?;
                 let now=Instant::now();
                 let expired=state.tasks.iter().filter(|(_,task)|task.lease.expired(now)).map(|(id,_)|id.clone()).collect::<Vec<_>>();
                 for id in expired {state.drop_task(&id,"execution lease expired")?;}

@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖测试证书、TLS 服务和对象存储。
+//! [OUTPUT]: 验证 HTTPS 存储连接和证书校验。
+//! [POS]: 对象传输 TLS 回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_control_plane::{settings::Settings, storage::Storage};
 use std::process::Command;
 
@@ -42,6 +46,7 @@ async fn storage_tls_probe_helper() {
         pki_dir: directory.clone().into(),
         data_dir: directory.into(),
         master_key: [0; 32],
+        signing_keys: None,
         s3_endpoint: endpoint.clone(),
         s3_public_endpoint: endpoint,
         s3_bucket: "tls-probe".into(),

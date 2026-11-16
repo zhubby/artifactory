@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖节点 session、任务租约和制品登记。
+//! [OUTPUT]: 提供执行事件、上传校验和签名完成约束。
+//! [POS]: 节点执行状态的事务边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Node identity, execution leases, events and upload persistence.
 use super::ControlStore;
 use crate::{crypto, pki};
@@ -10,6 +14,9 @@ use tonic::Status;
 use uuid::Uuid;
 fn internal(error: impl std::fmt::Display) -> Status {
     crate::grpc::internal(error)
+}
+pub(super) fn signing_internal(error: impl std::fmt::Display) -> Status {
+    internal(error)
 }
 const VALID_ATTEMPT_QUERY: &str = "SELECT EXISTS(SELECT 1 FROM attempts a JOIN nodes n ON n.id=a.node_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE a.id=$1 AND a.node_id=$2 AND a.lease_token=$3 AND a.status='running' AND a.lease_expires_at>clock_timestamp() AND NOT n.revoked AND n.certificate_expires_at>clock_timestamp() AND ($4 OR NOT b.cancel_requested))";
 
@@ -568,7 +575,11 @@ impl ControlStore {
                     )
                     .await
                     .map_err(internal)?;
-                    if complete != target.steps.len() as i64 || artifacts == 0 {
+                    let missing_signatures: bool = sql::scalar(&mut transaction,
+                        "SELECT EXISTS(SELECT 1 FROM jsonb_array_elements($2::jsonb) o WHERE NOT EXISTS(SELECT 1 FROM artifacts r JOIN signing_evidence e ON e.attempt_id=r.attempt_id AND e.path=r.path AND e.sha256=r.sha256 WHERE r.attempt_id=$1 AND r.path=o->>'path' AND r.signing=e.evidence))",
+                        params![id,serde_json::json!(target.signing_outputs)]).await.map_err(internal)?;
+                    if complete != target.steps.len() as i64 || artifacts == 0 || missing_signatures
+                    {
                         return Err(Status::failed_precondition(
                             "steps or verified artifacts missing",
                         ));

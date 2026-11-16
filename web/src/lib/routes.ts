@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖租户、项目 slug 和页面段。
+ * [OUTPUT]: 提供工作区路由生成和合法性校验。
+ * [POS]: 签名设置与业务页面的公开地址边界。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 /** Public page identifiers are stored slugs and project-local build numbers. */
 export function isSlug(value: string) {
   return value.length <= 63 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
@@ -46,6 +52,7 @@ export function validTenantRoute(segments: string[]) {
       "security",
       "tokens",
       "credentials",
+      "signing",
       "emissary",
       "ai",
       "audit",
@@ -58,9 +65,13 @@ export function validTenantRoute(segments: string[]) {
         segments[2],
       );
     if (segments.length === 4 && segments[2] === "settings")
-      return ["general", "members", "resources", "lifecycle"].includes(
-        segments[3],
-      );
+      return [
+        "general",
+        "members",
+        "resources",
+        "signing",
+        "lifecycle",
+      ].includes(segments[3]);
     if (segments.length === 4 && segments[2] === "releases")
       return /^[0-9a-f-]{36}$/.test(segments[3]);
     if (segments.length === 4 && segments[2] === "builds") {

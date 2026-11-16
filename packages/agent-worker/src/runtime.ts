@@ -50,6 +50,27 @@ recipe.parameters. Choose native os linux/darwin/windows and arch amd64/arm64.
 Target capabilities and labels must match real authorized nodes. Available
 signing profile names are permissions, never secrets. Signed targets must have
 ordered build, sign and verify phases; never weaken verification to claim success.
+project_context.signing_defaults freezes the managed default identity and version
+for this build. Declare application_platform as macos/android/linux/windows for
+each target; it describes the application, not the host OS. Android can run on
+any authorized host. Never relabel a product to bypass its default. Matching
+managed defaults require exactly that signing_profiles entry, literal final
+signing_outputs paths matching every artifact, and ordered build/sign/verify.
+For macOS ZIP/DMG each signing_outputs item also declares bundle: the relative
+.app path inside that archive. Managed signing requires managed-signing-v1.
+Secrets exist ONLY in sign steps. Android uses ARTIFACTORY_ANDROID_KEYSTORE,
+ARTIFACTORY_ANDROID_STORE_PASSWORD, ARTIFACTORY_ANDROID_KEY_PASSWORD and
+ARTIFACTORY_ANDROID_KEY_ALIAS. Use apksigner --ks-pass env:... --key-pass env:...
+for application-key APK, jarsigner -storepass:env ... -keypass:env ... for
+upload-key AAB. Align/assemble before signing; never mutate signed content.
+macOS uses ARTIFACTORY_APPLE_KEYCHAIN and ARTIFACTORY_APPLE_IDENTITY; explicitly
+pass codesign --keychain, enable hardened runtime and secure timestamp. Never
+modify the shared/default keychain search list. If notarize is true, sign steps
+must submit with xcrun notarytool using ARTIFACTORY_APPLE_NOTARY_KEY,
+ARTIFACTORY_APPLE_NOTARY_KEY_ID and ARTIFACTORY_APPLE_NOTARY_ISSUER, wait for
+Accepted, staple the .app (and DMG if used), then produce the final archive.
+Verify steps receive no private signing material. The node independently verifies
+final outputs and the fixed certificate before upload. Never echo secrets.
 If the intended product or required inputs are ambiguous, call request_input.
 project_context.clarifications contains earlier questions and the user's answers.
 Apply those answers as refinements to the original goal. Do not ask an already
@@ -76,7 +97,7 @@ large generated/vendor trees. No artifactory.yaml or .pi files are required.`;
 const text = { type: "string" };
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object", properties, required, additionalProperties: false });
 const step = object({ name: text, phase: { type: "string", enum: ["build", "sign", "verify"] }, shell: { type: "string", enum: ["bash", "sh", "powershell", "pwsh"] }, run: text, timeout_seconds: { type: "integer", minimum: 1 } }, ["name", "run"]);
-const target = object({ os: { type: "string", enum: ["linux", "darwin", "windows"] }, arch: { type: "string", enum: ["amd64", "arm64"] }, executor: { type: "string", const: "native" }, labels: { type: "object", additionalProperties: text }, capabilities: { type: "array", items: text }, signing_profiles: { type: "array", items: text }, timeout_seconds: { type: "integer", minimum: 1 }, steps: { type: "array", items: step }, artifacts: { type: "array", items: text } }, ["os", "arch", "steps", "artifacts"]);
+const target = object({ os: { type: "string", enum: ["linux", "darwin", "windows"] }, arch: { type: "string", enum: ["amd64", "arm64"] }, executor: { type: "string", const: "native" }, labels: { type: "object", additionalProperties: text }, capabilities: { type: "array", items: text }, signing_profiles: { type: "array", items: text }, application_platform: { type: "string", enum: ["macos", "android", "linux", "windows"] }, signing_outputs: { type: "array", items: object({ path: text, bundle: text }, ["path"]) }, timeout_seconds: { type: "integer", minimum: 1 }, steps: { type: "array", items: step }, artifacts: { type: "array", items: text } }, ["os", "arch", "steps", "artifacts"]);
 const placement = object({ candidates: { type: "array", minItems: 1, maxItems: 8, items: object({ node_id: {type:"string",format:"uuid"}, metadata_digest: {type:"string",pattern:"^[a-f0-9]{64}$"}, reason: text }, ["node_id","metadata_digest","reason"]) }, resources: object({ min_available_memory_bytes:{type:"integer",minimum:0}, min_build_disk_available_bytes:{type:"integer",minimum:0}, max_cpu_percent:{type:"number",minimum:0,maximum:100} }) }, ["candidates"]);
 const placements = {type:"object",additionalProperties:placement};
 const plan = object({

@@ -1,4 +1,10 @@
+//! [INPUT]: 依赖隔离数据库和带租户头的 HTTP 会话。
+//! [OUTPUT]: 验证多租户、成员和签名管理边界。
+//! [POS]: 数据库验收中的租户测试入口。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Real PostgreSQL and HTTP authorization tests. Accounts start with no membership.
+#[path = "signing.rs"]
+mod signing;
 use super::*;
 use serde_json::{Value, json};
 

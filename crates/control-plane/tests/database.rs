@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖隔离 PostgreSQL schema 和业务服务。
+//! [OUTPUT]: 提供数据库验收夹具与跨模块测试入口。
+//! [POS]: 真实数据库测试总入口。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_control_plane::{
     api, crypto,
     protocol::Command,
@@ -894,6 +898,7 @@ impl Database {
             pki_dir: ".local/pki".into(),
             data_dir: std::env::temp_dir(),
             master_key: [1; 32],
+            signing_keys: None,
             s3_endpoint: std::env::var("ARTIFACTORY_S3_ENDPOINT")
                 .unwrap_or("http://localhost:19000".into()),
             s3_public_endpoint: std::env::var("ARTIFACTORY_S3_ENDPOINT")

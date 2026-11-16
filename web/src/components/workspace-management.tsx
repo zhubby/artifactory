@@ -1,4 +1,10 @@
 "use client";
+/**
+ * [INPUT]: 依赖工作区权限、路由和资源设置组件。
+ * [OUTPUT]: 提供租户与项目配置导航。
+ * [POS]: 签名资源和项目默认方案的路由入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { Link } from "@/lib/tenant";
 import { useUI } from "@/components/providers";
 import { useRemote, mutation } from "@/lib/api";
@@ -9,6 +15,7 @@ import type {
   Pool,
   Credential,
 } from "@/lib/types";
+import { SigningSettings, ProjectSigning } from "@/components/signing-settings";
 import { LifecycleSettings } from "@/components/lifecycle";
 import { Settings } from "@/components/settings";
 import { AISettings } from "@/components/ai-settings";
@@ -59,12 +66,28 @@ export function WorkspaceManagement({
       : null,
   );
   const tabs = project
-    ? ["general", "members", "resources", "lifecycle"]
+    ? ["general", "members", "resources", "signing", "lifecycle"]
     : admin
-      ? ["general", "members", "resources", "security", "lifecycle"]
+      ? ["general", "members", "resources", "signing", "security", "lifecycle"]
       : ["security"];
   let content;
-  if (!admin && !(current === "security" && !project))
+  if (current === "signing")
+    content = project ? (
+      <fieldset disabled={readOnly}>
+        <ProjectSigning
+          project={project}
+          editable={admin && user.role === "admin"}
+          reload={reload}
+        />
+      </fieldset>
+    ) : admin ? (
+      <fieldset disabled={readOnly}>
+        <SigningSettings />
+      </fieldset>
+    ) : (
+      <p className="notice">{t("workspace.adminRequired")}</p>
+    );
+  else if (!admin && !(current === "security" && !project))
     content = <p className="notice">{t("workspace.adminRequired")}</p>;
   else if (current === "lifecycle")
     content = (

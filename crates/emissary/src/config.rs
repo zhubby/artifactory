@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖节点配置文件、工具路径与私有文件写入。
+//! [OUTPUT]: 提供节点设置和共享私有目录、原子文件写入。
+//! [POS]: Runner 与 Worker 共用的配置和本机文件边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{

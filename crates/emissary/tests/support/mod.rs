@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖 loopback mTLS、测试任务和日志存储。
+//! [OUTPUT]: 提供运行时验收的认证平台夹具。
+//! [POS]: Emissary 集成测试共享支持。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Loopback mTLS peer for runtime lifecycle tests; no business scheduler is simulated.
 use artifactory_emissary::{config::Config, protocol as pb};
 use rcgen::{BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, KeyPair};
@@ -62,6 +66,21 @@ pub struct TransportMetrics {
 }
 #[tonic::async_trait]
 impl pb::control_server::Control for Peer {
+    async fn acquire_signing_material(
+        &self,
+        _: Request<pb::SigningMaterialRequest>,
+    ) -> Result<Response<pb::SigningMaterialReply>, Status> {
+        Err(Status::unimplemented("test peer has no signing materials"))
+    }
+    async fn record_signing_evidence(
+        &self,
+        _: Request<pb::SigningEvidenceRequest>,
+    ) -> Result<Response<pb::SigningEvidenceReply>, Status> {
+        Err(Status::unimplemented(
+            "test peer has no signing evidence store",
+        ))
+    }
+
     type ConnectStream = ReceiverStream<Result<pb::Command, Status>>;
     async fn connect(
         &self,

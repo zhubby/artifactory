@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖节点工具配置和有界原生探测。
+//! [OUTPUT]: 提供诊断和执行能力声明。
+//! [POS]: 调度匹配前的节点能力入口。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{COMMIT, VERSION, config::Config, platform, process};
 use serde_json::{Value, json};
 use std::{collections::BTreeSet, time::Duration};
@@ -27,6 +31,11 @@ pub async fn doctor(cfg: &Config) -> (Value, Vec<String>) {
         "codesign",
         "security",
         "apksigner",
+        "jarsigner",
+        "keytool",
+        "xcrun",
+        "ditto",
+        "hdiutil",
         "docker",
     ]
     .into_iter()
@@ -34,7 +43,11 @@ pub async fn doctor(cfg: &Config) -> (Value, Vec<String>) {
     .collect();
     names.extend(cfg.tools.keys().cloned());
     let mut tools = serde_json::Map::new();
-    let mut capabilities = vec!["source-cache-v1".into(), "external-build-plan-v1".into()];
+    let mut capabilities = vec![
+        "source-cache-v1".into(),
+        "external-build-plan-v1".into(),
+        "managed-signing-v1".into(),
+    ];
     for name in names {
         let binary = cfg.tool(&name);
         let Ok(Ok(path)) = tokio::task::spawn_blocking(move || which::which(binary)).await else {
@@ -47,6 +60,9 @@ pub async fn doctor(cfg: &Config) -> (Value, Vec<String>) {
             "go" | "apksigner" => vec!["version"],
             "xcodebuild" | "java" | "msbuild" => vec!["-version"],
             "codesign" => vec!["--help"],
+            "jarsigner" | "keytool" => vec!["-help"],
+            "hdiutil" => vec!["help"],
+            "ditto" => vec!["-h"],
             "security" => vec!["help"],
             "signtool" => vec!["/?"],
             "powershell" | "pwsh" => vec![
@@ -71,7 +87,8 @@ pub async fn doctor(cfg: &Config) -> (Value, Vec<String>) {
         let version = output.trim();
         let version = version[..version.floor_char_boundary(version.len().min(512))].to_owned();
         let working = success
-            || (name == "codesign" && code == Some(2) && version.starts_with("Usage: codesign"));
+            || (name == "codesign" && code == Some(2) && version.starts_with("Usage: codesign"))
+            || (name == "ditto" && version.contains("ditto"));
         tools.insert(name.clone(), json!({"available":working,"path":path,"version":version,"version_check_succeeded":success,"probe_succeeded":working,"probe_arguments":args}));
         if working {
             capabilities.push(name);

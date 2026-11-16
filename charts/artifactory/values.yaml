@@ -42,6 +42,8 @@ controlPlane:
   schedulerBatch: 64
   # Enable only after Control, Telemetry, Runtime, Worker and Emissary are upgraded.
   aiPlacement: false
+  # Optional pre-created Secret containing keys.json; copied privately into tmpfs.
+  signingKeysSecret: ""
   drainSeconds: 5
   temporaryStorage: 10Gi
   # Optional ConfigMap containing emissary-releases.json; mounted on every replica.

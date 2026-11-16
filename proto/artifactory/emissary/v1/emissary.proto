@@ -1,3 +1,7 @@
+// [INPUT]: 依赖节点身份、任务租约与固定签名版本。
+// [OUTPUT]: 定义任务、签名材料领取及最终证据消息。
+// [POS]: 控制平面和 Emissary 的共享传输契约。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 syntax = "proto3";
 package artifactory.emissary.v1;
 
@@ -10,7 +14,26 @@ service Control {
   rpc UploadLogs(stream LogChunk) returns (LogAck);
   rpc PrepareArtifact(ArtifactRequest) returns (UploadTicket);
   rpc CompleteArtifact(CompleteArtifactRequest) returns (ArtifactRecord);
+  rpc AcquireSigningMaterial(SigningMaterialRequest) returns (SigningMaterialReply);
+  rpc RecordSigningEvidence(SigningEvidenceRequest) returns (SigningEvidenceReply);
 }
+
+message SigningMaterialRequest {
+  string attempt_id = 1;
+  string lease_token = 2;
+  string session_id = 3;
+  string profile = 4;
+  string version_id = 5;
+  uint32 step_index = 6;
+}
+message SigningMaterialReply { string material_json = 1; }
+message SigningEvidenceRequest {
+  string attempt_id = 1;
+  string lease_token = 2;
+  string session_id = 3;
+  string evidence_json = 4;
+}
+message SigningEvidenceReply { bool accepted = 1; }
 
 // A separate endpoint, database and flow-control budget from execution traffic.
 service Telemetry {
@@ -123,6 +146,7 @@ message Assignment {
   SourceDescriptor source = 12;
   string plan_revision_id = 13;
   repeated ExternalScript scripts = 14;
+  string managed_signing_json = 15;
 }
 message ExternalScript { string name = 1; string content = 2; string sha256 = 3; }
 message SourceRepository {
@@ -153,6 +177,7 @@ message Command {
   // Emissary-level commands (emissary_update / emissary_health) have no attempt ID.
   // OTA v1 is negotiated by the emissary-ota-v1 hello capability; protocol stays 1.
   string payload_json = 10;
+  string signing_session_id = 11;
 }
 message LogChunk {
   string attempt_id = 1;

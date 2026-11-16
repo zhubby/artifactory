@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖控制平面公开 JSON 契约。
+ * [OUTPUT]: 提供控制台领域类型和签名公开元数据。
+ * [POS]: API 数据与组件的类型边界；不定义私钥响应。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 export interface Account {
   id: string;
   username: string;
@@ -107,6 +113,7 @@ export interface Project {
   credential_id: string | null;
   pool_ids: string[];
   signing_profiles: string[];
+  signing_defaults?: Record<string, string>;
   build_count: number;
   last_build: {
     id: string;
@@ -154,6 +161,7 @@ export interface Job {
   attempts: Attempt[];
 }
 export interface Artifact {
+  signing?: SigningEvidence | null;
   id: string;
   path: string;
   size: number;
@@ -461,4 +469,33 @@ export interface PlanningHistory {
     payload: Record<string, unknown>;
     created_at: string;
   }[];
+}
+
+export interface SigningMetadata {
+  identity: string;
+  subject: string;
+  fingerprint_sha256: string;
+  not_before: number;
+  not_after: number;
+  team_id?: string | null;
+  alias?: string | null;
+  purpose?: "application" | "upload" | null;
+  notarization_available: boolean;
+}
+export interface SigningBinding {
+  profile: string;
+  platform: string;
+  credential_id: string;
+  version_id: string;
+  metadata: SigningMetadata;
+  notarize: boolean;
+  available?: boolean;
+}
+export interface SigningEvidence {
+  path: string;
+  sha256: string;
+  profile: string;
+  version_id: string;
+  fingerprint_sha256: string;
+  notarized: boolean;
 }

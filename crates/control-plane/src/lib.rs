@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖业务、源码、遥测与设备协议模块。
+//! [OUTPUT]: 导出控制平面服务与持久化接口。
+//! [POS]: 各服务二进制和集成测试的公共模块边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub mod api;
 pub mod auth;
 pub mod coordination;
@@ -14,6 +18,7 @@ pub mod planning;
 pub mod recipe;
 pub mod scheduler;
 pub mod settings;
+pub mod signing;
 pub mod source;
 pub mod source_cache;
 pub mod state;

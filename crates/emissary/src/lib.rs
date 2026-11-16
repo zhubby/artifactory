@@ -11,6 +11,7 @@ pub mod ota;
 pub mod process;
 pub mod runner;
 pub mod service;
+pub mod signing;
 pub mod source;
 pub mod telemetry;
 pub mod worker;

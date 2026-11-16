@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖 Toasty 连接、租户作用域和业务存储。
+//! [OUTPUT]: 组合控制平面持久化接口及迁移。
+//! [POS]: 业务服务与数据库的统一入口。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Persistence operations for the control plane.
 use artifactory_database::{params, sql};
 
@@ -12,6 +16,9 @@ mod management;
 mod models;
 mod planning_management;
 mod projects;
+mod signing;
+mod signing_execution;
+pub use signing_execution::SigningAccess;
 
 pub use auth::LoginAccount;
 pub use projects::{ProjectInput, ProjectSource};

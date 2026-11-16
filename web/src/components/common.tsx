@@ -1,4 +1,10 @@
 "use client";
+/**
+ * [INPUT]: 依赖公开领域类型、租户 API 与统一 UI。
+ * [OUTPUT]: 提供表单辅助、页面骨架和带验签证据的制品表。
+ * [POS]: 控制台跨页面共享组件。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { api } from "@/lib/api";
 
 import { usePathname } from "next/navigation";
@@ -236,6 +242,7 @@ export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
               <th>{t("artifacts.target")}</th>
               <th>{t("common.size")}</th>
               <th>SHA-256</th>
+              <th>{t("signing.status")}</th>
               <th className="text-right">{t("common.download")}</th>
             </tr>
           </thead>
@@ -256,6 +263,31 @@ export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
                   >
                     {short(artifact.sha256)}…{artifact.sha256.slice(-8)}
                   </span>
+                </td>
+                <td>
+                  {artifact.signing ? (
+                    <div className="space-y-1 text-xs">
+                      <strong>{t("signing.verified")}</strong>
+                      <p>{artifact.signing.profile}</p>
+                      <p
+                        className="break-all font-mono"
+                        title={artifact.signing.fingerprint_sha256}
+                      >
+                        {artifact.signing.fingerprint_sha256.slice(0, 16)}…
+                      </p>
+                      <p>
+                        {t(
+                          artifact.signing.notarized
+                            ? "signing.notarized"
+                            : "signing.notarizationNotRequired",
+                        )}
+                      </p>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      {t("signing.noEvidence")}
+                    </span>
+                  )}
                 </td>
                 <td className="text-right">
                   <Button variant="ghost" size="icon" asChild>

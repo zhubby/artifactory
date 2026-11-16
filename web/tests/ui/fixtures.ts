@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 Playwright 路由拦截与控制台业务类型。
+ * [OUTPUT]: 提供租户业务数据和共享 HTTP 夹具。
+ * [POS]: UI 测试的默认服务响应；专项测试覆盖对应响应。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import type { Page } from "@playwright/test";
 import type {
   Artifact,
@@ -382,6 +388,7 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
       },
       [`/projects/${project.id}`]: { ...project, effective_role: role },
       [`/projects/${project.id}/refs`]: repositoryRefs,
+      [`/projects/${project.id}/signing-preview`]: [],
       "/builds": [
         build,
         {

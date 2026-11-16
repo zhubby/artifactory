@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖公开 JSON 字段和数据库解码。
+//! [OUTPUT]: 提供项目默认方案及制品验签证据投影。
+//! [POS]: HTTP 响应的数据边界；不包含秘密信封。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Explicit API projections. These types never contain ORM models or database handles.
 use artifactory_database::{Error, Result, sql::Decode};
 use serde::{Deserialize, Serialize};
@@ -113,6 +117,7 @@ response! { Project {
     pool_ids: Vec<Uuid>,
     node_ids: Vec<Uuid>,
     signing_profiles: Vec<String>,
+    signing_defaults: Value,
     created_at: String,
     model_profile_id: Option<Uuid>,
     build_context: String,
@@ -141,6 +146,7 @@ response! { ProjectSummary {
     pool_ids: Vec<Uuid>,
     node_ids: Vec<Uuid>,
     signing_profiles: Vec<String>,
+    signing_defaults: Value,
     created_at: String,
     model_profile_id: Option<Uuid>,
     build_context: String,
@@ -351,6 +357,7 @@ response! { BuildArtifact {
     created_at: String,
     target: String,
     attempt_status: String,
+    signing: Option<Value>,
 }}
 
 response! { PublishAttempt {
@@ -381,6 +388,7 @@ response! { ArtifactSummary {
     build_id: Uuid,
     project_name: String,
     project_id: Uuid,
+    signing: Option<Value>,
 }}
 
 response! { ReleaseSummary {
@@ -416,6 +424,7 @@ response! { ReleaseArtifact {
     sha256: String,
     created_at: String,
     target: String,
+    signing: Option<Value>,
 }}
 
 response! { PlanRevision {

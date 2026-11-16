@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖环境变量、私有签名密钥环与服务地址校验。
+//! [OUTPUT]: 提供服务启动设置与资源预算。
+//! [POS]: 部署配置进入业务进程的唯一转换边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::{env, path::PathBuf};
@@ -13,6 +17,7 @@ pub struct Settings {
     pub pki_dir: PathBuf,
     pub data_dir: PathBuf,
     pub master_key: [u8; 32],
+    pub signing_keys: Option<crate::signing::KeyRing>,
     pub s3_endpoint: String,
     pub s3_public_endpoint: String,
     pub s3_bucket: String,
@@ -167,6 +172,10 @@ impl Settings {
                 .unwrap_or_else(|_| ".local/control-plane".into())
                 .into(),
             master_key,
+            signing_keys: env::var_os("ARTIFACTORY_SIGNING_KEYS_FILE")
+                .filter(|p| !p.is_empty())
+                .map(|p| crate::signing::KeyRing::load(std::path::Path::new(&p)))
+                .transpose()?,
             s3_endpoint,
             s3_public_endpoint,
             s3_bucket: env::var("ARTIFACTORY_S3_BUCKET").unwrap_or_else(|_| "artifactory".into()),

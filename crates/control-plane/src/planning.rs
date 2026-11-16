@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖固定源码、项目授权和凭据版本快照。
+//! [OUTPUT]: 校验并提交 Poll 与 Runtime 共用执行计划。
+//! [POS]: 规划结果进入调度前的业务约束边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     crypto, execution_plan::ExecutionPlan, pki, protocol::*, recipe::Recipe, source_cache,
     state::AppState,
@@ -301,7 +305,50 @@ pub(crate) async fn prepare_plan(
                     .all(|key| plan.recipe.targets.contains_key(key)),
         "plan target names differ from requested targets"
     );
-    for target in plan.recipe.targets.values() {
+    let signing_defaults: Vec<crate::signing::Binding> = serde_json::from_value(
+        planning_context
+            .get("signing_defaults")
+            .cloned()
+            .unwrap_or(json!([])),
+    )?;
+    for target in plan.recipe.targets.values_mut() {
+        crate::signing::policy::validate(target, &signing_defaults)?;
+        if !target.signing_outputs.is_empty() {
+            let binding = signing_defaults
+                .iter()
+                .find(|b| Some(b.platform.as_str()) == target.application_platform.as_deref())
+                .context("missing signing binding")?;
+            let mut tools = vec!["managed-signing-v1"];
+            if binding.platform == "macos" {
+                tools.extend(["codesign", "security"]);
+                if target
+                    .signing_outputs
+                    .iter()
+                    .any(|o| o.path.ends_with(".zip"))
+                {
+                    tools.push("ditto");
+                }
+                if target
+                    .signing_outputs
+                    .iter()
+                    .any(|o| o.path.ends_with(".dmg"))
+                {
+                    tools.push("hdiutil");
+                }
+                if binding.notarize {
+                    tools.push("xcrun");
+                }
+            } else if binding.metadata.purpose == Some(crate::signing::AndroidPurpose::Upload) {
+                tools.extend(["jarsigner", "keytool"]);
+            } else {
+                tools.push("apksigner");
+            }
+            for tool in tools {
+                if !target.capabilities.iter().any(|c| c == tool) {
+                    target.capabilities.push(tool.into());
+                }
+            }
+        }
         ensure!(
             target
                 .signing_profiles
@@ -327,6 +374,7 @@ pub(crate) async fn prepare_plan(
             ensure!(
                 target.os == old.os
                     && target.arch == old.arch
+                    && target.application_platform == old.application_platform
                     && target
                         .signing_profiles
                         .iter()

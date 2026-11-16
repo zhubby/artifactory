@@ -61,6 +61,17 @@ spec:
         runAsGroup: 10001
         fsGroup: 10001
         seccompProfile: {type: RuntimeDefault}
+      {{- if and (eq $component "control-plane") .Values.controlPlane.signingKeysSecret }}
+      initContainers:
+        - name: signing-keyring
+          image: "{{ (index .Values.images "control-plane").repository }}:{{ (index .Values.images "control-plane").tag | default .Chart.AppVersion }}"
+          command: ["/bin/sh", "-ec", "umask 077; cp /run/signing-source/keys.json /run/artifactory-signing/keys.json; chmod 0600 /run/artifactory-signing/keys.json"]
+          securityContext:
+            {{- include "artifactory.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - {name: signing-source, mountPath: /run/signing-source, readOnly: true}
+            - {name: signing-keyring, mountPath: /run/artifactory-signing}
+      {{- end }}
       containers:
         - name: {{ $component }}
           image: "{{ (index .Values.images "control-plane").repository }}:{{ (index .Values.images "control-plane").tag | default .Chart.AppVersion }}"
@@ -81,6 +92,9 @@ spec:
                 name: {{ required "planning.serviceSecretName is required with Runtime" .Values.planning.serviceSecretName }}
             {{- end }}
           env:
+            {{- if and (eq $component "control-plane") .Values.controlPlane.signingKeysSecret }}
+            - {name: ARTIFACTORY_SIGNING_KEYS_FILE, value: /run/artifactory-signing/keys.json}
+            {{- end }}
             {{- if eq $component "local-source" }}
             - {name: ARTIFACTORY_SERVICE_TLS_CERT, value: /run/artifactory-pki/server.pem}
             - {name: ARTIFACTORY_SERVICE_TLS_KEY, value: /run/artifactory-pki/server.key}
@@ -113,6 +127,9 @@ spec:
           resources:
             {{- toYaml (index .Values.resources "control-plane") | nindent 12 }}
           volumeMounts:
+            {{- if and (eq $component "control-plane") .Values.controlPlane.signingKeysSecret }}
+            - {name: signing-keyring, mountPath: /run/artifactory-signing, readOnly: true}
+            {{- end }}
             {{- if .Values.controlPlane.releaseSourceConfigMap }}
             - {name: release-source, mountPath: /etc/artifactory, readOnly: true}
             {{- end }}
@@ -123,6 +140,15 @@ spec:
             - {name: service-ca, mountPath: /run/service-ca, readOnly: true}
             {{- end }}
       volumes:
+        {{- if and (eq $component "control-plane") .Values.controlPlane.signingKeysSecret }}
+        - name: signing-source
+          secret:
+            secretName: {{ .Values.controlPlane.signingKeysSecret }}
+            defaultMode: 0440
+            items: [{key: keys.json, path: keys.json}]
+        - name: signing-keyring
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+        {{- end }}
         {{- if .Values.planning.serviceCaSecretName }}
         - name: service-ca
           secret:

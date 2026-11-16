@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖持久化任务、节点能力和项目范围。
+//! [OUTPUT]: 提供任务分配、材料引用和后台维护调度。
+//! [POS]: 将固定执行计划交给当前节点会话。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     protocol::{Assignment, GitCredential, Step},
     recipe::{Recipe, Target},
@@ -339,6 +343,17 @@ pub async fn schedule(state: &AppState) -> Result<()> {
 pub(crate) async fn assignment(state: &AppState, job: Uuid, attempt: Uuid) -> Result<Assignment> {
     let context = state.store.assignment_context(job).await?;
     let target: Target = serde_json::from_value(context.target_config)?;
+    let mut signing = state.store.signing_assignment(attempt).await?;
+    let mut bindings: Vec<crate::signing::Binding> =
+        serde_json::from_value(signing["bindings"].take())?;
+    bindings.retain(|b| Some(b.platform.as_str()) == target.application_platform.as_deref());
+    let managed_signing_json = if bindings.is_empty() {
+        String::new()
+    } else {
+        signing["bindings"] = serde_json::to_value(bindings)?;
+        signing["outputs"] = serde_json::to_value(&target.signing_outputs)?;
+        signing.to_string()
+    };
     let plan_id: Option<Uuid> = context.plan_revision_id;
     let plan = context
         .plan
@@ -374,6 +389,7 @@ pub(crate) async fn assignment(state: &AppState, job: Uuid, attempt: Uuid) -> Re
         known_hosts: auth.known_hosts,
     });
     Ok(Assignment {
+        managed_signing_json,
         job_id: job.to_string(),
         build_id: context.id.to_string(),
         target: context.target,

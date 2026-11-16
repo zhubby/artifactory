@@ -41,6 +41,9 @@ url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 walkdir = "2"
 which = "8"
+zeroize = "1"
+x509-parser = "0.18"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8"

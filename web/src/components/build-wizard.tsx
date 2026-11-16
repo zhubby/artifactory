@@ -1,5 +1,14 @@
 "use client";
+/**
+ * [INPUT]: 依赖项目公开配置、源码引用和构建提交 API。
+ * [OUTPUT]: 提供构建向导和默认签名版本预览。
+ * [POS]: 构建创建入口；服务器在创建时冻结签名版本。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 
+import { SigningSummary } from "@/components/signing-settings";
+import { useRemote } from "@/lib/api";
+import type { SigningBinding } from "@/lib/types";
 import {
   useEffect,
   useRef,
@@ -197,6 +206,9 @@ function Wizard({
   const questionRef = useRef<HTMLHeadingElement>(null);
   const motionRef = useRef(motion);
   motionRef.current = motion;
+  const signing = useRemote<SigningBinding[]>(
+    projectID ? `/projects/${projectID}/signing-preview` : null,
+  );
   const refs = useRepositoryRefs(user.role === "viewer" ? "" : projectID);
   const project = projects.find((project) => project.id === projectID);
   const reference = (sourceMode === "manual" ? manualRef : selectedRef).trim();
@@ -416,6 +428,14 @@ function Wizard({
           {t("wizard.cancel")}
         </Button>
       </PageTitle>
+      {projectID && (
+        <section className="panel mb-6">
+          <h2>{t("signing.defaults")}</h2>
+          <p className="management-description">{t("signing.freezeHint")}</p>
+          <ErrorBox message={signing.error} />
+          <SigningSummary bindings={signing.data || []} />
+        </section>
+      )}
       <div
         ref={draftRef}
         className="wizard-layout"

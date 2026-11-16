@@ -2,6 +2,7 @@
 Rust 2024 + Toasty 0.11.0 + PostgreSQL 17 + Next.js 16.4.5 + React 19.3.1
 
 <directory>
+.github/ - 平台验证与不可变镜像交付。
 crates/ - 控制平面、源码快照、执行节点与遥测服务。
 operator/ - Kubernetes 规划任务和设备工作负载编排。
 packages/ - 独立 Node.js AI 规划 Worker。

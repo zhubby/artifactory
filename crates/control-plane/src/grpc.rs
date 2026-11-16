@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖 mTLS 身份、节点会话和持久化授权。
+//! [OUTPUT]: 提供节点任务、材料领取和验签证据 RPC。
+//! [POS]: 节点与控制平面的认证传输边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     crypto, pki,
     protocol::{self, Command, EmissaryEvent},
@@ -100,6 +104,71 @@ impl protocol::enrollment_server::Enrollment for EmissaryService {
 #[tonic::async_trait]
 impl protocol::control_server::Control for EmissaryService {
     type ConnectStream = ReceiverStream<Result<Command, Status>>;
+
+    async fn acquire_signing_material(
+        &self,
+        request: Request<protocol::SigningMaterialRequest>,
+    ) -> Result<Response<protocol::SigningMaterialReply>, Status> {
+        let node = identity(&self.0, &request).await?;
+        let input = request.into_inner();
+        let id = |s: &str| {
+            Uuid::parse_str(s).map_err(|_| Status::invalid_argument("invalid signing resource ID"))
+        };
+        let keys = self
+            .0
+            .settings
+            .signing_keys
+            .as_ref()
+            .ok_or_else(|| Status::failed_precondition("managed signing not configured"))?;
+        let material_json = self
+            .0
+            .store
+            .acquire_signing_material(
+                crate::store::SigningAccess {
+                    node,
+                    attempt: id(&input.attempt_id)?,
+                    session: id(&input.session_id)?,
+                    token: &input.lease_token,
+                    profile: &input.profile,
+                    version: id(&input.version_id)?,
+                },
+                input.step_index,
+                keys,
+            )
+            .await?;
+        Ok(Response::new(protocol::SigningMaterialReply {
+            material_json,
+        }))
+    }
+
+    async fn record_signing_evidence(
+        &self,
+        request: Request<protocol::SigningEvidenceRequest>,
+    ) -> Result<Response<protocol::SigningEvidenceReply>, Status> {
+        let node = identity(&self.0, &request).await?;
+        let input = request.into_inner();
+        if input.evidence_json.len() > 16384 {
+            return Err(Status::invalid_argument("oversized signing evidence"));
+        }
+        let id = |s: &str| {
+            Uuid::parse_str(s).map_err(|_| Status::invalid_argument("invalid signing resource ID"))
+        };
+        let evidence = serde_json::from_str(&input.evidence_json)
+            .map_err(|_| Status::invalid_argument("invalid signing evidence"))?;
+        self.0
+            .store
+            .record_signing_evidence(
+                node,
+                id(&input.attempt_id)?,
+                id(&input.session_id)?,
+                &input.lease_token,
+                evidence,
+            )
+            .await?;
+        Ok(Response::new(protocol::SigningEvidenceReply {
+            accepted: true,
+        }))
+    }
 
     async fn connect(
         &self,
@@ -486,6 +555,7 @@ async fn report_heartbeat(
                 attempt_id: id.to_string(),
                 lease_token: token.into(),
                 lease_seconds: if renewed { 90 } else { 0 },
+                signing_session_id: session.to_string(),
                 request_id: event.command_id.clone(),
                 message: if renewed {
                     String::new()
@@ -552,6 +622,7 @@ async fn apply_event(
         crate::store::EventReceipt::Start => Command {
             command_id: Uuid::new_v4().to_string(),
             kind: "start".into(),
+            signing_session_id: session.to_string(),
             attempt_id: id.to_string(),
             lease_token: event.lease_token.clone(),
             lease_seconds: 90,

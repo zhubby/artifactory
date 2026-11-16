@@ -1,9 +1,14 @@
+//! [INPUT]: 依赖租户 HTTP 处理器、统一鉴权和请求限制。
+//! [OUTPUT]: 组合业务路由与签名导入的独立正文上限。
+//! [POS]: 控制平面 HTTP 接口入口。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub(crate) mod ai_management;
 mod builds;
 mod emissary_updates;
 mod lifecycle;
 mod management;
 mod projects;
+mod signing;
 mod source_http;
 mod telemetry;
 mod tenants;
@@ -167,6 +172,7 @@ pub fn router(state: AppState) -> Router {
             get(management::credentials).post(management::create_credential),
         )
         .route("/api/v1/audit", get(management::audit))
+        .merge(signing_routes())
         .route(
             "/api/v1/projects",
             get(projects::list).post(projects::create),
@@ -191,6 +197,32 @@ pub fn router(state: AppState) -> Router {
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state.clone())
         .merge(crate::runtime_bridge::routes(state))
+}
+
+fn signing_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/projects/{id}/signing-preview",
+            get(signing::preview),
+        )
+        .route(
+            "/api/v1/signing/credentials",
+            get(signing::credentials).post(signing::create),
+        )
+        .route(
+            "/api/v1/signing/credentials/{id}/versions",
+            post(signing::version),
+        )
+        .route(
+            "/api/v1/signing/profiles",
+            get(signing::profiles).post(signing::create_profile),
+        )
+        .route("/api/v1/signing/{resource}/{id}", patch(signing::enabled))
+        .route(
+            "/api/v1/projects/{id}/signing-defaults",
+            get(signing::defaults).put(signing::set_defaults),
+        )
+        .layer(DefaultBodyLimit::max(3 * 1024 * 1024))
 }
 
 pub(crate) fn health_routes() -> Router<AppState> {

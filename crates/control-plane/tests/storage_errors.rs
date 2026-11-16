@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖错误存储端点和测试服务设置。
+//! [OUTPUT]: 验证存储故障的接口错误边界。
+//! [POS]: 对象传输故障回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_control_plane::{settings::Settings, storage::Storage};
 use std::{process::Command, time::Duration};
 use tokio::{
@@ -94,6 +98,7 @@ async fn storage_error_probe_helper() {
             pki_dir: directory.path().into(),
             data_dir: directory.path().into(),
             master_key: [0; 32],
+            signing_keys: None,
             s3_endpoint: endpoint.clone(),
             s3_public_endpoint: endpoint,
             s3_bucket: "diagnostic-probe".into(),
