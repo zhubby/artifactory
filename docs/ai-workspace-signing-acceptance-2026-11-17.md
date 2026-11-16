@@ -176,18 +176,18 @@ ZIP 全部压缩数据通过 CRC 检查。
 生产验签继续使用当前时间和系统信任规则。
 该回归及 Clippy 已在本机再次通过。
 
-[源码修复的 CI](https://github.com/zhubby/artifactory/actions/runs/43901324483)
-中，Mac ARM 原生 job 和 Compose TLS 通过。
-完整 CI 尚未全绿。
-kind 初始化因 kubeadm `v1beta3` 配置被拒而失败。
-Linux 数据库轮次为 95 项通过、2 项失败、1 项过滤。
-失败涉及 SSH fixture 和 placement 重选用例。
-Windows OTA fixture 在建立连接前超时。
-旧版 Mac Intel 的系统应用信任回归也失败。
 [固定夹具日期后的 CI](https://github.com/zhubby/artifactory/actions/runs/43904698883)
-截至 00:21，Linux 和 Windows 的四个原生 job 均通过。
-两个 macOS job 仍在等待 runner。
-Mac Intel 的夹具修正尚未获得该 runner 的复核结果。
+中，六个平台原生 job、Compose TLS 和版本契约均通过。
+Mac ARM 于 00:26:42 完成，Mac Intel 于 00:29:29 完成。
+两项原生 job 均包含真实证书回归和独立账号服务生命周期。
+该轮 CI 的源码为 `7c53a3c`，后续提交只增加验收文档。
+
+完整 CI 尚未全绿。
+Kubernetes job 在 kind 初始化阶段失败，未执行应用部署。
+Linux 数据库轮次为 96 项通过、1 项失败、1 项过滤。
+剩余失败为源码引用的 SSH fixture。
+OpenSSH 拒绝 `/tmp` 的 ownership / modes。
+这些结果与本报告的目标集群、原生签名和 S3 验收分别记录。
 
 ## 已部署范围与验收边界
 
