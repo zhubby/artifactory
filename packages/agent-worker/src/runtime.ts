@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 Pi 模型接口、节点 MCP 与平台 RPC。
+ * [OUTPUT]: 提供规划循环、工具契约、检查点与脱敏错误。
+ * [POS]: Poll 与 Runtime 共用的规划核心。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { Agent, type AgentTool, type AgentMessage, type ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createModels, createProvider, type Api, type Model } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
@@ -97,7 +103,8 @@ export function safeError(error: unknown, secret: string): string {
   const raw = error instanceof Error ? error.message : String(error);
   if (/\blease\b|canceled|superseded/i.test(raw)) return "planning lease expired or task canceled";
   if (/call limit|budget/i.test(raw)) return "model call limit reached";
-  if (/deadline|timed out|timeout/i.test(raw)) return "planning deadline reached";
+  if (/^planning deadline reached$/i.test(raw)) return "planning deadline reached";
+  if (/deadline|timed out|timeout|ETIMEDOUT/i.test(raw)) return "model provider request timed out; check worker connectivity and the model endpoint";
   if (/\b429\b|rate.limit|quota/i.test(raw)) return "model provider quota or rate limit reached";
   if (/\b40[13]\b|unauthorized|authentication/i.test(raw)) return "model authentication rejected; check the platform model profile";
   // Provider errors can contain request headers or URLs; keep them out of records.

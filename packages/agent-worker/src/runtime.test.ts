@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖规划核心与本地 HTTP 模型桩。
+ * [OUTPUT]: 验证工具权限、凭据隔离和规划终态。
+ * [POS]: 规划核心的行为回归入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -10,6 +16,13 @@ test("worker exposes only read-only analysis and structured completion tools", (
   assert.equal(safeError(new Error('429: organization org-c401 request reached max RPM'), "secret-value"), "model provider quota or rate limit reached");
   assert.equal(safeError(new Error("request with key secret-value failed"), "secret-value").includes("secret-value"), false);
   assert.equal(restoreCheckpoint({ messages: checkpoint([]) })?.length, 0);
+});
+
+test("provider timeouts remain distinct from the planning deadline", () => {
+  assert.equal(safeError(new Error("planning deadline reached"), "task-secret"), "planning deadline reached");
+  for (const message of ["Request timed out.", "UND_ERR_CONNECT_TIMEOUT", "connect ETIMEDOUT", "model provider deadline exceeded"]) {
+    assert.equal(safeError(new Error(message), "task-secret"), "model provider request timed out; check worker connectivity and the model endpoint");
+  }
 });
 
 test("Pi uses task key only for authentication and terminates after clarification", async () => {
