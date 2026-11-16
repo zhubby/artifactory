@@ -5,7 +5,7 @@ NOTES.txt: 输出部署后的访问提示。
 _helpers.tpl: 定义资源命名和安全上下文。
 agent-worker.yaml: 部署规划 Worker。
 config.yaml: 生成非敏感服务配置。
-control-plane.yaml: 部署控制平面和私有内存签名密钥文件。
+control-plane.yaml: 部署 Control 和独立 Source；私有密钥环初始化沿用 Control 资源预算。
 ingress.yaml: 暴露控制台与对象存储入口。
 persistence.yaml: 创建持久化存储声明。
 postgres.yaml: 部署 PostgreSQL 和 TimescaleDB。
