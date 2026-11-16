@@ -37,4 +37,5 @@
 - Worker 16 项通过；Web 类型检查、生产构建和 mdBook 构建通过。
 - 签名与构建向导桌面及移动端 38 项全部通过；启用签名 Secret 的 Helm strict lint 通过。
 - 真实 CI 发现 SDK Action 默认安装已下架的 `tools` 包。改为显式安装平台工具、Build Tools 36.0.0 和 Android 36。
+- Windows 原生 CI 发现文件锁冲突返回错误 33。清扫改用 fs2 的平台错误契约，保留活动材料和闭锁标记。
 - 现场部署另行记录源提交、不可变镜像、数据库备份恢复和 Kubernetes 验收。

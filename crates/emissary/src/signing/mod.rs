@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖固定签名绑定、mTLS 领取、私有文件和原生安全工具。
+//! [INPUT]: 依赖固定签名绑定、mTLS 领取、跨平台文件锁和原生工具。
 //! [OUTPUT]: 提供签名阶段材料、临时 Keychain、清理闭锁及独立验签。
 //! [POS]: 同一构建节点上的任务签名生命周期；不向源码目录写入密钥。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -102,7 +102,7 @@ pub async fn sweep(cfg: &Config) -> Result<()> {
         );
         let file = lock(&root, &id)?;
         if let Err(error) = file.try_lock_exclusive() {
-            if error.kind() == std::io::ErrorKind::WouldBlock {
+            if error.raw_os_error() == fs2::lock_contended_error().raw_os_error() {
                 busy = true;
                 continue;
             }
@@ -351,12 +351,14 @@ mod tests {
         file.try_lock_exclusive().unwrap();
         sweep(&cfg).await.unwrap();
         assert!(material.join("private.key").exists());
+        private_write(&root.join("blocked"), b"failure", false, true).unwrap();
+        assert!(ready(&cfg).is_err());
+        assert!(sweep(&cfg).await.is_err());
+        assert!(root.join("blocked").exists());
+        assert!(material.join("private.key").exists());
         drop(file);
         sweep(&cfg).await.unwrap();
         assert!(!material.exists());
-        private_write(&root.join("blocked"), b"failure", false, true).unwrap();
-        assert!(ready(&cfg).is_err());
-        sweep(&cfg).await.unwrap();
         assert!(ready(&cfg).is_ok());
     }
     #[test]
