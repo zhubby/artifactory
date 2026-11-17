@@ -1,3 +1,9 @@
+<!--
+[INPUT]: 主 Chart、独立 Operator Chart 与持久身份。
+[OUTPUT]: 定义安装、统一网关升级与设备地址迁移。
+[POS]: Kubernetes 部署操作入口。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # Helm / Kubernetes 部署
 
 从旧组件名称升级时，先按[模块布局与命名](module-layout.md#从旧布局升级)迁移 PVC、身份及自定义 values，再启动新组件。
@@ -83,7 +89,7 @@ helm upgrade --install artifactory charts/artifactory \
 
 示例版本必须已发布；Chart 不会自动创建域名、Ingress Controller 或 TLS Secret。公开控制台要求 HTTPS。内建 S3 默认使用固定私有 ClusterIP HTTP，Chart 为该地址显式启用 `ARTIFACTORY_S3_ALLOW_HTTP`。外部 `s3.endpoint` 默认要求 HTTPS；私有 HTTP 端点须显式设置 `s3.allowHttp=true`，不会放宽公开入口。`s3.publicEndpoint` 已废弃且被忽略，不再生成客户端 S3 链接。Chart 不创建 S3 Ingress，S3 Service 固定为 ClusterIP。组织内部 S3 CA 需加入 Control 镜像内的系统信任库，不能只在宿主安装。
 
-Web Service 的入口是独立 Pingora；它将 `/api/*` 转发给 Control、`/v2/*` 转发给内建仓库、`/artifacts/object` 转发给私有对象，并将页面转发给 Next.js。开启 `gateway.dedicatedData` 后，Ingress 将仓库与制品路径分配到独立数据网关。Ingress 必须关闭响应缓冲并允许实际制品和镜像层大小。
+Web Service 指向统一 Pingora 的 8080 端口；它将 `/api/*` 转发给 Control、`/v2/*` 转发给内建仓库、`/artifacts/object` 转发给私有对象，并将页面转发给 Next.js。Gateway Deployment 默认两个副本。设备 Service 使用同一组 Pod 的 8443/8444 端口，内部 ClusterIP 使用 8445 端口。各端口保持独立协议和路由边界。Ingress 必须关闭响应缓冲并允许实际制品和镜像层大小。
 
 Web 镜像同时包含由 mdBook 生成的完整静态文档，安装后访问控制台同域名的 `/docs`，无需登录，也不需要额外的 Service、PVC 或 Ingress 路径。文档随 Web 镜像一起升级和回滚；构建与维护说明见[文档站点](operations.md#文档站点)。
 
@@ -170,7 +176,13 @@ kubectl --context YOUR_CONTEXT -n artifactory create secret generic artifactory-
 
 内部 Gateway 默认使用既有设备 PKI 的服务器证书。旧证书须用原 CA 续签，保留全部既有 SAN，并加入 `<release>-gateway-internal` 和 `<release>-gateway-internal.<namespace>.svc`。不更换 CA 或业务主密钥。若 Runtime/Source 已使用独立服务 CA，配置 `gateway.internalTlsSecret`，引用包含 `ca.pem/server.pem/server.key` 的 Secret；服务器证书由该服务 CA 签发，并覆盖相同内部 SAN。服务器私钥与 CA 私钥独立，Gateway 不挂载 CA 私钥。Runtime/Source 只读信任该服务 CA，地址为 `https://<release>-gateway-internal:8445`。内部 Service 不对公网暴露，公开入口继续拒绝 `/internal/*`。
 
-将 `s3.endpoint` 改为 Control/Gateway 可访问的私有地址。升级后验证网关下载、上传、Range/HEAD 和设备 mTLS，再移除旧 S3 Ingress、NodePort、LoadBalancer 及公网 DNS。关闭公开 Bucket 策略。旧预签名链接按原到期时间失效；不要将它们重新写入新页面。
+从分离网关升级时，移除 `gateway.dedicatedData`、`dataReplicas`、`deviceReplicas` 和 `internalReplicas`，统一设置 `gateway.replicas`。先部署新统一网关并验证四个监听，再把 Web、设备、内部 Service 切换到统一选择器。滚动升级保留原 Service 名称。内部 TLS 使用独立挂载，公开端口不接受内部路由。NetworkPolicy 对内部 8445 只允许同命名空间 Pod；公开与设备来源通过 `gateway.networkPolicy.publicFrom/deviceFrom` 配置。
+
+设备控制地址指向 `<release>-grpc:8443`，遥测地址指向 `https://<release>-grpc:8444`。集群外设备使用对应的可达域名、NodePort 或持久隧道，并验证后端服务器证书 SAN。已有注册设备须更新本机配置的 `endpoint`、`telemetry_endpoint`；仅修改注册回复不会更新已有设备。临时隧道直接选择正式 Service，不再选择旧 Pod。先验证设备重连与最新遥测，再移除旧 `emissary-gateway` StatefulSet、Service 和转发任务。
+
+`<release>-telemetry-grpc` 固定为私有 ClusterIP。旧 `telemetry.service.type=NodePort/LoadBalancer` 和非空 `telemetry.service.nodePort` 会拒绝渲染。先将旧后端 Service 改为 ClusterIP，释放旧 NodePort，再用 `grpc.service.telemetryNodePort` 将端口分配给统一网关。
+
+将 `s3.endpoint` 改为 Control/Gateway 可访问的私有地址。设备制品字节通过公开网关的 `/artifacts/object`，不保留旧设备 S3 转发。升级后验证网关下载、上传、Range/HEAD 和设备 mTLS，再移除旧 S3 Ingress、NodePort、LoadBalancer 及公网 DNS。关闭公开 Bucket 策略。旧预签名链接按原到期时间失效；不要将它们重新写入新页面。
 
 ## Agent worker
 

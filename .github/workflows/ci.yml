@@ -36,7 +36,7 @@ jobs:
           helm template native charts/artifactory-agent-operator > /dev/null
           helm template images charts/artifactory-image-operator > /dev/null
           helm template registry charts/artifactory-registry > /dev/null
-          helm template images charts/artifactory --set imageBuilds.enabled=true,gateway.dedicatedData=true,ingress.enabled=true > /dev/null
+          helm template images charts/artifactory --set imageBuilds.enabled=true,ingress.enabled=true > /dev/null
           helm template artifactory charts/artifactory --set ingress.enabled=true > /dev/null
           helm template artifactory charts/artifactory -f charts/artifactory/values-kind.yaml > /dev/null
           helm template artifactory charts/artifactory --namespace artifactory --kube-version 1.28.3 \

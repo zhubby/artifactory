@@ -1,5 +1,5 @@
 """[INPUT]: Helm 模板与独立 Secret 初始化脚本。
-[OUTPUT]: 验证私有入口、服务端口和不可覆盖的持久凭据。
+[OUTPUT]: 验证统一网关、私有入口和不可覆盖的持久凭据。
 [POS]: 部署契约回归；不连接 Kubernetes。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -68,16 +68,32 @@ class HelmBootstrapTests(unittest.TestCase):
     def test_gateway_ports_and_independent_image_services(self):
         chart = SCRIPT.parents[1] / 'charts/artifactory'
         result = subprocess.run(['helm', 'template', 'custom', str(chart), '--set',
-                                 'imageBuilds.enabled=true,gateway.dedicatedData=true,ingress.enabled=true'],
+                                 'imageBuilds.enabled=true,ingress.enabled=true'],
                                 check=True, capture_output=True, text=True)
         rendered = result.stdout
         self.assertIn('- {port: 8443, targetPort: grpc, name: grpc}', rendered)
-        self.assertIn('app.kubernetes.io/component: gateway-device', rendered)
-        self.assertIn('ARTIFACTORY_GATEWAY_PROFILE, value: "control"', rendered)
-        self.assertIn('ARTIFACTORY_GATEWAY_PROFILE, value: "data"', rendered)
-        self.assertIn('ARTIFACTORY_GATEWAY_PROFILE, value: "internal"', rendered)
-        self.assertIn('ARTIFACTORY_GATEWAY_TLS_KEY, value: /run/ca/server.key', rendered)
+        gateway = rendered.split('# Source: artifactory/templates/gateway.yaml')[1:]
+        self.assertEqual(sum('kind: Deployment' in document.split('---')[0] for document in gateway), 1)
+        deployment = next(document.split('---')[0] for document in gateway if 'kind: Deployment' in document.split('---')[0])
+        self.assertIn('metadata: {name: custom-gateway}', deployment)
+        self.assertIn('replicas: 2', deployment)
+        self.assertIn('minReadySeconds: 5', deployment)
+        self.assertIn('maxUnavailable: 0', deployment)
+        self.assertIn('maxSurge: 1', deployment)
+        self.assertIn('ARTIFACTORY_GATEWAY_PROFILE, value: "unified"', deployment)
+        self.assertIn('ARTIFACTORY_GATEWAY_INTERNAL_BIND, value: \'0.0.0.0:8445\'', deployment)
+        self.assertIn('ARTIFACTORY_GATEWAY_INTERNAL_TLS_KEY, value: /run/internal-tls/server.key', deployment)
+        self.assertIn('ARTIFACTORY_GATEWAY_INTERNAL_CONNECTIONS, value: "1024"', deployment)
+        for old in ['gateway-edge', 'gateway-device', 'gateway-data']:
+            self.assertNotIn(old, rendered)
         self.assertIn('port: 8445, targetPort: https', rendered)
+        services = rendered.split('kind: Service\n')[1:]
+        for name in ['custom-web', 'custom-grpc', 'custom-gateway-internal']:
+            service = next(value.split('---')[0] for value in services
+                           if f'name: {name}\n' in value or f'name: {name}}}' in value)
+            self.assertIn('app.kubernetes.io/component: gateway\n', service)
+        internal = next(value.split('---')[0] for value in services if 'name: custom-gateway-internal}' in value)
+        self.assertIn('type: ClusterIP', internal)
         self.assertIn('secretKeyRef: {name: custom-gateway, key: token}', rendered)
         self.assertIn('secretName: custom-registry-signing', rendered)
         self.assertIn('ARTIFACTORY_S3_ENDPOINT: "http://custom-s3:8333"', rendered)
@@ -95,6 +111,56 @@ class HelmBootstrapTests(unittest.TestCase):
                                check=True, capture_output=True, text=True).stdout
         self.assertIn('name: native-agent-operator', agent)
         self.assertIn('app.kubernetes.io/name: artifactory-agent-operator', agent)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_gateway_nodeports_and_network_sources_preserve_internal_boundary(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        command = ['helm', 'template', 'boundary', str(chart), '--set',
+                   'grpc.service.type=NodePort,grpc.service.nodePort=30843,grpc.service.telemetryNodePort=30844,gateway.internalTlsSecret=service-tls',
+                   '--set-json', 'gateway.networkPolicy.publicFrom=[{"ipBlock":{"cidr":"10.169.1.0/24"}}]',
+                   '--set-json', 'gateway.networkPolicy.deviceFrom=[{"ipBlock":{"cidr":"10.233.0.0/16"}}]']
+        rendered = subprocess.run(command, check=True, capture_output=True, text=True).stdout
+        grpc = next(document.split('---')[0] for document in rendered.split('kind: Service\n')[1:]
+                    if 'name: boundary-grpc\n' in document)
+        control, telemetry = grpc.split('    - port: ')[1:]
+        self.assertTrue(control.startswith('8443\n'))
+        self.assertIn('targetPort: grpc', control)
+        self.assertIn('nodePort: 30843', control)
+        self.assertTrue(telemetry.startswith('8444\n'))
+        self.assertIn('targetPort: telemetry', telemetry)
+        self.assertIn('nodePort: 30844', telemetry)
+        self.assertIn('secretName: service-tls', rendered)
+        policy = next(document for document in rendered.split('---') if 'kind: NetworkPolicy\n' in document)
+        public, devices, internal = policy.split('    - ports: ')[1:]
+        self.assertIn('port: 8080', public)
+        self.assertIn('cidr: 10.169.1.0/24', public)
+        self.assertIn('port: 8443', devices)
+        self.assertIn('port: 8444', devices)
+        self.assertIn('cidr: 10.233.0.0/16', devices)
+        self.assertNotIn('port: 8445', public + devices)
+        self.assertIn('port: 8445', internal)
+        self.assertIn('from: [{podSelector: {}}]', internal)
+        self.assertNotIn('namespaceSelector', internal)
+        invalid = subprocess.run(command + ['--set', 'grpc.service.telemetryNodePort=30843'],
+                                 capture_output=True, text=True)
+        self.assertNotEqual(invalid.returncode, 0)
+        self.assertIn('must differ', invalid.stderr)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_telemetry_backend_cannot_publish_a_second_device_entry(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        command = ['helm', 'template', 'boundary', str(chart)]
+        rendered = subprocess.run(command, check=True, capture_output=True, text=True).stdout
+        backend = next(document.split('---')[0] for document in rendered.split('kind: Service\n')[1:]
+                       if 'name: boundary-telemetry-grpc\n' in document)
+        self.assertIn('type: ClusterIP', backend)
+        self.assertNotIn('nodePort:', backend)
+        for legacy in ['telemetry.service.type=NodePort,telemetry.service.nodePort=30844',
+                       'telemetry.service.type=LoadBalancer', 'telemetry.service.nodePort=30844']:
+            with self.subTest(legacy=legacy):
+                invalid = subprocess.run(command + ['--set', legacy], capture_output=True, text=True)
+                self.assertNotEqual(invalid.returncode, 0)
+                self.assertIn('grpc.service', invalid.stderr)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_private_external_http_requires_explicit_permission(self):

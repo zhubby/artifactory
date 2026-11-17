@@ -1,3 +1,7 @@
+//! [INPUT]: 节点配置、固定 CA、节点证书与平台控制协议。
+//! [OUTPUT]: 建立校验地址 SAN 的 TLS 通道，注册节点身份。
+//! [POS]: 执行节点的控制连接边界；网关只透传 TLS。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     config::{Config, private_dir, private_write},
     platform,

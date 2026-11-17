@@ -28,7 +28,8 @@ book.toml - mdBook 文档构建。
 
 源码凭据通过凭据引用传入。禁止把密钥放入仓库 URL。
 内建 OCI 仓库由 Distribution 提供，使用独立私有 S3 Bucket。
-Pingora 反向代理内建仓库与制品。设备连接透传 mTLS。
+统一 Pingora 双副本网关反向代理内建仓库与制品。
+公开、内部和设备入口使用独立端口。设备连接透传 mTLS。
 HTTP 仓库只在用户指定该协议时接入。
 变更后检查文件契约、模块地图与项目地图。
 [PROTOCOL]: Update this header on change, then check AGENTS.md

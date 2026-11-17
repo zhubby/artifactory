@@ -25,7 +25,7 @@ tenant_migrate.py: 执行既有数据的租户迁移。
 test_acceptance.py: 验证服务回收、凭据隔离和新进程及恢复入口同源。
 test_data_access.py: 验证数据库访问规则。
 test_deploy.py: 验证单机部署清单。
-test_init_helm.py: 验证网关入口、独立服务和持久 Secret。
+test_init_helm.py: 验证统一网关端口隔离、私有遥测后端和持久 Secret。
 test_recovery_acceptance.py: 验证恢复脚本隔离与归属规则。
 test_tenant_migrate.py: 验证租户迁移的可重复执行。
 test_version.py: 验证工作区与交付物统一版本。

@@ -1,5 +1,5 @@
-# [INPUT]: 单一公开域名、TLS Secret 和数据入口分流开关。
-# [OUTPUT]: 只连接 Pingora Service 的 HTTP Ingress。
+# [INPUT]: 单一公开域名和 TLS Secret。
+# [OUTPUT]: 连接统一 Pingora HTTP Service 的 Ingress。
 # [POS]: 公开控制、仓库和制品入口；S3 保持私有。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 {{- if .Values.ingress.enabled }}
@@ -24,16 +24,6 @@ spec:
     - host: {{ .Values.ingress.consoleHost | quote }}
       http:
         paths:
-          {{- if .Values.gateway.dedicatedData }}
-          {{- range $path := list "/v2" "/artifacts" }}
-          - path: {{ $path }}
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ include "artifactory.fullname" $ }}-gateway-data
-                port: {number: 80}
-          {{- end }}
-          {{- end }}
           - path: /
             pathType: Prefix
             backend:

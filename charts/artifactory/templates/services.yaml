@@ -1,7 +1,12 @@
 # [INPUT]: 固定服务端口和入口类型。
-# [OUTPUT]: 私有业务服务和经过网关的公开入口。
-# [POS]: Control 内部端口与设备网关入口使用独立 Service。
+# [OUTPUT]: 私有业务服务和统一网关的公开入口。
+# [POS]: 公开 HTTP 与设备透传使用独立 Service 和端口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
+{{- if and (eq .Values.grpc.service.type "NodePort") .Values.grpc.service.nodePort .Values.grpc.service.telemetryNodePort }}
+{{- if eq (.Values.grpc.service.nodePort | toString) (.Values.grpc.service.telemetryNodePort | toString) }}
+{{- fail "grpc.service.nodePort and grpc.service.telemetryNodePort must differ" }}
+{{- end }}
+{{- end }}
 {{- $components := list "control-plane" "web" "grpc" }}
 {{- if .Values.postgres.enabled }}{{- $components = append $components "postgres" }}{{- end }}
 {{- if .Values.s3.enabled }}{{- $components = append $components "s3" }}{{- end }}
@@ -22,12 +27,12 @@
 {{- $settings = $.Values.console.service }}
 {{- $port = 80 }}
 {{- $target = "http" }}
-{{- $selector = "gateway-edge" }}
+{{- $selector = "gateway" }}
 {{- else if eq $component "grpc" }}
 {{- $settings = $.Values.grpc.service }}
 {{- $port = 8443 }}
 {{- $target = "grpc" }}
-{{- $selector = "gateway-device" }}
+{{- $selector = "gateway" }}
 {{- end }}
 ---
 apiVersion: v1
@@ -48,6 +53,14 @@ spec:
       {{- end }}
     {{- if eq $component "control-plane" }}
     - {port: 8443, targetPort: grpc, name: grpc}
+    {{- end }}
+    {{- if eq $component "grpc" }}
+    - port: 8444
+      targetPort: telemetry
+      name: telemetry
+      {{- if and (eq $settings.type "NodePort") $settings.telemetryNodePort }}
+      nodePort: {{ $settings.telemetryNodePort }}
+      {{- end }}
     {{- end }}
   selector:
     {{- include "artifactory.selector" $ | nindent 4 }}

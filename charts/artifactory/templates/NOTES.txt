@@ -1,7 +1,13 @@
+{{/* [INPUT]: 入口地址、副本数和外部 Secret 配置。 */}}
+{{/* [OUTPUT]: 安装后的统一网关端口与持久化提示。 */}}
+{{/* [POS]: Helm 安装结果的服务访问说明。 */}}
+{{/* [PROTOCOL]: Update this header on change, then check AGENTS.md */}}
 Console: {{ .Values.console.publicUrl }}
 Artifact gateway: {{ .Values.console.publicUrl }}/artifacts/object
 S3 remains private; clients receive gateway tickets.
-gRPC TLS service: {{ include "artifactory.fullname" . }}-grpc:8443
+Unified Gateway replicas: {{ .Values.gateway.replicas }}
+Device TLS service: {{ include "artifactory.fullname" . }}-grpc:8443
+Telemetry TLS service: {{ include "artifactory.fullname" . }}-grpc:8444
 Internal service TLS: {{ include "artifactory.fullname" . }}-gateway-internal:8445 (ClusterIP only)
 
 Credentials and PKI are external Secrets; Helm never rotates them.

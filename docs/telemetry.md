@@ -1,3 +1,9 @@
+<!--
+[INPUT]: 设备 mTLS、统一网关与独立 TimescaleDB 遥测服务。
+[OUTPUT]: 定义采集、持久重放、访问权限和部署地址。
+[POS]: 设备观测协议与遥测服务的部署契约。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # Emissary 时序观测
 
 所有后端使用 TimescaleDB 2.32+。默认镜像为 `timescale/timescaledb:2.32.0-pg17`，数据库访问统一由 store 层通过 Toasty 0.11 执行；连接恢复补丁及来源记录位于 `vendor/toasty/PATCH.md`。Control、Runtime、Source 的状态表保持普通关系表；遥测使用独立逻辑数据库、写池、查询池和 Rust 服务。
@@ -48,7 +54,7 @@ AI 查询和分配另以 `startup_resources` 保存每个节点／启动的最�
 
 ## 传输、故障与权限
 
-注册回复包含 `telemetry_endpoint`，使用设备现有的 pinned CA 和 mTLS 身份，连接独立端口 8444。Telemetry 每次验证证书指纹、过期和撤销；只读查询业务库确认 process attempt 属于该设备，允许已完成/已取消任务离线补报，不取得任何构建执行权。
+注册回复包含 `telemetry_endpoint`，使用设备现有的 pinned CA 和 mTLS 身份，连接独立端口 8444。主 Helm Chart 通过统一 Gateway 的 `<release>-grpc:8444` 透传到 Telemetry，TLS 在 Telemetry 终止。该端口与设备控制 8443、内部 HTTPS 8445 使用独立监听和连接预算。外部设备使用可达域名或直接选择该 Service 的持久隧道；配置地址须匹配后端证书 SAN。Telemetry 每次验证证书指纹、过期和撤销；只读查询业务库确认 process attempt 属于该设备，允许已完成/已取消任务离线补报，不取得任何构建执行权。
 
 批次有 UUID、进程内 session、单调计时、UTC 采样时间；新版 Emissary 的 `session_id` 与 metadata 的 `startup_id` 相同。服务器在事务提交后 ACK；节点与批次 ID 构成幂等键，内容不一致的重复 ID 被拒绝。发送端在 ACK ID 匹配后才删除本地记录。重放窗口为 48 小时；超过窗口或未来超过 5 分钟的记录永久拒收并记为缺口，需要设备修正系统时间。
 

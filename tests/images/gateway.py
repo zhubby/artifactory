@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """[INPUT]: 本机构建的 Pingora 网关和 Python HTTP/TLS 夹具。
-[OUTPUT]: 验证流式对象、Range/HEAD、身份头隔离和 mTLS 透传。
-[POS]: 只创建临时本机端口，不连接已有集群。
+[OUTPUT]: 验证同进程公开、内部和设备监听的协议与资源边界。
+[POS]: 使用真实 TCP/TLS 和流式对象；不连接已有集群。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
@@ -46,6 +46,10 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.server.origin if request['ticket'] != 'escape' else 'http://127.0.0.1:1'
         self.reply(200, json.dumps({'url': origin + '/private/object?signature=retained'}).encode(), Content_Type='application/json')
     def do_GET(self):
+        if self.path == '/api/hold':
+            self.server.hold_started.set()
+            assert self.server.hold_release.wait(timeout=10)
+            return self.reply(200)
         if self.path.startswith('/v2/'):
             assert not self.headers.get('X-Client-Cert')
             assert not self.headers.get('X-Artifactory-Identity')
@@ -121,18 +125,21 @@ def main():
         tls.load_cert_chain(root/'server.pem', root/'server.key')
         tls.load_verify_locations(root/'ca.pem')
         tls.verify_mode = ssl.CERT_REQUIRED
-        upstream = socket.socket(); upstream.bind(('127.0.0.1', 0)); upstream.listen()
-        def tls_server():
+        upstreams = []
+        def tls_server(upstream, identity):
             while True:
                 try:
                     conn, _ = upstream.accept()
                     with tls.wrap_socket(conn, server_side=True) as stream:
-                        stream.sendall(b'client-certificate-verified:' + stream.recv(64))
+                        stream.sendall(identity + b'-client-certificate-verified:' + stream.recv(64))
                 except ssl.SSLError:
                     continue
                 except OSError:
                     return
-        threading.Thread(target=tls_server, daemon=True).start()
+        for identity in [b'control', b'telemetry']:
+            upstream = socket.socket(); upstream.bind(('127.0.0.1', 0)); upstream.listen()
+            upstreams.append(upstream)
+            threading.Thread(target=tls_server, args=(upstream, identity), daemon=True).start()
         service_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         service_tls.load_cert_chain(root/'server.pem', root/'server.key')
         server.socket = service_tls.wrap_socket(server.socket, server_side=True)
@@ -148,14 +155,27 @@ def main():
         registry.socket = registry_tls.wrap_socket(registry.socket,server_side=True)
         registry.origin = f'https://127.0.0.1:{registry.server_port}'
         threading.Thread(target=registry.serve_forever,daemon=True).start()
-        base = dict(os.environ, SSL_CERT_FILE=str(root/'system.pem'), ARTIFACTORY_GATEWAY_TOKEN=TOKEN, ARTIFACTORY_SERVICE_CA=str(root/'ca.pem'), ARTIFACTORY_S3_ENDPOINT=server.origin, ARTIFACTORY_GATEWAY_CONTROL=server.origin, ARTIFACTORY_GATEWAY_WEB=server.origin, ARTIFACTORY_GATEWAY_REGISTRY=registry.origin, ARTIFACTORY_GATEWAY_DEVICE=f'127.0.0.1:{upstream.getsockname()[1]}')
+        base = dict(os.environ, SSL_CERT_FILE=str(root/'system.pem'), ARTIFACTORY_GATEWAY_TOKEN=TOKEN, ARTIFACTORY_SERVICE_CA=str(root/'ca.pem'), ARTIFACTORY_S3_ENDPOINT=server.origin, ARTIFACTORY_GATEWAY_CONTROL=server.origin, ARTIFACTORY_GATEWAY_WEB=server.origin, ARTIFACTORY_GATEWAY_REGISTRY=registry.origin, ARTIFACTORY_GATEWAY_DEVICE=f'127.0.0.1:{upstreams[0].getsockname()[1]}', ARTIFACTORY_GATEWAY_TELEMETRY=f'127.0.0.1:{upstreams[1].getsockname()[1]}')
         try:
-            http_port, tls_port = port(), port()
-            for profile, bind_name, number in [('all','HTTP',http_port),('device','TCP',tls_port)]:
-                env = dict(base, ARTIFACTORY_GATEWAY_PROFILE=profile)
-                env[f'ARTIFACTORY_GATEWAY_{bind_name}_BIND'] = f'127.0.0.1:{number}'
-                process = subprocess.Popen([binary], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-                processes.append(process); wait(number, process)
+            http_port, tls_port, internal_port, telemetry_port = port(), port(), port(), port()
+            env = dict(base, ARTIFACTORY_GATEWAY_PROFILE='unified', ARTIFACTORY_GATEWAY_HTTP_BIND=f'127.0.0.1:{http_port}', ARTIFACTORY_GATEWAY_TCP_BIND=f'127.0.0.1:{tls_port}', ARTIFACTORY_GATEWAY_INTERNAL_BIND=f'127.0.0.1:{internal_port}', ARTIFACTORY_GATEWAY_TELEMETRY_BIND=f'127.0.0.1:{telemetry_port}', ARTIFACTORY_GATEWAY_INTERNAL_TLS_CERT=str(root/'server.pem'), ARTIFACTORY_GATEWAY_INTERNAL_TLS_KEY=str(root/'server.key'), ARTIFACTORY_GATEWAY_HTTP_CONNECTIONS='1', ARTIFACTORY_GATEWAY_INTERNAL_CONNECTIONS='1')
+            for missing in ['ARTIFACTORY_GATEWAY_INTERNAL_TLS_KEY', 'ARTIFACTORY_GATEWAY_INTERNAL_TLS_CERT']:
+                invalid = dict(env)
+                invalid.pop(missing)
+                result = subprocess.run([binary], env=invalid, capture_output=True, timeout=5)
+                assert result.returncode != 0 and b'requires both certificate and key' in result.stderr
+            invalid = dict(env)
+            invalid.pop('ARTIFACTORY_GATEWAY_INTERNAL_TLS_KEY')
+            invalid.pop('ARTIFACTORY_GATEWAY_INTERNAL_TLS_CERT')
+            result = subprocess.run([binary], env=invalid, capture_output=True, timeout=5)
+            assert result.returncode != 0 and b'unified gateway requires internal TLS' in result.stderr
+            invalid = dict(env, ARTIFACTORY_GATEWAY_INTERNAL_BIND=env['ARTIFACTORY_GATEWAY_HTTP_BIND'])
+            result = subprocess.run([binary], env=invalid, capture_output=True, timeout=5)
+            assert result.returncode != 0 and b'require distinct ports' in result.stderr
+            process = subprocess.Popen([binary], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            processes.append(process)
+            for number in [http_port, tls_port, internal_port, telemetry_port]:
+                wait(number, process)
             status, headers, body = request(http_port,'GET','/artifacts/object?ticket=get',headers={'Range':'bytes=123-4096','Authorization':'Bearer must-not-forward','Cookie':'secret'})
             assert status == 206 and body == DATA[123:4097] and headers['content-range'] == f'bytes 123-4096/{len(DATA)}'
             status, headers, body = request(http_port,'HEAD','/artifacts/object?ticket=get')
@@ -170,31 +190,44 @@ def main():
             for chunk in [DATA[:4096], DATA[4096:]]:
                 assert request(http_port,'PATCH',headers['location'],chunk,{'Authorization':'Bearer registry-token'})[0] == 202
             assert request(http_port,'PUT',headers['location']+'?digest=sha256:fixture',b'')[0] == 201
-            internal_port = port()
-            internal_env = dict(base, ARTIFACTORY_GATEWAY_PROFILE='internal', ARTIFACTORY_GATEWAY_HTTP_BIND=f'127.0.0.1:{internal_port}', ARTIFACTORY_GATEWAY_TLS_CERT=str(root/'server.pem'), ARTIFACTORY_GATEWAY_TLS_KEY=str(root/'server.key'))
-            process = subprocess.Popen([binary],env=internal_env,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
-            processes.append(process); wait(internal_port,process)
             internal_client = ssl.create_default_context(cafile=str(root/'ca.pem'))
             assert request(internal_port,'GET','/api/v1/images',context=internal_client)[0] == 404
             assert request(internal_port,'POST','/internal/artifact-resolve',json.dumps({'ticket':'get','method':'GET'}),{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},context=internal_client)[0] == 200
             client = ssl.create_default_context(cafile=str(root/'ca.pem'))
             client.load_cert_chain(root/'client.pem', root/'client.key')
-            with socket.create_connection(('127.0.0.1',tls_port),timeout=5) as conn:
-                with client.wrap_socket(conn,server_hostname='localhost') as stream:
-                    stream.sendall(b'ping'); assert stream.recv(128) == b'client-certificate-verified:ping'
+            for number, identity in [(tls_port, b'control'), (telemetry_port, b'telemetry')]:
+                with socket.create_connection(('127.0.0.1',number),timeout=5) as conn:
+                    with client.wrap_socket(conn,server_hostname='localhost') as stream:
+                        stream.sendall(b'ping'); assert stream.recv(128) == identity + b'-client-certificate-verified:ping'
             anonymous = ssl.create_default_context(cafile=str(root/'ca.pem'))
+            for number in [tls_port, telemetry_port]:
+                try:
+                    with socket.create_connection(('127.0.0.1',number),timeout=5) as conn:
+                        with anonymous.wrap_socket(conn,server_hostname='localhost') as stream:
+                            stream.sendall(b'bad'); assert not stream.recv(128)
+                except ssl.SSLError:
+                    pass
+            server.hold_started = threading.Event()
+            server.hold_release = threading.Event()
+            held = []
+            pending = threading.Thread(target=lambda: held.append(request(http_port, 'GET', '/api/hold')))
+            pending.start()
             try:
-                with socket.create_connection(('127.0.0.1',tls_port),timeout=5) as conn:
-                    with anonymous.wrap_socket(conn,server_hostname='localhost') as stream:
-                        stream.sendall(b'bad'); assert not stream.recv(128)
-            except ssl.SSLError:
-                pass
-            print('PASS: 8 MiB upload, Range, HEAD, ticket scope, origin restriction, identity headers, resumable registry upload, private TLS API and real mTLS passthrough')
+                assert server.hold_started.wait(timeout=5)
+                assert request(http_port, 'GET', '/v2/')[0] == 503
+                assert request(internal_port,'POST','/internal/artifact-resolve',json.dumps({'ticket':'get','method':'GET'}),{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},context=internal_client)[0] == 200
+            finally:
+                server.hold_release.set()
+                pending.join(timeout=10)
+            assert held and held[0][0] == 200
+            print('PASS: unified listeners, isolated HTTP budgets, 8 MiB upload, Range, HEAD, ticket scope, origin restriction, identity headers, resumable registry upload, private TLS API and real mTLS passthrough')
         finally:
             for process in processes:
                 process.terminate()
                 try: process.communicate(timeout=5)
                 except subprocess.TimeoutExpired: process.kill(); process.communicate()
-            upstream.close(); server.shutdown(); server.server_close(); registry.shutdown(); registry.server_close()
+            for upstream in upstreams:
+                upstream.close()
+            server.shutdown(); server.server_close(); registry.shutdown(); registry.server_close()
 if __name__ == '__main__':
     main()

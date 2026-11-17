@@ -1,5 +1,5 @@
 # [INPUT]: 服务镜像、私有凭据引用、节点预算和入口地址。
-# [OUTPUT]: Control、Pingora、存储和规划工作负载的部署参数。
+# [OUTPUT]: Control、统一 Pingora、存储和规划工作负载参数。
 # [POS]: 只声明部署配置，持久 Secret 由初始化脚本生成。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 fullnameOverride: ""
@@ -71,6 +71,7 @@ grpc:
   service:
     type: ClusterIP
     nodePort: null
+    telemetryNodePort: null
 
 telemetry:
   enabled: true
@@ -80,6 +81,7 @@ telemetry:
   authorizationConnections: 4
   # Device-reachable TLS endpoint. Include this host in init-helm.py --grpc-host.
   endpoint: https://build.example.com:8444
+  # Backend only. Publish devices through grpc.service; other values are rejected.
   service:
     type: ClusterIP
     nodePort: null
@@ -160,18 +162,21 @@ planning:
 
 gateway:
   replicas: 2
-  dataReplicas: 2
-  deviceReplicas: 2
-  internalReplicas: 2
   # Optional ca.pem/server.pem/server.key for an existing service CA.
   # Empty selects the device PKI; Runtime/Source must trust its CA.
   internalTlsSecret: ''
-  dedicatedData: false
   # Secret key token; empty selects <release>-gateway.
   secretName: ''
   httpConnections: 1024
   deviceConnections: 4096
+  telemetryConnections: 4096
+  internalConnections: 1024
   registryUrl: http://artifactory-registry:5000
+  networkPolicy:
+    enabled: true
+    # 原生 NetworkPolicy peer；空数组允许所有公开入口来源。
+    publicFrom: []
+    deviceFrom: []
 imageBuilds:
   enabled: false
   namespace: '' # Defaults to this release namespace.

@@ -4,7 +4,7 @@
 lib.rs: 导出节点能力与统一版本标识。
 main.rs: CLI、凭据输入与服务启动入口。
 config.rs: 校验节点配置，创建私有目录并原子保存记录。
-client.rs: 建立平台 mTLS 通道与节点注册。
+client.rs: 校验入口地址 SAN，建立平台 mTLS 通道与节点注册。
 runner.rs: 会话、租约、事件确认与工作进程调度。
 worker.rs: 执行隔离任务并上传制品，以栈预算回归保护原生 Worker。
 signing/: 临时领取材料、清理闭锁并原生校验最终副本。

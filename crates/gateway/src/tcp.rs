@@ -1,8 +1,7 @@
-//! [INPUT]: 依赖原始 TCP 流、固定设备后端和连接预算。
-//! [OUTPUT]: 将设备 TLS 字节透传给控制平面。
-//! [POS]: 保留客户端证书到 tonic 的端到端认证。
+//! [INPUT]: 依赖原始 TCP 流、固定后端和独立连接预算。
+//! [OUTPUT]: 将设备和遥测 TLS 字节透传给对应服务。
+//! [POS]: 每个监听保留客户端证书到 tonic 的端到端认证。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
-use crate::config::Config;
 use async_trait::async_trait;
 use pingora::{apps::ServerApp, protocols::Stream, server::ShutdownWatch};
 use std::sync::{
@@ -10,15 +9,15 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 pub struct Passthrough {
-    config: Config,
+    destinations: Vec<String>,
     next: AtomicUsize,
     connections: tokio::sync::Semaphore,
 }
 impl Passthrough {
-    pub fn new(config: Config) -> Self {
+    pub fn new(destinations: Vec<String>, max_connections: usize) -> Self {
         Self {
-            connections: tokio::sync::Semaphore::new(config.max_tcp),
-            config,
+            connections: tokio::sync::Semaphore::new(max_connections),
+            destinations,
             next: AtomicUsize::new(0),
         }
     }
@@ -33,8 +32,8 @@ impl ServerApp for Passthrough {
         let Ok(_permit) = self.connections.try_acquire() else {
             return None;
         };
-        let index = self.next.fetch_add(1, Ordering::Relaxed) % self.config.device.len();
-        let destination = &self.config.device[index];
+        let index = self.next.fetch_add(1, Ordering::Relaxed) % self.destinations.len();
+        let destination = &self.destinations[index];
         if let Ok(Ok(mut upstream)) = tokio::time::timeout(
             std::time::Duration::from_secs(5),
             tokio::net::TcpStream::connect(destination),

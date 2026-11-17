@@ -1,3 +1,9 @@
+<!--
+[INPUT]: 独立镜像 Operator、私有仓库与统一 Pingora 入口。
+[OUTPUT]: 定义镜像交付、四端口边界和部署参数。
+[POS]: 镜像构建与统一网关的部署入口。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # 集群镜像构建、内建仓库与网关
 
 Image Operator 在 Kubernetes 中启动 BuildKit。平台固定源码快照后，为每个平台创建独立 Job。所有平台镜像完成内容校验后，Publisher 生成 OCI Index，再写入最终标签。构建不占用 Emissary 设备 attempt。
@@ -15,7 +21,15 @@ Image Operator 在 Kubernetes 中启动 BuildKit。平台固定源码快照后�
 | Pingora HTTP | 控制入口、仓库反向代理、制品票据流转 | 无本地制品副本 |
 | Pingora TCP | 在建连时选择 Control，透传 TLS 字节 | 原有设备 mTLS 会话 |
 
-设备入口使用独立连接预算。`gateway.dedicatedData=true` 为仓库和制品部署独立副本与预算，并通过 Ingress 路径分流。控制入口此时拒绝数据路径；关闭该选项时，公开控制与数据共享 HTTP 预算。设备长连接在建立时选择后端；网关不重放已经发送的设备消息。新增 Control 副本只接纳新连接，已有连接通过排空和客户端重连迁移。
+主 Chart 只创建一个 Gateway Deployment，默认两个副本。每个 Pod 同时提供公开 HTTP、设备控制、设备遥测和内部 HTTPS 四个监听端口。公开 API、仓库和制品共享 HTTP 连接预算；内部请求、设备控制和遥测各有独立预算。三个 Service 分别选择同一组 Pod 的对应端口。
+
+| Service | Pod 端口 | 访问边界 |
+|---|---|---|
+| `<release>-web` | 8080 | 控制台、API、仓库与制品；拒绝 `/internal/*` |
+| `<release>-grpc` | 8443、8444 | 控制与遥测的端到端设备 mTLS 透传 |
+| `<release>-gateway-internal` | 8445 | 仅内部 HTTPS API 与健康检查 |
+
+Gateway NetworkPolicy 将 8445 限制为同命名空间 Pod。`gateway.networkPolicy.publicFrom` 和 `deviceFrom` 接受 Kubernetes 网络来源列表；空列表允许任意来源。设置这些列表时同步检查其他 NetworkPolicy，相加规则仍能放行相同流量。设备长连接在建立时选择后端，网关不重放设备消息。新增 Control 副本接纳新连接，已有连接通过排空和客户端重连迁移。
 
 Runtime/Source 使用独立 ClusterIP `https://<release>-gateway-internal:8445`。该入口只接受内部 API 和健康检查，强制 TLS，并由 Control 校验既有服务令牌。默认服务器身份来自设备 PKI；已有独立服务 CA 使用 `gateway.internalTlsSecret` 提供受 Runtime/Source 信任的证书。不要将内部 Service 添加到公开 Ingress。
 
@@ -50,12 +64,11 @@ Control 未设置 `ARTIFACTORY_IMAGE_NAMESPACE` 时拒绝镜像计划、重试�
 ```yaml
 gateway:
   registryUrl: http://artifactory-registry:5000
-  dedicatedData: true
   replicas: 2
-  dataReplicas: 2
-  deviceReplicas: 2
   httpConnections: 1024
+  internalConnections: 1024
   deviceConnections: 4096
+  telemetryConnections: 4096
 imageBuilds:
   enabled: true
   namespace: artifactory

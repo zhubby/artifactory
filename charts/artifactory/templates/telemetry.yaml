@@ -1,3 +1,10 @@
+# [INPUT]: 遥测预算、服务身份与统一网关入口。
+# [OUTPUT]: 遥测工作负载、初始化配置与私有后端 Service。
+# [POS]: 遥测后端只接收集群流量；设备入口由统一网关提供。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+{{- if or (ne .Values.telemetry.service.type "ClusterIP") .Values.telemetry.service.nodePort }}
+{{- fail "telemetry.service must remain ClusterIP without nodePort; configure the device entry with grpc.service instead" }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -92,10 +99,10 @@ kind: Service
 metadata:
   name: {{ include "artifactory.fullname" . }}-telemetry-grpc
 spec:
-  type: {{ .Values.telemetry.service.type }}
+  type: ClusterIP
   selector:
     {{- include "artifactory.selector" . | nindent 4 }}
     app.kubernetes.io/component: telemetry
   ports:
-    - {name: ingest, port: 8444, targetPort: ingest{{ if and (eq .Values.telemetry.service.type "NodePort") .Values.telemetry.service.nodePort }}, nodePort: {{ .Values.telemetry.service.nodePort }}{{ end }}}
+    - {name: ingest, port: 8444, targetPort: ingest}
 {{- end }}

@@ -1,85 +1,86 @@
-# [INPUT]: 固定服务入口、网关令牌与各入口连接预算。
-# [OUTPUT]: 独立公开 HTTP、数据、设备与内部 TLS 网关。
-# [POS]: 设备透传 TLS；内部 API 不进入公开路由。
+# [INPUT]: 固定服务入口、网关令牌和内部 TLS 身份。
+# [OUTPUT]: 双副本统一网关与按端口隔离的 Service。
+# [POS]: 同一进程监听公开 HTTP、设备透传和内部 HTTPS。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
-{{- $profiles := list "edge" "device" "internal" }}
-{{- if .Values.gateway.dedicatedData }}{{- $profiles = append $profiles "data" }}{{- end }}
-{{- range $profile := $profiles }}
----
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: {{ include "artifactory.fullname" $ }}-gateway-{{ $profile }}}
+metadata: {name: {{ include "artifactory.fullname" . }}-gateway}
 spec:
-  replicas: {{ ternary $.Values.gateway.internalReplicas (ternary $.Values.gateway.deviceReplicas (ternary $.Values.gateway.dataReplicas $.Values.gateway.replicas (eq $profile "data")) (eq $profile "device")) (eq $profile "internal") }}
+  replicas: {{ .Values.gateway.replicas }}
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
   selector:
     matchLabels:
-      {{- include "artifactory.selector" $ | nindent 6 }}
-      app.kubernetes.io/component: gateway-{{ $profile }}
+      {{- include "artifactory.selector" . | nindent 6 }}
+      app.kubernetes.io/component: gateway
   template:
     metadata:
       labels:
-        {{- include "artifactory.selector" $ | nindent 8 }}
-        app.kubernetes.io/component: gateway-{{ $profile }}
+        {{- include "artifactory.selector" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
     spec:
       automountServiceAccountToken: false
-      {{- with $.Values.imagePullSecrets }}
+      {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: gateway
-          image: "{{ $.Values.images.gateway.repository }}:{{ $.Values.images.gateway.tag | default $.Chart.AppVersion }}"
-          imagePullPolicy: {{ $.Values.images.gateway.pullPolicy }}
-          {{- if eq $profile "internal" }}
-          ports: [{name: https, containerPort: 8445}]
-          {{- else }}
-          ports: [{name: http, containerPort: 8080}, {name: grpc, containerPort: 8443}]
-          {{- end }}
+          image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: grpc, containerPort: 8443}
+            - {name: telemetry, containerPort: 8444}
+            - {name: https, containerPort: 8445}
           env:
-            - {name: ARTIFACTORY_GATEWAY_PROFILE, value: {{ ternary (ternary "control" "all" $.Values.gateway.dedicatedData) $profile (eq $profile "edge") | quote }}}
+            - {name: ARTIFACTORY_GATEWAY_PROFILE, value: "unified"}
             - {name: ARTIFACTORY_GATEWAY_ALLOW_HTTP_UPSTREAMS, value: 'true'}
-            {{- if eq $profile "internal" }}
-            - {name: ARTIFACTORY_GATEWAY_HTTP_BIND, value: '0.0.0.0:8445'}
-            - {name: ARTIFACTORY_GATEWAY_TLS_CERT, value: /run/ca/server.pem}
-            - {name: ARTIFACTORY_GATEWAY_TLS_KEY, value: /run/ca/server.key}
-            {{- end }}
-            - {name: ARTIFACTORY_INSECURE_DEV, value: {{ $.Values.development.insecureHttp | toString | quote }}}
-            - {name: ARTIFACTORY_GATEWAY_CONTROL, value: "http://{{ include "artifactory.fullname" $ }}-control-plane:8080"}
-            - {name: ARTIFACTORY_GATEWAY_WEB, value: "http://{{ include "artifactory.fullname" $ }}-web-internal:3000"}
-            - {name: ARTIFACTORY_GATEWAY_DEVICE, value: "{{ include "artifactory.fullname" $ }}-control-plane:8443"}
-            - {name: ARTIFACTORY_GATEWAY_REGISTRY, value: {{ $.Values.gateway.registryUrl | quote }}}
-            - {name: ARTIFACTORY_S3_ENDPOINT, value: {{ include "artifactory.s3Endpoint" $ | quote }}}
-            - {name: ARTIFACTORY_GATEWAY_HTTP_CONNECTIONS, value: {{ $.Values.gateway.httpConnections | quote }}}
-            - {name: ARTIFACTORY_GATEWAY_DEVICE_CONNECTIONS, value: {{ $.Values.gateway.deviceConnections | quote }}}
-            {{- if $.Values.localSource.enabled }}
-            - {name: ARTIFACTORY_GATEWAY_SOURCE, value: "https://{{ include "artifactory.fullname" $ }}-local-source:8080"}
+            - {name: ARTIFACTORY_GATEWAY_HTTP_BIND, value: '0.0.0.0:8080'}
+            - {name: ARTIFACTORY_GATEWAY_TCP_BIND, value: '0.0.0.0:8443'}
+            - {name: ARTIFACTORY_GATEWAY_TELEMETRY_BIND, value: '0.0.0.0:8444'}
+            - {name: ARTIFACTORY_GATEWAY_INTERNAL_BIND, value: '0.0.0.0:8445'}
+            - {name: ARTIFACTORY_GATEWAY_INTERNAL_TLS_CERT, value: /run/internal-tls/server.pem}
+            - {name: ARTIFACTORY_GATEWAY_INTERNAL_TLS_KEY, value: /run/internal-tls/server.key}
+            - {name: ARTIFACTORY_INSECURE_DEV, value: {{ .Values.development.insecureHttp | toString | quote }}}
+            - {name: ARTIFACTORY_GATEWAY_CONTROL, value: "http://{{ include "artifactory.fullname" . }}-control-plane:8080"}
+            - {name: ARTIFACTORY_GATEWAY_WEB, value: "http://{{ include "artifactory.fullname" . }}-web-internal:3000"}
+            - {name: ARTIFACTORY_GATEWAY_DEVICE, value: "{{ include "artifactory.fullname" . }}-control-plane:8443"}
+            - {name: ARTIFACTORY_GATEWAY_TELEMETRY, value: "{{ include "artifactory.fullname" . }}-telemetry-grpc:8444"}
+            - {name: ARTIFACTORY_GATEWAY_REGISTRY, value: {{ .Values.gateway.registryUrl | quote }}}
+            - {name: ARTIFACTORY_S3_ENDPOINT, value: {{ include "artifactory.s3Endpoint" . | quote }}}
+            - {name: ARTIFACTORY_GATEWAY_HTTP_CONNECTIONS, value: {{ .Values.gateway.httpConnections | quote }}}
+            - {name: ARTIFACTORY_GATEWAY_DEVICE_CONNECTIONS, value: {{ .Values.gateway.deviceConnections | quote }}}
+            - {name: ARTIFACTORY_GATEWAY_TELEMETRY_CONNECTIONS, value: {{ .Values.gateway.telemetryConnections | quote }}}
+            - {name: ARTIFACTORY_GATEWAY_INTERNAL_CONNECTIONS, value: {{ .Values.gateway.internalConnections | quote }}}
+            {{- if .Values.localSource.enabled }}
+            - {name: ARTIFACTORY_GATEWAY_SOURCE, value: "https://{{ include "artifactory.fullname" . }}-local-source:8080"}
             {{- end }}
             - {name: ARTIFACTORY_SERVICE_CA, value: /run/ca/ca.crt}
             - name: ARTIFACTORY_GATEWAY_TOKEN
-              valueFrom: {secretKeyRef: {name: {{ include "artifactory.gatewaySecret" $ }}, key: token}}
+              valueFrom: {secretKeyRef: {name: {{ include "artifactory.gatewaySecret" . }}, key: token}}
           securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
-          {{- if eq $profile "device" }}
-          readinessProbe: {tcpSocket: {port: grpc}}
-          {{- else if eq $profile "internal" }}
-          readinessProbe: {httpGet: {path: /healthz, port: https, scheme: HTTPS}}
-          {{- else }}
-          readinessProbe: {httpGet: {path: /healthz, port: http}}
-          {{- end }}
-          resources: {{ toYaml $.Values.resources.gateway | nindent 12 }}
-          volumeMounts: [{name: ca, mountPath: /run/ca, readOnly: true}]
+          readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5}
+          resources: {{ toYaml .Values.resources.gateway | nindent 12 }}
+          volumeMounts:
+            - {name: ca, mountPath: /run/ca, readOnly: true}
+            - {name: internal-tls, mountPath: /run/internal-tls, readOnly: true}
       volumes:
         - name: ca
           secret:
-            secretName: {{ ternary ($.Values.gateway.internalTlsSecret | default (include "artifactory.pki" $)) (include "artifactory.pki" $) (eq $profile "internal") }}
+            secretName: {{ include "artifactory.pki" . }}
+            defaultMode: 0440
+            items: [{key: ca.pem, path: ca.crt}]
+        - name: internal-tls
+          secret:
+            secretName: {{ .Values.gateway.internalTlsSecret | default (include "artifactory.pki" .) }}
             defaultMode: 0440
             items:
-              - {key: ca.pem, path: ca.crt}
-            {{- if eq $profile "internal" }}
               - {key: server.pem, path: server.pem}
               - {key: server.key, path: server.key}
-            {{- end }}
-{{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -89,7 +90,7 @@ spec:
   ports: [{name: https, port: 8445, targetPort: https}]
   selector:
     {{- include "artifactory.selector" . | nindent 4 }}
-    app.kubernetes.io/component: gateway-internal
+    app.kubernetes.io/component: gateway
 ---
 apiVersion: v1
 kind: Service
@@ -99,14 +100,26 @@ spec:
   selector:
     {{- include "artifactory.selector" . | nindent 4 }}
     app.kubernetes.io/component: web
-{{- if .Values.gateway.dedicatedData }}
+{{- if .Values.gateway.networkPolicy.enabled }}
 ---
-apiVersion: v1
-kind: Service
-metadata: {name: {{ include "artifactory.fullname" . }}-gateway-data}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: {{ include "artifactory.fullname" . }}-gateway}
 spec:
-  ports: [{name: http, port: 80, targetPort: http}]
-  selector:
-    {{- include "artifactory.selector" . | nindent 4 }}
-    app.kubernetes.io/component: gateway-data
+  podSelector:
+    matchLabels:
+      {{- include "artifactory.selector" . | nindent 6 }}
+      app.kubernetes.io/component: gateway
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{port: 8080, protocol: TCP}]
+      {{- with .Values.gateway.networkPolicy.publicFrom }}
+      from: {{ toYaml . | nindent 8 }}
+      {{- end }}
+    - ports: [{port: 8443, protocol: TCP}, {port: 8444, protocol: TCP}]
+      {{- with .Values.gateway.networkPolicy.deviceFrom }}
+      from: {{ toYaml . | nindent 8 }}
+      {{- end }}
+    - ports: [{port: 8445, protocol: TCP}]
+      from: [{podSelector: {}}]
 {{- end }}
