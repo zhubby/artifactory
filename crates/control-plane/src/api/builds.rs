@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户鉴权、构建存储与私有制品存储。
-//! [OUTPUT]: 提供构建、规划、发布、制品下载和事件接口。
+//! [OUTPUT]: 提供构建、规划、发布和制品下载接口。
 //! [POS]: HTTP 输入边界，权限检查后调用业务与存储层。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 
@@ -15,14 +15,10 @@ use axum::{
     Json,
     extract::{Path, Query},
     http::HeaderMap,
-    response::{
-        IntoResponse, Redirect, Sse,
-        sse::{Event, KeepAlive},
-    },
+    response::{IntoResponse, Redirect},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{convert::Infallible, time::Duration};
 use uuid::Uuid;
 
 pub use crate::store::BuildInput;
@@ -277,52 +273,4 @@ pub async fn release_detail(
     )?;
     release["artifacts"] = json!(state.store.release_artifacts(id).await?);
     Ok(Json(release))
-}
-
-#[derive(Deserialize, Default)]
-pub struct EventQuery {
-    #[serde(default)]
-    after: i64,
-}
-
-pub async fn events(
-    TenantState(state): TenantState,
-    auth: Auth,
-    Path(id): Path<Uuid>,
-    Query(query): Query<EventQuery>,
-    headers: HeaderMap,
-) -> Result<impl IntoResponse> {
-    auth.project(state.store.build_project(id).await?, "read")?;
-    let mut cursor = headers
-        .get("last-event-id")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or(query.after)
-        .max(0);
-    let state_project = state.store.build_project(id).await?;
-    let stream = async_stream::stream! {
-        let started=tokio::time::Instant::now();
-        loop {
-            let allowed=auth.refresh(&state).await.is_ok_and(|a|a.project(state_project,"read").is_ok());
-            if !allowed {break;}
-            if let Ok(snapshot)=build_detail(&state,id).await {yield Ok::<Event,Infallible>(Event::default().event("snapshot").data(snapshot.to_string()));}
-            let logs = state.store.log_chunks(id, cursor).await;
-            if let Ok(logs)=logs {
-                for log in logs {
-                    let text=match state.storage.get_log(&log.object_key).await {Ok(bytes)=>String::from_utf8_lossy(&bytes).into_owned(),Err(_)=>break};
-                    cursor=log.id;
-                    yield Ok(Event::default().id(cursor.to_string()).event("log").data(json!({"id":cursor,"attempt_id":log.attempt_id,"step":log.step,"text":text}).to_string()));
-                }
-            }
-            if started.elapsed()>Duration::from_secs(55) {break;}
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-    };
-    Ok((
-        [
-            ("cache-control", "no-cache, no-transform"),
-            ("x-accel-buffering", "no"),
-        ],
-        Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))),
-    ))
 }

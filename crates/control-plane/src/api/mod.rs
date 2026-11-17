@@ -3,6 +3,7 @@
 //! [POS]: 控制平面 HTTP 接口入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub(crate) mod ai_management;
+mod build_logs;
 mod builds;
 mod emissary_updates;
 mod lifecycle;
@@ -187,7 +188,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/builds/{id}", get(builds::detail))
         .route("/api/v1/builds/{id}/cancel", post(builds::cancel))
         .route("/api/v1/builds/{id}/publish", post(builds::publish))
-        .route("/api/v1/builds/{id}/events", get(builds::events))
+        .route("/api/v1/builds/{id}/events", get(build_logs::events))
+        .route("/api/v1/builds/{id}/logs", get(build_logs::history))
         .route("/api/v1/jobs/{id}/retry", post(builds::retry))
         .route("/api/v1/artifacts", get(builds::artifacts))
         .route("/api/v1/artifacts/{id}/download", get(builds::download))

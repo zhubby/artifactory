@@ -1,15 +1,29 @@
+/**
+ * [INPUT]: 依赖构建状态、规划历史和澄清接口。
+ * [OUTPUT]: 提供 BuildPlanning 计划与澄清视图。
+ * [POS]: 活跃构建轮询规划；终态保留静态计划。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useUI } from "@/components/providers";
 import { ErrorBox, Field, SectionTitle, Status } from "@/components/common";
 import { SubmitForm } from "@/components/forms";
 import { Textarea } from "@/components/ui/input";
 import { mutation, useRemote } from "@/lib/api";
+import { isBuildTerminal } from "@/lib/build-state";
 import type { Build, PlanningHistory, User } from "@/lib/types";
 
 export function BuildPlanning({build, user, refresh}: {build: Build; user: User; refresh: () => Promise<void>}) {
   const { t, number, date } = useUI();
-  const history = useRemote<PlanningHistory>(`/builds/${build.id}/plans`, 3000);
+  const terminal = isBuildTerminal(build.status);
+  const history = useRemote<PlanningHistory>(`/builds/${build.id}/plans`, terminal ? false : 3000);
+  const previous = useRef({ id: build.id, terminal });
+  useEffect(() => {
+    if (terminal && previous.current.id === build.id && !previous.current.terminal) void history.reload();
+    previous.current = { id: build.id, terminal };
+  }, [build.id, terminal, history.reload]);
   const current = history.data?.plans.at(-1);
   const run = history.data?.runs.at(-1);
   return <section className="panel mb-6 min-w-0">

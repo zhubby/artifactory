@@ -3,6 +3,8 @@
 //! [POS]: 数据库验收中的租户测试入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Real PostgreSQL and HTTP authorization tests. Accounts start with no membership.
+#[path = "build_logs.rs"]
+mod build_logs;
 #[path = "signing.rs"]
 mod signing;
 use super::*;

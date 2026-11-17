@@ -13,7 +13,7 @@ signing_execution.rs: 锁定当前授权并执行材料领取及最终证据登�
 tenancy.rs: 锁定租户权限并校验资源范围。
 lifecycle.rs: 维护工作区归档和删除租约。
 lifecycle_cleanup.rs: 依据删除清单清除业务状态和签名密文。
-builds.rs: 创建构建并读取制品、发布与日志。
+builds.rs: 创建构建，读取制品、发布与前后向日志游标。
 executions.rs: 维护节点 session、任务事件和不可变制品登记。
 scheduling.rs: 分配任务并生成不可变 Release。
 planning.rs: 维护规划租约、工具结果和固定上下文。

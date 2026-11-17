@@ -59,7 +59,8 @@
 | `POST /builds/{id}/cancel` | 空对象，停止队列和在途任务 |
 | `POST /jobs/{id}/retry` | 空对象，仅失败 / lost / canceled 且尚未发布的 job |
 | `POST /builds/{id}/publish` | `{version?}`；既有版本不可更改；重试复用制品 |
-| `GET /builds/{id}/events` | SSE `snapshot` / `log`；`Last-Event-ID` 或 `?after=` 恢复日志 |
+| `GET /builds/{id}/logs` | 静态历史日志；`attempt_id?`、`step?` 筛选，`before?` 向前翻页；返回 `{logs, next_before}`，每页最多 100 块，页内按 ID 升序；无更早日志时游标为 `null` |
+| `GET /builds/{id}/events` | SSE `snapshot` / `log` / `complete`；`Last-Event-ID` 或 `?after=` 恢复日志；终态排空日志后发送包含最终详情的 `complete`，客户端停止重连 |
 | `GET /artifacts` | 可按项目过滤，不返回对象 key |
 | `GET /artifacts/{id}/download` | 项目 read 权限后临时重定向到私有对象 GET |
 | `GET /releases` | 可按项目过滤 |

@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖租户作用域、CSRF 边界与 React 生命周期。
+ * [OUTPUT]: 提供请求、变更和可停止轮询的 useRemote。
+ * [POS]: 控制台远端数据的请求与取消边界。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import {
@@ -118,7 +124,10 @@ export async function mutation<Type>(
   return api<Type>(path, { method, body: JSON.stringify(body) });
 }
 
-export function useRemote<Type>(path: string | null, interval = 10000) {
+export function useRemote<Type>(
+  path: string | null,
+  interval: number | false | ((data?: Type) => number | false) = 10000,
+) {
   const [snapshot, setSnapshot] = useState<{
     path: string | null;
     data?: Type;
@@ -179,16 +188,21 @@ export function useRemote<Type>(path: string | null, interval = 10000) {
   }, [path]);
   useEffect(() => {
     void reload();
-    const timer = path ? setInterval(() => void reload(), interval) : undefined;
     const pending = requests.current;
     return () => {
-      clearInterval(timer);
       for (const controller of pending) controller.abort();
       pending.clear();
     };
-  }, [reload, path, interval]);
+  }, [reload]);
+  const data = snapshot.path === path ? snapshot.data : undefined;
+  const delay = typeof interval === "function" ? interval(data) : interval;
+  useEffect(() => {
+    if (!path || delay === false || delay <= 0) return;
+    const timer = setInterval(() => void reload(), delay);
+    return () => clearInterval(timer);
+  }, [reload, path, delay]);
   return {
-    data: snapshot.path === path ? snapshot.data : undefined,
+    data,
     error: snapshot.path === path ? snapshot.error : undefined,
     reload,
     setData,

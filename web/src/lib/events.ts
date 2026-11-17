@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖租户请求头、SSE 游标与取消信号。
+ * [OUTPUT]: 提供带重连和 complete 结束语义的构建订阅。
+ * [POS]: 传递日志与快照；尾部读完后停止重连。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 import { assertTenant, currentTenant, tenantHeaders } from "@/lib/tenant";
 
@@ -60,8 +66,10 @@ export async function subscribeBuild(
                 }
               }
             }
-            if (data.length && !signal.aborted && currentTenant() === tenant)
+            if (data.length && !signal.aborted && currentTenant() === tenant) {
               receive(kind, data.join("\n"));
+              if (kind === "complete") return;
+            }
           }
         }
       } finally {

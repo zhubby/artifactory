@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖构建 API、事件订阅和共享控件。
  * [OUTPUT]: 提供 BuildDetail 构建详情。
- * [POS]: 展示执行、计划和制品；维持事件订阅。
+ * [POS]: 活跃构建订阅事件；终态展示静态分页日志。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -41,18 +41,13 @@ import { Modal } from "@/components/ui/dialog";
 import { Tabs } from "@/components/ui/tabs";
 import { SubmitForm } from "@/components/forms";
 import { BuildPlanning } from "@/components/build-planning";
+import { BuildLogHistory } from "@/components/build-log-history";
+import { isBuildTerminal, type BuildLog } from "@/lib/build-state";
 import { Field } from "@/components/common";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
 import type { Build, User } from "@/lib/types";
 import { cn, elapsed, short } from "@/lib/utils";
-
-interface Log {
-  id: number;
-  attempt_id: string;
-  step: string;
-  text: string;
-}
 
 export function BuildDetail({
   projectSlug,
@@ -68,6 +63,7 @@ export function BuildDetail({
   const { t, date } = useUI();
   const remote = useRemote<Build>(
     `/projects/by-slug/${encodeURIComponent(projectSlug)}/builds/${number}`,
+    data => isBuildTerminal(data?.status) && data?.publish_status === "pending" ? 3000 : false,
   );
   const build = remote.data;
   const id = build?.id;
@@ -75,11 +71,13 @@ export function BuildDetail({
     user.role === "admin"
       ? "admin"
       : user.project_roles?.[build?.project_id || ""] || "viewer";
-  const [logs, setLogs] = useState<Log[]>([]);
+  const [logs, setLogs] = useState<BuildLog[]>([]);
   const [selected, setSelected] = useState<string>();
   const [filter, setFilter] = useState<string>();
   const [follow, setFollow] = useState(true);
   const [connected, setConnected] = useState(false);
+  const [watching, setWatching] = useState<string>();
+  const live = !!id && (!isBuildTerminal(build?.status) || watching === id);
   const [error, setError] = useState<Error>();
   const [publish, setPublish] = useState(false);
   const [tab, setTab] = useState("execution");
@@ -90,18 +88,26 @@ export function BuildDetail({
     setSelected(undefined);
     setFilter(undefined);
     setClipped(false);
-    if (!id) return;
+  }, [id]);
+  useEffect(() => {
+    if (!id || !live) return;
+    setWatching(id);
+    setConnected(false);
     const controller = new AbortController();
     void subscribeBuild(
       id,
       controller.signal,
       (kind, data) => {
-        if (kind === "snapshot") {
+        if (kind === "snapshot" || kind === "complete") {
           remote.setData(JSON.parse(data));
           setConnected(true);
         }
+        if (kind === "complete") {
+          setWatching(undefined);
+          setConnected(false);
+        }
         if (kind === "log") {
-          const log: Log = JSON.parse(data);
+          const log: BuildLog = JSON.parse(data);
           setLogs((previous) => {
             if (previous.some((entry) => entry.id === log.id)) return previous;
             if (previous.length >= 3000) setClipped(true);
@@ -112,7 +118,7 @@ export function BuildDetail({
       () => setConnected(false),
     );
     return () => controller.abort();
-  }, [id, remote.setData]);
+  }, [id, live, remote.setData]);
   useEffect(() => {
     if (tab === "execution" && follow && terminal.current)
       terminal.current.scrollTop = terminal.current.scrollHeight;
@@ -355,7 +361,7 @@ export function BuildDetail({
               )}
           </section>
             </div>
-          <section className="panel">
+          {!live ? <BuildLogHistory key={`${id}/${attempt?.id || ""}/${filter || ""}`} buildId={id} attemptId={attempt?.id} step={filter} /> : <section className="panel">
             <SectionTitle
               live
               title={
@@ -411,7 +417,7 @@ export function BuildDetail({
                 </span>
               )}
             </div>
-          </section>
+          </section>}
           </div>
         </div>
         <div hidden={activeTab !== "plan"}>

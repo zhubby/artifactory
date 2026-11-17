@@ -319,6 +319,8 @@
     "steps": "Execution steps",
     "retry": "Retry target with a new attempt",
     "logs": "Execution logs",
+    "history": "Historical logs",
+    "olderLogs": "Load older logs",
     "connected": "SSE connected",
     "reconnecting": "Waiting to connect / Reconnecting",
     "pauseFollow": "Pause log following",

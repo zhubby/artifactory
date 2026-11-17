@@ -5,6 +5,7 @@ ai-builds.spec.ts: 验证 AI 构建与澄清交互。
 accessibility.spec.ts: 验证共享页面的 WCAG 自动检查。
 browser-audit.spec.ts: 验证快捷导航、偏好面板和日志保持。
 build-source-edge.spec.ts: 验证源码选择边界。
+build-history.spec.ts: 验证终态静态日志、分页锚点与尾部事件。
 build-wizard.spec.ts: 验证构建向导与提交数据。
 console-visual.spec.ts: 验证工作台视觉与布局。
 emissary-ota.spec.ts: 验证节点升级配置。

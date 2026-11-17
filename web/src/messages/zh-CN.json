@@ -319,6 +319,8 @@
     "steps": "执行步骤",
     "retry": "以新 attempt 重试此目标",
     "logs": "执行日志",
+    "history": "历史日志",
+    "olderLogs": "加载更早日志",
     "connected": "SSE 已连接",
     "reconnecting": "等待连接 / 重连中",
     "pauseFollow": "暂停跟随日志",

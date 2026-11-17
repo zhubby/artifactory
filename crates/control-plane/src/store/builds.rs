@@ -1,4 +1,9 @@
-//! Build, artifact and release persistence. External storage IO stays in services.
+//! ```text
+//! [INPUT]: 依赖租户构建、attempt 与日志对象索引。
+//! [OUTPUT]: 提供构建、发布、制品和日志游标查询。
+//! [POS]: 查询日志元数据；对象正文由接口层读取。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
+//! ```
 use super::ControlStore;
 use super::dto;
 use crate::{
@@ -16,6 +21,7 @@ pub struct ArtifactDownload {
     pub object_key: String,
     pub project_id: Uuid,
 }
+#[derive(Deserialize)]
 pub struct LogChunk {
     pub id: i64,
     pub attempt_id: Uuid,
@@ -271,5 +277,22 @@ impl ControlStore {
                 })
             })
             .collect::<artifactory_database::Result<_>>()?)
+    }
+
+    pub async fn historical_log_chunks(
+        &self,
+        build: Uuid,
+        attempt: Option<Uuid>,
+        step: Option<&str>,
+        before: i64,
+    ) -> Result<Vec<LogChunk>> {
+        let rows: Vec<Value> = sql::scalars(&mut self.pool.clone(),
+            "SELECT jsonb_build_object('id',l.id,'attempt_id',l.attempt_id,'step',l.step,'object_key',l.object_key) FROM log_chunks l JOIN attempts a ON a.id=l.attempt_id JOIN jobs j ON j.id=a.job_id WHERE j.build_id=$1 AND ($2::uuid IS NULL OR a.id=$2) AND ($3::text IS NULL OR l.step=$3) AND l.id<$4 ORDER BY l.id DESC LIMIT 101",
+            params![build, attempt, step, before]).await?;
+        Ok(rows
+            .into_iter()
+            .map(serde_json::from_value)
+            .collect::<std::result::Result<_, _>>()
+            .map_err(anyhow::Error::from)?)
     }
 }

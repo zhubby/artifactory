@@ -5,8 +5,9 @@ account.tsx: 提供当前账户和个人设置。
 ai-settings.tsx: 配置模型与规划 Worker。
 auth-shell.tsx: 渲染认证页面布局。
 brand-mark.tsx: 渲染 Artifactory 品牌标记。
-build-detail.tsx: 展示步骤、日志和构建制品。
-build-planning.tsx: 展示规划进度与澄清问题。
+build-detail.tsx: 订阅活跃构建，展示终态日志与构建制品。
+build-log-history.tsx: 按 attempt 和步骤分页读取静态日志并保持阅读锚点。
+build-planning.tsx: 展示规划与澄清，终态停止轮询。
 build-table.tsx: 展示项目构建列表。
 build-wizard.tsx: 组合引用查询、三步构建引导和默认签名身份预览。
 common.tsx: 提供共享字段、状态和制品验签表。
