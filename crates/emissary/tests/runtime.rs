@@ -479,7 +479,7 @@ async fn foreground_and_ota_shutdown_stop_authenticated_worker_tree() {
             .unwrap();
         let mut connection = fixture.connection().await;
         let attempt = uuid::Uuid::new_v4().to_string();
-        connection.commands.send(pb::Command{kind:"assign".into(),attempt_id:attempt.clone(),lease_token:"fixture-lease".into(),lease_seconds:90,assignment:Some(pb::Assignment{repository_url:repo.to_string_lossy().into(),commit_sha:commit,timeout_seconds:120,steps:vec![pb::Step{name:"tree".into(),shell:"sh".into(),run:"sh -c 'sleep 120 & wait' & echo $! > child.pid; echo tree-started; wait".into(),timeout_seconds:120,..Default::default()}],..Default::default()}),..Default::default()}).await.unwrap();
+        connection.commands.send(pb::Command{kind:"assign".into(),attempt_id:attempt.clone(),lease_token:"fixture-lease".into(),lease_seconds:90,assignment:Some(pb::Assignment{repository_url:repo.to_string_lossy().into(),commit_sha:commit,timeout_seconds:120,steps:vec![pb::Step{name:"tree".into(),shell:"sh".into(),run:"sh -c 'sleep 120 & wait' & pid=$!; printf '%s\\n' \"$pid\" > child.pid.tmp && mv child.pid.tmp child.pid; echo tree-started; wait".into(),timeout_seconds:120,..Default::default()}],..Default::default()}),..Default::default()}).await.unwrap();
         let marker = fixture
             .cfg
             .root

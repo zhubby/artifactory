@@ -1,3 +1,7 @@
+//! [INPUT]: 真实 Emissary 子进程、工作目录和取消信号。
+//! [OUTPUT]: 验证 EOF、后代进程清理与服务启动失败。
+//! [POS]: Emissary 进程树的跨平台集成验收；PID 标记原子发布。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_emissary::process;
 use std::{fs, time::Duration};
 use tokio::process::Command;
@@ -177,7 +181,7 @@ async fn worker_kills_process_tree_on_parent_death_and_lease_expiry() {
                 steps: vec![Step {
                     name: "long".into(),
                     shell: "sh".into(),
-                    run: "sh -c 'sleep 120 & wait' & echo $! > child.pid; wait".into(),
+                    run: "sh -c 'sleep 120 & wait' & pid=$!; printf '%s\\n' \"$pid\" > child.pid.tmp && mv child.pid.tmp child.pid; wait".into(),
                     timeout_seconds: 60,
                     ..Default::default()
                 }],
