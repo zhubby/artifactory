@@ -1,4 +1,4 @@
-# [INPUT]: 依赖提交源码、固定 Android 包及隔离服务。
+# [INPUT]: 提交源码、固定 kind/Android 版本及隔离服务。
 # [OUTPUT]: 验证版本、原生签名与跨服务契约。
 # [POS]: 合并交付的自动化验证入口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -181,8 +181,9 @@ jobs:
           go-version: 1.27.x
       - uses: helm/kind-action@v1
         with:
+          version: v0.33.0
           cluster_name: operator
-          node_image: kindest/node:v1.37.0
+          node_image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
           config: tests/operator/acceptance/kind-cilium.yaml
           kubectl_version: v1.37.0
           wait: 0s

@@ -1,3 +1,7 @@
+# [INPUT]: Rust 验收二进制、临时目录与 Git/OpenSSH/OpenSSL。
+# [OUTPUT]: 认证 HTTPS、SSH 与受权远端引用查询证据。
+# [POS]: 隔离服务夹具，证明项目凭据和主机信任边界。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 """Read-only Git reference queries over authenticated HTTPS and isolated OpenSSH."""
 
 import base64

@@ -1,3 +1,7 @@
+//! [INPUT]: 隔离数据库、账号权限与网关对象票据。
+//! [OUTPUT]: 验证账号生命周期、项目权限和授权下载。
+//! [POS]: 注册流程与项目资源访问的 HTTP 回归测试。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use artifactory_database::{params, sql};
 use serde_json::{Value, json};
@@ -364,12 +368,22 @@ async fn registered_account_requires_membership_then_project_viewer_can_only_rea
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
-    assert!(
-        response.headers()["location"]
-            .to_str()
-            .unwrap()
-            .contains("final/test")
-    );
+    let location = url::Url::parse(response.headers()["location"].to_str().unwrap()).unwrap();
+    assert_eq!(location.path(), "/artifacts/object");
+    let ticket = location
+        .query_pairs()
+        .find(|(name, _)| name == "ticket")
+        .unwrap()
+        .1;
+    let upstream = url::Url::parse(
+        &database
+            .state
+            .storage
+            .resolve_ticket(&ticket, "GET")
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(upstream.path().ends_with("/final/test"));
     for (path, input) in [
         (
             "/projects".to_owned(),

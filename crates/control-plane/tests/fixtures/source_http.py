@@ -1,3 +1,7 @@
+# [INPUT]: 临时 Git 仓库、LFS 对象与 Git HTTP 后端。
+# [OUTPUT]: 只读 Git/LFS HTTP 服务与监听端口。
+# [POS]: 固定快照与恢复验收的独立源码服务。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 """Read-only local Git/LFS server for immutable snapshot recovery tests."""
 import http.server
 import json

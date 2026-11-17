@@ -1,3 +1,7 @@
+//! [INPUT]: 隔离数据库、用户主目录及认证 HTTPS、SSH 夹具。
+//! [OUTPUT]: 验证引用查询权限、项目凭据和主机信任。
+//! [POS]: 远端引用查询的 HTTP 与真实 Git 集成回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use artifactory_database::{params, sql};
 use serde_json::{Value, json};
@@ -85,9 +89,10 @@ async fn references_enforce_read_scope_project_scope_and_not_found() {
 #[test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL, openssl and sshd"]
 fn repository_refs_use_only_project_credentials_and_host_trust() {
+    // sshd StrictModes 拒绝 authorized_keys 的可写祖先目录。
     let directory = tempfile::Builder::new()
         .prefix("source refs with spaces ")
-        .tempdir()
+        .tempdir_in(std::env::var_os("HOME").expect("SSH fixture requires HOME"))
         .unwrap();
     let output = std::process::Command::new("python3")
         .arg(concat!(

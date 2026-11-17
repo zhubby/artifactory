@@ -1,3 +1,7 @@
+# [INPUT]: Rust 验收二进制、临时目录与 OpenSSL。
+# [OUTPUT]: 可信、不可信及错域名 TLS 服务验收证据。
+# [POS]: 隔离对象存储证书测试，保留真实 TLS 验证。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 """Exercise the real Rust Storage client with trusted and untrusted TLS peers."""
 
 import http.server
