@@ -21,7 +21,7 @@ vendor/ - 带连接回收修复的 Toasty 源码。
 <config>
 VERSION - 全项目版本 0.2.0。
 Cargo.toml - Rust 工作区和统一依赖。
-Dockerfile - 控制平面与遥测运行镜像。
+Dockerfile - 限定控制平面与遥测依赖的运行镜像。
 compose.yaml - 本机完整服务栈。
 book.toml - mdBook 文档构建。
 </config>

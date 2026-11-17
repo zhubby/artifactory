@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定 ImageBuild、管理员 BuilderPool 和可用节点。
-//! [OUTPUT]: 创建按执行隔离的 BuildKit 与 Publisher Job。
+//! [OUTPUT]: 按 BuilderPool sidecar 模式创建隔离 BuildKit 与 Publisher Job。
 //! [POS]: 声明工作负载身份、凭据投影和调度安全边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::api::{BuilderPool, ImageBuild};
@@ -8,6 +8,38 @@ use k8s_openapi::api::{batch::v1::Job, core::v1::Node};
 use kube::{Resource, ResourceExt};
 use serde_json::json;
 use std::collections::BTreeMap;
+
+pub(crate) const LEGACY_WORKER: &str = r#"set -eu
+trap 'touch /run/buildkit/worker.done' EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+attempt=0
+until buildctl --addr unix:///run/buildkit/buildkitd.sock debug workers >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 90 ]; then
+        echo 'BuildKit startup timed out' >&2
+        exit 1
+    fi
+    sleep 2
+done
+"$@"
+"#;
+
+pub(crate) const LEGACY_BUILDKIT: &str = r#"set -eu
+rootlesskit buildkitd "$@" &
+daemon=$!
+trap 'kill "$daemon" 2>/dev/null || true; wait "$daemon" 2>/dev/null || true' EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+while kill -0 "$daemon" 2>/dev/null; do
+    if [ -f /run/buildkit/worker.done ]; then
+        exit 0
+    fi
+    sleep 1 &
+    wait $!
+done
+wait "$daemon"
+"#;
 
 pub fn name(build: &ImageBuild, platform: Option<&str>) -> Result<String> {
     let id = uuid::Uuid::parse_str(&build.spec.execution_id)?;
@@ -138,6 +170,23 @@ pub fn job(
             json!({"name":"ARTIFACTORY_SERVICE_CA","value":"/run/ca/ca.crt"}),
             json!({"name":"GIT_SSL_CAINFO","value":"/run/ca/ca.crt"}),
         ]);
+    }
+    if !publisher && !pool.spec.native_sidecar {
+        // 旧集群以共享完成标记停止普通容器，保留 Runner 的退出码。
+        let mut buildkit = pod
+            .as_object_mut()
+            .unwrap()
+            .remove("initContainers")
+            .unwrap()[0]
+            .take();
+        buildkit.as_object_mut().unwrap().remove("restartPolicy");
+        buildkit["command"] = json!(["/bin/sh", "-c", LEGACY_BUILDKIT, "buildkit-sidecar"]);
+        pod["containers"][0]["command"] =
+            json!(["/bin/sh", "-c", LEGACY_WORKER, "image-worker", binary]);
+        pod["containers"].as_array_mut().unwrap().push(buildkit);
+        value["spec"]["template"]["metadata"]["annotations"] = json!({
+            "container.apparmor.security.beta.kubernetes.io/buildkit": "unconfined"
+        });
     }
     Ok(serde_json::from_value(value)?)
 }

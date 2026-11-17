@@ -23,7 +23,7 @@ Runtime/Source 使用独立 ClusterIP `https://<release>-gateway-internal:8445`�
 
 ## 安装顺序
 
-部署前准备 Kubernetes、StorageClass、业务 PostgreSQL、制品 S3、仓库 S3 和可达的 HTTPS 网关。主 Chart 的内建制品 S3 使用私有 ClusterIP HTTP；外部私有 HTTP 端点须显式设置 `s3.allowHttp=true`。仓库的 Kubernetes 测试配置使用 1.37。BuildKit 使用原生 sidecar、rootless user namespace、Unconfined seccomp/AppArmor，以及 `--oci-worker-no-process-sandbox`。节点和准入策略必须允许这些设置。任务只运行可信项目源码；rootless 不能替代租户安全沙箱。
+部署前准备 Kubernetes、StorageClass、业务 PostgreSQL、制品 S3、仓库 S3 和可达的 HTTPS 网关。主 Chart 的内建制品 S3 使用私有 ClusterIP HTTP；外部私有 HTTP 端点须显式设置 `s3.allowHttp=true`。仓库的 Kubernetes 测试配置使用 1.37。BuildKit 默认使用原生 sidecar。未启用 `SidecarContainers` 的集群须配置 `builderPool.nativeSidecar=false`。两种模式均使用 rootless user namespace、Unconfined seccomp/AppArmor，以及 `--oci-worker-no-process-sandbox`。节点和准入策略必须允许这些设置。任务只运行可信项目源码；rootless 不能替代租户安全沙箱。
 
 1. 按 [Helm 指南](helm.md) 准备主部署 Secret。设备 CA 与仓库 RSA 签名身份独立。仓库签名私钥只挂载到 Control；Distribution 只挂载公开证书。
 2. 预先创建仓库 Bucket。使用独立 S3 身份，仅授权该 Bucket。不要复用原生制品 Bucket。保持 Bucket 私有，并限制网络入口。
@@ -97,6 +97,7 @@ builderPool:
   name: default
   workerImage: ghcr.io/zhubby/artifactory-image-worker:0.2.0
   buildkitImage: moby/buildkit:v0.26.2-rootless
+  nativeSidecar: true
   maxActive: 8
   maxPerProject: 4
   nodeSelector:
@@ -104,6 +105,8 @@ builderPool:
   caSecret: build-service-ca
   buildkitConfigMap: buildkit-config
 ```
+
+`nativeSidecar=true` 依赖 Kubernetes 的 `SidecarContainers` 功能。Kubernetes 1.28 未启用该功能时，API 会丢弃 init container 的 `restartPolicy`，导致构建一直等待。此类集群显式设置 `nativeSidecar=false`。普通 BuildKit 容器与 Runner 同时启动；Runner 等待 BuildKit 就绪后构建，并在退出时写入共享完成标记。BuildKit 看到标记后退出，Job 保留 Runner 的成功或失败状态。Job 截止期限和取消会终止全部容器。发布 Job 始终只有 Publisher，不启动 BuildKit。
 
 `caSecret` 包含 `ca.crt`，同时挂载到 Runner、Publisher 和 BuildKit 的 `/run/ca`。Runner 将它用于源码、Control 和 Registry HTTPS。Buildctl 通过 `--registry-auth-tlscontext` 为内建仓库的独立令牌请求追加该 CA，保留系统根证书。BuildKit 读取的 `buildkitd.toml` 必须单独声明私有仓库 CA，例如：
 

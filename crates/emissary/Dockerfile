@@ -1,4 +1,4 @@
-# [INPUT]: Rust 工作区与独立 Operator crate 清单。
+# [INPUT]: Rust 工作区清单与 Emissary 依赖闭包。
 # [OUTPUT]: 提供含 Git/LFS 的 Linux 原生执行节点镜像。
 # [POS]: 只交付 Emissary；Operator 使用独立镜像。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -15,7 +15,7 @@ COPY proto ./proto
 ARG ARTIFACTORY_BUILD_VERSION=0.2.0
 ARG ARTIFACTORY_BUILD_COMMIT=development
 ENV ARTIFACTORY_BUILD_VERSION=${ARTIFACTORY_BUILD_VERSION} ARTIFACTORY_BUILD_COMMIT=${ARTIFACTORY_BUILD_COMMIT}
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/build/target cargo build --locked --release --bin artifactory-emissary && cp target/release/artifactory-emissary /usr/local/bin/
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/build/target cargo build --locked --release -p artifactory-emissary --bin artifactory-emissary && cp target/release/artifactory-emissary /usr/local/bin/
 FROM ${BASE_IMAGE}
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git git-lfs openssh-client && rm -rf /var/lib/apt/lists/* && useradd --uid 10001 --create-home emissary
 COPY --from=builder /usr/local/bin/artifactory-emissary /usr/local/bin/

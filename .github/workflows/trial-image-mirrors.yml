@@ -1,4 +1,4 @@
-# [INPUT]: 固定依赖 digest 和既有稳定 Release tag。
+# [INPUT]: 数据库、S3、TLS、Registry、BuildKit 固定 digest 与稳定 Release tag。
 # [OUTPUT]: 保留原 manifest digest 的隔离试用缓存标签。
 # [POS]: tls-edge 专指 Caddy；gateway 保留给 Pingora 服务。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -41,6 +41,14 @@ jobs:
             source: docker.io/library/caddy
             tag: 2-alpine
             digest: sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+          - component: registry
+            source: ghcr.io/distribution/distribution
+            tag: 3.0.0
+            digest: sha256:4ba3adf47f5c866e9a29288c758c5328ef03396cb8f5f6454463655fa8bc83e2
+          - component: buildkit
+            source: docker.io/moby/buildkit
+            tag: v0.26.2-rootless
+            digest: sha256:0ffa2fcf6b8757c47d569b3ef0f03f9d5eb3b9ff5ce68d858f994f89b749da0c
     steps:
       - name: Install the registry copy client
         run: |

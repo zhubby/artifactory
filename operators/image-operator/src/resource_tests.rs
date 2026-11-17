@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖声明式资源生成器和模拟节点能力。
-//! [OUTPUT]: 验证架构选择、任务材料隔离与归属。
+//! [OUTPUT]: 验证架构选择、sidecar 生命周期、任务材料隔离与归属。
 //! [POS]: 不连接集群的工作负载契约回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -48,6 +48,7 @@ fn native_architecture_precedes_explicit_emulation() {
 fn workers_mount_only_their_task_and_sidecar_stops_with_job() {
     let build = build();
     let pool = pool();
+    assert!(pool.spec.native_sidecar);
     let build_job = resources::job(&build, &pool, Some("linux/amd64"), Default::default()).unwrap();
     assert!(resources::owned(&build, &build_job));
     assert_eq!(
@@ -79,6 +80,12 @@ fn workers_mount_only_their_task_and_sidecar_stops_with_job() {
 #[test]
 fn crd_fences_publication_mode_and_cancellation() {
     let crds = crate::api::crds();
+    let pool = serde_json::to_value(&crds[0]).unwrap();
+    assert_eq!(
+        pool["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"]
+            ["nativeSidecar"]["default"],
+        true
+    );
     let value = serde_json::to_value(&crds[1]).unwrap();
     let rules=value["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]["x-kubernetes-validations"].as_array().unwrap();
     assert!(
@@ -91,4 +98,117 @@ fn crd_fences_publication_mode_and_cancellation() {
             .iter()
             .any(|r| r["rule"] == "!oldSelf.cancelRequested || self.cancelRequested")
     );
+}
+
+#[test]
+fn legacy_sidecar_runs_with_worker_and_preserves_publication_isolation() {
+    let build = build();
+    let mut value = serde_json::to_value(pool()).unwrap();
+    value["spec"]["nativeSidecar"] = json!(false);
+    let pool: BuilderPool = serde_json::from_value(value).unwrap();
+    let value = serde_json::to_value(
+        resources::job(&build, &pool, Some("linux/amd64"), Default::default()).unwrap(),
+    )
+    .unwrap();
+    let pod = &value["spec"]["template"]["spec"];
+    assert!(pod["initContainers"].is_null());
+    assert_eq!(pod["containers"].as_array().unwrap().len(), 2);
+    assert_eq!(pod["containers"][1]["name"], "buildkit");
+    assert!(pod["containers"][1]["restartPolicy"].is_null());
+    assert_eq!(pod["containers"][0]["command"][0], "/bin/sh");
+    assert_eq!(pod["containers"][1]["command"][0], "/bin/sh");
+    assert_eq!(
+        pod["containers"][1]["volumeMounts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    assert_eq!(
+        value["spec"]["template"]["metadata"]["annotations"]["container.apparmor.security.beta.kubernetes.io/buildkit"],
+        "unconfined"
+    );
+    let publisher =
+        serde_json::to_value(resources::job(&build, &pool, None, Default::default()).unwrap())
+            .unwrap();
+    let pod = &publisher["spec"]["template"]["spec"];
+    assert!(pod["initContainers"].is_null());
+    assert_eq!(pod["containers"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        pod["containers"][0]["command"][0],
+        "artifactory-image-publisher"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn legacy_worker_marks_completion_and_keeps_runner_failure() {
+    use std::{fs, os::unix::fs::PermissionsExt, process::Command};
+    let dir = tempfile::tempdir().unwrap();
+    let buildctl = dir.path().join("buildctl");
+    fs::write(&buildctl, "#!/bin/sh\nexit 0\n").unwrap();
+    fs::set_permissions(&buildctl, fs::Permissions::from_mode(0o700)).unwrap();
+    let marker = dir.path().join("worker.done");
+    let script =
+        resources::LEGACY_WORKER.replace("/run/buildkit/worker.done", marker.to_str().unwrap());
+    let result = Command::new("/bin/sh")
+        .args(["-c", &script, "worker", "/bin/sh", "-c", "exit 37"])
+        .env("PATH", format!("{}:/usr/bin:/bin", dir.path().display()))
+        .status()
+        .unwrap();
+    assert_eq!(result.code(), Some(37));
+    assert!(marker.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn legacy_buildkit_exits_after_completion_marker() {
+    use std::{
+        fs,
+        os::unix::fs::PermissionsExt,
+        process::Command,
+        thread,
+        time::{Duration, Instant},
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let daemon = dir.path().join("rootlesskit");
+    let ready = dir.path().join("ready");
+    let stopped = dir.path().join("stopped");
+    fs::write(
+        &daemon,
+        format!(
+            "#!/bin/sh\ntrap 'touch {}; exit 0' TERM\ntouch {}\nwhile :; do sleep 0.1; done\n",
+            stopped.display(),
+            ready.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&daemon, fs::Permissions::from_mode(0o700)).unwrap();
+    let marker = dir.path().join("worker.done");
+    let script =
+        resources::LEGACY_BUILDKIT.replace("/run/buildkit/worker.done", marker.to_str().unwrap());
+    let mut child = Command::new("/bin/sh")
+        .args(["-c", &script, "buildkit"])
+        .env("PATH", format!("{}:/usr/bin:/bin", dir.path().display()))
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !ready.exists() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
+    fs::write(&marker, "").unwrap();
+    let result = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break Some(status);
+        }
+        if Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            break None;
+        }
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert!(ready.exists());
+    assert!(result.is_some_and(|status| status.success()));
+    assert!(stopped.exists());
 }

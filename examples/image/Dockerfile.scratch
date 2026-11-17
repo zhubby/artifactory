@@ -1,0 +1,6 @@
+# [INPUT]: 固定源码中的 hello.txt。
+# [OUTPUT]: 不依赖上游基础镜像的最小镜像。
+# [POS]: 验证受限网络中的构建、推送与摘要读取。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+FROM scratch
+COPY hello.txt /hello.txt

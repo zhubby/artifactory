@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 kube CRD、Serde 和固定执行身份。
-//! [OUTPUT]: 提供 BuilderPool、ImageBuild 与状态定义。
+//! [OUTPUT]: 提供含 sidecar 模式的 BuilderPool、ImageBuild 与状态定义。
 //! [POS]: Image Operator 的 Kubernetes 公开契约。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use kube::{CustomResource, CustomResourceExt};
@@ -27,6 +27,8 @@ pub struct Status {
 pub struct BuilderPoolSpec {
     pub worker_image: String,
     pub buildkit_image: String,
+    #[serde(default = "native_sidecar")]
+    pub native_sidecar: bool,
     #[serde(default = "pull_policy")]
     pub image_pull_policy: String,
     #[schemars(range(min = 1, max = 1000))]
@@ -49,6 +51,9 @@ pub struct BuilderPoolSpec {
     pub ca_secret: String,
     #[serde(default)]
     pub buildkit_config_map: String,
+}
+fn native_sidecar() -> bool {
+    true
 }
 fn pull_policy() -> String {
     "IfNotPresent".into()
