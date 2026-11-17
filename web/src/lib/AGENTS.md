@@ -9,7 +9,7 @@ preferences.ts: 定义语言和视觉偏好的存储键。
 repository-refs.ts: 查询项目引用，取消过期请求并隔离迟到响应。
 routes.ts: 校验工作区页面和签名设置地址。
 tenant.tsx: 提供租户作用域、导航和请求头。
-types.ts: 定义公开领域数据和签名元数据。
+types.ts: 定义领域数据、签名元数据和镜像发布来源快照。
 unsaved.tsx: 保护未保存编辑。
 utils.ts: 格式化日期、摘要和制品大小。
 

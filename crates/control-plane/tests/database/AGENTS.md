@@ -17,4 +17,7 @@ tenancy_regressions.rs: 验证租户隔离和管理权限回归。
 transport.rs: 验证执行 RPC 与传输状态。
 workspace_lifecycle.rs: 验证工作区归档、删除和故障恢复。
 
+images.rs: 验证镜像准入、轮转调度、固定发布与凭据撤销。
+image_regressions.rs: 验证排空续跑、超时重发、日志清扫和发布快照。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

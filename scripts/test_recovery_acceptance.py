@@ -1,3 +1,8 @@
+"""[INPUT]: 恢复验收的私有备份读取边界。
+[OUTPUT]: 验证符号链接拒绝与缺失密钥拒绝。
+[POS]: 本机单元测试，不访问容器与数据库。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 import os
 import tempfile
 import unittest
@@ -38,6 +43,7 @@ class RecoveryBackupGuards(unittest.TestCase):
         settings = {
             'DATABASE_URL': 'postgres://backup-only',
             'ARTIFACTORY_MASTER_KEY': 'backup-key',
+            'ARTIFACTORY_GATEWAY_TOKEN': 'backup-gateway-token',
             'ARTIFACTORY_S3_ACCESS_KEY': 'backup-access',
             'ARTIFACTORY_S3_SECRET_KEY': 'backup-secret',
             'ARTIFACTORY_S3_REGION': 'us-east-1',
@@ -48,7 +54,7 @@ class RecoveryBackupGuards(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as temporary:
             environment = Path(temporary) / 'env'
-            for missing in ('ARTIFACTORY_MASTER_KEY', 'DATABASE_URL'):
+            for missing in ('ARTIFACTORY_MASTER_KEY', 'ARTIFACTORY_GATEWAY_TOKEN', 'DATABASE_URL'):
                 with self.subTest(setting=missing):
                     environment.write_text('\n'.join(key + '=' + value for key, value in settings.items() if key != missing) + '\n')
                     with patch.dict(os.environ, {missing: 'inherited-live-secret'}):

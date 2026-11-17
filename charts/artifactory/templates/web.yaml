@@ -1,3 +1,7 @@
+# [INPUT]: 独立 Next.js 镜像和只读运行预算。
+# [OUTPUT]: 只提供页面与静态文档的 Web Deployment。
+# [POS]: Pingora 通过 web-internal Service 访问页面。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -50,44 +54,6 @@ spec:
           volumeMounts:
             - {name: web-tmp, mountPath: /tmp}
             - {name: web-cache, mountPath: /app/.next/cache}
-        # Route API/SSE before Next's build-time rewrites. All public traffic
-        # enters this gateway, so image builds do not depend on Helm DNS names.
-        - name: gateway
-          image: "{{ .Values.images.gateway.repository }}:{{ .Values.images.gateway.tag }}"
-          imagePullPolicy: {{ .Values.images.gateway.pullPolicy }}
-          command: [caddy]
-          args: [run, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
-          env:
-            - {name: XDG_CONFIG_HOME, value: /tmp/config}
-            - {name: XDG_DATA_HOME, value: /tmp/data}
-          securityContext:
-            {{- include "artifactory.containerSecurity" . | nindent 12 }}
-          ports:
-            - {name: gateway, containerPort: 8080}
-          readinessProbe:
-            httpGet: {path: /, port: gateway}
-          livenessProbe:
-            tcpSocket: {port: gateway}
-          resources:
-            {{- toYaml .Values.resources.gateway | nindent 12 }}
-          volumeMounts:
-            {{- if .Values.localSource.enabled }}
-            - {name: pki, mountPath: /run/pki, readOnly: true}
-            {{- end }}
-            - {name: config, mountPath: /etc/caddy, readOnly: true}
-            - {name: gateway-tmp, mountPath: /tmp}
       volumes:
-        {{- if .Values.localSource.enabled }}
-        - name: pki
-          secret:
-            secretName: {{ include "artifactory.pki" . }}
-            items: [{key: ca.pem, path: ca.pem}]
-        {{- end }}
-        - name: config
-          configMap:
-            name: {{ include "artifactory.fullname" . }}-config
-            items:
-              - {key: Caddyfile, path: Caddyfile}
         - {name: web-tmp, emptyDir: {sizeLimit: 128Mi}}
         - {name: web-cache, emptyDir: {sizeLimit: 128Mi}}
-        - {name: gateway-tmp, emptyDir: {sizeLimit: 16Mi}}

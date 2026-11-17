@@ -82,6 +82,7 @@ impl ControlStore {
             "artifacts" => Some(
                 "SELECT b.project_id FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE ar.id=$1",
             ),
+            "image-executions" => Some("SELECT project_id FROM image_executions WHERE id=$1"),
             "releases" => Some("SELECT project_id FROM releases WHERE id=$1"),
             _ => None,
         };

@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖私有 S3、主密钥和网关公共入口。
+//! [OUTPUT]: 提供对象校验、私有签名和有时限的网关票据。
+//! [POS]: 所有客户端对象流量通过网关，内部校验直连 S3。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::settings::Settings;
 use anyhow::{Context, Result, ensure};
 use futures::StreamExt;
@@ -7,7 +11,8 @@ use std::time::Duration;
 
 pub struct Storage {
     bucket: Bucket,
-    public_bucket: Bucket,
+    public_url: String,
+    ticket_key: [u8; 32],
     credentials: Credentials,
     client: reqwest::Client,
     temporary_dir: std::path::PathBuf,
@@ -71,12 +76,8 @@ impl Storage {
                 settings.s3_bucket.clone(),
                 settings.s3_region.clone(),
             )?,
-            public_bucket: Bucket::new(
-                settings.s3_public_endpoint.parse()?,
-                UrlStyle::Path,
-                settings.s3_bucket.clone(),
-                settings.s3_region.clone(),
-            )?,
+            public_url: settings.public_url.clone(),
+            ticket_key: settings.master_key,
             credentials: Credentials::new(&settings.s3_access_key, &settings.s3_secret_key),
             client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(300))
@@ -105,25 +106,59 @@ impl Storage {
         Ok(())
     }
 
-    pub fn upload_url(&self, key: &str) -> String {
-        self.public_bucket
-            .put_object(Some(&self.credentials), key)
-            .sign(Duration::from_secs(900))
-            .to_string()
+    fn ticket(&self, key: &str, method: &str, seconds: i64) -> Result<String> {
+        let bytes = serde_json::to_vec(
+            &serde_json::json!({"key":key,"method":method,"expires":chrono::Utc::now().timestamp()+seconds}),
+        )?;
+        let sealed = crate::crypto::seal_context(&self.ticket_key, &bytes, b"artifact-gateway/v1")?;
+        let mut url = url::Url::parse(&format!(
+            "{}/artifacts/object",
+            self.public_url.trim_end_matches('/')
+        ))?;
+        url.query_pairs_mut().append_pair("ticket", &sealed);
+        Ok(url.to_string())
     }
-
-    pub fn download_url(&self, key: &str) -> String {
-        self.public_bucket
-            .get_object(Some(&self.credentials), key)
-            .sign(Duration::from_secs(60))
-            .to_string()
+    pub fn upload_url(&self, key: &str) -> Result<String> {
+        self.ticket(key, "PUT", 900)
     }
-
-    pub fn emissary_download_url(&self, key: &str) -> String {
-        self.public_bucket
-            .get_object(Some(&self.credentials), key)
-            .sign(Duration::from_secs(900))
-            .to_string()
+    pub fn download_url(&self, key: &str) -> Result<String> {
+        self.ticket(key, "GET", 60)
+    }
+    pub fn emissary_download_url(&self, key: &str) -> Result<String> {
+        self.ticket(key, "GET", 900)
+    }
+    pub fn resolve_ticket(&self, ticket: &str, method: &str) -> Result<String> {
+        ensure!(ticket.len() <= 8192, "invalid artifact ticket");
+        let bytes = crate::crypto::open_context(&self.ticket_key, ticket, b"artifact-gateway/v1")?;
+        let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+        let expected = value["method"].as_str().unwrap_or("");
+        ensure!(
+            method == expected || (method == "HEAD" && expected == "GET"),
+            "artifact method not authorized"
+        );
+        let expires = value["expires"].as_i64().unwrap_or(0);
+        let remaining = expires - chrono::Utc::now().timestamp();
+        ensure!(remaining > 0 && remaining <= 900, "artifact ticket expired");
+        let key = value["key"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("invalid artifact key"))?;
+        let duration = Duration::from_secs(remaining as u64);
+        Ok(match method {
+            "PUT" => self
+                .bucket
+                .put_object(Some(&self.credentials), key)
+                .sign(duration),
+            "HEAD" => self
+                .bucket
+                .head_object(Some(&self.credentials), key)
+                .sign(duration),
+            "GET" => self
+                .bucket
+                .get_object(Some(&self.credentials), key)
+                .sign(duration),
+            _ => anyhow::bail!("artifact method not authorized"),
+        }
+        .to_string())
     }
 
     pub async fn put(&self, key: &str, body: Vec<u8>) -> Result<()> {
@@ -223,5 +258,87 @@ impl Storage {
             .error_for_status()
             .map_err(|error| error.without_url())?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn storage() -> Storage {
+        Storage {
+            bucket: Bucket::new(
+                "https://private.invalid:9000".parse().unwrap(),
+                UrlStyle::Path,
+                "artifacts",
+                "us-east-1",
+            )
+            .unwrap(),
+            public_url: "https://build.example.com/".into(),
+            ticket_key: [42; 32],
+            credentials: Credentials::new("fixture-access", "fixture-secret"),
+            client: reqwest::Client::new(),
+            temporary_dir: std::env::temp_dir(),
+            verifications: tokio::sync::Semaphore::new(1),
+        }
+    }
+    fn ticket(url: &str) -> String {
+        url::Url::parse(url)
+            .unwrap()
+            .query_pairs()
+            .find(|(k, _)| k == "ticket")
+            .unwrap()
+            .1
+            .into_owned()
+    }
+    #[tokio::test]
+    async fn gateway_tickets_bind_object_and_method_and_hide_s3() {
+        let storage = storage();
+        let public = storage.download_url("private/object").unwrap();
+        assert!(public.starts_with("https://build.example.com/artifacts/object?ticket="));
+        assert!(!public.contains("private.invalid") && !public.contains("fixture-access"));
+        let token = ticket(&public);
+        for method in ["GET", "HEAD"] {
+            let private =
+                url::Url::parse(&storage.resolve_ticket(&token, method).unwrap()).unwrap();
+            assert_eq!(private.host_str(), Some("private.invalid"));
+            assert_eq!(private.path(), "/artifacts/private/object");
+            assert!(private.query().unwrap().contains("X-Amz-Signature="));
+        }
+        assert!(storage.resolve_ticket(&token, "PUT").is_err());
+        let upload = ticket(&storage.upload_url("uploads/new").unwrap());
+        assert!(storage.resolve_ticket(&upload, "PUT").is_ok());
+        assert!(storage.resolve_ticket(&upload, "GET").is_err());
+        assert!(storage.resolve_ticket(&upload, "DELETE").is_err());
+    }
+    #[tokio::test]
+    async fn gateway_tickets_reject_expiry_tampering_and_other_keys() {
+        let storage = storage();
+        assert!(
+            storage
+                .resolve_ticket(
+                    &ticket(&storage.ticket("object", "GET", -1).unwrap()),
+                    "GET"
+                )
+                .is_err()
+        );
+        assert!(
+            storage
+                .resolve_ticket(
+                    &ticket(&storage.ticket("object", "GET", 901).unwrap()),
+                    "GET"
+                )
+                .is_err()
+        );
+        let valid = ticket(&storage.download_url("object").unwrap());
+        let mut changed = valid.as_bytes().to_vec();
+        changed[10] = if changed[10] == b'A' { b'B' } else { b'A' };
+        assert!(
+            storage
+                .resolve_ticket(std::str::from_utf8(&changed).unwrap(), "GET")
+                .is_err()
+        );
+        let mut other = storage;
+        other.ticket_key = [43; 32];
+        assert!(other.resolve_ticket(&valid, "GET").is_err());
     }
 }

@@ -34,9 +34,9 @@ td a:not([data-slot="button"]):hover { text-decoration: underline; text-underlin
 .status { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; color: var(--muted-foreground); font-size: 12px; font-weight: 450; white-space: nowrap; line-height: 1.5; }
 .status-small { font-size: 11px; }
 .status-small svg { width: 13px; height: 13px; }
-.status-running, .status-resolving, .status-leased, .status-needs_input, .status-waiting, .status-draining { color: var(--warning); }
+.status-running, .status-resolving, .status-leased, .status-needs_input, .status-waiting, .status-draining, .status-preparing { color: var(--warning); }
 .status-succeeded, .status-online, .status-active { color: var(--success); }
-.status-failed, .status-lost, .status-revoked { color: var(--destructive); }
+.status-failed, .status-lost, .status-revoked, .status-publish_failed { color: var(--destructive); }
 .tag { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted-foreground); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
 .notice { padding: 12px 14px; border: 1px solid var(--border); border-radius: 5px; background: var(--quiet); color: var(--muted-foreground); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
 .error-box { display: flex; align-items: flex-start; gap: 10px; margin: 12px 0; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--destructive) 25%, var(--border)); border-radius: 5px; background: color-mix(in srgb, var(--destructive) 4%, var(--background)); color: var(--destructive); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }

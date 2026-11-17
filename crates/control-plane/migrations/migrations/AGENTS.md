@@ -10,4 +10,6 @@
 0006_workspace_lifecycle.sql: 增加归档、删除和工作区写入门禁。
 0007_managed_signing.sql: 增加加密签名库、版本快照和制品证据约束。
 
+0008_image_builds.sql: 隔离镜像执行、凭据、仓库来源快照与源码授权。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

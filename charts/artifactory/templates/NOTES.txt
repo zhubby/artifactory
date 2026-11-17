@@ -1,6 +1,8 @@
 Console: {{ .Values.console.publicUrl }}
-S3 signed URL endpoint: {{ .Values.s3.publicEndpoint }}
+Artifact gateway: {{ .Values.console.publicUrl }}/artifacts/object
+S3 remains private; clients receive gateway tickets.
 gRPC TLS service: {{ include "artifactory.fullname" . }}-grpc:8443
+Internal service TLS: {{ include "artifactory.fullname" . }}-gateway-internal:8445 (ClusterIP only)
 
 Credentials and PKI are external Secrets; Helm never rotates them.
 Back up all application PVCs, the credentials Secret, and the PKI Secret together.

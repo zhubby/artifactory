@@ -2,7 +2,7 @@
 > L2 | Parent: ../../AGENTS.md
 
 Chart.yaml: 声明应用与 Chart 版本。
-values.yaml: 定义基础配置和可选签名密钥环 Secret。
+values.yaml: 定义独立网关预算、镜像任务、私有 S3 与签名 Secret。
 values-ha.yaml: 定义控制平面多副本参数。
 values-kind.yaml: 定义本机 kind 参数。
 values-trial.yaml: 定义隔离试部署参数。

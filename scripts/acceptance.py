@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""[INPUT]: 本机数据库、私有对象源与原生设备工具链。
+[OUTPUT]: 验证隔离 Control、Pingora 和 Emissary 构建链路。
+[POS]: 只创建本机进程；制品始终经网关交付。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 import argparse
 import base64
 import hashlib
@@ -19,6 +24,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
+import local_gateway
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = os.environ.get('ARTIFACTORY_ACCEPTANCE_HTTP_URL', 'http://127.0.0.1:8080')
@@ -242,22 +248,39 @@ def start_control(timeout=30):
             raise RuntimeError(f'Port {endpoint.port} is already occupied; stop the manually started control plane first.')
     except ConnectionRefusedError:
         pass
+    internal = f'127.0.0.1:{local_gateway.free_port()}'
+    environment = dict(os.environ, GIT_SSL_CAINFO=str(PKI / 'ca.pem'), ARTIFACTORY_HTTP_BIND=internal,
+                       ARTIFACTORY_PUBLIC_URL=BASE,
+                       ARTIFACTORY_GATEWAY_TOKEN=os.environ.get('ARTIFACTORY_GATEWAY_TOKEN') or uuid.uuid4().hex + uuid.uuid4().hex)
+    os.environ['ARTIFACTORY_PUBLIC_URL'] = BASE
     log_path = DIRECTORY / 'control-plane.log'
     with log_path.open('ab') as log:
-        process = subprocess.Popen([str(ROOT / 'target/debug/artifactory-control-plane')], cwd=ROOT, env=dict(os.environ, GIT_SSL_CAINFO=str(PKI / 'ca.pem')), stdout=log, stderr=log)
+        process = subprocess.Popen([str(ROOT / 'target/debug/artifactory-control-plane')], cwd=ROOT, env=environment, stdout=log, stderr=log)
+    gateway = None
 
     def ready():
         status = process.poll()
         if status is not None:
             details = log_path.read_text(errors='replace')[-8192:]
             raise RuntimeError(f'control plane exited with status {status}; see {log_path}\n{details}')
-        with urllib.request.urlopen(BASE + '/healthz', timeout=2) as response:
+        with urllib.request.urlopen('http://' + internal + '/healthz', timeout=2) as response:
             return response.status == 200
 
     try:
         wait_for(ready, timeout)
-        return process
+        gateway_log = DIRECTORY / 'gateway.log'
+        with gateway_log.open('ab') as log:
+            gateway = subprocess.Popen([str(ROOT / 'target/debug/artifactory-gateway')], cwd=ROOT,
+                env=local_gateway.environment(environment, f'{endpoint.hostname}:{endpoint.port}', 'http://' + internal), stdout=log, stderr=log)
+        def gateway_ready():
+            if gateway.poll() is not None:
+                raise RuntimeError('gateway exited; see ' + str(gateway_log))
+            with urllib.request.urlopen(BASE + '/healthz', timeout=2) as response:
+                return response.status == 200
+        wait_for(gateway_ready, timeout)
+        return local_gateway.Processes(process, gateway)
     except BaseException:
+        stop_process(gateway)
         stop_process(process)
         raise
 

@@ -1,0 +1,20 @@
+[package]
+name = "artifactory-image-registry"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow = "1"
+artifactory-image-protocol = { path = "../image-protocol" }
+futures = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "stream", "json"] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+url = "2"
+
+[dev-dependencies]
+axum = "0.8"

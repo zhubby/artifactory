@@ -77,7 +77,7 @@ Control 的 `temporaryStorage` 默认 10Gi，实际应大于“校验并发 × �
 
 上述升级命令需要由部署负责人针对实际 context、namespace 和 release 执行。本实现没有修改任何已有安装。
 
-新建安装可以直接合并 HA overlay。外部 HA 存储使用 `postgres.enabled=false`、`s3.enabled=false`，将现有凭据 Secret 中的业务与遥测数据库 URL 指向对应服务，填写 `s3.endpoint` 和 `s3.publicEndpoint`。Chart 会停止创建相应 Deployment、Service、PVC 及内置 S3 Ingress。保留已存在的卷并显式执行数据迁移，不能只改 URL 后让业务连接到空库。
+新建安装可以直接合并 HA overlay。外部 HA 存储使用 `postgres.enabled=false`、`s3.enabled=false`，将现有凭据 Secret 中的业务与遥测数据库 URL 指向对应服务，并填写私有 `s3.endpoint`。外部端点默认要求 HTTPS；私有 HTTP 须显式设置 `s3.allowHttp=true`。S3 不对客户端公开，`s3.publicEndpoint` 已废弃。Chart 会停止创建对应 Deployment、Service 和 PVC。保留已存在的卷并显式执行数据迁移，不能只改 URL 后连接空库。
 
 Control 三副本解决 Control 进程故障。默认 Web 网关、内置数据库、内置 S3、兼容 Source 的单副本仍有各自可用性边界；完整平台 HA 还需要外部存储、入口多副本和跨故障域部署。
 

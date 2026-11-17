@@ -1,3 +1,8 @@
+"""[INPUT]: 单机部署清单与私有环境初始化脚本。
+[OUTPUT]: 验证固定网关路径、私有对象源和凭据保留。
+[POS]: 仅渲染 Compose，不启动容器。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 import base64
 import json
 import os
@@ -97,6 +102,7 @@ class ProductionComposeTests(unittest.TestCase):
             ARTIFACTORY_TELEMETRY_TOKEN='non-secret-telemetry-token-fixture-1234',
             ARTIFACTORY_GRPC_HOST='control.example.invalid',
             ARTIFACTORY_MASTER_KEY=base64.b64encode(bytes(32)).decode(),
+            ARTIFACTORY_GATEWAY_TOKEN='non-secret-gateway-token-fixture-1234',
             ARTIFACTORY_S3_ACCESS_KEY='non-secret-config-fixture',
             ARTIFACTORY_S3_SECRET_KEY='non-secret-config-fixture',
             ARTIFACTORY_BOOTSTRAP_PASSWORD='non-secret-config-fixture',
@@ -131,6 +137,7 @@ class ProductionComposeTests(unittest.TestCase):
             ARTIFACTORY_TELEMETRY_TOKEN='non-secret-telemetry-token-fixture-1234',
             ARTIFACTORY_GRPC_HOST='control.example.invalid',
             ARTIFACTORY_MASTER_KEY=base64.b64encode(bytes(32)).decode(),
+            ARTIFACTORY_GATEWAY_TOKEN='non-secret-gateway-token-fixture-1234',
             ARTIFACTORY_S3_ACCESS_KEY='non-secret-config-fixture',
             ARTIFACTORY_S3_SECRET_KEY='non-secret-config-fixture',
             ARTIFACTORY_BOOTSTRAP_PASSWORD='non-secret-config-fixture',
@@ -148,6 +155,17 @@ class ProductionComposeTests(unittest.TestCase):
             ['/tmp:size=1g,mode=1777'],
             'the size and mode must belong to the same absolute tmpfs mount',
         )
+        services = manifest['services']
+        self.assertEqual(services['control-plane']['environment']['ARTIFACTORY_S3_ENDPOINT'], 'http://s3:8333')
+        self.assertEqual(services['control-plane']['environment']['ARTIFACTORY_S3_ALLOW_HTTP'], 'true')
+        self.assertNotIn('ARTIFACTORY_S3_PUBLIC_ENDPOINT', services['control-plane']['environment'])
+        self.assertEqual(services['gateway']['environment']['ARTIFACTORY_GATEWAY_TOKEN'], services['control-plane']['environment']['ARTIFACTORY_GATEWAY_TOKEN'])
+        self.assertFalse(services['s3'].get('ports'))
+        self.assertFalse(services['gateway'].get('ports'))
+        caddy = (ROOT / 'deploy/Caddyfile').read_text()
+        self.assertIn('reverse_proxy gateway:8080', caddy)
+        self.assertNotIn('s3:8333', caddy)
+        self.assertNotIn('ARTIFACTORY_S3_DOMAIN', caddy)
 
 
 class LocalRegistrationSettingsTests(unittest.TestCase):
@@ -170,6 +188,8 @@ class LocalRegistrationSettingsTests(unittest.TestCase):
                 original = (root / '.local/env').read_bytes()
                 settings = dict(line.split('=', 1) for line in original.decode().splitlines())
                 self.assertEqual(settings.get('ARTIFACTORY_REGISTRATION_ENABLED'), enabled)
+                self.assertGreaterEqual(len(settings['ARTIFACTORY_GATEWAY_TOKEN']), 32)
+                self.assertEqual(settings['ARTIFACTORY_PUBLIC_URL'], 'http://127.0.0.1:8081')
                 environment['ARTIFACTORY_REGISTRATION_ENABLED'] = 'false' if enabled == 'true' else 'true'
                 subprocess.run(command, cwd=root, env=environment, check=True, capture_output=True)
                 self.assertEqual((root / '.local/env').read_bytes(), original)

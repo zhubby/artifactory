@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖原生与 BuildKit 配方解析器。
+//! [OUTPUT]: 验证平台、路径和执行器契约。
+//! [POS]: 控制平面配方兼容性回归入口。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_control_plane::recipe::Recipe;
 
 const VALID: &str = r#"
@@ -76,7 +80,34 @@ fn all_platform_examples_obey_the_real_parser() {
         include_str!("../../../examples/windows-rust.yaml"),
         include_str!("../../../examples/android-gradle.yaml"),
         include_str!("../../../examples/ios-xcode.yaml"),
+        include_str!("../../../examples/container-image.yaml"),
     ] {
         Recipe::parse(input).unwrap();
+    }
+}
+#[test]
+fn image_targets_accept_multi_platform_builds_without_native_steps() {
+    let yaml = r#"
+version: 1
+targets:
+  container:
+    os: linux
+    arch: amd64
+    executor: buildkit
+    image:
+      name: app
+      platforms: [linux/amd64, linux/arm64]
+      allow_emulation: true
+"#;
+    assert!(artifactory_control_plane::recipe::Recipe::parse(yaml).is_ok());
+}
+
+#[test]
+fn image_targets_reject_escaping_context_and_native_commands() {
+    for extra in ["context: ../private", "dockerfile: /etc/passwd"] {
+        let yaml = format!(
+            "version: 1\ntargets:\n  container:\n    os: linux\n    arch: amd64\n    executor: buildkit\n    image:\n      name: app\n      {extra}\n"
+        );
+        assert!(artifactory_control_plane::recipe::Recipe::parse(&yaml).is_err());
     }
 }

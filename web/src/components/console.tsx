@@ -39,6 +39,7 @@ import { BuildTable } from "@/components/build-table";
 import { BuildDetail } from "@/components/build-detail";
 import { BuildWizard } from "@/components/build-wizard";
 import { ReleaseDetail } from "@/components/release-detail";
+import { ImageCatalog } from "@/components/image-catalog";
 import { ProjectForm } from "@/components/forms";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
@@ -766,6 +767,7 @@ function ProjectWorkspace({
               <Loading />
             )}
           </section>
+          {column === "artifacts" && <ImageCatalog projectId={project.id} query={query} order={order} />}
         </>
       )}
     </>

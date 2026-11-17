@@ -66,6 +66,7 @@ mod ota_management;
 pub use ota_management::Target;
 
 mod builds;
+pub mod images;
 pub use builds::{ArtifactDownload, BuildInput, LogChunk};
 
 mod scheduling;

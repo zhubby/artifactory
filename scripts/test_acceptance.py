@@ -1,3 +1,8 @@
+"""[INPUT]: 本机构建验收与可执行进程夹具。
+[OUTPUT]: 验证启动失败、成组回收和凭据隔离。
+[POS]: 不连接数据库、Docker 或已有服务。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 import importlib.util
 import json
 import os
@@ -6,6 +11,7 @@ import socket
 import tempfile
 import time
 import unittest
+import local_gateway
 from pathlib import Path
 from unittest.mock import patch
 
@@ -95,25 +101,57 @@ class ControlStartupTests(unittest.TestCase):
                 port = listener.getsockname()[1]
             binary.write_text(
                 "#!/usr/bin/env python3\n"
-                "import http.server\n"
+                "import http.server, os\n"
                 "class Handler(http.server.BaseHTTPRequestHandler):\n"
                 "    def do_GET(self):\n"
                 "        self.send_response(200 if self.path == '/healthz' else 404)\n"
                 "        self.end_headers()\n"
-                f"http.server.HTTPServer(('127.0.0.1', {port}), Handler).serve_forever()\n"
+                "host, port = os.environ['ARTIFACTORY_HTTP_BIND'].rsplit(':', 1)\n"
+                "http.server.HTTPServer((host, int(port)), Handler).serve_forever()\n"
             )
             binary.chmod(0o700)
+            gateway = binary.with_name('artifactory-gateway')
+            gateway.write_text(binary.read_text().replace('ARTIFACTORY_HTTP_BIND', 'ARTIFACTORY_GATEWAY_HTTP_BIND'))
+            gateway.chmod(0o700)
             evidence = root / "evidence"
             evidence.mkdir()
             process = None
             try:
-                with patch.multiple(acceptance, ROOT=root, DIRECTORY=evidence, BASE=f"http://127.0.0.1:{port}"):
+                with patch.multiple(acceptance, ROOT=root, DIRECTORY=evidence, BASE=f"http://127.0.0.1:{port}"), patch.dict(os.environ, {'ARTIFACTORY_S3_ENDPOINT': 'http://127.0.0.1:1', 'ARTIFACTORY_INSECURE_DEV': 'true'}):
                     process = acceptance.start_control(timeout=5)
                 self.assertIsNone(process.poll())
+                self.assertEqual(len(process.processes), 2)
+                self.assertTrue(all(child.poll() is None for child in process.processes))
             finally:
                 if process is not None:
                     process.terminate()
                     process.wait(timeout=5)
+
+
+class GatewayEnvironmentTests(unittest.TestCase):
+    def test_gateway_environment_excludes_control_and_object_credentials(self):
+        config = {'ARTIFACTORY_GATEWAY_TOKEN': 'gateway-fixture-token-' + 'x' * 32,
+                  'ARTIFACTORY_S3_ENDPOINT': 'http://127.0.0.1:19000',
+                  'ARTIFACTORY_MASTER_KEY': 'must-not-propagate',
+                  'ARTIFACTORY_S3_SECRET_KEY': 'must-not-propagate',
+                  'DATABASE_URL': 'must-not-propagate', 'ARTIFACTORY_INSECURE_DEV': 'true'}
+        result = local_gateway.environment(config, '127.0.0.1:8081', 'http://127.0.0.1:8080')
+        self.assertNotIn('must-not-propagate', result.values())
+        self.assertEqual(result['ARTIFACTORY_GATEWAY_TOKEN'], config['ARTIFACTORY_GATEWAY_TOKEN'])
+        self.assertEqual(result['ARTIFACTORY_GATEWAY_CONTROL'], 'http://127.0.0.1:8080')
+        self.assertEqual(result['ARTIFACTORY_GATEWAY_WEB'], 'http://127.0.0.1:3000')
+
+    def test_browser_ci_uses_the_public_gateway_origin(self):
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
+        self.assertIn('export ARTIFACTORY_BROWSER_URL=http://127.0.0.1:8080', workflow)
+        self.assertEqual(acceptance.BASE, 'http://127.0.0.1:8080')
+
+    def test_configured_web_origin_is_preserved_for_ai_and_recovery(self):
+        result = local_gateway.environment({'ARTIFACTORY_GATEWAY_TOKEN': 'fixture-token-' + 'x' * 32,
+            'ARTIFACTORY_S3_ENDPOINT': 'https://private.example.invalid',
+            'ARTIFACTORY_GATEWAY_WEB': 'http://127.0.0.1:39000'}, '127.0.0.1:38080', 'http://127.0.0.1:38082')
+        self.assertEqual(result['ARTIFACTORY_GATEWAY_WEB'], 'http://127.0.0.1:39000')
+        self.assertEqual(result['ARTIFACTORY_GATEWAY_CONTROL'], 'http://127.0.0.1:38082')
 
 
 class BuildFailureDiagnosticsTests(unittest.TestCase):

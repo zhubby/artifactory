@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖租户、项目和业务状态。
+//! [OUTPUT]: 持久化调度认领、固定源码和不可变 Release。
+//! [POS]: 控制平面的业务边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Scheduler persistence. Claim, publish and resolver lock lifetimes are owned here.
 use super::ControlStore;
 use crate::recipe::{Recipe, Target};
@@ -40,6 +44,7 @@ pub(crate) enum ResolvedSource {
         model: Value,
     },
     Recipe {
+        snapshot_id: Option<Uuid>,
         commit: String,
         yaml: String,
         recipe: Recipe,
@@ -198,8 +203,9 @@ impl ControlStore {
         )
         .await?;
         let complete:i64=sql::scalar(&mut transaction, "SELECT count(DISTINCT j.id) FROM jobs j JOIN attempts a ON a.job_id=j.id AND a.status='succeeded' JOIN artifacts ar ON ar.attempt_id=a.id WHERE j.build_id=$1 AND j.status='succeeded' AND ar.id=ANY($2)", params![id, &artifacts]).await?;
+        let images:Vec<Uuid>=sql::scalars(&mut transaction,"SELECT i.id FROM image_artifacts i JOIN image_executions e ON e.id=i.execution_id JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id WHERE b.id=$1 AND j.status='succeeded' AND e.status='succeeded' AND e.snapshot_id=b.source_snapshot_id AND e.plan_revision_id IS NOT DISTINCT FROM j.plan_revision_id AND e.id=(SELECT id FROM image_executions WHERE job_id=j.id AND operation='build' ORDER BY created_at DESC,id DESC LIMIT 1)",params![id]).await?;
         ensure!(
-            jobs > 0 && jobs == complete,
+            jobs > 0 && jobs == complete + images.len() as i64,
             "every target must have verified artifacts"
         );
         let release = Uuid::new_v4();
@@ -213,6 +219,14 @@ impl ControlStore {
             .exec(&mut transaction)
             .await
             .context("release version already exists or publication failed")?;
+        for image in images {
+            sql::execute(
+                &mut transaction,
+                "INSERT INTO release_images(release_id,image_id) VALUES($1,$2)",
+                params![release, image],
+            )
+            .await?;
+        }
         for artifact in artifacts {
             super::models::ReleaseArtifact::create()
                 .release_id(release)
@@ -323,7 +337,7 @@ let mut tx = tx_db.transaction().await?;
                 super::models::PlanningRun::create().id(Uuid::new_v4()).build_id(id).purpose("initial").model_config(toasty::Json((model).clone())).exec(&mut tx).await?;
                 tx.commit().await?;
             }
-            ResolvedSource::Recipe { commit, yaml, recipe, targets } => {
+            ResolvedSource::Recipe { snapshot_id, commit, yaml, recipe, targets } => {
                 let mut transaction_db = self.pool.clone();
 let mut transaction = transaction_db.transaction().await?;
                 let canceled: bool = sql::scalar(&mut transaction, "SELECT cancel_requested FROM builds WHERE id=$1 FOR UPDATE", params![id]).await?;
@@ -331,7 +345,7 @@ let mut transaction = transaction_db.transaction().await?;
                 for (name, target) in targets {
                     super::models::Job::upsert_by_build_id_and_target(id,name).id(Uuid::new_v4()).target_config(toasty::Json((serde_json::to_value(target)?).clone())).or_ignore().exec(&mut transaction).await?;
                 }
-                sql::execute(&mut transaction, "UPDATE builds SET commit_sha=$2,config_yaml=$3,config_snapshot=$4,status='queued' WHERE id=$1", params![id, commit, yaml, serde_json::to_value(recipe)?]).await?;
+                sql::execute(&mut transaction, "UPDATE builds SET commit_sha=$2,config_yaml=$3,config_snapshot=$4,source_snapshot_id=$5,status='queued' WHERE id=$1", params![id, commit, yaml, serde_json::to_value(recipe)?,snapshot_id]).await?;
                 transaction.commit().await?;
             }
         }

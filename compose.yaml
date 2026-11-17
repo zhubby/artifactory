@@ -1,3 +1,7 @@
+# [INPUT]: 私有部署凭据、固定服务源和公网 TLS 域名。
+# [OUTPUT]: 交付 Control、设备、Pingora 和私有对象服务。
+# [POS]: Caddy 只终止公网 TLS；制品字节经 Pingora 访问 S3。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: artifactory
 services:
   postgres:
@@ -46,8 +50,9 @@ services:
       ARTIFACTORY_SIGNING_KEYS_FILE: ${ARTIFACTORY_SIGNING_KEYS_FILE:-}
       ARTIFACTORY_PKI_DIR: /run/artifactory-pki
       ARTIFACTORY_DATA_DIR: /var/lib/artifactory
-      ARTIFACTORY_S3_ENDPOINT: https://${ARTIFACTORY_S3_DOMAIN:?set ARTIFACTORY_S3_DOMAIN}
-      ARTIFACTORY_S3_PUBLIC_ENDPOINT: https://${ARTIFACTORY_S3_DOMAIN}
+      ARTIFACTORY_S3_ENDPOINT: http://s3:8333
+      ARTIFACTORY_S3_ALLOW_HTTP: 'true'
+      ARTIFACTORY_GATEWAY_TOKEN: ${ARTIFACTORY_GATEWAY_TOKEN:?run scripts/init-deploy.sh}
       ARTIFACTORY_S3_BUCKET: artifactory
       ARTIFACTORY_S3_REGION: us-east-1
       ARTIFACTORY_S3_ACCESS_KEY: ${ARTIFACTORY_S3_ACCESS_KEY}
@@ -122,17 +127,34 @@ services:
     read_only: true
     tmpfs: ["/tmp:size=256m,mode=1777"]
   gateway:
+    build:
+      context: .
+      dockerfile: crates/gateway/Dockerfile
+    restart: unless-stopped
+    environment:
+      ARTIFACTORY_GATEWAY_PROFILE: all
+      ARTIFACTORY_GATEWAY_HTTP_BIND: 0.0.0.0:8080
+      ARTIFACTORY_GATEWAY_CONTROL: http://control-plane:8080
+      ARTIFACTORY_GATEWAY_REGISTRY: http://control-plane:8080
+      ARTIFACTORY_GATEWAY_WEB: http://web:3000
+      ARTIFACTORY_GATEWAY_ALLOW_HTTP_UPSTREAMS: 'true'
+      ARTIFACTORY_GATEWAY_TOKEN: ${ARTIFACTORY_GATEWAY_TOKEN:?run scripts/init-deploy.sh}
+      ARTIFACTORY_S3_ENDPOINT: http://s3:8333
+    depends_on: [control-plane, web, s3]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+  tls-edge:
     image: caddy:2-alpine
     restart: unless-stopped
     environment:
       ARTIFACTORY_DOMAIN: ${ARTIFACTORY_DOMAIN}
-      ARTIFACTORY_S3_DOMAIN: ${ARTIFACTORY_S3_DOMAIN}
     ports: [80:80, 443:443]
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on: [web, s3]
+    depends_on: [gateway]
 volumes:
   postgres:
   objects:

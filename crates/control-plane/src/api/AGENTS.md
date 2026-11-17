@@ -14,4 +14,8 @@ source_http.rs: 向规划任务和执行节点提供只读源码内容。
 telemetry.rs: 提供设备与构建时序查询接口。
 tenants.rs: 提供租户、成员与项目授权接口。
 
+images.rs: 提供项目镜像目录、凭据、回执与固定目标发布。
+
+artifact_gateway.rs: 将加密票据转换为网关内部对象请求。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

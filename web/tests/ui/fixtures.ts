@@ -389,6 +389,7 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
       [`/projects/${project.id}`]: { ...project, effective_role: role },
       [`/projects/${project.id}/refs`]: repositoryRefs,
       [`/projects/${project.id}/signing-preview`]: [],
+      [`/projects/${project.id}/image-credentials`]: [],
       "/builds": [
         build,
         {
@@ -442,6 +443,7 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
       "/releases": [release],
       [`/releases/${release.id}`]: release,
       "/artifacts": [artifact],
+      "/images": [],
       "/pools": [{ id: "pool-main", name: "default", is_default: true }],
       "/credentials": [
         {

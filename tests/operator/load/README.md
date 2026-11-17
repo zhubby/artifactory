@@ -1,5 +1,11 @@
 # Runtime 队列与卸压验证
 
+集群脚本复用 `acceptance/run.py` 创建的独立服务栈。
+先用 `acceptance/prepare.py` 构建 Agent Operator、Runtime、Source、Control、Emissary 与 Pingora 镜像。
+API 与制品票据经 `gateway` Service 访问，设备 mTLS 连接控制平面。
+主机原生验收公告同一网关的本机端口，不公告 S3 地址。
+旧安装缺少网关令牌时，创建新的隔离验收命名空间。
+
 `admission.py` 使用独立 PostgreSQL schema 写入 10,000 个运行并并发调用实际 Runtime 准入 API，断言 pool=8、每项目=2、其余 9,992 个仍未开始 deadline/消耗调用。只需设置一次性测试库 `ARTIFACTORY_TEST_DATABASE_URL`；证据保存在 `.local/operator-load/`，不输出连接凭据。
 
 ```sh
@@ -18,3 +24,5 @@ python3 tests/operator/load/active.py --context <saved-context> --namespace <sav
 `active.py` 验证实际 Pi Pod（每个运行真实 Node/Pi 循环并在模型请求等待），检查活动配额、排队预算、Runtime/Operator 重启后的累计预算与固定源码，再并发取消并观察授权撤销和 Pod 清理。恢复检查等待旧 Runtime/Operator Pod UID 全部消失，确认每个原 run 在新 Runtime 新增模型调用预留，并再保持 15 秒稳定；仅 Deployment rollout 完成不算恢复。记录业务 API、各服务及 etcd/apiserver 的 CPU/RSS/网络、PG 连接/等待、AgentRun 数量及 Kubernetes API 变更计数。启动前根据 Pod 上限和请求内存检查容量；默认 25m/64Mi 是本地 fixture 请求值，生产资源要按真实模型和上下文大小重测。100/500/1,000 档位需要各自的真实资源，不能用数据库排队数代替活动 Pod。
 
 10,000 排队的完整准入验证使用 `admission.py`；活动脚本可另设 `--queued` 验证未准入运行不产生同量 Pod/CRD。超过本机资源时应使用更大的独立测试集群，保留实际档位、采样窗口、故障与取消证据。
+
+[PROTOCOL]: Update this header on change, then check AGENTS.md

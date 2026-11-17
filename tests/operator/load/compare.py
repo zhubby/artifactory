@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Compare real Poll and Kubernetes Pi against one frozen repository in kind.
-
-Reuses only an existing private acceptance installation. Credentials remain in
-memory/Kubernetes Secrets; the exported evidence contains measurements and IDs.
+"""[INPUT]: 已保存的隔离服务栈和固定随机源码。
+[OUTPUT]: 比较 Poll 与 Kubernetes 规划的实际资源和延迟。
+[POS]: 复用网关交付路径；证据只记录指标与身份。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
 import hashlib
@@ -187,7 +187,7 @@ class Comparison:
 
     def run(self):
         # Poll's Git client must trust the same private fixture CA as Source.
-        self.a.kubectl('set', 'env', 'deployment/control-plane', 'GIT_SSL_CAINFO=/run/pki/ca.pem', 'GIT_TRACE2_EVENT=/tmp/load-git-trace.json', 'ARTIFACTORY_PUBLIC_URL=http://control-plane:8080')
+        self.a.kubectl('set', 'env', 'deployment/control-plane', 'GIT_SSL_CAINFO=/run/pki/ca.pem', 'GIT_TRACE2_EVENT=/tmp/load-git-trace.json', 'ARTIFACTORY_PUBLIC_URL=http://gateway:8080')
         self.a.kubectl('rollout', 'status', 'deployment/control-plane', '--timeout=120s')
         self.a.resume()
         original_pool = json.loads(self.a.kubectl("get", "agentpool", "default", "-o", "json"))["spec"]

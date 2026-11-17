@@ -9,6 +9,9 @@
 | windows-rust | Windows amd64 / Rust / Windows SDK | 证书库身份、时间戳服务器及服务账户私钥权限 |
 | android-gradle | Linux amd64 / JDK / Android SDK | Gradle wrapper、unsigned APK 路径、zipalign / apksigner / keystore |
 | ios-xcode | macOS arm64 / Xcode / Keychain | 提供 build / export / verify 脚本，匹配 Team、entitlements、provisioning profile 和导出选项 |
+| container-image | Kubernetes amd64 + arm64 / rootless BuildKit | 使用 `image/Dockerfile` 验证双平台构建、OCI Index 和摘要拉取 |
+
+镜像示例使用本项目源码中的 `examples/image/Dockerfile`。`context` 和 `dockerfile` 均相对源码根目录；Dockerfile 路径不相对 context。该示例关闭模拟构建，需要两个架构的原生节点。部署与凭据见[镜像构建指南](../docs/image-builds.md)。
 
 iOS 的 verify 脚本应解包 IPA、对真实 `.app` 及嵌套代码执行原生签名校验、检查 profile / entitlements / bundle ID 与所选分发方式，而不是仅检查文件存在。Android 应在签名前完成要求的对齐，验证签名方案及目标 API 的兼容性。复杂项目的原生脚本由仓库维护，平台不猜测签名命令。
 

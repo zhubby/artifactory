@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖租户、项目和业务状态。
+//! [OUTPUT]: 校验镜像启动配置并启动业务与调度服务。
+//! [POS]: 控制平面的业务边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
 use artifactory_control_plane::{
     api, auth,
@@ -89,6 +93,7 @@ async fn main() -> Result<()> {
         return tokio::select! { result=http=>result, _=shutdown()=>Ok(()) };
     }
     scheduler::start(state.clone());
+    artifactory_control_plane::images::start(state.clone())?;
     let lifecycle = state.clone();
     let drain_seconds = settings.control.drain_seconds;
     tokio::spawn(async move {

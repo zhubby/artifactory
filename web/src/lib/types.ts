@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供控制台领域类型和签名公开元数据。
+ * [OUTPUT]: 提供领域类型、签名元数据和镜像发布来源快照。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -172,6 +172,13 @@ export interface Artifact {
   build_id?: string;
   attempt_status?: string;
 }
+export interface ImageCredential { id: string; name: string; kind: "registry" | "secret"; enabled: boolean }
+export interface ImageExecution {
+  parent_id: string | null; tags: string[];
+  id: string; job_id: string; operation: "build" | "publish"; status: string;
+  spec: { name: string; platforms: string[] }; root_digest: string | null;
+  destination_repository: string; destination_credential: string | null; destination_registry?: string | null; error: string | null;
+}
 export interface Build {
   number: number;
   project_slug: string;
@@ -194,6 +201,8 @@ export interface Build {
   finished_at: string | null;
   jobs?: Job[];
   targets?: { id: string; target: string; status: string }[];
+  image_executions?: ImageExecution[];
+  image_registry?: string;
   artifacts?: Artifact[];
   config_yaml?: string;
   config_snapshot?: Record<string, unknown>;
@@ -344,6 +353,23 @@ export interface Release {
   created_at: string;
   artifact_count: number;
   artifacts?: Artifact[];
+  images?: ReleaseImage[];
+  image_registry?: string | null;
+}
+export interface ReleaseImage {
+  id: string;
+  name: string;
+  target: string;
+  repository: string;
+  digest: string;
+  platforms: { platform: string; digest: string }[];
+}
+export interface ImageArtifact extends ReleaseImage {
+  project_id: string;
+  project_slug: string;
+  build_number: number;
+  registry?: string | null;
+  created_at: string;
 }
 export interface Pool {
   is_default?: boolean;

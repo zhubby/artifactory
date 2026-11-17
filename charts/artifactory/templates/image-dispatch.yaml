@@ -1,0 +1,31 @@
+# [INPUT]: ImageBuild 命名空间和 Control 服务身份。
+# [OUTPUT]: 任务声明与任务 Secret 的最小命名空间权限。
+# [POS]: Control 下发任务；Image Operator 仅编排 Job。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+{{- if .Values.imageBuilds.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: {{ include "artifactory.fullname" . }}-image-dispatch}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "artifactory.fullname" . }}-image-dispatch
+  namespace: {{ .Values.imageBuilds.namespace | default .Release.Namespace }}
+rules:
+  - apiGroups: [images.artifactory.dev]
+    resources: [imagebuilds]
+    verbs: [get, create, patch]
+  - apiGroups: ['']
+    resources: [secrets]
+    verbs: [get, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "artifactory.fullname" . }}-image-dispatch
+  namespace: {{ .Values.imageBuilds.namespace | default .Release.Namespace }}
+subjects:
+  - {kind: ServiceAccount, name: {{ include "artifactory.fullname" . }}-image-dispatch, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ include "artifactory.fullname" . }}-image-dispatch}
+{{- end }}

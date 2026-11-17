@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖配方、源码证据和原生节点 Placement。
+//! [OUTPUT]: 校验并密封 AI 执行计划。
+//! [POS]: 镜像目标由 Image Operator 排程，禁止节点 Placement。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{crypto, recipe::Recipe};
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -39,9 +43,11 @@ impl ExecutionPlan {
         let mut plan: Self = serde_json::from_value(value)?;
         plan.recipe = Recipe::parse(&serde_yaml::to_string(&plan.recipe)?)?;
         ensure!(
-            plan.placements
-                .keys()
-                .all(|key| plan.recipe.targets.contains_key(key)),
+            plan.placements.keys().all(|key| plan
+                .recipe
+                .targets
+                .get(key)
+                .is_some_and(|t| t.executor == "native")),
             "placement references unknown target"
         );
         for placement in plan.placements.values() {

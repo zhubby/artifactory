@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Isolated kind acceptance. Only changes this harness namespace and release.
-
-Requires three arm64 images in the cluster registry: operator, operator-fixture,
-and operator-pi. Uses the real Pi loop and Rust Emissary with
-a deterministic model fixture. Private credentials/logs stay in .local/.
+"""[INPUT]: 独立服务镜像、临时命名空间和确定性模型夹具。
+[OUTPUT]: 验证 Agent 规划、源码、原生构建与网关制品交付。
+[POS]: 仅修改指定验收命名空间；私密证据保存在 .local/。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
 import base64
@@ -112,6 +111,24 @@ class Acceptance:
     def service(self, name, ports):
         return {'apiVersion': 'v1', 'kind': 'Service', 'metadata': {'name': name}, 'spec': {'selector': {'app': name}, 'ports': [{'name': 'p' + str(port), 'port': port, 'targetPort': port} for port in ports]}}
 
+    def gateway(self, token):
+        env = {
+            'ARTIFACTORY_GATEWAY_PROFILE': 'all',
+            'ARTIFACTORY_GATEWAY_HTTP_BIND': '0.0.0.0:8080',
+            'ARTIFACTORY_GATEWAY_CONTROL': 'http://control-plane:8080',
+            'ARTIFACTORY_GATEWAY_REGISTRY': 'http://control-plane:8080',
+            'ARTIFACTORY_GATEWAY_WEB': 'http://control-plane:8080',
+            'ARTIFACTORY_GATEWAY_DEVICE': 'control-plane:8443',
+            'ARTIFACTORY_GATEWAY_TOKEN': token,
+            'ARTIFACTORY_S3_ENDPOINT': 'http://s3:8333',
+            'ARTIFACTORY_INSECURE_DEV': 'true',
+        }
+        secret = self.secret('gateway', env)
+        deployment = self.workload('gateway', self.image('gateway'), [], secret='gateway')
+        deployment['spec']['template']['spec']['automountServiceAccountToken'] = False
+        deployment['spec']['template']['spec']['containers'][0]['readinessProbe'] = {'httpGet': {'path': '/healthz', 'port': 8080}}
+        return secret, deployment, self.service('gateway', [8080])
+
     def sql(self, database, statement):
         return self.kubectl('exec', 'service/postgres', '--', 'psql', '-U', 'admin', '-d', database, '-qAt', '-v', 'ON_ERROR_STOP=1', '-c', statement).strip()
 
@@ -124,7 +141,7 @@ class Acceptance:
         self.command(['openssl', 'x509', '-req', '-in', str(pki/'server.csr'), '-CA', str(pki/'ca.pem'), '-CAkey', str(pki/'ca.key'), '-CAcreateserial', '-out', str(pki/'server.pem'), '-days', '2', '-extfile', str(pki/'ext')])
         self.command(['openssl', 'verify', '-x509_strict', '-CAfile', str(pki/'ca.pem'), str(pki/'server.pem')])
         self.apply(self.secret('acceptance-pki', {name: (pki/name).read_text() for name in ['ca.key','ca.pem','server.key','server.pem']}), self.secret('service-tls', {'ca.crt': (pki/'ca.pem').read_text(), 'tls.crt': (pki/'server.pem').read_text(), 'tls.key': (pki/'server.key').read_text()}))
-        password = secrets.token_hex(20); token = secrets.token_hex(32); admin = secrets.token_hex(20)
+        password = secrets.token_hex(20); token = secrets.token_hex(32); admin = secrets.token_hex(20); gateway_token = secrets.token_hex(32)
         self.token=token
         self.tls=ssl.create_default_context(cafile=str(pki/'ca.pem'))
         databases = "\n".join(f"CREATE USER {role} PASSWORD '{password}'; CREATE DATABASE {role} OWNER {role};\n\\connect {role}\nCREATE EXTENSION IF NOT EXISTS timescaledb;\n\\connect postgres" for role in ['business','planner','sources','telemetry'])
@@ -146,20 +163,21 @@ class Acceptance:
         control['GIT_SSL_CAINFO']='/run/pki/ca.pem'
         telemetry=dict(DATABASE_URL=f'postgres://telemetry:{password}@postgres:5432/telemetry',ARTIFACTORY_BUSINESS_DATABASE_URL=f'postgres://business:{password}@postgres:5432/business',ARTIFACTORY_TELEMETRY_TOKEN=token)
         control.update(ARTIFACTORY_TELEMETRY_ENDPOINT='https://artifactory-telemetry:8444',ARTIFACTORY_TELEMETRY_URL='https://artifactory-telemetry:8093',ARTIFACTORY_TELEMETRY_TOKEN=token)
-        # Device Pods must reach the legacy source origin; localhost is only
-        # the harness port-forward, not the application's advertised address.
-        control['ARTIFACTORY_PUBLIC_URL']='http://control-plane:8080'
+        # 设备使用集群网关，主机客户端通过端口转发访问同一入口。
+        control['ARTIFACTORY_PUBLIC_URL']='http://gateway:8080'
+        control['ARTIFACTORY_GATEWAY_TOKEN']=gateway_token
         self.origin=control['ARTIFACTORY_PUBLIC_URL']
-        self.apply(self.secret('telemetry',telemetry),self.secret('runtime',runtime),self.secret('source',source),self.secret('control-plane',control),self.workload('control-plane',self.image('operator'),['control-plane','serve'],secret='control-plane',pki=True),self.service('control-plane',[8080,8443]),self.workload('upstream',self.image('operator-fixture'),[],env={'FIXTURE_ARCH':self.arch},pki=True),self.service('upstream',[9443]))
+        self.apply(self.secret('telemetry',telemetry),self.secret('runtime',runtime),self.secret('source',source),self.secret('control-plane',control),self.workload('control-plane',self.image('control-plane'),['serve'],secret='control-plane',pki=True),self.service('control-plane',[8080,8443]),*self.gateway(gateway_token),self.workload('upstream',self.image('operator-fixture'),[],env={'FIXTURE_ARCH':self.arch},pki=True),self.service('upstream',[9443]))
         self.wait(lambda:self.sql('business','SELECT 1')=='1')
-        self.command(['kubectl','--context',self.context,'apply','-f',str(ROOT/'operator/config/crd/resources.yaml')])
-        values={'image':{'repository':'localhost:5001/artifactory/operator','tag':self.image_tag,'pullPolicy':self.pull_policy},'runtime':{'secretName':'runtime'},'telemetry':{'secretName':'telemetry','pkiSecretName':'acceptance-pki'},'sourcePool':{'secretName':'source','storageSize':'1Gi'},'agentPool':{'image':self.image('operator-pi'),'maxActive':2,'maxPerProject':1},'tls':{'secretName':'service-tls'},'controlUrl':'https://upstream:9443','networkPolicy':{'enabled':True}}
+        self.command(['kubectl','--context',self.context,'apply','-f',str(ROOT/'operators/agent-operator/config/crd/resources.yaml')])
+        values={'image':{'repository':'localhost:5001/artifactory/agent-operator','tag':self.image_tag,'pullPolicy':self.pull_policy},'runtime':{'secretName':'runtime','image':{'repository':'localhost:5001/artifactory/planner-runtime','tag':self.image_tag}},'telemetry':{'secretName':'telemetry','pkiSecretName':'acceptance-pki','image':{'repository':'localhost:5001/artifactory/control-plane','tag':self.image_tag}},'sourcePool':{'secretName':'source','storageSize':'1Gi','image':{'repository':'localhost:5001/artifactory/source-service','tag':self.image_tag}},'agentPool':{'image':self.image('operator-pi'),'maxActive':2,'maxPerProject':1},'tls':{'secretName':'service-tls'},'controlUrl':'https://upstream:9443','networkPolicy':{'enabled':True}}
         path=self.run/'values.json';path.write_text(json.dumps(values))
-        self.command(['helm','--kube-context',self.context,'upgrade','--install','native',str(ROOT/'charts/artifactory-operator'),'-n',self.ns,'-f',str(path)])
+        self.command(['helm','--kube-context',self.context,'upgrade','--install','native',str(ROOT/'charts/artifactory-agent-operator'),'-n',self.ns,'-f',str(path)])
         self.kubectl('rollout','status','deploy/control-plane','--timeout=180s')
-        self.forward('service/control-plane','38081:8080')
+        self.kubectl('rollout','status','deploy/gateway','--timeout=180s')
+        self.forward('service/gateway','38081:8080')
         self.forward('service/upstream','39443:9443')
-        self.wait(lambda:self.api('/healthz').get('status')=='ok')
+        self.wait(lambda:self.api('/api/v1/auth/config'))
         self.enroll(admin)
 
     def enroll(self, admin):
@@ -187,8 +205,10 @@ class Acceptance:
         self.token=base64.b64decode(secret['ARTIFACTORY_SERVICE_TOKEN']).decode()
         self.tls=ssl.create_default_context(cafile=str(self.run/'pki/ca.pem'))
         self.origin=self.kubectl('exec','deploy/control-plane','--','printenv','ARTIFACTORY_PUBLIC_URL').strip()
-        self.forward('service/control-plane','38081:8080');self.forward('service/upstream','39443:9443')
-        self.wait(lambda:self.api('/healthz').get('status')=='ok')
+        if 'ARTIFACTORY_GATEWAY_TOKEN' not in secret:
+            raise ValueError('Resume requires a gateway-aware acceptance installation')
+        self.forward('service/gateway','38081:8080');self.forward('service/upstream','39443:9443')
+        self.wait(lambda:self.api('/api/v1/auth/config'))
         self.enroll(base64.b64decode(secret['ARTIFACTORY_BOOTSTRAP_PASSWORD']).decode())
 
     def forward(self, resource, ports):
@@ -200,6 +220,20 @@ class Acceptance:
         opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=self.tls))
         with opener.open(request,timeout=20) as response:
             return response.read().decode()
+
+    def verify_artifact_gateway(self, artifact):
+        request = urllib.request.Request(self.base + '/api/v1/artifacts/' + artifact['id'] + '/download', headers={'Accept': 'application/json'})
+        with self.http.open(request, timeout=20) as response:
+            url = urlsplit(json.load(response)['url'])
+        self.check('artifact download advertises the gateway instead of private S3', url.netloc == urlsplit(self.origin).netloc and url.path == '/artifacts/object' and bool(parse_qs(url.query).get('ticket')))
+        forwarded = self.base + url.path + '?' + url.query
+        with self.http.open(forwarded, timeout=20) as response:
+            data = response.read()
+        self.check('artifact bytes download through the gateway', hashlib.sha256(data).hexdigest() == artifact['sha256'])
+        with self.http.open(urllib.request.Request(forwarded, method='HEAD'), timeout=20) as response:
+            self.check('artifact gateway preserves HEAD length', int(response.headers['Content-Length']) == len(data) and not response.read())
+        with self.http.open(urllib.request.Request(forwarded, headers={'Range': 'bytes=0-7'}), timeout=20) as response:
+            self.check('artifact gateway preserves Range', response.status == 206 and response.read() == data[:8])
 
     def verify(self):
         business_bytes_before=int(self.sql('business','SELECT coalesce(sum(git_download_bytes+lfs_download_bytes),0) FROM source_repositories'))
@@ -229,6 +263,7 @@ class Acceptance:
         self.check('source snapshot is durable in Source database',self.sql('sources',f"SELECT durable FROM source_snapshots WHERE id='{origin}'")=='t')
         self.check('Rust Emissary artifact verified by control',bool(detail['artifacts']))
         self.check('artifact has expected content hash',detail['artifacts'][0]['sha256']==hashlib.sha256(b'operator-native-ok\n').hexdigest())
+        self.verify_artifact_gateway(detail['artifacts'][0])
         self.check('lost acceptance acknowledgement returns original result without new inference','fixture_dropped_accept_acks 1' in self.service_request(39443,'/metrics') and calls==4)
         self.evidence['calls']=calls;self.evidence['source_snapshot_id']=origin
         self.evidence['resources']=json.loads(self.kubectl('get','agentruns,sourcepools,sourcesnapshots,pvc','-o','json'))
@@ -256,12 +291,12 @@ class Acceptance:
         restored=json.loads(self.service_request(38090,'/v1/inspect',{'snapshot_id':snapshot,'name':'read_file','arguments':{'path':'README.md'}}))
         self.check('PVC cache loss restores frozen source while Git upstream is unavailable','Build with sh build.sh.' in restored['content'])
         self.service_request(39443,'/test/mode',{})
-        lease=json.loads(self.kubectl('get','lease','artifactory-operator','-o','json'))
+        lease=json.loads(self.kubectl('get','lease','artifactory-agent-operator','-o','json'))
         holder=lease['spec']['holderIdentity']
-        pods=json.loads(self.kubectl('get','pods','-l','app.kubernetes.io/name=artifactory-operator','-o','json'))['items']
+        pods=json.loads(self.kubectl('get','pods','-l','app.kubernetes.io/name=artifactory-agent-operator','-o','json'))['items']
         leader=next(p['metadata']['name'] for p in pods if p['metadata']['uid']==holder)
         self.kubectl('delete','pod',leader,'--wait=false')
-        self.wait(lambda:json.loads(self.kubectl('get','lease','artifactory-operator','-o','json'))['spec']['holderIdentity']!=holder,60)
+        self.wait(lambda:json.loads(self.kubectl('get','lease','artifactory-agent-operator','-o','json'))['spec']['holderIdentity']!=holder,60)
         self.check('two Operator replicas elect a replacement after leader deletion',True)
         # Hold a real model request before its headers, then kill the owning Pi Pod.
         self.service_request(39443,'/test/mode',{'hold':True})
@@ -352,9 +387,9 @@ class Acceptance:
                    {r['kind']:r['metadata']['uid'] for r in before}=={r['kind']:r['metadata']['uid'] for r in after})
         metadata=json.loads(self.service_request(38090,'/v1/metadata',{'snapshot_id':self.evidence['source_snapshot_id']}))
         self.check('durable source remains readable after Operator release removal',bool(metadata['digest']))
-        self.command(['helm','--kube-context',self.context,'upgrade','--install','native',str(ROOT/'charts/artifactory-operator'),'-n',self.ns,'-f',str(self.run/'values.json')])
+        self.command(['helm','--kube-context',self.context,'upgrade','--install','native',str(ROOT/'charts/artifactory-agent-operator'),'-n',self.ns,'-f',str(self.run/'values.json')])
         self.kubectl('rollout','status','deploy/native-runtime','--timeout=120s')
-        self.kubectl('rollout','status','deploy/native-operator','--timeout=120s')
+        self.kubectl('rollout','status','deploy/native-agent-operator','--timeout=120s')
         self.wait(lambda:json.loads(self.kubectl('get','sourcepool','sources','-o','json')).get('status',{}).get('phase')=='Ready',60)
         self.check('independent release reinstalls against retained Source and databases',True)
         self.evidence['images']=self.images()
@@ -362,7 +397,7 @@ class Acceptance:
 
     def cleanup(self):
         for process in self.processes:process.terminate()
-        for name in ['control-plane','native-operator','native-runtime','native-telemetry','upstream','device']:
+        for name in ['control-plane','gateway','native-agent-operator','native-runtime','native-telemetry','upstream','device']:
             try:(self.run/(name+'.log')).write_text(self.kubectl('logs','deploy/'+name,'--all-containers=true','--tail=500'))
             except RuntimeError:pass
         # Keep the namespace for inspection; explicit user cleanup is separate.

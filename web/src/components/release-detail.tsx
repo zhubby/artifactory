@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖不可变发布及镜像摘要 API。
+ * [OUTPUT]: 展示原生制品和按摘要固定的镜像。
+ * [POS]: 发布页面只读取发布时保存的结果。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 import { Activity, GitBranch, ShieldCheck } from "lucide-react";
 import { useUI } from "@/components/providers";
@@ -6,6 +12,7 @@ import { Link } from "@/lib/tenant";
 import { buildPath } from "@/lib/routes";
 import {
   ArtifactTable,
+  CopyButton,
   ErrorBox,
   Loading,
   PageTitle,
@@ -68,6 +75,17 @@ export function ReleaseDetail({
         />
         <ArtifactTable artifacts={release.artifacts || []} />
       </section>
+      {!!release.images?.length && <section className="panel mt-5">
+        <SectionTitle title={t("images.results")} />
+        <div className="space-y-4 p-5">{release.images.map(image => {
+          const ref = `${release.image_registry ? `${release.image_registry.replace(/^https?:\/\//, "").replace(/\/$/, "")}/` : ""}${image.repository}@${image.digest}`;
+          return <article key={image.id} className="space-y-2">
+            <strong>{image.name} · {image.target}</strong>
+            <p className="break-all font-mono text-xs">{ref} <CopyButton value={ref} /></p>
+            <p className="text-xs text-muted-foreground">{image.platforms.map(item => item.platform).join(" · ")}</p>
+          </article>;
+        })}</div>
+      </section>}
       <div className="notice mt-5">{t("releases.notice")}</div>
     </>
   );

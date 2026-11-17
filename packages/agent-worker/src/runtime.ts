@@ -88,6 +88,10 @@ unassigned targets; copy their resource thresholds unchanged. Scripts, platform
 and signing authorization are immutable.
 For initial/revision tasks, finish by calling submit_plan with summary, evidence,
 scripts, recipe and placements. For placement tasks, finish with submit_placements.
+For OCI images, use executor:buildkit and os:linux with image:{name,context,
+dockerfile,platforms:["linux/amd64","linux/arm64"],pool}. Omit native steps,
+artifacts, signing and device placements for image targets. Use only supplied
+credential UUID references for image secrets and registry logins.
 Put version:1 inside recipe (recipe.version), never at the outer plan level.
 Give each step an explicit timeout_seconds no greater than its target timeout.
 Do not finish with a prose-only plan. A tool error is feedback to correct the plan.
@@ -97,7 +101,8 @@ large generated/vendor trees. No artifactory.yaml or .pi files are required.`;
 const text = { type: "string" };
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object", properties, required, additionalProperties: false });
 const step = object({ name: text, phase: { type: "string", enum: ["build", "sign", "verify"] }, shell: { type: "string", enum: ["bash", "sh", "powershell", "pwsh"] }, run: text, timeout_seconds: { type: "integer", minimum: 1 } }, ["name", "run"]);
-const target = object({ os: { type: "string", enum: ["linux", "darwin", "windows"] }, arch: { type: "string", enum: ["amd64", "arm64"] }, executor: { type: "string", const: "native" }, labels: { type: "object", additionalProperties: text }, capabilities: { type: "array", items: text }, signing_profiles: { type: "array", items: text }, application_platform: { type: "string", enum: ["macos", "android", "linux", "windows"] }, signing_outputs: { type: "array", items: object({ path: text, bundle: text }, ["path"]) }, timeout_seconds: { type: "integer", minimum: 1 }, steps: { type: "array", items: step }, artifacts: { type: "array", items: text } }, ["os", "arch", "steps", "artifacts"]);
+const image = object({name:text,context:text,dockerfile:text,platforms:{type:"array",minItems:1,maxItems:2,uniqueItems:true,items:{type:"string",enum:["linux/amd64","linux/arm64"]}},pool:text,allow_emulation:{type:"boolean"},build_args:{type:"object",additionalProperties:text},secrets:{type:"object",additionalProperties:{type:"string",format:"uuid"}},pull_credentials:{type:"array",items:{type:"string",format:"uuid"}},tags:{type:"array",items:text}},["name"]);
+const target = object({ os: { type: "string", enum: ["linux", "darwin", "windows"] }, arch: { type: "string", enum: ["amd64", "arm64"] }, executor: { type: "string", enum: ["native", "buildkit"] }, image, labels: { type: "object", additionalProperties: text }, capabilities: { type: "array", items: text }, signing_profiles: { type: "array", items: text }, application_platform: { type: "string", enum: ["macos", "android", "linux", "windows"] }, signing_outputs: { type: "array", items: object({ path: text, bundle: text }, ["path"]) }, timeout_seconds: { type: "integer", minimum: 1 }, steps: { type: "array", items: step }, artifacts: { type: "array", items: text } }, ["os", "arch"]);
 const placement = object({ candidates: { type: "array", minItems: 1, maxItems: 8, items: object({ node_id: {type:"string",format:"uuid"}, metadata_digest: {type:"string",pattern:"^[a-f0-9]{64}$"}, reason: text }, ["node_id","metadata_digest","reason"]) }, resources: object({ min_available_memory_bytes:{type:"integer",minimum:0}, min_build_disk_available_bytes:{type:"integer",minimum:0}, max_cpu_percent:{type:"number",minimum:0,maximum:100} }) }, ["candidates"]);
 const placements = {type:"object",additionalProperties:placement};
 const plan = object({

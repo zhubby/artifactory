@@ -1,6 +1,6 @@
-//! [INPUT]: 依赖 Serde、签名输出契约与阶段校验。
-//! [OUTPUT]: 提供历史配方和 AI 目标的严格解析及环境参数。
-//! [POS]: 所有设备执行计划共用的基础契约。
+//! [INPUT]: 依赖 Serde、镜像目标、签名输出与阶段校验。
+//! [OUTPUT]: 提供原生和 BuildKit 目标的严格解析及环境参数。
+//! [POS]: 设备执行与 Kubernetes 镜像执行共用的计划契约。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use std::collections::BTreeMap;
 
@@ -30,6 +30,8 @@ pub struct ReleaseRule {
 #[serde(deny_unknown_fields)]
 pub struct Target {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<artifactory_image_protocol::ImageSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub application_platform: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub signing_outputs: Vec<artifactory_emissary_protocol::signing::Output>,
@@ -45,7 +47,9 @@ pub struct Target {
     pub signing_profiles: Vec<String>,
     #[serde(default = "job_timeout")]
     pub timeout_seconds: u32,
+    #[serde(default)]
     pub steps: Vec<Step>,
+    #[serde(default)]
     pub artifacts: Vec<String>,
 }
 
@@ -107,8 +111,33 @@ impl Recipe {
             }
             ensure!(!name.is_empty() && name.len() <= 80, "invalid target name");
             ensure!(
-                target.executor == "native",
-                "container executor is not implemented"
+                target.timeout_seconds > 0 && target.timeout_seconds <= 86400,
+                "invalid job timeout"
+            );
+            if target.executor == "buildkit" {
+                let image = target
+                    .image
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("BuildKit requires an image target"))?;
+                image.validate()?;
+                ensure!(
+                    target.os == "linux" && ["amd64", "arm64"].contains(&target.arch.as_str()),
+                    "BuildKit requires a Linux target"
+                );
+                ensure!(
+                    target.steps.is_empty()
+                        && target.artifacts.is_empty()
+                        && target.signing_profiles.is_empty()
+                        && target.signing_outputs.is_empty()
+                        && target.labels.is_empty()
+                        && target.capabilities.is_empty(),
+                    "image targets use Dockerfile, builder pool and image outputs"
+                );
+                continue;
+            }
+            ensure!(
+                target.executor == "native" && target.image.is_none(),
+                "unsupported executor or image on native target"
             );
             ensure!(
                 ["linux", "darwin", "windows"].contains(&target.os.as_str()),

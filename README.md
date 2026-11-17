@@ -21,6 +21,8 @@
 - Next.js/React/shadcn 风格 Radix 组件/Tailwind 控制台，项目、构建矩阵、SSE 日志、节点、制品、Release、身份与授权均使用真实 API。
 - HTTPS/SSH Git 凭据加密托管；提交、仓库地址、凭据引用、配置、参数按构建快照固定。
 - 节点证书认证、一次性注册、角色与项目范围 Token、S3 内容校验、签名引用的项目 / 节点双向授权。
+- 独立 Image Operator 在 Kubernetes 启动 BuildKit，支持 Linux amd64/arm64、完整 OCI Index、内建私有 S3 仓库和外部仓库独立发布；部署与验收边界见[镜像构建与网关](docs/image-builds.md)。
+- Pingora 为控制入口、内建仓库和制品提供反向代理；S3 保持私有。设备入口透传原有 mTLS，数据与设备连接使用独立预算。
 - 原生执行仅适用于可信代码，不是安全沙箱。不兼容 GitHub Actions YAML、通信协议或插件生态。
 
 **状态：已提供可执行首版与自动化验收；不能将本机联测或交叉编译视为三类宿主、五种应用目标全部验收。实际证据与缺口见 [验收记录](docs/acceptance.md)。**
@@ -47,7 +49,7 @@ npm ci
 npm run dev
 ```
 
-浏览器访问 `http://127.0.0.1:3000`；初始账号及随机密码在私有文件 `.local/env`。数据库和 S3 仅绑定本机；本地开发明确启用 HTTP，不能直接用于生产。
+另开终端加载 `.local/env` 并运行 `cargo run -p artifactory-gateway`，浏览器从 Pingora `http://127.0.0.1:8081` 登录、上传和下载。初始账号及随机密码保存在 `.local/env`。Control 8080 与 Next.js 3000 为内部后端，数据库和 S3 仅绑定本机。已有环境须补充随机 `ARTIFACTORY_GATEWAY_TOKEN` 和对应网关地址，不重新生成主密钥或设备 CA。本地 HTTP 配置不能直接用于生产。
 
 Emissary 注册：在控制台创建 15 分钟有效的一次性令牌，以环境变量传递，不写入命令行或仓库。
 
@@ -62,7 +64,7 @@ target/debug/artifactory-emissary run --config .local/emissary/emissary.json
 
 生产部署、三类系统服务与签名节点设置见 [运维手册](docs/operations.md)。不要在已有生产配置旁运行本地验收脚本。
 
-Kubernetes / 本机 kind 使用 [Helm 部署指南](docs/helm.md)。GitHub Release 发布时自动构建并推送 control-plane / web / agent-worker 的 AMD64、ARM64 镜像到 GHCR。新构建前需按 [AI 构建指南](docs/ai-builds.md) 配置模型并注册 worker。
+Kubernetes / 本机 kind 使用 [Helm 部署指南](docs/helm.md)。GitHub Release 发布独立服务的 AMD64、ARM64 镜像和四个 Chart。新 AI 构建前需按 [AI 构建指南](docs/ai-builds.md) 配置模型并注册 worker。
 
 可选 Kubernetes Pi 使用独立的 Rust Operator、Runtime 与 Source 服务，分出源码与推理热路径；控制平面接纳计划后，将设备构建下发给 Rust Emissary。项目默认保留 Poll Worker，可按项目选择 `planner_backend: kubernetes`。部署、暂停准入及回退见 [Operator 运维](docs/operator-operations.md)，协议见 [Runtime/Source v1](docs/runtime-protocol.md)。
 
@@ -87,6 +89,7 @@ Rust 测试运行真实前台 Emissary / Worker，检查父管道断开、租约
 ```sh
 cargo build --bin artifactory-control-plane
 cargo build --locked --bin artifactory-emissary
+cargo build --locked --bin artifactory-gateway
 set -a; . .local/env; set +a
 python3 -u scripts/acceptance.py --keep-alive
 ```
@@ -140,7 +143,10 @@ python3 -u scripts/compose_acceptance.py
 | 目录 | 内容 |
 |---|---|
 | `crates/control-plane` | 控制平面、SQL 迁移、权限 / 状态 / 数据库测试 |
-| `operator` / `charts/artifactory-operator` | Rust Operator、四个 CRD、独立 Helm release |
+| `operators/agent-operator` / `charts/artifactory-agent-operator` | 独立 Agent Operator、既有 Agent/Source CRD |
+| `operators/image-operator` / `charts/artifactory-image-operator` | 独立 Image Operator、BuildKit/Publisher Job |
+| `crates/image-protocol` / `crates/image-registry` | 镜像执行契约、OCI 内容校验与按 digest 复制 |
+| `crates/gateway` / `charts/artifactory-registry` | Pingora 入口与私有 Distribution 仓库 |
 | `crates/planner-runtime` / `crates/runtime-protocol` | Pi 队列、租约/预算、模型代理和幂等交接 |
 | `crates/source-core` / `crates/source-service` | 固定 Git/LFS 快照、源码工具、直接下载与 S3 恢复 |
 | `crates/emissary` / `crates/emissary-protocol` | Rust 设备运行程序、独立 Worker、原生服务、OTA 与共享协议 |
@@ -152,4 +158,4 @@ python3 -u scripts/compose_acceptance.py
 | `deploy` / `compose.yaml` | Linux 单实例部署 |
 | `docs` | 配置、API、协议、运维与验收边界 |
 
-容器执行器、OCI 镜像、商店发布、Webhook、OIDC、多实例 HA 不属于本版；未用空实现伪装支持。
+商店发布、Webhook 和 OIDC 尚未实现。集群镜像构建已提供代码与部署入口；本机测试不代替真实双原生架构集群、外部仓库和生产存储验收。

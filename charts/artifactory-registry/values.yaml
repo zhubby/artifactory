@@ -1,0 +1,25 @@
+# [INPUT]: 独立私有 Bucket 和预建身份 Secret。
+# [OUTPUT]: Distribution 多副本与令牌信任参数。
+# [POS]: 只作为平台内建仓库，不配置上游镜像缓存。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+image: registry:3.0.0
+replicas: 2
+service: artifactory-registry
+s3:
+  bucket: artifactory-registry
+  region: us-east-1
+  endpoint: https://s3.example.com
+  # access-key, secret-key, http-secret. Same http-secret on every replica.
+  secretName: artifactory-registry-storage
+  secure: true
+  forcePathStyle: true
+  rootDirectory: /registry
+auth:
+  realm: https://build.example.com/api/v1/registry/token
+  service: artifactory-registry
+  issuer: artifactory
+  # tls.crt only. Private RSA tls.key stays in the control-plane Secret.
+  certificateSecret: artifactory-registry-signing-public
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: '2', memory: 512Mi}

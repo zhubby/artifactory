@@ -22,6 +22,8 @@ use tokio::sync::{RwLock, mpsc};
 use tower::ServiceExt;
 use uuid::Uuid;
 
+#[path = "database/images.rs"]
+mod images;
 #[path = "database/registration.rs"]
 mod registration;
 #[path = "database/replication.rs"]

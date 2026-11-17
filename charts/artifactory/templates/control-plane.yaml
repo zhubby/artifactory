@@ -54,7 +54,12 @@ spec:
                     app.kubernetes.io/instance: {{ .Release.Name }}
                     app.kubernetes.io/component: control-plane
       {{- end }}
+      {{- if and (eq $component "control-plane") .Values.imageBuilds.enabled }}
+      serviceAccountName: {{ include "artifactory.fullname" . }}-image-dispatch
+      automountServiceAccountToken: true
+      {{- else }}
       automountServiceAccountToken: false
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -98,6 +103,17 @@ spec:
                 name: {{ required "planning.serviceSecretName is required with Runtime" .Values.planning.serviceSecretName }}
             {{- end }}
           env:
+            - name: ARTIFACTORY_GATEWAY_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ include "artifactory.gatewaySecret" . }}, key: token}}
+            {{- if and (eq $component "control-plane") .Values.imageBuilds.enabled }}
+            - {name: ARTIFACTORY_IMAGE_NAMESPACE, value: {{ .Values.imageBuilds.namespace | default .Release.Namespace | quote }}}
+            - {name: ARTIFACTORY_REGISTRY_URL, value: {{ .Values.imageBuilds.registryUrl | quote }}}
+            - {name: ARTIFACTORY_IMAGE_CONTROL_URL, value: {{ .Values.imageBuilds.controlUrl | quote }}}
+            - {name: ARTIFACTORY_REGISTRY_SERVICE, value: {{ .Values.imageBuilds.registryService | quote }}}
+            - {name: ARTIFACTORY_REGISTRY_ISSUER, value: {{ .Values.imageBuilds.registryIssuer | quote }}}
+            - {name: ARTIFACTORY_REGISTRY_SIGNING_KEY, value: /run/registry-signing/tls.key}
+            - {name: ARTIFACTORY_REGISTRY_SIGNING_CERT, value: /run/registry-signing/tls.crt}
+            {{- end }}
             {{- if and (eq $component "control-plane") .Values.controlPlane.signingKeysSecret }}
             - {name: ARTIFACTORY_SIGNING_KEYS_FILE, value: /run/artifactory-signing/keys.json}
             {{- end }}
@@ -133,6 +149,9 @@ spec:
           resources:
             {{- toYaml (index .Values.resources "control-plane") | nindent 12 }}
           volumeMounts:
+            {{- if and (eq $component "control-plane") .Values.imageBuilds.enabled }}
+            - {name: registry-signing, mountPath: /run/registry-signing, readOnly: true}
+            {{- end }}
             {{- if and (eq $component "control-plane") .Values.controlPlane.signingKeysSecret }}
             - {name: signing-keyring, mountPath: /run/artifactory-signing, readOnly: true}
             {{- end }}
@@ -146,6 +165,10 @@ spec:
             - {name: service-ca, mountPath: /run/service-ca, readOnly: true}
             {{- end }}
       volumes:
+        {{- if and (eq $component "control-plane") .Values.imageBuilds.enabled }}
+        - name: registry-signing
+          secret: {secretName: {{ include "artifactory.registrySigningSecret" . }}, defaultMode: 0440}
+        {{- end }}
         {{- if and (eq $component "control-plane") .Values.controlPlane.signingKeysSecret }}
         - name: signing-source
           secret:

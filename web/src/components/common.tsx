@@ -49,6 +49,8 @@ export function Status({
     queued: t("status.queued"),
     leased: t("status.leased"),
     running: t("status.running"),
+    preparing: t("status.preparing"),
+    publish_failed: t("status.publish_failed"),
     succeeded: t("status.succeeded"),
     failed: t("status.failed"),
     canceled: t("status.canceled"),
@@ -61,11 +63,11 @@ export function Status({
     draining: t("status.draining"),
     revoked: t("status.revoked"),
   };
-  const Icon = ["running", "resolving", "canceling"].includes(value)
+  const Icon = ["running", "resolving", "canceling", "preparing"].includes(value)
     ? LoaderCircle
     : ["succeeded", "online"].includes(value)
       ? CheckCircle2
-      : ["failed", "lost", "revoked"].includes(value)
+      : ["failed", "lost", "revoked", "publish_failed"].includes(value)
         ? XCircle
         : ["queued", "leased", "pending"].includes(value)
           ? Clock3

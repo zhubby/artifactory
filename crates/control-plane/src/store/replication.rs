@@ -1,4 +1,7 @@
-//! Durable work and connection ownership shared by Control replicas.
+//! [INPUT]: 依赖控制副本所有权、任务状态与持久化唤醒。
+//! [OUTPUT]: 提供跨副本任务调度和设备命令领取。
+//! [POS]: 镜像任务使用独立执行身份，排除设备队列。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use crate::{crypto, recipe::Target};
 use anyhow::Result;
@@ -130,7 +133,7 @@ impl ControlStore {
     ) -> Result<bool> {
         let mut db = self.pool.clone();
         let mut tx = db.transaction().await?;
-        let candidate = sql::optional_record(&mut tx, "SELECT b.id AS build_id,jp.version AS placement_version,j.id,j.target_config,j.plan_revision_id,b.source_snapshot_id,b.goal,b.planning_context,p.pool_ids,p.signing_profiles AS permitted_signing FROM jobs j JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=b.project_id LEFT JOIN job_placements jp ON jp.job_id=j.id WHERE j.status='queued' AND j.dispatch_after<=clock_timestamp() AND b.status IN ('queued','running') AND NOT b.cancel_requested ORDER BY j.dispatch_after,j.created_at,j.id LIMIT 1 FOR UPDATE OF b,j SKIP LOCKED FOR SHARE OF p SKIP LOCKED", params![], &[("build_id",Type::Uuid),("placement_version", Type::I64), ("id", Type::Uuid), ("target_config", Type::String), ("plan_revision_id", Type::Uuid), ("source_snapshot_id", Type::Uuid), ("goal", Type::String), ("planning_context", Type::String), ("pool_ids", Type::List(Box::new(Type::Uuid))), ("permitted_signing", Type::List(Box::new(Type::String)))]).await?;
+        let candidate = sql::optional_record(&mut tx, "SELECT b.id AS build_id,jp.version AS placement_version,j.id,j.target_config,j.plan_revision_id,b.source_snapshot_id,b.goal,b.planning_context,p.pool_ids,p.signing_profiles AS permitted_signing FROM jobs j JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=b.project_id LEFT JOIN job_placements jp ON jp.job_id=j.id WHERE coalesce(j.target_config->>'executor','native')='native' AND j.status='queued' AND j.dispatch_after<=clock_timestamp() AND b.status IN ('queued','running') AND NOT b.cancel_requested ORDER BY j.dispatch_after,j.created_at,j.id LIMIT 1 FOR UPDATE OF b,j SKIP LOCKED FOR SHARE OF p SKIP LOCKED", params![], &[("build_id",Type::Uuid),("placement_version", Type::I64), ("id", Type::Uuid), ("target_config", Type::String), ("plan_revision_id", Type::Uuid), ("source_snapshot_id", Type::Uuid), ("goal", Type::String), ("planning_context", Type::String), ("pool_ids", Type::List(Box::new(Type::Uuid))), ("permitted_signing", Type::List(Box::new(Type::String)))]).await?;
         let Some(candidate) = candidate else {
             return Ok(false);
         };

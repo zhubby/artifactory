@@ -1,3 +1,7 @@
+# [INPUT]: 手动选择的提交与统一版本。
+# [OUTPUT]: 全部独立运行服务的不可变 amd64 镜像。
+# [POS]: 只发布源码 SHA 标签，不更新集群或已有镜像。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: deployment-images
 
 on:
@@ -26,6 +30,20 @@ jobs:
             file: packages/agent-worker/Dockerfile
           - component: web
             file: web/Dockerfile
+          - component: agent-operator
+            file: operators/agent-operator/Dockerfile
+          - component: planner-runtime
+            file: crates/planner-runtime/Dockerfile
+          - component: source-service
+            file: crates/source-service/Dockerfile
+          - component: image-operator
+            file: operators/image-operator/Dockerfile
+          - component: image-worker
+            file: operators/image-operator/Dockerfile.worker
+          - component: gateway
+            file: crates/gateway/Dockerfile
+          - component: emissary
+            file: crates/emissary/Dockerfile
     steps:
       - uses: actions/checkout@v4
       - name: Resolve immutable source identity
@@ -68,6 +86,9 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.source.outputs.image }}:sha-${{ steps.source.outputs.sha }}
+          build-args: |
+            ARTIFACTORY_BUILD_VERSION=${{ steps.source.outputs.version }}
+            ARTIFACTORY_BUILD_COMMIT=${{ steps.source.outputs.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ steps.source.outputs.sha }}

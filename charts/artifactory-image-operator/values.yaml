@@ -1,0 +1,27 @@
+# [INPUT]: 管理员选择的镜像、节点与并发预算。
+# [OUTPUT]: 独立 Image Operator 与 BuilderPool 参数。
+# [POS]: 不接收构建者提交的任意 Pod 模板。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+image:
+  repository: ghcr.io/zhubby/artifactory-image-operator
+  tag: ''
+  pullPolicy: IfNotPresent
+replicas: 2
+builderPool:
+  name: default
+  workerImage: ghcr.io/zhubby/artifactory-image-worker:0.2.0
+  buildkitImage: moby/buildkit:v0.26.2-rootless
+  maxActive: 8
+  maxPerProject: 4
+  nodeSelector: {}
+  emulationNodeSelector: {}
+  emulationPlatforms: []
+  cpu: '1'
+  memory: 2Gi
+  ephemeralStorage: 20Gi
+  caSecret: ''
+  # Contains buildkitd.toml. Configure private CAs and explicit HTTP here.
+  buildkitConfigMap: ''
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: '1', memory: 512Mi}

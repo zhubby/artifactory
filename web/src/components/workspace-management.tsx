@@ -16,6 +16,7 @@ import type {
   Pool,
   Credential,
 } from "@/lib/types";
+import { ImageCredentials } from "@/components/image-credentials";
 import { SigningSettings, ProjectSigning } from "@/components/signing-settings";
 import { LifecycleSettings } from "@/components/lifecycle";
 import { Settings } from "@/components/settings";
@@ -211,6 +212,7 @@ export function WorkspaceManagement({
         />
       </fieldset>
     );
+  if (project && current === "resources") content = <>{content}<ImageCredentials projectId={project.id} editable={admin && !readOnly} /></>;
   return (
     <>
       <PageTitle

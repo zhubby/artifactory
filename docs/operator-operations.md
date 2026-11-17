@@ -9,24 +9,34 @@ Operator、Runtime、Source 与 Artifactory Emissary 均由 Rust 编写；Pi Age
 首期锁定 Rust 1.95.0、kube-rs 5.0.0、k8s-openapi 0.29.0 `v1_37`、Tonic/Prost 0.14。Cargo.lock 为依赖依据；CRD group `agents.artifactory.dev/v1alpha1`。实际集群及平台证据见 [验收记录](acceptance/operator/2026-11-12.md)，其他 Kubernetes minor 需要单独验证。
 
 1. 备份业务数据库、原主密钥和 PKI。为 Runtime/Source 分别配置数据库/角色、32 字节 base64 加密 key；配置 S3、Service TLS、服务间随机 token。数据库与 S3 需独立容量及备份策略，chart 不创建生产数据库。
-2. 审查并独立应用 `operator/config/crd/resources.yaml`。Helm CRD 目录用于首次安装，Helm 不自动升级或删除已有 CRD。CRD 兼容性变化需要单独审查。
+2. 审查并独立应用 `operators/agent-operator/config/crd/resources.yaml`。Helm CRD 目录用于首次安装，Helm 不自动升级或删除已有 CRD。CRD 兼容性变化需要单独审查。
 3. 在新命名空间创建 `service-tls` Secret，含 `tls.crt/tls.key/ca.crt`。SAN 应覆盖 Runtime HTTP/gRPC 地址及每个 Source shard FQDN。Pi 和 Operator 只挂载 CA；服务器挂载证书及私钥。不要授予 Pi Secret 读取权限。
 4. 创建 Runtime Secret：`DATABASE_URL`、`ARTIFACTORY_SERVICE_KEY`、`ARTIFACTORY_SERVICE_TOKEN`。创建 Source Secret：上述三个变量，以及 `ARTIFACTORY_S3_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY`；私有 Git HTTPS CA 可用 `GIT_SSL_CAINFO=/run/service-tls/ca.crt`，独立 Git CA 需自定义挂载。S3 bucket 首先由业务部署初始化，Source 不使用业务主密钥。
-5. 构建/发布 `operator/Dockerfile` 共享四个 Rust binary 的镜像，以及 `packages/agent-worker/Dockerfile`。生产 values 用固定镜像 tag/digest 对应的发布记录；选择与节点一致的 arm64/amd64 架构。
+5. 分别构建/发布 `operators/agent-operator/Dockerfile`、`crates/planner-runtime/Dockerfile`、`crates/source-service/Dockerfile` 和 `packages/agent-worker/Dockerfile`。每个镜像只启动自己的服务。生产 values 使用对应发布版本；选择与节点一致的 arm64/amd64 架构。
 
 ```sh
-kubectl apply -f operator/config/crd/resources.yaml
-helm upgrade --install native charts/artifactory-operator -n agent-runtime --create-namespace -f private-values.yaml
+kubectl apply -f operators/agent-operator/config/crd/resources.yaml
+helm upgrade --install native charts/artifactory-agent-operator -n agent-runtime --create-namespace -f private-values.yaml
 kubectl -n agent-runtime get agentpools,sourcepools,deploy,statefulsets,pvc
 ```
 
-values 至少配置 `image.repository/tag`、`runtime.secretName/url/grpcUrl`、`controlUrl`、`tls.secretName`、`agentPool.image`、`sourcePool.secretName/storageClass/storageSize/shards`。`controlUrl` 必须是可访问内部 API 的 HTTPS 网关；control-plane 自身默认 HTTP 8080，需要 TLS 终结。每个命名空间部署一套服务/Pool，Operator 两副本共享一个 Lease。
+values 至少配置 `image.repository/tag`、`runtime.image`、`sourcePool.image`、`runtime.secretName/url/grpcUrl`、`controlUrl`、`tls.secretName`、`agentPool.image`、`sourcePool.secretName/storageClass/storageSize/shards`。主 Chart 提供私有 `https://<release>-gateway-internal:8445` 入口。`controlUrl` 指向它，Runtime/Source 的服务 CA 必须信任该服务器证书。默认 Gateway 沿用设备 PKI；独立服务 CA 部署设置主 Chart 的 `gateway.internalTlsSecret`。该 Secret 使用服务 CA 签发的独立服务器身份，包含 `ca.pem/server.pem/server.key`，SAN 覆盖 Gateway 内部 DNS。公开入口拒绝 `/internal/*`。每个命名空间部署一套服务/Pool，Operator 两副本共享一个 Lease。
 
 主 chart 配置 `planning.runtimeUrl`、`planning.sourceUrls`（逗号分隔每个 shard 的 HTTPS FQDN）、`planning.agentPool`、`planning.serviceSecretName`、`planning.serviceCaSecretName`。服务 token 必须一致；业务 DB、Runtime DB、Source DB 的密钥必须分别保管。开启项目 `planner_backend: kubernetes` 后，新 Build 使用该路径；默认仍为 poll。
 
-集群外设备需要可访问的下载网关。设置 `sourcePool.publicUrlTemplate: 'https://{pod}.source.example.com'`，可用变量为 `{pod}`、`{pool}`、`{namespace}`；留空只适用于能访问集群内部 DNS 的设备。Operator 把每个 Pod 的公开地址传给 Source，control-plane 保存该地址用于设备 Git/LFS，Pi 和内部 RPC 仍使用 `planning.sourceUrls`。下载 HTTPS 证书需被设备信任，私有 CA 配入设备 `git_ca_file`。设备还需能访问 control-plane gRPC 和制品对象存储的 advertised endpoint。
+集群外设备需要可访问的下载网关。设置 `sourcePool.publicUrlTemplate: 'https://{pod}.source.example.com'`，可用变量为 `{pod}`、`{pool}`、`{namespace}`；留空只适用于能访问集群内部 DNS 的设备。Operator 把每个 Pod 的公开地址传给 Source，Control 保存该地址用于设备 Git/LFS，Pi 和内部 RPC 仍使用 `planning.sourceUrls`。下载证书需被设备信任，私有 CA 配入 `git_ca_file`。设备还需能访问 gRPC 和公开制品网关，不访问 S3。
 
 边缘网关应按 shard 定向，仅公开 `/api/v1/source/` 下载路径，保留 Authorization。可为每个 ordinal 创建 Service，selector 同时包含 `artifactory.dev/source-pool: sources` 与 `statefulset.kubernetes.io/pod-name: sources-0`，8090 指向对应 Pod；Ingress/Gateway 的 `sources-0.source.example.com` 绑定这个 Service，后端 HTTPS 并核验证书。多 shard 不能将这些域名随机负载均衡到整个 headless Service。网关和 DNS 由部署环境管理，chart 不假设具体 Ingress controller。变更模板后保留旧下载域名以支持在途和历史快照；禁止通过业务控制进程转发源码字节。
+
+## 从旧 Operator 升级
+
+源码目录从 `operator/` 改为 `operators/agent-operator/`，包和命令从 `artifactory-operator` 改为 `artifactory-agent-operator`。构建 Operator 位于 `operators/image-operator/`，是独立 crate、镜像、Deployment、Chart 和 Lease。它不替代 Agent Operator。
+
+升级保留原 Agent release 名和命名空间，使用新的 `charts/artifactory-agent-operator` 路径。保留 Agent/Source CRD 名称、Pool、Runtime/Source 数据库、Source StatefulSet、Service、PVC 和 Secret。服务器字段管理身份继续使用 `artifactory-operator`，避免升级时抢占已有字段。
+
+先暂停新的规划准入并排空或取消在途 AgentRun，再将旧 `<release>-operator` Deployment 缩为零。等待旧控制器全部 Pod 退出，再应用兼容 CRD 并升级同一个 Helm release。新 Deployment 名为 `<release>-agent-operator`，避免修改旧 Deployment 的不可变 selector；Helm 升级移除旧 Deployment。新控制器使用 `artifactory-agent-operator` Lease；旧控制器使用不同 Lease，二者不能同时运行。不要先卸载旧 release，也不要删除 SourcePool、CRD 或 PVC。
+
+同步更新 Operator、Runtime 和 Source 三个独立镜像配置。验证新控制器选主、既有 Source PVC 挂载、固定快照下载、一次规划和设备构建后，恢复准入。回滚时先停止新控制器，再恢复旧控制器；避免两套 Lease 同时取得写入权。
 
 ## 存储与扩容
 
@@ -63,7 +73,7 @@ python3 tests/operator/acceptance/prepare.py --platform linux/arm64
 python3 -u tests/operator/acceptance/run.py --context kind-substrate-orbstack
 ```
 
-prepare 构建三类镜像并推入本地 registry；可 `--kind <name>` 加载到临时 kind。run 创建全新 `artifact-operator-*` 命名空间和随机 CA/密钥、三个独立数据库、S3、真实 Pi 推理循环与 Rust Emissary 构建 Pod。模型为确定性 SSE fixture，包含一次非法计划与修正。保留命名空间供检查；`.local/operator-acceptance/<namespace>` 含秘密，不能整目录上传或公开。清理时仅删除本次命名空间、其专属 TokenReview ClusterRole/Binding；共享 CRD 不删除。现有 release 不受此脚本操作。
+prepare 构建独立 Agent、Runtime、Source、Control、Gateway、Emissary 和 fixture 镜像并推入本地 registry；可用 `--kind <name>` 加载到临时 kind。run 创建全新 `artifact-operator-*` 命名空间和随机 CA/密钥、三个独立数据库、S3、真实 Pi 推理循环与 Rust Emissary 构建 Pod。制品通过本次 Gateway 传输。模型 fixture 包含一次非法计划与修正。保留命名空间供检查；`.local/operator-acceptance/<namespace>` 含秘密，不能整目录公开。清理仅删除本次资源和专属 TokenReview 权限；共享 CRD 不删除。
 
 隔离集群应使用支持 NetworkPolicy 的 CNI；仓库提供 `tests/operator/acceptance/kind-cilium.yaml`，CI 固定 Cilium 1.20.4。先安装 CNI 并等待 Node Ready，再运行 harness。`network.py --context <context> --namespace <saved-namespace> --controller 'Cilium 1.20.4'` 从三个全新 Pod 的第一次 TCP 请求检查 Runtime/Source 可达、control-plane/provider/PG/S3 被阻断，同时使用不受限 Pod 做正向对照。仅后台安装 policy controller 并等待规则收敛不足以证明启动期间隔离。
 
@@ -71,6 +81,6 @@ prepare 构建三类镜像并推入本地 registry；可 `--kind <name>` 加载�
 
 `cleanup.py --context <dedicated-kind-context> --namespace <saved-namespace> --node-container <kind-control-plane>` 验证节点无法清理时的取消状态。它核对 Docker kind 归属、单节点、命名空间 PKI 和无其他业务负载，暂停一个真实 Pi 并停止 kubelet，通过独立 Docker/API 通路取消，检查撤权、进程仍存在时保留 `CleanupPending`，最后恢复进程与 kubelet 并等待 Pod 清理。此测试模拟 kubelet 不可达，不等同于完整网络分区；只用于本次 harness 创建的专用 kind。
 
-传入 `--real-model-env /private/path/env.json` 可在 fixture 后使用显式选择的本机开发加密 profile 验证真实供应商；凭据仅在内存中读取/解密，不写诊断或命令参数。`--resume --namespace <this-harness-namespace>` 仅恢复本机保存 PKI 与集群 CA 一致的测试环境。harness 最后会卸载并重装自己的独立 release，验证 Source StatefulSet/Service/PVC 保留；不应对已有业务 release 使用该测试脚本。
+传入 `--real-model-env /private/path/env.json` 可在 fixture 后使用显式选择的本机开发加密 profile 验证真实供应商；凭据仅在内存中读取/解密，不写诊断或命令参数。`--resume --namespace <this-harness-namespace>` 仅恢复本机保存 PKI 与集群 CA 一致、已含网关令牌的测试环境。旧环境应重新创建隔离 namespace，不能复用已有业务部署。harness 最后卸载并重装本次 release，验证 Source StatefulSet/Service/PVC 保留。
 
 本轮按用户确认以流程验证收口，500/1,000 活动实例作为后续容量验证。PostgreSQL 测试有 10,000 queued/8 admitted/每项目 2 的并发准入场景；这证明队列有界，不证明 1,000 活动 Pod 或生产 API P95。100/500/1,000 活动档位应按真实集群容量逐级压测，记录数据集、模型/源码负载、时间窗、API P95、PG 等待、CPU/RSS/网络、Pod/CRD 数量及故障恢复；没有测得的数据不填“通过”。

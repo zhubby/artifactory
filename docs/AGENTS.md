@@ -20,6 +20,7 @@ control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。
 frontend-experience.md: 定义语言、主题与动效行为。
 helm.md: 定义 Helm 安装和 Kubernetes 配置。
+image-builds.md: 定义双架构镜像、私有仓库、反向代理与独立发布。
 local-macmini-acceptance-2026-11-11.md: 记录本机和 Mac mini 的验收。
 module-layout.md: 定义模块命名和依赖边界。
 multitenancy.md: 定义租户权限和设备共享边界。
@@ -37,6 +38,7 @@ versioning.md: 定义统一版本与交付约束。
 workspaces.md: 定义租户和项目工作台流程。
 acceptance/: 保存子系统在真实环境中的验收记录。
 brand/: 保存品牌规范和视觉资源。
+fonts/: 保存文档构建生成的字体资产。
 plans/: 保存实施方案与修复计划。
 releases/: 保存版本交付与部署记录。
 superpowers/: 保存设计说明和实现计划。

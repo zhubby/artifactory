@@ -1,4 +1,7 @@
-//! Persisted ranked admission and bounded, placement-only planning rounds.
+//! [INPUT]: 依赖节点资源快照和规划 Placement。
+//! [OUTPUT]: 维护原生任务的候选排序及排程轮次。
+//! [POS]: BuildKit 目标不进入设备调度。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use anyhow::{Result, ensure};
 use artifactory_database::{params, sql};
@@ -60,7 +63,7 @@ impl ControlStore {
     }
 
     pub(crate) async fn placement_admission(&self, limit: i64) -> Result<Admission> {
-        let rows=sql::records(&mut self.pool.clone(),"SELECT p.job_id,p.version,p.placement FROM job_placements p JOIN jobs j ON j.id=p.job_id JOIN builds b ON b.id=j.build_id WHERE j.status='queued' AND j.dispatch_after<=clock_timestamp() AND b.status IN ('queued','running') AND NOT b.cancel_requested ORDER BY j.dispatch_after,j.created_at,j.id LIMIT $1",params![limit.clamp(1,64)],&[("job_id",Type::Uuid),("version",Type::I64),("placement",Type::String)]).await?;
+        let rows=sql::records(&mut self.pool.clone(),"SELECT p.job_id,p.version,p.placement FROM job_placements p JOIN jobs j ON j.id=p.job_id JOIN builds b ON b.id=j.build_id WHERE coalesce(j.target_config->>'executor','native')='native' AND j.status='queued' AND j.dispatch_after<=clock_timestamp() AND b.status IN ('queued','running') AND NOT b.cancel_requested ORDER BY j.dispatch_after,j.created_at,j.id LIMIT $1",params![limit.clamp(1,64)],&[("job_id",Type::Uuid),("version",Type::I64),("placement",Type::String)]).await?;
         let mut admission = Admission::default();
         let mut ids = Vec::new();
         for row in rows {

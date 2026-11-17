@@ -1,4 +1,7 @@
-# The release name is the resource prefix. PostgreSQL fences concurrent dispatchers.
+# [INPUT]: 服务镜像、私有凭据引用、节点预算和入口地址。
+# [OUTPUT]: Control、Pingora、存储和规划工作负载的部署参数。
+# [POS]: 只声明部署配置，持久 Secret 由初始化脚本生成。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 fullnameOverride: ""
 imagePullSecrets: []
 podAnnotations: {}
@@ -17,8 +20,8 @@ images:
     tag: ""
     pullPolicy: IfNotPresent
   gateway:
-    repository: caddy
-    tag: 2-alpine
+    repository: ghcr.io/zhubby/artifactory-gateway
+    tag: ""
     pullPolicy: IfNotPresent
   postgres:
     repository: timescale/timescaledb
@@ -86,9 +89,12 @@ telemetry:
 
 s3:
   enabled: true
-  # Production uses the reachable HTTPS endpoint, including from control pods.
-  # In development, an empty endpoint selects the internal HTTP service.
+  # Private endpoint reachable only by Control and Gateway.
+  # Empty selects the embedded ClusterIP service over private HTTP.
   endpoint: ""
+  # Explicit opt-in for an external private HTTP endpoint.
+  allowHttp: false
+  # Deprecated and ignored; clients use gateway tickets.
   publicEndpoint: https://artifacts.example.com
   bucket: artifactory
   region: us-east-1
@@ -143,7 +149,7 @@ resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: "1", memory: 768Mi}
 
-# Runtime/Source are installed by the separate artifactory-operator release.
+# Runtime/Source are installed by the separate artifactory-agent-operator release.
 # Opt in per project using planner_backend=kubernetes after verification.
 planning:
   runtimeUrl: ""
@@ -151,3 +157,27 @@ planning:
   agentPool: default
   serviceSecretName: ""
   serviceCaSecretName: ""
+
+gateway:
+  replicas: 2
+  dataReplicas: 2
+  deviceReplicas: 2
+  internalReplicas: 2
+  # Optional ca.pem/server.pem/server.key for an existing service CA.
+  # Empty selects the device PKI; Runtime/Source must trust its CA.
+  internalTlsSecret: ''
+  dedicatedData: false
+  # Secret key token; empty selects <release>-gateway.
+  secretName: ''
+  httpConnections: 1024
+  deviceConnections: 4096
+  registryUrl: http://artifactory-registry:5000
+imageBuilds:
+  enabled: false
+  namespace: '' # Defaults to this release namespace.
+  registryUrl: https://build.example.com
+  controlUrl: https://build.example.com
+  # Independent RSA tls.key and tls.crt, never the device CA.
+  signingSecret: '' # Empty selects <release>-registry-signing.
+  registryService: artifactory-registry
+  registryIssuer: artifactory

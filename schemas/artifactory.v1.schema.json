@@ -4,47 +4,317 @@
   "title": "artifactory repository configuration v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "targets"],
+  "required": [
+    "version",
+    "targets"
+  ],
   "properties": {
-    "version": { "const": 1 },
-    "parameters": { "type": "object", "propertyNames": { "pattern": "^[A-Z][A-Z0-9_]{0,63}$" }, "additionalProperties": { "type": "string", "maxLength": 4096 } },
-    "release": { "type": "object", "additionalProperties": false, "properties": { "enabled": { "type": "boolean", "default": false } } },
-    "targets": { "type": "object", "minProperties": 1, "maxProperties": 32, "propertyNames": { "minLength": 1, "maxLength": 80 }, "additionalProperties": { "$ref": "#/$defs/target" } }
+    "version": {
+      "const": 1
+    },
+    "parameters": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 4096
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "targets": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 32,
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 80
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/target"
+      }
+    }
   },
   "$defs": {
     "target": {
-      "type": "object", "additionalProperties": false,
-      "required": ["os", "arch", "steps", "artifacts"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "arch"
+      ],
       "properties": {
-        "application_platform": { "enum": ["macos", "ios", "android", "linux", "windows"], "description": "Application platform, independent from the build host OS" },
-        "signing_outputs": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/signingOutput" } },
-        "os": { "enum": ["linux", "darwin", "windows"], "description": "Agent host OS, not application target OS" },
-        "arch": { "enum": ["amd64", "arm64"] },
-        "executor": { "const": "native", "default": "native" },
-        "labels": { "type": "object", "additionalProperties": { "type": "string" } },
-        "capabilities": { "type": "array", "items": { "type": "string" } },
-        "signing_profiles": { "type": "array", "items": { "type": "string" } },
-        "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 86400, "default": 7200 },
-        "steps": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/step" } },
-        "artifacts": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?![\\/])(?!.*[\\\\:\\u0000])(?!.*(?:^|/)(?:\\.\\.?|)(?:/|$)).+$" } }
-      }
+        "application_platform": {
+          "enum": [
+            "macos",
+            "ios",
+            "android",
+            "linux",
+            "windows"
+          ],
+          "description": "Application platform, independent from the build host OS"
+        },
+        "signing_outputs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/signingOutput"
+          }
+        },
+        "os": {
+          "enum": [
+            "linux",
+            "darwin",
+            "windows"
+          ],
+          "description": "Agent host OS, not application target OS"
+        },
+        "arch": {
+          "enum": [
+            "amd64",
+            "arm64"
+          ]
+        },
+        "executor": {
+          "enum": [
+            "native",
+            "buildkit"
+          ],
+          "default": "native"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "signing_profiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400,
+          "default": 7200
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?![\\/])(?!.*[\\\\:\\u0000])(?!.*(?:^|/)(?:\\.\\.?|)(?:/|$)).+$"
+          }
+        },
+        "image": {
+          "$ref": "#/$defs/image"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "executor": {
+                "const": "buildkit"
+              }
+            },
+            "required": [
+              "executor"
+            ]
+          },
+          "then": {
+            "required": [
+              "image"
+            ],
+            "properties": {
+              "steps": {
+                "maxItems": 0
+              },
+              "artifacts": {
+                "maxItems": 0
+              }
+            }
+          },
+          "else": {
+            "required": [
+              "steps",
+              "artifacts"
+            ],
+            "not": {
+              "required": [
+                "image"
+              ]
+            },
+            "properties": {
+              "steps": {
+                "minItems": 1
+              },
+              "artifacts": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
     },
     "signingOutput": {
-      "type": "object", "additionalProperties": false, "required": ["path"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
       "properties": {
-        "path": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?![\\/])(?!.*[\\\\:\\u0000*?\\[\\]])(?!.*(?:^|/)(?:\\.\\.?|)(?:/|$)).+$" },
-        "bundle": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?![\\/])(?!.*[\\\\:\\u0000])(?!.*(?:^|/)(?:\\.\\.?|)(?:/|$)).+\\.app$" }
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?![\\/])(?!.*[\\\\:\\u0000*?\\[\\]])(?!.*(?:^|/)(?:\\.\\.?|)(?:/|$)).+$"
+        },
+        "bundle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?![\\/])(?!.*[\\\\:\\u0000])(?!.*(?:^|/)(?:\\.\\.?|)(?:/|$)).+\\.app$"
+        }
       }
     },
     "step": {
-      "type": "object", "additionalProperties": false,
-      "required": ["name", "run"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "run"
+      ],
       "properties": {
-        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
-        "phase": { "enum": ["build", "sign", "verify"], "default": "build" },
-        "shell": { "enum": ["bash", "sh", "powershell", "pwsh"] },
-        "run": { "type": "string", "minLength": 1, "maxLength": 65536 },
-        "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 86400, "default": 3600 }
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "phase": {
+          "enum": [
+            "build",
+            "sign",
+            "verify"
+          ],
+          "default": "build"
+        },
+        "shell": {
+          "enum": [
+            "bash",
+            "sh",
+            "powershell",
+            "pwsh"
+          ]
+        },
+        "run": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400,
+          "default": 3600
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+          "maxLength": 128
+        },
+        "context": {
+          "type": "string",
+          "default": "."
+        },
+        "dockerfile": {
+          "type": "string",
+          "default": "Dockerfile"
+        },
+        "platforms": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "linux/amd64",
+              "linux/arm64"
+            ]
+          }
+        },
+        "pool": {
+          "type": "string",
+          "default": "default"
+        },
+        "allow_emulation": {
+          "type": "boolean",
+          "default": false
+        },
+        "build_args": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "secrets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "pull_credentials": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$"
+          }
+        }
       }
     }
   }

@@ -40,6 +40,7 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/dialog";
 import { Tabs } from "@/components/ui/tabs";
 import { SubmitForm } from "@/components/forms";
+import { ImageBuilds } from "@/components/image-builds";
 import { BuildPlanning } from "@/components/build-planning";
 import { BuildLogHistory } from "@/components/build-log-history";
 import { isBuildTerminal, type BuildLog } from "@/lib/build-state";
@@ -440,14 +441,15 @@ export function BuildDetail({
           title={t("builds.verified")}
           detail={t("artifacts.shaVerified")}
         />
+        {!!build.image_executions?.length && <ImageBuilds executions={build.image_executions} projectId={build.project_id} registry={build.image_registry} editable={role !== "viewer" && !readOnly} reload={remote.reload} />}
         {build.artifacts?.length ? (
           <ArtifactTable artifacts={build.artifacts} />
-        ) : (
+        ) : !build.image_executions?.length ? (
           <Empty
             title={t("builds.noArtifacts")}
             detail={t("builds.noArtifactsDetail")}
           />
-        )}
+        ) : null}
       </section>
       </>}</Tabs>
 

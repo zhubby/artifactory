@@ -1,3 +1,7 @@
+# [INPUT]: 固定依赖 digest 和既有稳定 Release tag。
+# [OUTPUT]: 保留原 manifest digest 的隔离试用缓存标签。
+# [POS]: tls-edge 专指 Caddy；gateway 保留给 Pingora 服务。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: trial-image-mirrors
 
 on:
@@ -33,7 +37,7 @@ jobs:
             source: docker.io/chrislusf/seaweedfs
             tag: '4.53'
             digest: sha256:ccad23e18639c8b98cee17e7100b95830a06077b56d8e5b006d6dcf8ec5e94a0
-          - component: gateway
+          - component: tls-edge
             source: docker.io/library/caddy
             tag: 2-alpine
             digest: sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0

@@ -9,4 +9,6 @@ history.toml: 按不可变 ID 排列数据库迁移。
 0007_snapshot.toml: 保留 SQL 托管签名迁移后的未变 CRUD 投影。
 migrations/: 保存带数据库约束和触发器的增量 SQL。
 
+0008_snapshot.toml: 保留镜像 SQL 表之外的 CRUD 模型快照。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Isolated real-model acceptance. Keys are read from the invoking environment.
-
-Never starts against the deployment database/schema. Retains evidence and
-private configuration in .local/ai-acceptance; upstream accepts reads only.
+"""[INPUT]: 显式模型凭据、隔离数据库 schema 和只读源码夹具。
+[OUTPUT]: 验证真实 AI 规划、原生构建与网关交付。
+[POS]: 临时入口由 Pingora 提供；私密证据保存于 .local/。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
 import base64
 import hashlib
-import http.client
 import http.cookiejar
 import http.server
 import json
@@ -25,6 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import local_gateway
 
 ROOT = Path(__file__).resolve().parents[1]
 os.umask(0o077)
@@ -64,8 +64,9 @@ class Acceptance:
         parts = urllib.parse.urlsplit(self.db)
         query = urllib.parse.parse_qsl(parts.query) + [('options', '-csearch_path=' + self.schema)]
         self.config['DATABASE_URL'] = urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(query)))
-        self.config.update(ARTIFACTORY_HTTP_BIND='127.0.0.1:38080', ARTIFACTORY_GRPC_BIND='127.0.0.1:38443',
+        self.config.update(ARTIFACTORY_HTTP_BIND='127.0.0.1:38082', ARTIFACTORY_GRPC_BIND='127.0.0.1:38443',
                            ARTIFACTORY_PUBLIC_URL='http://127.0.0.1:38080', ARTIFACTORY_INSECURE_DEV='true',
+                           ARTIFACTORY_GATEWAY_TOKEN=uuid.uuid4().hex + uuid.uuid4().hex,
                            ARTIFACTORY_DATA_DIR=str(self.run / 'control-plane'), ARTIFACTORY_BOOTSTRAP_USERNAME='ai-admin',
                            ARTIFACTORY_BOOTSTRAP_PASSWORD=uuid.uuid4().hex, ARTIFACTORY_S3_BUCKET='ai-' + uuid.uuid4().hex[:12])
         self.grpc_endpoint = 'localhost:38443'
@@ -225,48 +226,18 @@ class Acceptance:
 
     def setup(self):
         self.fixtures()
-        if self.args.tailnet_address:
-            # Isolated test ingress. Production uses the existing TLS ingress;
-            # this listener does not change it or expose the upstream fixture.
-            class Proxy(http.server.BaseHTTPRequestHandler):
-                protocol_version='HTTP/1.1'
-                def log_message(self, *_): pass
-                def do_HEAD(self): self.forward()
-                def do_GET(self): self.forward()
-                def do_POST(self): self.forward()
-                def do_PATCH(self): self.forward()
-                def do_DELETE(self): self.forward()
-                def forward(self):
-                    connection=http.client.HTTPConnection('127.0.0.1',38080,timeout=120)
-                    try:
-                        body=self.rfile.read(int(self.headers.get('content-length','0')))
-                        headers={k:v for k,v in self.headers.items() if k.lower() not in ['connection','transfer-encoding']}
-                        connection.request(self.command,self.path,body=body,headers=headers)
-                        response=connection.getresponse();self.send_response(response.status)
-                        chunked=response.getheader('content-length') is None and self.command!='HEAD'
-                        for key,value in response.getheaders():
-                            if key.lower() not in ['connection','transfer-encoding']: self.send_header(key,value)
-                        if chunked:self.send_header('Transfer-Encoding','chunked')
-                        self.end_headers()
-                        if self.command != 'HEAD':
-                            while chunk:=response.read1(65536):
-                                if chunked:self.wfile.write(('%x\r\n'%len(chunk)).encode())
-                                self.wfile.write(chunk)
-                                if chunked:self.wfile.write(b'\r\n')
-                                self.wfile.flush()
-                            if chunked:self.wfile.write(b'0\r\n\r\n');self.wfile.flush()
-                    except (OSError,http.client.HTTPException):
-                        self.send_error(502)
-                    finally:connection.close()
-            self.proxy=http.server.ThreadingHTTPServer((self.args.tailnet_address,39444),Proxy)
-            context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            context.load_cert_chain(str(Path(self.config['ARTIFACTORY_PKI_DIR'])/'server.pem'),str(Path(self.config['ARTIFACTORY_PKI_DIR'])/'server.key'))
-            self.proxy.socket=context.wrap_socket(self.proxy.socket,server_side=True)
-            threading.Thread(target=self.proxy.serve_forever,daemon=True).start()
         env = {key: os.environ[key] for key in ['PATH','HOME','LANG','TMPDIR'] if key in os.environ}
         env.update(self.config, GIT_SSL_CAINFO=str(Path(self.config['ARTIFACTORY_PKI_DIR'])/'ca.pem'))
         self.start('control-plane', [str(ROOT/'target/debug/artifactory-control-plane'),'serve'], env=env)
-        self.wait(lambda: self.http.open(self.base+'/healthz',timeout=2).status==200)
+        self.wait(lambda: self.http.open('http://127.0.0.1:38082/healthz',timeout=2).status==200)
+        bind = self.args.tailnet_address + ':39444' if self.args.tailnet_address else '127.0.0.1:38080'
+        gateway_env = local_gateway.environment(self.config, bind, 'http://127.0.0.1:38082')
+        gateway_env['ARTIFACTORY_SERVICE_CA'] = str(Path(self.config['ARTIFACTORY_PKI_DIR'])/'ca.pem')
+        if self.args.tailnet_address:
+            gateway_env.update(ARTIFACTORY_GATEWAY_TLS_CERT=str(Path(self.config['ARTIFACTORY_PKI_DIR'])/'server.pem'),
+                               ARTIFACTORY_GATEWAY_TLS_KEY=str(Path(self.config['ARTIFACTORY_PKI_DIR'])/'server.key'))
+        self.start('gateway', [str(ROOT/'target/debug/artifactory-gateway')], env=gateway_env)
+        self.wait(lambda: self.http.open(self.base+'/api/v1/auth/config',timeout=2).status==200)
         self.api('/auth/login', {'username':self.config['ARTIFACTORY_BOOTSTRAP_USERNAME'],'password':self.config['ARTIFACTORY_BOOTSTRAP_PASSWORD']})
         self.check('new session cookie', any(c.name=='artifactory_session' for c in self.jar))
         key = os.environ.get('ARTIFACTORY_ACCEPTANCE_MODEL_KEY') or os.environ.get('ANTHROPIC_AUTH_TOKEN') or os.environ.get('ANTHROPIC_API_KEY')
@@ -424,7 +395,6 @@ class Acceptance:
             try:process.wait(timeout=15)
             except subprocess.TimeoutExpired:process.kill();process.wait()
         if hasattr(self,'server'):self.server.shutdown()
-        if hasattr(self,'proxy'):self.proxy.shutdown()
         self.save()
 
 

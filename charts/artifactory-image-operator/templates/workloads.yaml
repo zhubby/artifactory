@@ -1,0 +1,42 @@
+# [INPUT]: 独立 Operator 镜像与管理员 BuilderPool。
+# [OUTPUT]: Image Operator Deployment、ServiceAccount 与 BuilderPool。
+# [POS]: 每个任务单独创建 Job；控制器不读取任务 Secret。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: artifactory-image-operator}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: artifactory-image-worker}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ .Release.Name }}-image-operator}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels: {app.kubernetes.io/name: artifactory-image-operator, app.kubernetes.io/instance: {{ .Release.Name }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: artifactory-image-operator, app.kubernetes.io/instance: {{ .Release.Name }}}
+    spec:
+      serviceAccountName: artifactory-image-operator
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: operator
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: ARTIFACTORY_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - name: POD_UID
+              valueFrom: {fieldRef: {fieldPath: metadata.uid}}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+---
+apiVersion: images.artifactory.dev/v1alpha1
+kind: BuilderPool
+metadata: {name: {{ .Values.builderPool.name }}}
+spec: {{ toYaml (omit .Values.builderPool "name") | nindent 2 }}

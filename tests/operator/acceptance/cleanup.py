@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Check cancellation cleanup with an unreachable kubelet in a dedicated kind.
-
-Freezes one real Pi and stops its node's kubelet; the API server and Docker
-management path remain available. Always resumes Pi and restarts kubelet.
-Requires the existing acceptance harness namespace and its saved private PKI.
-This is a kubelet outage, not a complete network-partition experiment.
+"""[INPUT]: 独立 kind 节点、已保存的命名空间与私有 PKI。
+[OUTPUT]: 验证 kubelet 不可达时的授权撤销与清理。
+[POS]: 暂停真实 Pi；结束时恢复 Pi 与 kubelet。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
 import json
@@ -53,7 +51,7 @@ def run(args):
         pods = json.loads(a.kubectl('get', 'pods', '-o', 'json'))['items']
         evidence['operator_images'] = [{'uid': p['metadata']['uid'], 'containers': [
             {key: c.get(key) for key in ['image', 'imageID']} for c in p['status'].get('containerStatuses', [])]}
-            for p in pods if p['metadata'].get('labels', {}).get('app.kubernetes.io/name') == 'artifactory-operator']
+            for p in pods if p['metadata'].get('labels', {}).get('app.kubernetes.io/name') == 'artifactory-agent-operator']
         control = next(p for p in pods if p['metadata'].get('labels', {}).get('app') == 'control-plane')
         runtime = next(p for p in pods if p['metadata'].get('labels', {}).get('app.kubernetes.io/name') == 'artifactory-runtime')
         upstream = next(p for p in pods if p['metadata'].get('labels', {}).get('app') == 'upstream')

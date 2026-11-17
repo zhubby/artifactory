@@ -136,6 +136,10 @@ impl ControlStore {
         // Persist link tombstones before removing identities; all statements commit atomically.
         sql::execute(&mut tx,"INSERT INTO deleted_projects(id,tenant_id,slug) SELECT id,tenant_id,slug FROM projects WHERE id=ANY($1) ON CONFLICT DO NOTHING",params![&projects]).await?;
         for statement in [
+            "DELETE FROM release_images WHERE release_id IN(SELECT id FROM releases WHERE project_id=ANY($1))",
+            "DELETE FROM image_artifacts WHERE project_id=ANY($1)",
+            "DELETE FROM image_executions WHERE project_id=ANY($1)",
+            "DELETE FROM image_credentials WHERE project_id=ANY($1)",
             "DELETE FROM release_artifacts WHERE release_id IN(SELECT id FROM releases WHERE project_id=ANY($1))",
             "DELETE FROM releases WHERE project_id=ANY($1)",
             "DELETE FROM publish_attempts WHERE build_id IN(SELECT id FROM builds WHERE project_id=ANY($1))",

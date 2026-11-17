@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Build test images for the target cluster architecture; never deploy them."""
+"""[INPUT]: 工作区源码、目标架构和隔离集群镜像地址。
+[OUTPUT]: 构建独立服务、网关、Pi 和设备夹具镜像。
+[POS]: 仅构建并导入指定镜像，不创建集群工作负载。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 import argparse
 from pathlib import Path
 import os
@@ -19,18 +23,19 @@ if __name__ == '__main__':
     parser.add_argument('--rust-image', default='rust:1.95-bookworm')
     parser.add_argument('--base-image', default='debian:bookworm-slim')
     parser.add_argument('--pi-base', help='Optional Agent worker image using the current layout and identical pinned Pi dependencies')
-    parser.add_argument('--skip-runtime-build', action='store_true')
+    parser.add_argument('--skip-runtime-build', action='store_true', help='Reuse all previously built independent service and gateway images')
     parser.add_argument('--kind', help='Load into this kind cluster instead of pushing')
     args = parser.parse_args()
     directory = ROOT / '.local/operator-test'; directory.mkdir(parents=True, exist_ok=True)
-    runtime = f'{args.registry}/operator:{args.tag}'
+    components = {'agent-operator':'operators/agent-operator/Dockerfile','planner-runtime':'crates/planner-runtime/Dockerfile','source-service':'crates/source-service/Dockerfile','control-plane':'Dockerfile','emissary':'crates/emissary/Dockerfile','gateway':'crates/gateway/Dockerfile'}
     fixture = f'{args.registry}/operator-fixture:{args.tag}'
     pi = f'{args.registry}/operator-pi:{args.tag}'
     if not args.skip_runtime_build:
-        run(['docker', 'build', '--platform', args.platform, '-f', 'operator/Dockerfile', '--build-arg', 'RUST_IMAGE='+args.rust_image, '--build-arg', 'BASE_IMAGE='+args.base_image, '-t', runtime, '.'])
+        for name, dockerfile in components.items():
+            run(['docker', 'build', '--platform', args.platform, '-f', dockerfile, '--build-arg', 'RUST_IMAGE='+args.rust_image, '--build-arg', 'BASE_IMAGE='+args.base_image, '-t', f'{args.registry}/{name}:{args.tag}', '.'])
     environment = dict(os.environ, CGO_ENABLED='0', GOOS='linux', GOARCH=args.platform.split('/')[1])
     run(['go', 'build', '-o', str(directory/'fixture'), str(ROOT/'tests/operator/acceptance/fixture.go'), str(ROOT/'tests/operator/acceptance/live_provider.go')], env=environment)
-    run(['docker', 'build', '--platform', args.platform, '-f', str(ROOT/'tests/operator/acceptance/Dockerfile'), '--build-arg', 'BASE_IMAGE='+runtime, '-t', fixture, str(directory)])
+    run(['docker', 'build', '--platform', args.platform, '-f', str(ROOT/'tests/operator/acceptance/Dockerfile'), '--build-arg', 'BASE_IMAGE='+f'{args.registry}/emissary:{args.tag}', '-t', fixture, str(directory)])
     if args.pi_base:
         run(['npm', 'run', 'build'], cwd=ROOT/'packages/agent-worker')
         dockerfile = directory/'pi.Dockerfile'
@@ -47,7 +52,7 @@ if __name__ == '__main__':
             continue
         run(['docker', 'pull', '--platform', args.platform, upstream])
         run(['docker', 'tag', upstream, local])
-    images = [runtime, fixture, pi, *[local for _, local in dependencies]]
+    images = [*[f'{args.registry}/{name}:{args.tag}' for name in components], fixture, pi, *[local for _, local in dependencies]]
     for image in images:
         actual = subprocess.check_output(['docker','image','inspect','--format','{{.Os}}/{{.Architecture}}',image], text=True).strip()
         if actual != args.platform:

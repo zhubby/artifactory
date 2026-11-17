@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Prepare private, persistent Kubernetes Secrets; never overwrite an output directory."""
+"""[INPUT]: 新部署命名空间、资源前缀和设备入口 SAN。
+[OUTPUT]: 持久业务凭据、设备 PKI、网关令牌和独立仓库签名密钥。
+[POS]: 只初始化新目录；已有部署必须保留主密钥和设备 CA。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 
 import argparse
 import base64
@@ -59,6 +63,8 @@ def main():
             "-out", "server.csr", "-subj", "/CN=artifactory Control")
     hosts = args.grpc_host + ["DNS:" + prefix + "-grpc",
                              f"DNS:{prefix}-grpc.{args.namespace}.svc",
+                             "DNS:" + prefix + "-gateway-internal",
+                             f"DNS:{prefix}-gateway-internal.{args.namespace}.svc",
                              "DNS:" + prefix + "-local-source",
                              f"DNS:{prefix}-local-source.{args.namespace}.svc",
                              "DNS:" + prefix + "-telemetry",
@@ -103,6 +109,11 @@ def main():
         }
         (output / (suffix + ".json")).write_text(json.dumps(document, indent=2) + "\n")
 
+    openssl("req", "-x509", "-newkey", "rsa:3072", "-nodes", "-keyout", "registry.key",
+            "-out", "registry.crt", "-sha256", "-days", "365", "-subj", "/CN=artifactory Registry Token Issuer")
+    write_secret("gateway", {"token": secrets.token_hex(32)})
+    write_secret("registry-signing", {"tls.key": (pki / "registry.key").read_text(), "tls.crt": (pki / "registry.crt").read_text()})
+    write_secret("registry-signing-public", {"tls.crt": (pki / "registry.crt").read_text()})
     write_secret("credentials", credentials)
     write_secret("pki", {name: (pki / name).read_text()
                          for name in ("ca.pem", "ca.key", "server.pem", "server.key")})
@@ -113,7 +124,7 @@ def main():
         "ca_file": str(pki / "ca.pem"),
     }, indent=2) + "\n")
     print(f"Prepared private Secrets in {output}. Back up this directory; reuse it on upgrades.")
-    print("Apply credentials.json and pki.json only after confirming the target namespace is new.")
+    print("Apply generated Secret JSON files only after confirming the target namespace is new.")
 
 
 if __name__ == "__main__":

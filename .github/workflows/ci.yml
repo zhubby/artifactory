@@ -30,8 +30,13 @@ jobs:
           helm lint charts/artifactory --strict -f charts/artifactory/values-kind.yaml
           helm lint charts/artifactory --strict -f charts/artifactory/values-ha.yaml
           helm lint charts/artifactory --strict -f charts/artifactory/values-trial.yaml
-          helm lint charts/artifactory-operator --strict
-          helm template native charts/artifactory-operator > /dev/null
+          helm lint charts/artifactory-agent-operator --strict
+          helm lint charts/artifactory-image-operator --strict
+          helm lint charts/artifactory-registry --strict
+          helm template native charts/artifactory-agent-operator > /dev/null
+          helm template images charts/artifactory-image-operator > /dev/null
+          helm template registry charts/artifactory-registry > /dev/null
+          helm template images charts/artifactory --set imageBuilds.enabled=true,gateway.dedicatedData=true,ingress.enabled=true > /dev/null
           helm template artifactory charts/artifactory --set ingress.enabled=true > /dev/null
           helm template artifactory charts/artifactory -f charts/artifactory/values-kind.yaml > /dev/null
           helm template artifactory charts/artifactory --namespace artifactory --kube-version 1.28.3 \
@@ -62,7 +67,7 @@ jobs:
             echo "ARTIFACTORY_TEST_ANDROID_BUILD_TOOLS=$ANDROID_HOME/build-tools/36.0.0"
             echo "ARTIFACTORY_TEST_ANDROID_PLATFORM=$ANDROID_HOME/platforms/android-36/android.jar"
           } >> "$GITHUB_ENV"
-      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler openssh-server postgresql-client rclone git-lfs && sudo mkdir -p /run/sshd
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler openssh-server postgresql-client rclone git-lfs cmake pkg-config && sudo mkdir -p /run/sshd
       - run: npm ci && npm run check && npm test
         working-directory: packages/agent-worker
       - run: rustup toolchain install 1.95.0 --profile minimal --component rustfmt,clippy && rustup default 1.95.0
@@ -73,6 +78,7 @@ jobs:
       - run: sh scripts/local-services.sh
       - run: python3 scripts/check_data_access.py --dependencies
       - run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+      - run: python3 -m unittest discover -s tests/operator/acceptance -p 'test_*.py' -v
       - run: cargo fmt --all --check && cargo clippy --locked --all-targets -- -D warnings
       - name: Rust unit, Runtime/Source, business and Timescale telemetry regressions
         run: |
@@ -80,11 +86,18 @@ jobs:
           ARTIFACTORY_SERVICE_TOKEN="$(openssl rand -hex 32)"
           export ARTIFACTORY_SERVICE_TOKEN
           cargo test --locked --workspace --all-targets -- --include-ignored --skip live_emissary_protocol --skip native_service_lifecycle --skip device_fleet_load
-      - name: Generated CRDs match both release manifests
+      - name: Generated CRDs match independent Operator charts
         run: |
-          cargo run --locked -q -p artifactory-operator --bin crdgen > /tmp/artifactory-crds.yaml
-          diff -u operator/config/crd/resources.yaml /tmp/artifactory-crds.yaml
-          diff -u charts/artifactory-operator/crds/resources.yaml /tmp/artifactory-crds.yaml
+          cargo run --locked -q -p artifactory-agent-operator --bin artifactory-agent-crdgen > /tmp/artifactory-crds.yaml
+          diff -u operators/agent-operator/config/crd/resources.yaml /tmp/artifactory-crds.yaml
+          diff -u charts/artifactory-agent-operator/crds/resources.yaml /tmp/artifactory-crds.yaml
+          cargo run --locked -q -p artifactory-image-operator --bin artifactory-image-crdgen > /tmp/artifactory-image-crds.yaml
+          diff -u operators/image-operator/config/crd/resources.yaml /tmp/artifactory-image-crds.yaml
+          diff -u charts/artifactory-image-operator/crds/resources.yaml /tmp/artifactory-image-crds.yaml
+      - name: Streaming gateway and end-to-end device mTLS
+        run: |
+          cargo build --locked -p artifactory-gateway
+          python3 tests/images/gateway.py
       - run: cargo build --locked --bin artifactory-emissary
       - run: sh scripts/cross-build-emissary.sh
       - run: npm ci && npm run typecheck && npm run build && npx playwright install --with-deps chromium
@@ -124,6 +137,7 @@ jobs:
           grep -q 'ACCEPTANCE READY' .local/acceptance-run.log
           test -f .local/acceptance/latest.json
           export ARTIFACTORY_LIVE_TESTS=1
+          export ARTIFACTORY_BROWSER_URL=http://127.0.0.1:8080
           export ARTIFACTORY_LIVE_S3_CONTAINER=artifactory-s3-test
           ARTIFACTORY_LIVE_EMISSARY_CONFIG="$(python3 -c 'import json; print(json.load(open(".local/acceptance/latest.json"))["emissary_config"])')"
           ARTIFACTORY_LIVE_PROJECT_ID="$(python3 -c 'import json; print(json.load(open(".local/acceptance/latest.json"))["project_id"])')"
@@ -212,7 +226,7 @@ jobs:
             .local/operator-acceptance/*/evidence.json
             .local/operator-acceptance/*/build.json
             .local/operator-acceptance/*/control-plane.log
-            .local/operator-acceptance/*/native-operator.log
+            .local/operator-acceptance/*/native-agent-operator.log
             .local/operator-acceptance/*/native-runtime.log
             .local/operator-acceptance/*/native-telemetry.log
             .local/operator-acceptance/*/device.log

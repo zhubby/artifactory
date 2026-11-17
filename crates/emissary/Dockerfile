@@ -1,3 +1,7 @@
+# [INPUT]: Rust 工作区与独立 Operator crate 清单。
+# [OUTPUT]: 提供含 Git/LFS 的 Linux 原生执行节点镜像。
+# [POS]: 只交付 Emissary；Operator 使用独立镜像。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 ARG RUST_IMAGE=rust:1.95-bookworm
 ARG BASE_IMAGE=debian:bookworm-slim
 FROM ${RUST_IMAGE} AS builder
@@ -6,7 +10,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY vendor ./vendor
 COPY crates ./crates
-COPY operator ./operator
+COPY operators ./operators
 COPY proto ./proto
 ARG ARTIFACTORY_BUILD_VERSION=0.2.0
 ARG ARTIFACTORY_BUILD_COMMIT=development

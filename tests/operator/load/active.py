@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Measure real active Pi Pods, recovery and cancellation in a saved test namespace.
-
-Capacity is checked before admission. This is distinct from admission.py's 10,000
-database-only queued runs. Evidence never contains service credentials.
+"""[INPUT]: 已保存的隔离命名空间和显式活动容量。
+[OUTPUT]: 记录真实 Pi Pod、预算、故障恢复与取消。
+[POS]: 准入前检查容量；只输出脱敏观测证据。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -212,9 +212,9 @@ class Capacity:
             self.evidence['hold_crd_mutations'] = hold_writes
             assert hold_writes <= 2*self.args.active, 'Steady heartbeats caused excessive CRD writes'
             (self.directory/'runtime-before-restart.log').write_text(self.a.kubectl('logs','-l','app.kubernetes.io/name=artifactory-runtime','--prefix','--tail=200'))
-            old_services = {p['metadata']['uid'] for p in json.loads(self.a.kubectl('get','pods','-o','json'))['items'] if p['metadata'].get('labels',{}).get('app.kubernetes.io/name') in ['artifactory-runtime','artifactory-operator']}
+            old_services = {p['metadata']['uid'] for p in json.loads(self.a.kubectl('get','pods','-o','json'))['items'] if p['metadata'].get('labels',{}).get('app.kubernetes.io/name') in ['artifactory-runtime','artifactory-agent-operator']}
             restarted = time.monotonic()
-            for deployment in ['native-runtime','native-operator']:
+            for deployment in ['native-runtime','native-agent-operator']:
                 self.a.kubectl('rollout','restart','deployment/'+deployment)
                 self.a.kubectl('rollout','status','deployment/'+deployment,'--timeout=120s')
             self.a.wait(lambda: not old_services.intersection(p['metadata']['uid'] for p in json.loads(self.a.kubectl('get','pods','-o','json'))['items']),120)
@@ -268,9 +268,9 @@ class Capacity:
             self.evidence['failure'] = {'type':type(error).__name__, 'message':str(error)[:300]}
             # Capture the original failure before cancellation adds expected
             # fencing errors, and before a later rollout discards Pod logs.
-            for name in ['runtime', 'operator']:
+            for name, label in [('runtime', 'artifactory-runtime'), ('operator', 'artifactory-agent-operator')]:
                 try:
-                    log = self.a.kubectl('logs','-l','app.kubernetes.io/name=artifactory-'+name,'--prefix','--tail=1000')
+                    log = self.a.kubectl('logs','-l','app.kubernetes.io/name='+label,'--prefix','--tail=1000')
                     (self.directory/(name+'-failure.log')).write_text(log)
                 except RuntimeError:
                     pass

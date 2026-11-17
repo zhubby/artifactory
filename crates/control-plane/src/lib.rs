@@ -10,6 +10,7 @@ pub mod dispatch;
 pub mod error;
 pub mod execution_plan;
 pub mod grpc;
+pub mod images;
 pub mod lifecycle;
 pub mod local_source;
 pub mod ota;

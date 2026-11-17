@@ -1,0 +1,26 @@
+# [INPUT]: Pi Pod 标签和命名空间内规划服务端口。
+# [OUTPUT]: 拒绝入站并限制 Pi 出站目的地的 NetworkPolicy。
+# [POS]: Pi 仅分析源码，不连接设备或业务数据库。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-pi
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: artifactory-pi}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: artifactory-runtime}
+        - podSelector:
+            matchLabels: {app.kubernetes.io/name: artifactory-source}
+      ports: [{port: 8090, protocol: TCP}, {port: 8091, protocol: TCP}]
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+{{- end }}

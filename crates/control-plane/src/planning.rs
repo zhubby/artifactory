@@ -1,6 +1,6 @@
-//! [INPUT]: 依赖固定源码、项目授权和凭据版本快照。
+//! [INPUT]: 依赖固定源码、执行器准入和项目授权。
 //! [OUTPUT]: 校验并提交 Poll 与 Runtime 共用执行计划。
-//! [POS]: 规划结果进入调度前的业务约束边界。
+//! [POS]: 原生 LFS 能力与镜像目标在持久化前分别校验。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     crypto, execution_plan::ExecutionPlan, pki, protocol::*, recipe::Recipe, source_cache,
@@ -231,6 +231,17 @@ fn target_requirements(recipe: &Recipe, requirements: &Value) -> Result<()> {
     let requirements = requirements
         .as_array()
         .context("target requirements must be an array")?;
+    let platforms: Vec<_> = recipe
+        .targets
+        .values()
+        .flat_map(|target| {
+            if let Some(image) = &target.image {
+                image.platforms.clone()
+            } else {
+                vec![format!("{}/{}", target.os, target.arch)]
+            }
+        })
+        .collect();
     for requirement in requirements {
         let os = requirement["os"]
             .as_str()
@@ -239,18 +250,20 @@ fn target_requirements(recipe: &Recipe, requirements: &Value) -> Result<()> {
             .as_str()
             .context("target architecture is required")?;
         ensure!(
-            recipe
-                .targets
-                .values()
-                .any(|target| target.os == os && target.arch == arch),
+            platforms.contains(&format!("{os}/{arch}")),
             "plan does not cover requested platform {os}/{arch}"
         );
     }
     if !requirements.is_empty() {
         ensure!(
-            recipe.targets.values().all(|t| requirements
+            platforms
                 .iter()
-                .any(|r| r["os"] == t.os && r["arch"] == t.arch)),
+                .all(|platform| requirements.iter().any(|r| platform
+                    == &format!(
+                        "{}/{}",
+                        r["os"].as_str().unwrap_or(""),
+                        r["arch"].as_str().unwrap_or("")
+                    ))),
             "plan adds an unrequested platform"
         );
     }
@@ -264,6 +277,7 @@ pub(crate) async fn prepare_plan(
     evidence_verified: bool,
 ) -> Result<ExecutionPlan> {
     let mut plan = ExecutionPlan::parse(value)?;
+    crate::images::ensure_targets_enabled(plan.recipe.targets.values(), crate::images::enabled())?;
     let snapshot: Uuid = context.snapshot_id;
     let source = source_cache::load(state, snapshot).await?;
     if !evidence_verified {
@@ -283,8 +297,13 @@ pub(crate) async fn prepare_plan(
     let planning_context = context.planning_context;
     if planning_context["placement_version"] == 1 {
         ensure!(
-            plan.recipe.targets.keys().eq(plan.placements.keys()),
-            "AI placement is required for every target"
+            plan.recipe
+                .targets
+                .iter()
+                .filter(|(_, target)| target.executor == "native")
+                .map(|(key, _)| key)
+                .eq(plan.placements.keys()),
+            "AI placement is required for every native target"
         );
     } else {
         // A newer worker must preserve the scheduler selected when this build began.
@@ -357,6 +376,7 @@ pub(crate) async fn prepare_plan(
             "plan exceeds project signing authorization"
         );
     }
+    source_capabilities(&mut plan.recipe, &source);
     let current: Option<Uuid> = context.current_plan_id;
     let failed: Vec<String> = context.failed_targets;
     if current.is_some() {
@@ -391,16 +411,55 @@ pub(crate) async fn prepare_plan(
     }
     // Publication is controlled by explicit API requests and release authorization.
     plan.recipe.release.enabled = true;
+    ExecutionPlan::parse(serde_json::to_value(plan)?)
+}
+
+fn source_capabilities(recipe: &mut Recipe, source: &source_cache::Snapshot) {
     if source.repositories.iter().any(|repo| !repo.lfs.is_empty()) {
-        for target in plan.recipe.targets.values_mut() {
+        for target in recipe
+            .targets
+            .values_mut()
+            .filter(|target| target.executor == "native")
+        {
             if !target.capabilities.iter().any(|c| c == "git-lfs") {
                 target.capabilities.push("git-lfs".into());
             }
         }
     }
-    Ok(plan)
 }
 
 pub async fn reap(state: &AppState) -> Result<()> {
     state.store.reap_planning().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn lfs_capabilities_keep_mixed_plans_valid_after_persistence() {
+        let value = json!({"summary":"mixed plan","evidence":[{"path":"Dockerfile","reason":"build context"}],"recipe":{"version":1,"targets":{"image":{"os":"linux","arch":"amd64","executor":"buildkit","image":{"name":"app"}},"native":{"os":"linux","arch":"amd64","artifacts":["dist/*"],"steps":[{"name":"build","run":"echo ok"}]}}}});
+        let mut plan = ExecutionPlan::parse(value).unwrap();
+        let source:source_cache::Snapshot=serde_json::from_value(json!({"id":Uuid::new_v4(),"project_id":Uuid::new_v4(),"commit":"a".repeat(40),"repositories":[{"id":Uuid::new_v4(),"repository_id":Uuid::new_v4(),"path":"","commit":"a".repeat(40),"tags":{},"lfs":[{"path":"data.bin","oid":"b".repeat(64),"size":42}]}]})).unwrap();
+        source_capabilities(&mut plan.recipe, &source);
+        let persisted = serde_json::to_value(&plan).unwrap();
+        let mut revision = ExecutionPlan::parse(persisted.clone())
+            .expect("saved plans must reparse for assignment and revisions");
+        assert_eq!(plan.recipe.targets["native"].capabilities, vec!["git-lfs"]);
+        assert!(plan.recipe.targets["image"].capabilities.is_empty());
+        source_capabilities(&mut revision.recipe, &source);
+        assert_eq!(serde_json::to_value(revision).unwrap(), persisted);
+    }
+    #[test]
+    fn image_platform_requirements_cover_the_index_platforms() {
+        let recipe=Recipe::parse("version: 1\ntargets:\n  image:\n    os: linux\n    arch: amd64\n    executor: buildkit\n    image:\n      name: app\n      platforms: [linux/amd64, linux/arm64]\n").unwrap();
+        assert!(
+            target_requirements(
+                &recipe,
+                &json!([{"os":"linux","arch":"amd64"},{"os":"linux","arch":"arm64"}])
+            )
+            .is_ok()
+        );
+        assert!(target_requirements(&recipe, &json!([{"os":"linux","arch":"amd64"}])).is_err());
+        assert!(target_requirements(&recipe,&json!([{"os":"linux","arch":"amd64"},{"os":"linux","arch":"arm64"},{"os":"darwin","arch":"arm64"}])).is_err());
+    }
 }

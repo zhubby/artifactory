@@ -1,17 +1,9 @@
+# [INPUT]: 公网控制台域名与 Pingora 内部入口。
+# [OUTPUT]: 自动签发 TLS 并转发整个公共入口。
+# [POS]: 只终止 TLS；对象和控制路由由 Pingora 判定。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 {$ARTIFACTORY_DOMAIN} {
-    encode zstd gzip
-    handle /api/* {
-        reverse_proxy control-plane:8080 {
-            flush_interval -1
-        }
-    }
-    handle {
-    reverse_proxy web:3000 {
+    reverse_proxy gateway:8080 {
         flush_interval -1
     }
-    }
-}
-
-{$ARTIFACTORY_S3_DOMAIN} {
-    reverse_proxy s3:8333
 }

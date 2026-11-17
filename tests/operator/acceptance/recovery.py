@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Restore all four TimescaleDB databases, S3, service keys and routing in isolated kind.
-
-Creates fresh PostgreSQL/S3 Pods and promotes them behind stable Services. The
-original data Pods remain available for rollback. Never targets a live project.
+"""[INPUT]: 独立 kind 安装、四个数据库和私有对象。
+[OUTPUT]: 验证数据库、密钥、网关与源码路由恢复。
+[POS]: 创建新数据 Pod；保留旧 Pod 供回退。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
 import base64
@@ -37,16 +37,16 @@ class Recovery:
         self.pg_port = str(args.postgres_port)
         if not self.pg_restore or not self.psql:
             raise ValueError('Install a PostgreSQL client compatible with the PostgreSQL 17 archive before running this drill')
-        self.replicas = {'deploy/control-plane': 1, 'deploy/native-runtime': 1, 'deploy/native-operator': 2, 'deploy/native-telemetry':1, 'statefulset/sources': 1}
+        self.replicas = {'deploy/gateway': 1, 'deploy/control-plane': 1, 'deploy/native-runtime': 1, 'deploy/native-agent-operator': 2, 'deploy/native-telemetry':1, 'statefulset/sources': 1}
 
     def scale(self, stopped):
         if stopped:
-            self.a.kubectl('scale', 'deploy/native-operator', '--replicas=0')
-            self.a.wait(lambda: not json.loads(self.a.kubectl('get', 'pods', '-l', 'app.kubernetes.io/name=artifactory-operator', '-o', 'json'))['items'], 120)
+            self.a.kubectl('scale', 'deploy/native-agent-operator', '--replicas=0')
+            self.a.wait(lambda: not json.loads(self.a.kubectl('get', 'pods', '-l', 'app.kubernetes.io/name=artifactory-agent-operator', '-o', 'json'))['items'], 120)
         for resource, replicas in self.replicas.items():
             self.a.kubectl('scale', resource, '--replicas=' + str(0 if stopped else replicas))
         if stopped:
-            self.a.wait(lambda: not any(p['metadata']['name'].startswith(('control-plane-', 'native-runtime-', 'native-operator-', 'native-telemetry-','sources-')) for p in json.loads(self.a.kubectl('get', 'pods', '-o', 'json'))['items']), 120)
+            self.a.wait(lambda: not any(p['metadata']['name'].startswith(('gateway-', 'control-plane-', 'native-runtime-', 'native-agent-operator-', 'native-telemetry-','sources-')) for p in json.loads(self.a.kubectl('get', 'pods', '-o', 'json'))['items']), 120)
 
     def telemetry_state(self):
         tables=['telemetry_batches','host_samples','process_samples','build_samples','inventory_versions','inventory_observations','latest_hosts','latest_inventories','host_minutes','host_hours','build_minutes','build_hours']
@@ -126,7 +126,7 @@ class Recovery:
             telemetry_before=self.telemetry_state()
             dumps = {db: self.dump(db) for db in ['business', 'planner', 'sources','telemetry']}
             # Full private backup; only hashes are included in exported evidence.
-            resources = [json.loads(a.kubectl('get', 'secret', name, '-o', 'json')) for name in ['control-plane', 'runtime', 'source','telemetry', 'service-tls', 'acceptance-pki']]
+            resources = [json.loads(a.kubectl('get', 'secret', name, '-o', 'json')) for name in ['control-plane', 'gateway', 'runtime', 'source','telemetry', 'service-tls', 'acceptance-pki']]
             routes = [json.loads(a.kubectl('get', kind, '-o', 'json')) for kind in ['agentpools', 'sourcepools']]
             (self.directory / 'private-keys-and-routes.json').write_text(json.dumps({'secrets': resources, 'routes': routes}))
             key_hash = hashlib.sha256(json.dumps([r['data'] for r in resources], sort_keys=True).encode()).hexdigest()

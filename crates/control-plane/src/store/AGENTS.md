@@ -11,9 +11,9 @@ projects.rs: 写入项目配置和源码授权。
 signing.rs: 写入凭据版本、默认方案并投影方案当前可用性。
 signing_execution.rs: 锁定当前授权并执行材料领取及最终证据登记。
 tenancy.rs: 锁定租户权限并校验资源范围。
-lifecycle.rs: 维护工作区归档和删除租约。
+lifecycle.rs: 维护归档、删除租约与在途日志写入宽限期。
 lifecycle_cleanup.rs: 依据删除清单清除业务状态和签名密文。
-builds.rs: 创建构建，读取制品、发布与前后向日志游标。
+builds.rs: 创建构建，读取原生及镜像 Release、制品与日志游标。
 executions.rs: 维护节点 session、任务事件和不可变制品登记。
 scheduling.rs: 分配任务并生成不可变 Release。
 planning.rs: 维护规划租约、工具结果和固定上下文。
@@ -29,5 +29,7 @@ node_queries.rs: 执行项目范围内的节点查询。
 ota.rs: 记录节点升级命令和健康回执。
 ota_management.rs: 写入节点发布及升级目标。
 performance.rs: 验证存储查询预算和响应规模。
+
+images.rs: 保存排空续跑身份、超时分类和发布仓库来源快照。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

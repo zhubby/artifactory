@@ -1,7 +1,7 @@
 //! ```text
-//! [INPUT]: 依赖租户构建、attempt 与日志对象索引。
-//! [OUTPUT]: 提供构建、发布、制品和日志游标查询。
-//! [POS]: 查询日志元数据；对象正文由接口层读取。
+//! [INPUT]: 依赖租户构建、镜像准入和执行结果索引。
+//! [OUTPUT]: 保存构建准入快照并提供原生与镜像 Release。
+//! [POS]: 构建创建与结果查询边界；对象正文由接口层读取。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! ```
 use super::ControlStore;
@@ -79,7 +79,7 @@ impl ControlStore {
                 project_row.decode("tenant_id")?,
             )
             .await?;
-        let context = json!({"placement_version":if std::env::var("ARTIFACTORY_AI_PLACEMENT").is_ok_and(|v|v=="1" || v=="true") {1}else{0},"pool_ids":project_row.decode::<Vec<Uuid>>("pool_ids")?,"signing_profiles":project_row.decode::<Vec<String>>("signing_profiles")?,"build_context":project_row.decode::<String>("build_context")?,"source_credentials":project_row.decode::<Value>("source_credentials")?});
+        let context = json!({"image_builds_enabled":crate::images::enabled(),"placement_version":if std::env::var("ARTIFACTORY_AI_PLACEMENT").is_ok_and(|v|v=="1" || v=="true") {1}else{0},"pool_ids":project_row.decode::<Vec<Uuid>>("pool_ids")?,"signing_profiles":project_row.decode::<Vec<String>>("signing_profiles")?,"build_context":project_row.decode::<String>("build_context")?,"source_credentials":project_row.decode::<Value>("source_credentials")?});
         let id = Uuid::new_v4();
         let created=sql::execute(&mut self.pool.clone(), "INSERT INTO builds(id,project_id,requested_ref,parameters,selected_targets,release_version,publish_status,requested_by,source_repository_url,source_credential_id,goal,target_requirements,planning_context,model_config_snapshot) SELECT $1,id,$3,$4,$5,$6,$7,$8,repository_url,credential_id,$9,$10,$11,$12 FROM projects WHERE id=$2", params![id, project, &input.reference, &input.parameters, &input.targets, &input.release_version, if input.release_version.is_some(){"pending"}else{"not_requested"}, actor, goal, &input.target_requirements, context, model]).await?;
         if created != 1 {
@@ -109,7 +109,7 @@ impl ControlStore {
         project: Option<Uuid>,
         visible: Option<Vec<Uuid>>,
     ) -> Result<Vec<dto::ReleaseSummary>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(r) || jsonb_build_object('project_name',p.name,'artifact_count',(SELECT count(*) FROM release_artifacts ra WHERE ra.release_id=r.id)) FROM releases r JOIN projects p ON p.id=r.project_id WHERE ($1::uuid IS NULL OR p.id=$1) AND ($2::uuid[] IS NULL OR p.id=ANY($2)) ORDER BY r.created_at DESC LIMIT 100", params![project, visible]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(r) || jsonb_build_object('project_name',p.name,'artifact_count',(SELECT count(*) FROM release_artifacts ra WHERE ra.release_id=r.id)+(SELECT count(*) FROM release_images ri WHERE ri.release_id=r.id)) FROM releases r JOIN projects p ON p.id=r.project_id WHERE ($1::uuid IS NULL OR p.id=$1) AND ($2::uuid[] IS NULL OR p.id=ANY($2)) ORDER BY r.created_at DESC LIMIT 100", params![project, visible]).await?)
     }
 
     pub async fn build_project(&self, id: Uuid) -> Result<Uuid> {
@@ -136,6 +136,8 @@ impl ControlStore {
             jobs,
             artifacts,
             publish_attempts,
+            image_executions: self.image_history(id).await?,
+            image_registry: std::env::var("ARTIFACTORY_REGISTRY_URL").ok(),
         })
     }
 
@@ -180,10 +182,15 @@ impl ControlStore {
         let mut transaction_db = self.pool.clone();
         let mut transaction = transaction_db.transaction().await?;
         sql::execute(&mut transaction,"SELECT require_active_project(b.project_id) FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1",params![id]).await?;
-        let row=sql::record(&mut transaction, "SELECT j.status,b.status AS build_status,b.id,b.project_id,b.release_version,EXISTS(SELECT 1 FROM releases r WHERE r.build_id=b.id) AS published FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1 FOR UPDATE OF j,b", params![id], &[("status", Type::String),("build_status", Type::String),("id", Type::Uuid),("project_id", Type::Uuid),("release_version", Type::String),("published", Type::Bool)]).await?;
+        let row=sql::record(&mut transaction, "SELECT j.status,j.target_config->>'executor' AS executor,b.status AS build_status,b.id,b.project_id,b.release_version,EXISTS(SELECT 1 FROM releases r WHERE r.build_id=b.id) AS published FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1 FOR UPDATE OF j,b", params![id], &[("status", Type::String),("executor", Type::String),("build_status", Type::String),("id", Type::Uuid),("project_id", Type::Uuid),("release_version", Type::String),("published", Type::Bool)]).await?;
         auth.project(row.decode("project_id")?, "build")?;
         if row.decode::<Option<String>>("release_version")?.is_some() {
             auth.project(row.decode("project_id")?, "release")?;
+        }
+        if row.decode::<Option<String>>("executor")?.as_deref() == Some("buildkit")
+            && !crate::images::enabled()
+        {
+            return Err(ApiError::Conflict(crate::images::DISABLED_MESSAGE.into()));
         }
         if row.decode::<bool>("published")?
             || ["planning", "replanning", "needs_input"]
@@ -262,6 +269,10 @@ impl ControlStore {
 
     pub async fn release_artifacts(&self, id: Uuid) -> Result<Vec<dto::ReleaseArtifact>> {
         Ok(sql::scalars::<dto::ReleaseArtifact>(&mut self.pool.clone(), "SELECT (to_jsonb(ar)-'object_key') || jsonb_build_object('target',j.target) FROM release_artifacts ra JOIN artifacts ar ON ar.id=ra.artifact_id JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id WHERE ra.release_id=$1 ORDER BY j.target,ar.path", params![id]).await?)
+    }
+
+    pub async fn release_images(&self, id: Uuid) -> Result<Vec<Value>> {
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(i) || jsonb_build_object('target',j.target,'name',e.spec->>'name') FROM release_images r JOIN image_artifacts i ON i.id=r.image_id JOIN jobs j ON j.id=i.job_id JOIN image_executions e ON e.id=i.execution_id WHERE r.release_id=$1 ORDER BY j.target", params![id]).await?)
     }
 
     pub async fn log_chunks(&self, id: Uuid, cursor: i64) -> Result<Vec<LogChunk>> {

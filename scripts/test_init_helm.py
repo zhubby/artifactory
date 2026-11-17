@@ -1,3 +1,8 @@
+"""[INPUT]: Helm 模板与独立 Secret 初始化脚本。
+[OUTPUT]: 验证私有入口、服务端口和不可覆盖的持久凭据。
+[POS]: 部署契约回归；不连接 Kubernetes。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 import base64
 import json
 import os
@@ -54,9 +59,54 @@ class HelmBootstrapTests(unittest.TestCase):
         self.assertIn('emptyDir: {sizeLimit: 10Gi}', result.stdout)
         self.assertIn('kind: PodDisruptionBudget', result.stdout)
         self.assertIn('https://ha-test-local-source:8080', result.stdout)
-        self.assertIn('tls_trust_pool file /run/pki/ca.pem', result.stdout)
+        self.assertIn('ARTIFACTORY_SERVICE_CA, value: /run/ca/ca.crt', result.stdout)
+        self.assertIn('ARTIFACTORY_GATEWAY_SOURCE, value: "https://ha-test-local-source:8080"', result.stdout)
         self.assertIn('ARTIFACTORY_DB_MAX_CONNECTIONS: "40"', result.stdout)
         self.assertIn('path: /readyz', result.stdout)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_gateway_ports_and_independent_image_services(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        result = subprocess.run(['helm', 'template', 'custom', str(chart), '--set',
+                                 'imageBuilds.enabled=true,gateway.dedicatedData=true,ingress.enabled=true'],
+                                check=True, capture_output=True, text=True)
+        rendered = result.stdout
+        self.assertIn('- {port: 8443, targetPort: grpc, name: grpc}', rendered)
+        self.assertIn('app.kubernetes.io/component: gateway-device', rendered)
+        self.assertIn('ARTIFACTORY_GATEWAY_PROFILE, value: "control"', rendered)
+        self.assertIn('ARTIFACTORY_GATEWAY_PROFILE, value: "data"', rendered)
+        self.assertIn('ARTIFACTORY_GATEWAY_PROFILE, value: "internal"', rendered)
+        self.assertIn('ARTIFACTORY_GATEWAY_TLS_KEY, value: /run/ca/server.key', rendered)
+        self.assertIn('port: 8445, targetPort: https', rendered)
+        self.assertIn('secretKeyRef: {name: custom-gateway, key: token}', rendered)
+        self.assertIn('secretName: custom-registry-signing', rendered)
+        self.assertIn('ARTIFACTORY_S3_ENDPOINT: "http://custom-s3:8333"', rendered)
+        self.assertIn('ARTIFACTORY_S3_ALLOW_HTTP: "true"', rendered)
+        self.assertNotIn('type: NodePort', rendered)
+        ingress = rendered.split('# Source: artifactory/templates/ingress.yaml')[1].split('---')[0]
+        self.assertNotIn('custom-s3', ingress)
+        image_chart = SCRIPT.parents[1] / 'charts/artifactory-image-operator'
+        image = subprocess.run(['helm', 'template', 'images', str(image_chart)],
+                               check=True, capture_output=True, text=True).stdout
+        self.assertIn('fieldPath: metadata.namespace', image)
+        self.assertNotIn('metadata.uidspace', image)
+        self.assertNotIn('resources: [secrets]', image)
+        agent = subprocess.run(['helm', 'template', 'native', str(SCRIPT.parents[1] / 'charts/artifactory-agent-operator')],
+                               check=True, capture_output=True, text=True).stdout
+        self.assertIn('name: native-agent-operator', agent)
+        self.assertIn('app.kubernetes.io/name: artifactory-agent-operator', agent)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_private_external_http_requires_explicit_permission(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        command = ['helm', 'template', 'external', str(chart), '--set',
+                   's3.enabled=false,s3.endpoint=http://private-objects:8333']
+        denied = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(denied.returncode, 0)
+        allowed = subprocess.run(command + ['--set', 's3.allowHttp=true'],
+                                 check=True, capture_output=True, text=True)
+        self.assertIn('ARTIFACTORY_S3_ALLOW_HTTP: "true"', allowed.stdout)
+        self.assertIn('ARTIFACTORY_PUBLIC_URL: "https://build.example.com"', allowed.stdout)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_external_stateful_services_are_not_created(self):
@@ -99,6 +149,13 @@ class HelmBootstrapTests(unittest.TestCase):
                              data["bootstrap-password"])
             identity = json.loads(data["s3.json"])["identities"][0]["credentials"][0]
             self.assertEqual(identity["secretKey"], data["s3-secret-key"])
+            gateway = json.loads((output / 'gateway.json').read_text())
+            self.assertEqual(gateway['metadata']['name'], 'test-kit-gateway')
+            self.assertGreaterEqual(len(gateway['stringData']['token']), 32)
+            signing = json.loads((output / 'registry-signing.json').read_text())['stringData']
+            public = json.loads((output / 'registry-signing-public.json').read_text())['stringData']
+            self.assertEqual(public, {'tls.crt': signing['tls.crt']})
+            self.assertNotEqual(signing['tls.key'], (output / 'pki/ca.key').read_text())
             subprocess.run(["openssl", "verify", "-CAfile", str(output / "pki/ca.pem"),
                             "-verify_hostname", "agents.example.com", str(output / "pki/server.pem")],
                            check=True, capture_output=True)
@@ -107,6 +164,9 @@ class HelmBootstrapTests(unittest.TestCase):
                            check=True, capture_output=True)
             subprocess.run(["openssl", "verify", "-CAfile", str(output / "pki/ca.pem"),
                             "-verify_hostname", "test-kit-local-source", str(output / "pki/server.pem")],
+                           check=True, capture_output=True)
+            subprocess.run(["openssl", "verify", "-CAfile", str(output / "pki/ca.pem"),
+                            "-verify_hostname", "test-kit-gateway-internal", str(output / "pki/server.pem")],
                            check=True, capture_output=True)
             if os.name != "nt":
                 for path in output.rglob("*"):

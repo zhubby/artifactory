@@ -1,3 +1,7 @@
+# [INPUT]: 依赖持久化边界检查器和临时工作区。
+# [OUTPUT]: 验证违规检测及 Operator 目录覆盖。
+# [POS]: 数据访问静态规则的回归。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 import pathlib
 import tempfile
 import unittest
@@ -39,7 +43,7 @@ class DataAccessBoundaries(unittest.TestCase):
     def test_operator_orchestration_obeys_the_same_boundary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
-            path = root / "operator/src/reconcile.rs"
+            path = root / "operators/agent-operator/src/reconcile.rs"
             path.parent.mkdir(parents=True)
             path.write_text("use toasty::Db;")
             self.assertTrue(violations(root))

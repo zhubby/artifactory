@@ -1,3 +1,7 @@
+# [INPUT]: 不可变 Release tag 与对应工作区源码。
+# [OUTPUT]: 独立双架构镜像、OCI Index 和四个 Chart。
+# [POS]: 按原生平台构建后按 digest 汇总发布。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: release-images
 
 on:
@@ -49,7 +53,12 @@ jobs:
           - {name: control-plane, context: ., file: Dockerfile}
           - {name: web, context: ., file: web/Dockerfile}
           - {name: agent-worker, context: ., file: packages/agent-worker/Dockerfile}
-          - {name: operator, context: ., file: operator/Dockerfile}
+          - {name: agent-operator, context: ., file: operators/agent-operator/Dockerfile}
+          - {name: planner-runtime, context: ., file: crates/planner-runtime/Dockerfile}
+          - {name: source-service, context: ., file: crates/source-service/Dockerfile}
+          - {name: image-operator, context: ., file: operators/image-operator/Dockerfile}
+          - {name: image-worker, context: ., file: operators/image-operator/Dockerfile.worker}
+          - {name: gateway, context: ., file: crates/gateway/Dockerfile}
           - {name: emissary, context: ., file: crates/emissary/Dockerfile}
     steps:
       - uses: actions/checkout@v4
@@ -110,7 +119,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        component: [control-plane, web, agent-worker, operator, emissary]
+        component: [control-plane, web, agent-worker, agent-operator, planner-runtime, source-service, image-operator, image-worker, gateway, emissary]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -180,7 +189,7 @@ jobs:
       - uses: azure/setup-helm@v4
         with:
           version: v3.19.0
-      - name: Package both charts and publish checksummed source identity
+      - name: Package four charts and publish checksummed source identity
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
@@ -188,9 +197,13 @@ jobs:
           set -euo pipefail
           mkdir -p .local/release
           helm lint charts/artifactory --strict
-          helm lint charts/artifactory-operator --strict
+          helm lint charts/artifactory-agent-operator --strict
           helm package charts/artifactory --destination .local/release
-          helm package charts/artifactory-operator --destination .local/release
+          helm package charts/artifactory-agent-operator --destination .local/release
+          helm lint charts/artifactory-image-operator --strict
+          helm lint charts/artifactory-registry --strict
+          helm package charts/artifactory-image-operator --destination .local/release
+          helm package charts/artifactory-registry --destination .local/release
           cp VERSION .local/release/VERSION
           git rev-parse HEAD > .local/release/SOURCE_COMMIT
           (cd .local/release && sha256sum -- ./*.tgz VERSION SOURCE_COMMIT > SHA256SUMS)

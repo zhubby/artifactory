@@ -1,0 +1,9 @@
+# [INPUT]: 依赖 Chart 文件和模块地图。
+# [OUTPUT]: 排除打包与模板渲染中的代理文档。
+# [POS]: 保持 Helm 清单与源码导航文件隔离。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+.git
+*.tgz
+AGENTS.md
+templates/AGENTS.md
+crds/AGENTS.md

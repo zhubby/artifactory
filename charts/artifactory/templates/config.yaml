@@ -1,8 +1,14 @@
+# [INPUT]: 控制平面预算、公开网关和私有存储地址。
+# [OUTPUT]: Control 与 Source 的非敏感环境配置。
+# [POS]: 对象地址仅供服务端使用，客户端使用网关票据。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 {{- $scheme := ternary "^https?://" "^https://" .Values.development.insecureHttp -}}
-{{- range $url := list .Values.console.publicUrl .Values.s3.publicEndpoint (include "artifactory.s3Endpoint" .) -}}
-{{- if not (regexMatch $scheme $url) -}}
-{{- fail "console and S3 URLs require HTTPS; HTTP is only allowed with development.insecureHttp=true" -}}
+{{- if not (regexMatch $scheme .Values.console.publicUrl) -}}
+{{- fail "console URL requires HTTPS outside explicit development mode" -}}
 {{- end -}}
+{{- $s3Http := or .Values.development.insecureHttp .Values.s3.allowHttp (and .Values.s3.enabled (not .Values.s3.endpoint)) -}}
+{{- if not (regexMatch (ternary "^https?://" "^https://" $s3Http) (include "artifactory.s3Endpoint" .)) -}}
+{{- fail "private S3 requires HTTPS unless s3.allowHttp=true" -}}
 {{- end }}
 apiVersion: v1
 kind: ConfigMap
@@ -28,7 +34,7 @@ data:
   ARTIFACTORY_SOURCE_CACHE_BYTES: {{ .Values.sourceCache.maxBytes | quote }}
   ARTIFACTORY_PKI_DIR: /run/artifactory-pki
   ARTIFACTORY_S3_ENDPOINT: {{ include "artifactory.s3Endpoint" . | quote }}
-  ARTIFACTORY_S3_PUBLIC_ENDPOINT: {{ .Values.s3.publicEndpoint | trimSuffix "/" | quote }}
+  ARTIFACTORY_S3_ALLOW_HTTP: {{ $s3Http | toString | quote }}
   ARTIFACTORY_S3_BUCKET: {{ .Values.s3.bucket | quote }}
   ARTIFACTORY_S3_REGION: {{ .Values.s3.region | quote }}
   {{- if .Values.telemetry.enabled }}
@@ -43,29 +49,3 @@ data:
   ARTIFACTORY_SERVICE_CA: /run/service-ca/ca.crt
   {{- end }}
   {{- end }}
-  Caddyfile: |
-    {
-      admin off
-      auto_https off
-    }
-    :8080 {
-      {{- if .Values.localSource.enabled }}
-      handle /api/v1/source/* {
-        reverse_proxy https://{{ include "artifactory.fullname" . }}-local-source:8080 {
-          transport http {
-            tls_trust_pool file /run/pki/ca.pem
-          }
-          flush_interval -1
-        }
-      }
-      {{- end }}
-      @control-plane path /api/* /healthz /readyz
-      handle @control-plane {
-        reverse_proxy {{ include "artifactory.fullname" . }}-control-plane:8080 {
-          flush_interval -1
-        }
-      }
-      handle {
-        reverse_proxy 127.0.0.1:3000
-      }
-    }

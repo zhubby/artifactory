@@ -1,0 +1,42 @@
+# [INPUT]: 独立 Image Operator 服务身份。
+# [OUTPUT]: CRD 状态、Job、Lease 与只读节点权限。
+# [POS]: 控制器不读取任务 Secret，不修改 Node。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: {{ .Release.Name }}-image-operator}
+rules:
+  - apiGroups: [images.artifactory.dev]
+    resources: [builderpools, imagebuilds]
+    verbs: [get, list, watch]
+  - apiGroups: [images.artifactory.dev]
+    resources: [imagebuilds/status]
+    verbs: [get, patch, update]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch, create, delete]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: {{ .Release.Name }}-image-operator}
+subjects:
+  - {kind: ServiceAccount, name: artifactory-image-operator, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ .Release.Name }}-image-operator}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: {{ .Release.Namespace }}-{{ .Release.Name }}-image-nodes}
+rules:
+  - apiGroups: ['']
+    resources: [nodes]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: {{ .Release.Namespace }}-{{ .Release.Name }}-image-nodes}
+subjects:
+  - {kind: ServiceAccount, name: artifactory-image-operator, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ .Release.Namespace }}-{{ .Release.Name }}-image-nodes}

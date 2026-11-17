@@ -1,0 +1,84 @@
+# [INPUT]: 独立 S3 Bucket、共享 HTTP Secret 与仓库认证证书。
+# [OUTPUT]: 私有 Distribution Deployment、配置和 ClusterIP。
+# [POS]: 网关是客户端唯一入口；禁止 S3 重定向与上游镜像缓存。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: {{ .Release.Name }}-registry}
+data:
+  config.yml: |
+    version: 0.1
+    log: {level: info}
+    storage:
+      s3:
+        bucket: {{ .Values.s3.bucket | quote }}
+        region: {{ .Values.s3.region | quote }}
+        regionendpoint: {{ .Values.s3.endpoint | quote }}
+        secure: {{ .Values.s3.secure }}
+        forcepathstyle: {{ .Values.s3.forcePathStyle }}
+        v4auth: true
+        rootdirectory: {{ .Values.s3.rootDirectory | quote }}
+      redirect: {disable: true}
+      delete: {enabled: false}
+    http:
+      addr: :5000
+      relativeurls: true
+      headers:
+        X-Content-Type-Options: [nosniff]
+    auth:
+      token:
+        realm: {{ .Values.auth.realm | quote }}
+        service: {{ .Values.auth.service | quote }}
+        issuer: {{ .Values.auth.issuer | quote }}
+        rootcertbundle: /run/token/tls.crt
+    health:
+      storagedriver: {enabled: true, interval: 10s, threshold: 3}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ .Release.Name }}-registry}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels: {app.kubernetes.io/name: artifactory-registry, app.kubernetes.io/instance: {{ .Release.Name }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: artifactory-registry, app.kubernetes.io/instance: {{ .Release.Name }}}
+      annotations:
+        checksum/config: {{ toJson .Values | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: registry
+          image: {{ .Values.image | quote }}
+          args: [serve, /etc/distribution/config.yml]
+          ports: [{name: registry, containerPort: 5000}]
+          env:
+            {{- range $env, $key := dict "REGISTRY_STORAGE_S3_ACCESSKEY" "access-key" "REGISTRY_STORAGE_S3_SECRETKEY" "secret-key" "REGISTRY_HTTP_SECRET" "http-secret" }}
+            - name: {{ $env }}
+              valueFrom: {secretKeyRef: {name: {{ $.Values.s3.secretName }}, key: {{ $key }}}}
+            {{- end }}
+          securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          readinessProbe: {tcpSocket: {port: registry}}
+          livenessProbe: {tcpSocket: {port: registry}, initialDelaySeconds: 30}
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/distribution, readOnly: true}
+            - {name: token, mountPath: /run/token, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: config, configMap: {name: {{ .Release.Name }}-registry}}
+        - name: token
+          secret:
+            secretName: {{ .Values.auth.certificateSecret }}
+            items: [{key: tls.crt, path: tls.crt}]
+        - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: {{ .Values.service }}}
+spec:
+  type: ClusterIP
+  ports: [{name: registry, port: 5000, targetPort: registry}]
+  selector: {app.kubernetes.io/name: artifactory-registry, app.kubernetes.io/instance: {{ .Release.Name }}}

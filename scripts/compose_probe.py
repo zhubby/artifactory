@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Run real API / Emissary traffic inside the isolated Compose acceptance network."""
+"""[INPUT]: 隔离 Compose 网络、TLS 信任链与临时设备身份。
+[OUTPUT]: 验证 API、设备、流式日志和网关制品字节。
+[POS]: 只向本次验收服务发送真实构建流量。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 
 import base64
 import hashlib
@@ -266,7 +270,7 @@ targets:
                 if event == b'log' and line.startswith(b'data:') and 'compose-tls-live-log' in json.loads(line.removeprefix(b'data:')).get('text', ''):
                     found = True
                     break
-            check('SSE delivers real build output through web and Caddy before completion', found and api('/builds/' + build_id)['status'] == 'running')
+            check('SSE delivers real build output through Pingora before completion', found and api('/builds/' + build_id)['status'] == 'running')
         (DIRECTORY / 'finish-build').touch()
         result = build_result(build_id)
         check('Control and Rust Emissary build the same immutable HTTPS Git commit', result['commit_sha'] == commit)
@@ -281,7 +285,7 @@ targets:
             with client.open(base + '/api/v1/artifacts/' + artifact['id'] + '/download', timeout=15) as response:
                 content = response.read()
                 url = response.url
-            check('signed HTTPS artifact download matches verified SHA-256 and size', url.startswith(os.environ['ARTIFACTORY_COMPOSE_S3_URL'] + '/') and len(content) == artifact['size'] and hashlib.sha256(content).hexdigest() == artifact['sha256'])
+            check('HTTPS gateway artifact download matches verified SHA-256 and size', url.startswith(base + '/artifacts/object?ticket=') and 'X-Amz-' not in url and len(content) == artifact['size'] and hashlib.sha256(content).hexdigest() == artifact['sha256'])
             return content, url
 
         content, signed_url = download()
@@ -289,7 +293,11 @@ targets:
             opener(False).open(signed_url.split('?')[0], timeout=10)
             raise AssertionError('anonymous object download succeeded')
         except urllib.error.HTTPError as error:
-            check('S3 objects stay private behind HTTPS', error.code in (401, 403))
+            check('artifact gateway rejects requests without tickets', error.code == 403)
+        with client.open(urllib.request.Request(signed_url, method='HEAD'), timeout=15) as response:
+            check('gateway preserves artifact HEAD length', int(response.headers['Content-Length']) == artifact['size'] and not response.read())
+        with client.open(urllib.request.Request(signed_url, headers={'Range': 'bytes=0-7'}), timeout=15) as response:
+            check('gateway preserves artifact byte ranges', response.status == 206 and response.read() == content[:8])
         binary = DIRECTORY / 'downloaded-app'
         binary.write_bytes(content)
         binary.chmod(0o700)

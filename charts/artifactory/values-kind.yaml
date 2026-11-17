@@ -13,11 +13,6 @@ grpc:
   service:
     type: NodePort
     nodePort: 31443
-s3:
-  publicEndpoint: http://127.0.0.1:31333
-  service:
-    type: NodePort
-    nodePort: 31333
 persistence:
   storageClass: standard
   control-plane: 1Gi

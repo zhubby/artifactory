@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Opt-in real DashScope acceptance on an owned Rust Emissary / Kubernetes Pi stack.
-
-Provider keys are decrypted in memory from the explicitly selected private profile.
-Only the relay's sanitized timing, counters and tool names become evidence.
+"""[INPUT]: 显式选择的私有供应商配置与隔离服务栈。
+[OUTPUT]: 验证真实模型、工具调用、预算与取消。
+[POS]: 只在内存解密凭据；中继只记录脱敏时序。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
 import base64
@@ -247,7 +247,7 @@ class ProviderAcceptance:
             self.evidence['emissary_binary_sha256']=a.kubectl('exec','deploy/device','--','sha256sum','/usr/local/bin/artifactory-emissary').split()[0]
             source_hash=hashlib.sha256()
             sources=[ROOT/'Cargo.toml',ROOT/'Cargo.lock',ROOT/'packages/agent-worker/package-lock.json']
-            for directory in ('crates','operator/src','packages/agent-worker/src','proto'):
+            for directory in ('crates','operators','packages/agent-worker/src','proto'):
                 sources.extend(path for path in (ROOT/directory).rglob('*') if path.is_file())
             for path in sorted(sources):
                 source_hash.update(str(path.relative_to(ROOT)).encode()+b'\0'+path.read_bytes()+b'\0')

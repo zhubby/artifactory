@@ -1,0 +1,18 @@
+# [INPUT]: 固定源码中的 examples/image/Dockerfile。
+# [OUTPUT]: 发布 linux/amd64 和 linux/arm64 镜像 Index。
+# [POS]: 使用独立 Image Operator 的最小双平台配方。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+version: 1
+targets:
+  image:
+    os: linux
+    arch: amd64
+    executor: buildkit
+    image:
+      name: example
+      context: examples/image
+      dockerfile: examples/image/Dockerfile
+      platforms: [linux/amd64, linux/arm64]
+      pool: default
+      allow_emulation: false
+      tags: [candidate]

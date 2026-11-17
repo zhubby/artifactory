@@ -95,7 +95,9 @@
     "active": "正常",
     "archived": "已归档",
     "deleting": "删除中",
-    "waiting": "等待中"
+    "waiting": "等待中",
+    "preparing": "准备中",
+    "publish_failed": "发布失败"
   },
   "navigation": {
     "docs": "文档",
@@ -884,5 +886,33 @@
     "notarized": "公证与装订已验证",
     "notarizationNotRequired": "未要求公证",
     "noEvidence": "无托管验签证据"
+  },
+  "images": {
+    "build": "镜像构建",
+    "publication": "镜像发布",
+    "retry": "重试发布",
+    "publishExternal": "推送到外部仓库",
+    "credential": "仓库凭据",
+    "repository": "目标仓库路径",
+    "tags": "标签（逗号分隔）",
+    "logs": "平台构建日志",
+    "credentials": "镜像与构建凭据",
+    "disable": "停用",
+    "disabled": "已停用",
+    "addCredential": "新增凭据",
+    "kind": "凭据类型",
+    "registryCredential": "镜像仓库",
+    "name": "名称",
+    "endpoint": "仓库地址",
+    "username": "用户名",
+    "password": "密码或访问令牌",
+    "secret": "Secret 内容",
+    "publishDescription": "按摘要复制已验证镜像，复用已有构建结果。",
+    "results": "镜像结果",
+    "platforms": "平台",
+    "sourceBuild": "来源构建",
+    "createdAt": "创建时间",
+    "empty": "暂无镜像",
+    "emptyDetail": "镜像构建成功后，已验证镜像显示在此处。"
   }
 }

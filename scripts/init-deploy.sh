@@ -1,11 +1,14 @@
 #!/bin/sh
+# [INPUT]: 公网域名和非 root 部署身份。
+# [OUTPUT]: 初始化设备 PKI、私有存储和网关共享令牌。
+# [POS]: 仅初始化新部署，不轮换已有持久密钥。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 set -eu
 umask 077
 cd "$(dirname "$0")/.."
 : "${ARTIFACTORY_DOMAIN:?set the console HTTPS hostname}"
-: "${ARTIFACTORY_S3_DOMAIN:?set the object-store HTTPS hostname}"
 : "${ARTIFACTORY_GRPC_HOST:?set the gRPC hostname, without port}"
-case "$ARTIFACTORY_DOMAIN:$ARTIFACTORY_S3_DOMAIN:$ARTIFACTORY_GRPC_HOST" in *[!a-zA-Z0-9.:-]*) printf '%s\n' 'Only DNS hostnames are accepted.' >&2; exit 1;; esac
+case "$ARTIFACTORY_DOMAIN:$ARTIFACTORY_GRPC_HOST" in *[!a-zA-Z0-9.:-]*) printf '%s\n' 'Only DNS hostnames are accepted.' >&2; exit 1;; esac
 if [ "$(id -u)" = 0 ]; then printf '%s\n' 'Run as the dedicated non-root deployment account.' >&2; exit 1; fi
 if [ -e .deploy/env ]; then printf '%s\n' '.deploy/env exists; refusing to rotate persistent keys.' >&2; exit 1; fi
 mkdir -p .deploy/pki .deploy/control-plane .deploy/agent-worker
@@ -15,7 +18,6 @@ printf '%s\n' "subjectAltName=DNS:$ARTIFACTORY_GRPC_HOST,DNS:telemetry" 'extende
 openssl x509 -req -in .deploy/pki/server.csr -CA .deploy/pki/ca.pem -CAkey .deploy/pki/ca.key -CAcreateserial -out .deploy/pki/server.pem -days 365 -sha256 -extfile .deploy/pki/server.ext >/dev/null 2>&1
 cat > .deploy/env <<EOF
 ARTIFACTORY_DOMAIN=$ARTIFACTORY_DOMAIN
-ARTIFACTORY_S3_DOMAIN=$ARTIFACTORY_S3_DOMAIN
 ARTIFACTORY_GRPC_HOST=$ARTIFACTORY_GRPC_HOST
 ARTIFACTORY_REGISTRATION_ENABLED=${ARTIFACTORY_REGISTRATION_ENABLED:-true}
 ARTIFACTORY_UID=$(id -u)
@@ -24,6 +26,7 @@ ARTIFACTORY_DATABASE_PASSWORD=$(openssl rand -hex 24)
 ARTIFACTORY_TELEMETRY_DATABASE_PASSWORD=$(openssl rand -hex 24)
 ARTIFACTORY_TELEMETRY_TOKEN=$(openssl rand -hex 32)
 ARTIFACTORY_MASTER_KEY=$(openssl rand -base64 32)
+ARTIFACTORY_GATEWAY_TOKEN=$(openssl rand -hex 32)
 ARTIFACTORY_S3_ACCESS_KEY=artifactory
 ARTIFACTORY_S3_SECRET_KEY=$(openssl rand -hex 32)
 ARTIFACTORY_BOOTSTRAP_USERNAME=admin

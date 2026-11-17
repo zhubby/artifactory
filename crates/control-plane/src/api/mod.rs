@@ -3,9 +3,11 @@
 //! [POS]: 控制平面 HTTP 接口入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub(crate) mod ai_management;
+mod artifact_gateway;
 mod build_logs;
 mod builds;
 mod emissary_updates;
+mod images;
 mod lifecycle;
 mod management;
 mod projects;
@@ -105,6 +107,33 @@ pub fn router(state: AppState) -> Router {
             post(ai_management::clarify),
         )
         .route("/api/v1/builds/{id}/plans", get(ai_management::plans))
+        .route(
+            "/internal/artifact-resolve",
+            post(artifact_gateway::resolve),
+        )
+        .route(
+            "/api/v1/registry/token",
+            get(crate::images::registry::token),
+        )
+        .route("/api/v1/image-tasks/{id}/report", post(images::report))
+        .route(
+            "/api/v1/image-tasks/{id}/publication",
+            get(images::publication),
+        )
+        .route("/api/v1/images", get(images::list))
+        .route(
+            "/api/v1/image-executions/{id}/publish",
+            post(images::publish),
+        )
+        .route("/api/v1/image-executions/{id}/logs", get(images::logs))
+        .route(
+            "/api/v1/projects/{id}/image-credentials",
+            get(images::credentials).post(images::create_credential),
+        )
+        .route(
+            "/api/v1/projects/{id}/image-credentials/{credential}",
+            delete(images::disable_credential),
+        )
         .merge(source_routes())
         .route("/api/v1/auth/login", post(auth::login))
         .route("/api/v1/auth/config", get(auth::registration_config))

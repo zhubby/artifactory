@@ -107,18 +107,9 @@ impl Settings {
         let s3_endpoint = required("ARTIFACTORY_S3_ENDPOINT")?;
         let s3_public_endpoint =
             env::var("ARTIFACTORY_S3_PUBLIC_ENDPOINT").unwrap_or_else(|_| s3_endpoint.clone());
-        for endpoint in [&public_url, &s3_endpoint, &s3_public_endpoint] {
-            let url = url::Url::parse(endpoint)?;
-            ensure!(
-                url.host_str().is_some()
-                    && (url.scheme() == "https" || (insecure_dev && url.scheme() == "http")),
-                "HTTPS is required outside explicit development mode"
-            );
-            ensure!(
-                url.username().is_empty() && url.password().is_none(),
-                "endpoint must not contain credentials"
-            );
-        }
+        validate_endpoint(&public_url, insecure_dev)?;
+        let private_http = env::var("ARTIFACTORY_S3_ALLOW_HTTP").as_deref() == Ok("true");
+        validate_endpoint(&s3_endpoint, insecure_dev || private_http)?;
         let decoded = STANDARD.decode(required("ARTIFACTORY_MASTER_KEY")?)?;
         let telemetry = match env::var("ARTIFACTORY_TELEMETRY_ENDPOINT") {
             Ok(endpoint) if !endpoint.is_empty() => {
@@ -186,6 +177,20 @@ impl Settings {
     }
 }
 
+fn validate_endpoint(endpoint: &str, allow_http: bool) -> Result<()> {
+    let url = url::Url::parse(endpoint)?;
+    ensure!(
+        url.host_str().is_some()
+            && (url.scheme() == "https" || (allow_http && url.scheme() == "http")),
+        "HTTPS is required unless this fixed endpoint explicitly allows HTTP"
+    );
+    ensure!(
+        url.username().is_empty() && url.password().is_none(),
+        "endpoint must not contain credentials"
+    );
+    Ok(())
+}
+
 fn parse_registration_enabled(value: Option<&str>) -> Result<bool> {
     value
         .unwrap_or("true")
@@ -195,7 +200,15 @@ fn parse_registration_enabled(value: Option<&str>) -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_registration_enabled;
+    use super::{parse_registration_enabled, validate_endpoint};
+
+    #[test]
+    fn private_http_requires_an_explicit_endpoint_policy() {
+        assert!(validate_endpoint("http://s3.internal:8333", false).is_err());
+        assert!(validate_endpoint("http://s3.internal:8333", true).is_ok());
+        assert!(validate_endpoint("https://s3.internal", false).is_ok());
+        assert!(validate_endpoint("http://user:secret@s3.internal", true).is_err());
+    }
 
     #[test]
     fn registration_defaults_on_and_accepts_explicit_boolean_values() {

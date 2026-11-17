@@ -1,3 +1,7 @@
+# [INPUT]: 隔离集群的资源预算与本机公开入口。
+# [OUTPUT]: 三副本 Control 与私有内建 S3 的试用参数。
+# [POS]: 只用于新命名空间，不覆盖历史固定镜像配置。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 controlPlane:
   replicas: 3
   databaseConnections: 20
@@ -8,8 +12,6 @@ postgres:
   maxConnections: 200
 console:
   publicUrl: http://127.0.0.1:38100
-s3:
-  publicEndpoint: http://127.0.0.1:38333
 development:
   insecureHttp: true
 telemetry:

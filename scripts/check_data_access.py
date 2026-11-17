@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# [INPUT]: 依赖工作区 Rust 源文件和持久化目录规则。
+# [OUTPUT]: 拒绝服务存储边界之外的数据库访问。
+# [POS]: 覆盖 crates 与 operators 的静态检查。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 """Keep persistence code inside service stores and shared DB infrastructure."""
 
 import argparse
@@ -30,7 +34,7 @@ def persistence_path(path):
 
 def violations(root):
     failures = []
-    sources = list((root / "crates").rglob("*.rs")) + list((root / "operator").rglob("*.rs"))
+    sources = list((root / "crates").rglob("*.rs")) + list((root / "operators").rglob("*.rs"))
     for path in sorted(sources):
         relative = path.relative_to(root)
         if persistence_path(relative):

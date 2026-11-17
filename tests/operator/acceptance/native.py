@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Run an isolated host-native Rust Emissary against Kubernetes Pi and Source.
-
-Uses only a saved acceptance namespace. Never installs or modifies a host service.
-The temporary Emissary identity, config, logs and build root stay in .local/.
+"""[INPUT]: 已保存的隔离命名空间和主机原生 Rust 工具链。
+[OUTPUT]: 验证主机 Emissary、分片源码和网关制品交付。
+[POS]: 只创建临时进程与设备身份；结束时恢复公告地址。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
 from datetime import datetime, timedelta, timezone
@@ -63,7 +63,7 @@ def run(args):
         a.wait(lambda: 'https://127.0.0.1:38090' in a.kubectl('get', 'statefulset', 'sources', '-o', 'json'))
         a.kubectl('rollout', 'status', 'statefulset/sources', '--timeout=180s')
         set_environment(a, 'upstream', {'FIXTURE_OS': host_os, 'FIXTURE_ARCH': arch})
-        set_environment(a, 'control-plane', {'ARTIFACTORY_S3_PUBLIC_ENDPOINT': 'http://127.0.0.1:38333'})
+        set_environment(a, 'control-plane', {'ARTIFACTORY_PUBLIC_URL': a.base})
         for forward in a.processes:
             forward.terminate()
             forward.wait(timeout=10)
@@ -72,7 +72,6 @@ def run(args):
         a.forward('pod/sources-0', '38090:8090')
         a.forward('service/control-plane', '38443:8443')
         a.forward('service/artifactory-telemetry','38444:8444')
-        a.forward('service/s3', '38333:8333')
         a.wait(lambda: a.service_request(39443,'/test/mode',{'build_seconds':25}) is not None)
         subprocess.run(['cargo', 'build', '--locked', '--bin', 'artifactory-emissary'], cwd=ROOT, check=True)
         shutil.copy2(ROOT/'target/debug/artifactory-emissary', agent)
@@ -103,6 +102,7 @@ def run(args):
         assert '.svc:8090' in origins['internal'] and origins['public'] == 'https://127.0.0.1:38090'
         assert int(a.sql('business', 'SELECT coalesce(sum(git_download_bytes+lfs_download_bytes),0) FROM source_repositories')) == before
         assert detail['artifacts'] and detail['artifacts'][0]['sha256'] == hashlib.sha256(b'operator-native-ok\n').hexdigest()
+        a.verify_artifact_gateway(detail['artifacts'][0])
         assert a.sql('business', "SELECT count(*) FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE j.build_id='" + build + "' AND a.node_id='" + node['id'] + "' AND a.status='succeeded'") == '1'
         assert int(a.sql('sources', "SELECT coalesce(sum(lfs_download_bytes),0) FROM source_repositories r JOIN source_snapshots s ON s.root_repository_id=r.id WHERE s.id='" + snapshot + "'")) > 0, 'Host build must materialize actual LFS bytes'
         history = a.api('/api/v1/builds/' + build + '/plans')
@@ -151,7 +151,7 @@ def run(args):
             assert a.sql('business', "SELECT revoked AND draining FROM nodes WHERE id='" + node['id'] + "'") == 't', 'Temporary device identity must be revoked'
             evidence['temporary_device_identity_revoked'] = True
         set_environment(a, 'upstream', {key: original_upstream.get(key) for key in ['FIXTURE_OS','FIXTURE_ARCH']})
-        set_environment(a, 'control-plane', {'ARTIFACTORY_S3_PUBLIC_ENDPOINT': original_control.get('ARTIFACTORY_S3_PUBLIC_ENDPOINT')})
+        set_environment(a, 'control-plane', {'ARTIFACTORY_PUBLIC_URL': original_control.get('ARTIFACTORY_PUBLIC_URL')})
         a.kubectl('patch', 'sourcepool', 'sources', '--type=merge', '-p', json.dumps({'spec': {'publicUrlTemplate': source_pool.get('publicUrlTemplate')}}))
         a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': agent_pool}))
         a.wait(lambda: json.loads(a.kubectl('get','sourcepool','sources','-o','json'))['metadata']['generation'] == json.loads(a.kubectl('get','sourcepool','sources','-o','json')).get('status',{}).get('observedGeneration'))

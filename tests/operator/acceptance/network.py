@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Verify the shipped Pi policy from the first network attempt in a new Pod."""
+"""[INPUT]: 隔离集群中的 Pi 策略与新 Pod 网络身份。
+[OUTPUT]: 验证 Runtime/Source 可达且数据与供应商入口隔离。
+[POS]: 每次创建新 Pod，以首次连接证明策略生效。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 import argparse
 import importlib.util
 import json
@@ -15,7 +19,7 @@ spec.loader.exec_module(module)
 def probe(a, restricted):
     name = 'pi-network-' + ('restricted' if restricted else 'control')
     upstream = json.loads(a.kubectl('get', 'service', 'upstream', '-o', 'json'))['spec']['clusterIP']
-    targets = {'runtime': ['artifactory-runtime', 8091], 'source': ['sources-0.sources.' + a.ns + '.svc', 8090], 'business': ['control-plane', 8080], 'provider': ['upstream', 9443], 'provider_ip': [upstream, 9443], 'database': ['postgres', 5432], 'objects': ['s3', 8333]}
+    targets = {'runtime': ['artifactory-runtime', 8091], 'source': ['sources-0.sources.' + a.ns + '.svc', 8090], 'business': ['control-plane', 8080], 'gateway': ['gateway', 8080], 'provider': ['upstream', 9443], 'provider_ip': [upstream, 9443], 'database': ['postgres', 5432], 'objects': ['s3', 8333]}
     code = 'const net=require("node:net"); const targets=' + json.dumps(targets) + '; Promise.all(Object.entries(targets).map(([key,[host,port]])=>new Promise(resolve=>{ const s=net.createConnection({host,port}); let done=false; const finish=ok=>{if(done)return;done=true;s.destroy();resolve([key,ok]);}; s.setTimeout(3000,()=>finish(false));s.on("connect",()=>finish(true));s.on("error",()=>finish(false));}))).then(x=>console.log(JSON.stringify(Object.fromEntries(x))));'
     pool = json.loads(a.kubectl('get', 'agentpool', 'default', '-o', 'json'))['spec']
     pod = {'apiVersion': 'v1', 'kind': 'Pod', 'metadata': {'name': name, 'labels': {'app.kubernetes.io/name': 'artifactory-pi' if restricted else 'network-control', 'artifactory.dev/network-probe': str(time.time_ns())}}, 'spec': {'restartPolicy': 'Never', 'automountServiceAccountToken': False, 'containers': [{'name': 'probe', 'image': pool['image'], 'imagePullPolicy': pool.get('imagePullPolicy', 'IfNotPresent'), 'command': ['node', '-e', code]}]}}

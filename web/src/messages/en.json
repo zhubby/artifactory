@@ -95,7 +95,9 @@
     "active": "Active",
     "archived": "Archived",
     "deleting": "Deleting",
-    "waiting": "Waiting"
+    "waiting": "Waiting",
+    "preparing": "Preparing",
+    "publish_failed": "Publication failed"
   },
   "navigation": {
     "docs": "Documentation",
@@ -884,5 +886,33 @@
     "notarized": "Notarization and stapling verified",
     "notarizationNotRequired": "Notarization not required",
     "noEvidence": "No managed verification evidence"
+  },
+  "images": {
+    "build": "Image build",
+    "publication": "Image publication",
+    "retry": "Retry publication",
+    "publishExternal": "Push to external registry",
+    "credential": "Registry credential",
+    "repository": "Destination repository",
+    "tags": "Tags (comma separated)",
+    "logs": "Platform build logs",
+    "credentials": "Image and build credentials",
+    "disable": "Disable",
+    "disabled": "Disabled",
+    "addCredential": "Add credential",
+    "kind": "Credential type",
+    "registryCredential": "Image registry",
+    "name": "Name",
+    "endpoint": "Registry URL",
+    "username": "Username",
+    "password": "Password or access token",
+    "secret": "Secret value",
+    "publishDescription": "Copy the verified image by digest. Existing builds are reused.",
+    "results": "Images",
+    "platforms": "Platforms",
+    "sourceBuild": "Source build",
+    "createdAt": "Created",
+    "empty": "No images",
+    "emptyDetail": "Verified images appear here after a successful image build."
   }
 }

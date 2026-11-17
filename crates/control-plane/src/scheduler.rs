@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖持久化任务、节点能力和项目范围。
-//! [OUTPUT]: 提供任务分配、材料引用和后台维护调度。
+//! [INPUT]: 依赖构建准入快照、节点能力和项目范围。
+//! [OUTPUT]: 校验解析目标并提供原生任务分配与后台维护。
 //! [POS]: 将固定执行计划交给当前节点会话。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -217,6 +217,12 @@ async fn resolve_next(state: &AppState) -> Result<()> {
                 .map(|(name, target)| (name.clone(), target.clone()))
                 .collect();
             ensure!(!targets.is_empty(), "no selected targets");
+            crate::images::ensure_targets_enabled(
+                targets.iter().map(|(_, target)| target),
+                input.planning_context["image_builds_enabled"]
+                    .as_bool()
+                    .unwrap_or(false),
+            )?;
             for (_, target) in &targets {
                 ensure!(
                     target
@@ -230,7 +236,33 @@ async fn resolve_next(state: &AppState) -> Result<()> {
                 input.release_version.is_none() || recipe.release.enabled,
                 "release is not enabled by repository configuration"
             );
+            let snapshot_id = if targets
+                .iter()
+                .any(|(_, target)| target.executor == "buildkit")
+            {
+                let bindings = serde_json::from_value(
+                    input
+                        .planning_context
+                        .get("source_credentials")
+                        .cloned()
+                        .unwrap_or(json!([])),
+                )?;
+                let snapshot = crate::source_cache::capture(
+                    state,
+                    input.project_id,
+                    &input.repository_url,
+                    &commit,
+                    input.credential_id,
+                    bindings,
+                )
+                .await?;
+                ensure!(snapshot.commit == commit, "recipe snapshot commit changed");
+                Some(snapshot.id)
+            } else {
+                None
+            };
             Ok(crate::store::ResolvedSource::Recipe {
+                snapshot_id,
                 commit,
                 yaml,
                 recipe,
@@ -248,7 +280,7 @@ pub fn matches(
     capabilities: &Value,
     signing: &[String],
 ) -> bool {
-    if target.os != os || target.arch != arch {
+    if target.executor != "native" || target.os != os || target.arch != arch {
         return false;
     }
     let Some(capabilities) = capabilities.as_array() else {

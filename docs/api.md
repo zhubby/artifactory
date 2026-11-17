@@ -46,7 +46,7 @@
 | `GET, PATCH /projects/{id}` | PATCH 使用完整项目设置，不是任意 JSON Patch |
 | `POST /projects/{id}/builds` | `{ref,goal,target_requirements?,parameters?,targets?,release_version?}`；所有新构建走 AI |
 | `GET /builds` | 可选 `?project_id=`，最多 100 条 |
-| `GET /builds/{id}` | 源码快照、当前计划 ID、修订次数、澄清、目标、所有 attempt、步骤、制品和发布 attempt |
+| `GET /builds/{id}` | 源码快照、当前计划 ID、修订次数、澄清、目标、设备 attempt、步骤、制品、镜像执行和发布记录 |
 | `GET /builds/{id}/plans` | 不可变计划历史、摘要、文件依据、规划运行和调用统计；不返回模型密钥或 checkpoint |
 | `POST /builds/{id}/clarifications` | `{answer}`；只在 needs_input 继续规划，仍固定原源码与目标 |
 | `GET, POST /model-profiles` | 管理员；接口类型/地址/模型/密钥/parameters/enabled/is_default/max_calls/timeout_seconds |
@@ -62,7 +62,13 @@
 | `GET /builds/{id}/logs` | 静态历史日志；`attempt_id?`、`step?` 筛选，`before?` 向前翻页；返回 `{logs, next_before}`，每页最多 100 块，页内按 ID 升序；无更早日志时游标为 `null` |
 | `GET /builds/{id}/events` | SSE `snapshot` / `log` / `complete`；`Last-Event-ID` 或 `?after=` 恢复日志；终态排空日志后发送包含最终详情的 `complete`，客户端停止重连 |
 | `GET /artifacts` | 可按项目过滤，不返回对象 key |
-| `GET /artifacts/{id}/download` | 项目 read 权限后临时重定向到私有对象 GET |
+| `GET /artifacts/{id}/download` | 项目 read 权限后重定向到有期限的网关票据地址；不返回 S3 地址 |
+| `GET /images` | 当前权限范围内的已验证镜像和 digest |
+| `GET /image-executions/{id}/logs?after=0` | 项目 read；镜像日志，按返回 ID 继续读取 |
+| `POST /image-executions/{id}/publish` | 项目 release；`{credential_id?,repository?,tags:[]}`；省略外部凭据时重试完整平台结果的内建发布，否则按原 digest 复制到同项目凭据指定仓库 |
+| `GET /projects/{id}/image-credentials` | 项目 read；只返回名称、类别和启用状态 |
+| `POST /projects/{id}/image-credentials` | 项目 admin；`{kind:"registry",name,login:{endpoint,username,password}}` 或 `{kind:"secret",name,value}` |
+| `DELETE /projects/{id}/image-credentials/{credential}` | 项目 admin；吊销凭据，不返回加密材料 |
 | `GET /releases` | 可按项目过滤 |
 | `GET /releases/{id}` | 不可变版本与制品目录 |
 
@@ -85,7 +91,9 @@ curl --fail-with-body -X POST 'https://build.example.com/api/v1/projects/PROJECT
 
 生命周期状态、清理顺序和管理页面见[工作台](workspaces.md)。操作记录与目标业务行独立保存，状态为 waiting/running/succeeded/failed/canceled；等待阶段可取消，实际清理开始后只能查询或重试。归档保持查询下载，禁止新增业务写入。
 
-当前列表为内部小团队规模的有界查询，并未提供全量导出、复杂分页或外部商店发布 API；Webhook / OIDC / 多实例并非隐藏开启的功能。
+当前列表为内部小团队规模的有界查询，并未提供全量导出、复杂分页或外部商店发布 API；Webhook 和 OIDC 尚未实现。
+
+OCI 客户端通过公开网关的 `/v2/` 访问内建仓库。Registry Token realm 为 `/api/v1/registry/token`，使用 HTTP Basic 携带平台 API Token 或执行专属短期身份，不使用浏览器 Cookie。返回的仓库 JWT 有效期为 60 秒，scope 严格约束租户、项目和仓库。构建回执与 publication 接口只接受执行专属 Bearer Token。部署与取消边界见 [镜像构建与网关](image-builds.md)。
 
 ## Emissary 版本与升级
 

@@ -1,0 +1,217 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: builderpools.images.artifactory.dev
+spec:
+  group: images.artifactory.dev
+  names:
+    kind: BuilderPool
+    plural: builderpools
+    singular: builderpool
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for BuilderPoolSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              buildkitConfigMap:
+                default: ''
+                type: string
+              buildkitImage:
+                type: string
+              caSecret:
+                default: ''
+                type: string
+              cpu:
+                default: '1'
+                type: string
+              emulationNodeSelector:
+                additionalProperties:
+                  type: string
+                default: {}
+                type: object
+              emulationPlatforms:
+                default: []
+                items:
+                  type: string
+                type: array
+              ephemeralStorage:
+                default: 20Gi
+                type: string
+              imagePullPolicy:
+                default: IfNotPresent
+                type: string
+              maxActive:
+                format: uint32
+                maximum: 1000.0
+                minimum: 1.0
+                type: integer
+              maxPerProject:
+                format: uint32
+                maximum: 1000.0
+                minimum: 1.0
+                type: integer
+              memory:
+                default: 2Gi
+                type: string
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                default: {}
+                type: object
+              workerImage:
+                type: string
+            required:
+            - buildkitImage
+            - maxActive
+            - maxPerProject
+            - workerImage
+            type: object
+          status:
+            nullable: true
+            properties:
+              message:
+                nullable: true
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                type: string
+            required:
+            - observedGeneration
+            - phase
+            type: object
+        required:
+        - spec
+        title: BuilderPool
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: imagebuilds.images.artifactory.dev
+spec:
+  group: images.artifactory.dev
+  names:
+    kind: ImageBuild
+    plural: imagebuilds
+    singular: imagebuild
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for ImageBuildSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              allowEmulation:
+                type: boolean
+              cancelRequested:
+                default: false
+                type: boolean
+              executionId:
+                format: uuid
+                type: string
+              platforms:
+                items:
+                  enum:
+                  - linux/amd64
+                  - linux/arm64
+                  type: string
+                maxItems: 2
+                minItems: 1
+                type: array
+                uniqueItems: true
+              pool:
+                type: string
+              projectId:
+                format: uuid
+                type: string
+              publishOnly:
+                default: false
+                type: boolean
+              snapshotDigest:
+                type: string
+              snapshotId:
+                format: uuid
+                type: string
+              taskSecret:
+                type: string
+              tenantId:
+                format: uuid
+                type: string
+              timeoutSeconds:
+                format: uint32
+                maximum: 87000.0
+                minimum: 1.0
+                type: integer
+            required:
+            - allowEmulation
+            - executionId
+            - platforms
+            - pool
+            - projectId
+            - snapshotDigest
+            - snapshotId
+            - taskSecret
+            - tenantId
+            - timeoutSeconds
+            type: object
+            x-kubernetes-validations:
+            - message: execution context is immutable
+              rule: self.executionId == oldSelf.executionId
+            - message: execution context is immutable
+              rule: self.tenantId == oldSelf.tenantId
+            - message: execution context is immutable
+              rule: self.projectId == oldSelf.projectId
+            - message: execution context is immutable
+              rule: self.pool == oldSelf.pool
+            - message: execution context is immutable
+              rule: self.snapshotId == oldSelf.snapshotId
+            - message: execution context is immutable
+              rule: self.snapshotDigest == oldSelf.snapshotDigest
+            - message: execution context is immutable
+              rule: self.taskSecret == oldSelf.taskSecret
+            - message: execution context is immutable
+              rule: self.platforms == oldSelf.platforms
+            - message: execution context is immutable
+              rule: self.allowEmulation == oldSelf.allowEmulation
+            - message: execution context is immutable
+              rule: self.publishOnly == oldSelf.publishOnly
+            - message: execution context is immutable
+              rule: self.timeoutSeconds == oldSelf.timeoutSeconds
+            - message: cancellation is irreversible
+              rule: '!oldSelf.cancelRequested || self.cancelRequested'
+          status:
+            nullable: true
+            properties:
+              message:
+                nullable: true
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                type: string
+            required:
+            - observedGeneration
+            - phase
+            type: object
+        required:
+        - spec
+        title: ImageBuild
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

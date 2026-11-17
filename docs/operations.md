@@ -4,7 +4,7 @@
 
 Control 为 Linux 模块化服务，支持多副本。后端统一使用 TimescaleDB 2.32+ / PostgreSQL 17，关系表保存队列和业务状态，独立 Rust Telemetry 服务保存时序数据。多副本设备调度使用 PostgreSQL Outbox 与节点行锁，部署、容量与回退见 [Control 多副本](control-ha.md)；Kubernetes Pi 的 Runtime / Source / Operator 部署见 [Operator 运维](operator-operations.md)。宿主执行只接受内部可信项目；签名节点应与一般构建节点分池、最小授权、限制网络和服务账户权限。
 
-生产需三个可解析的 DNS 名称：控制台、S3 HTTPS、Emissary gRPC。前两者通过 Caddy 80/443；构建 gRPC 使用钉住私有 CA 的 TLS 8443，独立遥测 mTLS 使用同一设备可达域名的 8444。仅向受信网络开放 8443 / 8444；不公开数据库、遥测内部查询端口、SeaweedFS 管理端口或其内部 filer/master。按组织要求提供受信 HTTPS、证书自动续期和反向代理限流。代理不得缓冲 SSE。
+生产需可解析的控制台和 Emissary gRPC 域名。Compose 的 Caddy 只负责 80/443 与 ACME，全部应用请求转至 Pingora。Pingora 反向代理控制台、API、内建仓库与制品，S3 没有公开入口。构建 gRPC 使用钉住私有 CA 的 TLS 8443，独立遥测 mTLS 使用同一设备域名的 8444。仅向受信网络开放设备端口；不公开数据库、遥测内部查询、SeaweedFS 管理端口及 filer/master。代理不得缓冲 SSE。
 
 ## Linux Compose
 
@@ -14,7 +14,6 @@ Kubernetes 和本机 kind 的 Chart、凭据初始化、TLS、持久卷与升级
 
 ```sh
 ARTIFACTORY_DOMAIN=build.example.com \
-ARTIFACTORY_S3_DOMAIN=artifacts.example.com \
 ARTIFACTORY_GRPC_HOST=agents.example.com \
 sh scripts/init-deploy.sh
 docker compose --env-file .deploy/env config --quiet
@@ -23,7 +22,7 @@ docker compose --env-file .deploy/env up -d --build
 
 `.deploy/env` 包含随机数据库密码、Git 凭据加密主密钥、S3 密钥和初始密码；`.deploy/pki` 包含节点证书签发私钥。均不入 Git，目录权限为 0700，文件为 0600；容器以该部署账户 UID/GID 读取。不要在已有部署上重新初始化或更换主密钥。
 
-Compose 内 S3 的默认匿名访问已禁用。Emissary 必须能访问外部 S3 HTTPS 名称；控制平面也使用该 HTTPS 地址完成初始化和内容校验，因此部署宿主必须能回环访问这个域名。首次 ACME 颁证期间控制平面可能自动重启，TLS 就绪后恢复；不要用 `ARTIFACTORY_INSECURE_DEV` 绕过生产证书检查。使用组织内部 CA 时，将信任链安装到控制平面 / Emissary 的系统信任库。
+Compose 内 S3 禁止匿名访问，只在私有网络使用 `http://s3:8333`。Control 显式设置 `ARTIFACTORY_S3_ALLOW_HTTP=true`，只放行管理员配置的私有存储地址；公开入口仍要求 HTTPS。Emissary 和浏览器只访问网关票据地址。升级既有 `.deploy/env` 时补充至少 32 字符的随机 `ARTIFACTORY_GATEWAY_TOKEN`，保留数据库口令、主密钥和设备 CA；旧 `ARTIFACTORY_S3_DOMAIN` 被忽略。不要重新运行初始化脚本覆盖已有身份。
 
 控制平面 S3 客户端通过 Rustls 加载系统根证书。容器部署需把组织 CA 加入控制平面镜像或容器内的信任库，并确保运行账户可读；宿主安装的证书不会自动传播到容器。证书的签发链和 S3 endpoint 主机名都会校验。
 
@@ -41,7 +40,7 @@ S3 启动脚本把只读挂载、0600 权限的宿主认证配置复制为容器
 
 控制平面数据目录同时承载 Git 临时目录与制品校验临时文件；至少留出最大并发校验文件的磁盘空间。单文件上限 20 GiB 不意味着小内存机器应使用相同大小的 tmpfs。S3 与 PostgreSQL 使用独立持久卷，默认不自动删除历史日志或制品。
 
-使用外部 TimescaleDB / S3 时可直接部署镜像并设置与 `Settings::from_env` 对应的环境变量。每个数据库由管理员预先安装 TimescaleDB 2.32+ 扩展；遥测使用独立数据库与应用角色。S3 公共签名地址必须与客户端实际访问的 endpoint 一致。外部对象桶必须私有，不启用公开读取策略。新安装的 Compose / Helm 自动初始化遥测数据库；遥测 token、证书 SAN、数据保留和独立连接池见 [时序观测](telemetry.md)。
+使用外部 TimescaleDB / S3 时可直接部署镜像并设置与 `Settings::from_env` 对应的环境变量。每个数据库由管理员预先安装 TimescaleDB 2.32+ 扩展；遥测使用独立数据库与应用角色。S3 endpoint 只供 Control 和 Gateway 访问，二者使用相同固定地址。外部对象桶必须私有，不启用公开读取策略。新安装的 Compose / Helm 自动初始化遥测数据库；遥测 token、证书 SAN、数据保留和独立连接池见 [时序观测](telemetry.md)。
 
 本仓库 Compose 清单和镜像不代表已经部署到用户生产域名；公有证书、DNS、磁盘容量、备份恢复与实际网络仍需现场验收。
 
@@ -53,7 +52,7 @@ S3 启动脚本把只读挂载、0600 权限的宿主认证配置复制为容器
 python3 -u scripts/compose_acceptance.py
 ```
 
-脚本从当前 Git HEAD 创建私有源码快照（未提交候选需先复制到隔离临时 Git 仓库并提交），构建实际控制平面与控制台镜像；以独立项目名、卷、网络和随机 loopback 端口运行生产清单的全部七个服务。测试覆盖使用 Caddy 内部 CA 的真实 HTTPS、Secure Cookie / CSRF、运行中 SSE、mTLS Emissary、HTTPS Git 原生 C 构建、私有 S3 上传下载与控制平面重启。CA 只注入测试客户端与独立控制平面进程，不修改宿主信任库。默认不加载已有 `.local/env` 或 `.deploy/env`，运行后仅清理归属标签匹配本次 run 的容器、网络与卷。
+脚本从当前 Git HEAD 创建私有源码快照（未提交候选需先复制到隔离临时 Git 仓库并提交），构建实际 Control、Gateway 与控制台镜像；以独立项目名、卷、网络和随机 loopback 端口运行生产清单的八个服务。测试经 Caddy TLS 入口连接 Pingora，覆盖 Secure Cookie / CSRF、运行中 SSE、mTLS Emissary、HTTPS Git 原生 C 构建、网关上传下载与 Control 重启。CA 只注入测试客户端与独立进程，不修改宿主信任库。默认不加载已有 `.local/env` 或 `.deploy/env`，运行后仅清理本次 run 的容器、网络与卷。
 
 日志故障测试把验收 Emissary 缓冲设为 1 MiB，仅暂停本次归属标签匹配的 S3，再让真实 Worker 输出超过缓冲上限。脚本核对子进程终止、磁盘缓冲边界及独立心跳，恢复 S3 后检查明确失败原因、无制品 / Release、日志按序确认和清理，并使用同一 Emissary 再构建原生 C 程序。缓存块的大小 / SHA-256 同时与真实 PostgreSQL 索引及 HTTPS SSE 内容比较。测试容器使用 Docker init 回收孤儿子进程；失败清理也会先恢复本次暂停的 S3。执行的 controller 副本及 controller / probe 摘要随本地证据保留。
 

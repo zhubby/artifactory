@@ -20,6 +20,7 @@
 - [统一版本与发布](versioning.md)
 - [控制平面多副本与设备容量](control-ha.md)
 - [Kubernetes Pi Operator 运维](operator-operations.md)
+- [集群镜像构建、内建仓库与网关](image-builds.md)
 - [Toasty 数据访问与整体切换](toasty-migration.md)
 - [Emissary OTA 自动升级](emissary-ota.md)
 - [Emissary 时序观测](telemetry.md)
@@ -70,6 +71,7 @@
 - [租户与项目工作台实施计划 · 2026-11-15](superpowers/plans/2026-11-15-workspace-hierarchy.md)
 - [中性色控制台重构计划 · 2026-11-15](superpowers/plans/2026-11-15-monochrome-console.md)
 - [托管应用签名实施计划 · 2026-11-16](superpowers/plans/2026-11-16-managed-signing.md)
+- [镜像构建与独立 Operator 实施计划 · 2026-11-17](superpowers/plans/2026-11-17-image-builds-and-operators.md)
 
 # 品牌与变更记录
 

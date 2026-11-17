@@ -1,10 +1,14 @@
+# [INPUT]: 依赖Rust 工作区和服务二进制。
+# [OUTPUT]: 交付 Control 与遥测运行镜像。
+# [POS]: 不承载独立 Operator、源码服务和网关。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 FROM rust:1.95-bookworm AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY vendor ./vendor
 COPY crates ./crates
-COPY operator ./operator
+COPY operators ./operators
 COPY proto ./proto
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/build/target cargo build --locked --release --bin artifactory-control-plane --bin artifactory-telemetry-service && cp target/release/artifactory-control-plane target/release/artifactory-telemetry-service /usr/local/bin/
 

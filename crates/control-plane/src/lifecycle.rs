@@ -1,4 +1,7 @@
-//! Reconcile durable work on every replica. External I/O never holds database locks.
+//! [INPUT]: 依赖工作区租约、私有对象存储与服务清理接口。
+//! [OUTPUT]: 按持久化游标删除对象并清扫原生及镜像日志前缀。
+//! [POS]: 所有外部清理 I/O 在数据库锁外执行。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{state::AppState, store::lifecycle::Lease};
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
@@ -159,6 +162,14 @@ async fn step(state: &AppState, lease: &Lease) -> Result<()> {
                 .context("missing release inventory")?;
             let cursor = usize::try_from(lease.object_cursor)?;
             let object_batches = objects.len().div_ceil(32);
+            // 旧清单没有镜像日志项，继续沿用原游标布局。
+            let image_projects: Vec<Uuid> = serde_json::from_value(
+                lease
+                    .manifest
+                    .get("image_log_projects")
+                    .cloned()
+                    .unwrap_or(json!([])),
+            )?;
             if cursor < object_batches {
                 for key in objects.iter().skip(cursor * 32).take(32) {
                     state
@@ -173,8 +184,14 @@ async fn step(state: &AppState, lease: &Lease) -> Result<()> {
                     .storage
                     .delete_prefix(&format!("logs/{attempt}/"))
                     .await?;
-            } else if cursor < object_batches + attempts.len() + ota.len() {
-                let release = &ota[cursor - object_batches - attempts.len()];
+            } else if cursor < object_batches + attempts.len() + image_projects.len() {
+                let project = image_projects[cursor - object_batches - attempts.len()];
+                state
+                    .storage
+                    .delete_prefix(&format!("{}/{project}/image-logs/", lease.tenant_id))
+                    .await?;
+            } else if cursor < object_batches + attempts.len() + image_projects.len() + ota.len() {
+                let release = &ota[cursor - object_batches - attempts.len() - image_projects.len()];
                 let hash = release["hash"].as_str().context("missing asset identity")?;
                 ensure!(
                     hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()),

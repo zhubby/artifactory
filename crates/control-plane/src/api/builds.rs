@@ -232,7 +232,7 @@ pub async fn download(
     state
         .audit(auth.user_id, "artifact_downloaded", id, json!({}))
         .await?;
-    let url = state.storage.download_url(&artifact.object_key);
+    let url = state.storage.download_url(&artifact.object_key)?;
     if headers
         .get("accept")
         .and_then(|h| h.to_str().ok())
@@ -272,5 +272,7 @@ pub async fn release_detail(
         "read",
     )?;
     release["artifacts"] = json!(state.store.release_artifacts(id).await?);
+    release["images"] = json!(state.store.release_images(id).await?);
+    release["image_registry"] = json!(std::env::var("ARTIFACTORY_REGISTRY_URL").ok());
     Ok(Json(release))
 }

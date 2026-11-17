@@ -1,4 +1,7 @@
-//! Durable runtime receipts, outbox delivery and remote source state.
+//! [INPUT]: 依赖规划运行时回执、固定源码和独立执行身份。
+//! [OUTPUT]: 持久化规划意图并校验源码下载授权。
+//! [POS]: 为原生 attempt 和镜像执行分别校验有效授权。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use anyhow::{Context, Result};
 use artifactory_database::{params, sql};
@@ -98,8 +101,8 @@ impl ControlStore {
         token_hash: String,
         snapshot: Uuid,
     ) -> Result<bool> {
-        let valid:bool=sql::scalar(&mut self.pool.clone(), "SELECT EXISTS(SELECT 1 FROM source_tokens t JOIN attempts a ON a.id=t.attempt_id JOIN nodes n ON n.id=a.node_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id JOIN source_snapshots ss ON ss.id=t.snapshot_id WHERE t.token_hash=$1 AND t.snapshot_id=$2 AND b.source_snapshot_id=ss.id AND b.project_id=ss.project_id AND b.tenant_id=n.tenant_id AND b.tenant_id=ss.tenant_id AND t.expires_at>clock_timestamp() AND a.status IN ('leased','running') AND a.lease_expires_at>clock_timestamp() AND NOT b.cancel_requested AND NOT n.revoked AND n.certificate_expires_at>clock_timestamp())", params![token_hash, snapshot]).await?;
-        Ok(valid)
+        let valid:bool=sql::scalar(&mut self.pool.clone(), "SELECT EXISTS(SELECT 1 FROM source_tokens t JOIN attempts a ON a.id=t.attempt_id JOIN nodes n ON n.id=a.node_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id JOIN source_snapshots ss ON ss.id=t.snapshot_id WHERE t.token_hash=$1 AND t.snapshot_id=$2 AND b.source_snapshot_id=ss.id AND b.project_id=ss.project_id AND b.tenant_id=n.tenant_id AND b.tenant_id=ss.tenant_id AND t.expires_at>clock_timestamp() AND a.status IN ('leased','running') AND a.lease_expires_at>clock_timestamp() AND NOT b.cancel_requested AND NOT n.revoked AND n.certificate_expires_at>clock_timestamp())", params![&token_hash, snapshot]).await?;
+        Ok(valid || self.image_source_authorized(&token_hash, snapshot).await?)
     }
 
     pub(crate) async fn runtime_tool_build(&self, run: Uuid) -> Result<Uuid> {

@@ -375,6 +375,8 @@ pub struct BuildDetail {
     pub jobs: Vec<Job>,
     pub artifacts: Vec<BuildArtifact>,
     pub publish_attempts: Vec<PublishAttempt>,
+    pub image_executions: Vec<serde_json::Value>,
+    pub image_registry: Option<String>,
 }
 
 response! { ArtifactSummary {

@@ -1,3 +1,7 @@
+# [INPUT]: 依赖版本检查器、Cargo 清单和 Chart。
+# [OUTPUT]: 验证独立 Operator 与服务版本一致。
+# [POS]: 发布版本规则的回归。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 import json
 from pathlib import Path
 import subprocess
@@ -32,7 +36,7 @@ class ProjectVersionTests(unittest.TestCase):
                 "packages": {"": {"name": name, "version": "0.1.0"},
                              "node_modules/third-party": {"version": "0.1.0"}},
             })
-        for chart in ["artifactory", "artifactory-operator"]:
+        for chart in ["artifactory", "artifactory-agent-operator"]:
             self.write(f"charts/{chart}/Chart.yaml", f"apiVersion: v2\nname: {chart}\n"
                        'version: 0.1.0\nappVersion: "0.1.0"\n')
         self.write("crates/emissary/Dockerfile", "FROM rust:1.95-bookworm\n"

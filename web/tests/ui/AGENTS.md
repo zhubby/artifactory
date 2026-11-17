@@ -12,6 +12,7 @@ emissary-ota.spec.ts: 验证节点升级配置。
 errors.spec.ts: 验证错误状态和本地化。
 fixtures.ts: 提供租户业务数据、默认签名预览与 HTTP 夹具。
 interaction-visual.spec.ts: 验证短视口导航和设置分组交互。
+images.spec.ts: 验证完整外部引用复制、摘要 Release、双架构发布与凭据清空。
 monochrome-workspace.spec.ts: 验证中性色工作台、项目切换和导航状态。
 motion.spec.ts: 验证入场布局、减少动效偏好及禁用后的侧面板位置。
 node-details.spec.ts: 验证节点详情交互。

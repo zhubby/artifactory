@@ -1,3 +1,7 @@
+# [INPUT]: 固定服务端口和入口类型。
+# [OUTPUT]: 私有业务服务和经过网关的公开入口。
+# [POS]: Control 内部端口与设备网关入口使用独立 Service。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 {{- $components := list "control-plane" "web" "grpc" }}
 {{- if .Values.postgres.enabled }}{{- $components = append $components "postgres" }}{{- end }}
 {{- if .Values.s3.enabled }}{{- $components = append $components "s3" }}{{- end }}
@@ -8,7 +12,7 @@
 {{- $target := "postgres" }}
 {{- $selector := $component }}
 {{- if eq $component "s3" }}
-{{- $settings = $.Values.s3.service }}
+{{- $settings = dict "type" "ClusterIP" }}
 {{- $port = 8333 }}
 {{- $target = "s3" }}
 {{- else if or (eq $component "control-plane") (eq $component "local-source") }}
@@ -17,12 +21,13 @@
 {{- else if eq $component "web" }}
 {{- $settings = $.Values.console.service }}
 {{- $port = 80 }}
-{{- $target = "gateway" }}
+{{- $target = "http" }}
+{{- $selector = "gateway-edge" }}
 {{- else if eq $component "grpc" }}
 {{- $settings = $.Values.grpc.service }}
 {{- $port = 8443 }}
 {{- $target = "grpc" }}
-{{- $selector = "control-plane" }}
+{{- $selector = "gateway-device" }}
 {{- end }}
 ---
 apiVersion: v1
@@ -41,6 +46,9 @@ spec:
       {{- if and (eq $settings.type "NodePort") $settings.nodePort }}
       nodePort: {{ $settings.nodePort }}
       {{- end }}
+    {{- if eq $component "control-plane" }}
+    - {port: 8443, targetPort: grpc, name: grpc}
+    {{- end }}
   selector:
     {{- include "artifactory.selector" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $selector }}

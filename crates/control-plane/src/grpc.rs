@@ -432,7 +432,10 @@ impl protocol::control_server::Control for EmissaryService {
         let url = if upload.completed {
             String::new()
         } else {
-            self.0.storage.upload_url(&upload.object_key)
+            self.0
+                .storage
+                .upload_url(&upload.object_key)
+                .map_err(|_| Status::internal("artifact ticket signing failed"))?
         };
         Ok(Response::new(protocol::UploadTicket {
             upload_id: upload.id.to_string(),

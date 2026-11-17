@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Restore a quiescent local acceptance environment into fresh PostgreSQL and S3 volumes."""
+"""[INPUT]: 静止的本机数据库、私有对象与持久密钥备份。
+[OUTPUT]: 在新卷中验证恢复、网关下载和再次构建。
+[POS]: 只创建带归属标签的临时服务与本机进程。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 
 import argparse
 import hashlib
@@ -14,6 +18,7 @@ import urllib.request
 from pathlib import Path
 
 import acceptance
+import local_gateway
 
 
 def execute(arguments, **kwargs):
@@ -69,7 +74,7 @@ def load_environment(path):
     clean = {key: value for key, value in os.environ.items() if not key.startswith(('ARTIFACTORY_', 'RCLONE_CONFIG_ARTIFACTORY_RECOVERY_')) and key != 'DATABASE_URL'}
     raw = subprocess.check_output(['bash', '-e', '-c', 'set -a; . "$1"; env -0', 'recovery-env', str(path)], env=clean, cwd=acceptance.ROOT)
     environment = dict(item.decode().split('=', 1) for item in raw.split(b'\0') if item and b'=' in item)
-    for key in ('DATABASE_URL', 'ARTIFACTORY_MASTER_KEY', 'ARTIFACTORY_S3_ACCESS_KEY', 'ARTIFACTORY_S3_SECRET_KEY', 'ARTIFACTORY_S3_REGION', 'ARTIFACTORY_S3_BUCKET', 'ARTIFACTORY_S3_ENDPOINT', 'ARTIFACTORY_BOOTSTRAP_USERNAME', 'ARTIFACTORY_BOOTSTRAP_PASSWORD'):
+    for key in ('DATABASE_URL', 'ARTIFACTORY_MASTER_KEY', 'ARTIFACTORY_GATEWAY_TOKEN', 'ARTIFACTORY_S3_ACCESS_KEY', 'ARTIFACTORY_S3_SECRET_KEY', 'ARTIFACTORY_S3_REGION', 'ARTIFACTORY_S3_BUCKET', 'ARTIFACTORY_S3_ENDPOINT', 'ARTIFACTORY_BOOTSTRAP_USERNAME', 'ARTIFACTORY_BOOTSTRAP_PASSWORD'):
         if not environment.get(key):
             raise RuntimeError('private environment is missing ' + key)
     return environment
@@ -145,7 +150,7 @@ def main():
     restored.mkdir(mode=0o700)
     created_containers = []
     created_volumes = []
-    control = emissary = ssh_server = None
+    control = gateway = emissary = ssh_server = None
     handles = []
     evidence = directory / 'evidence.json'
     cleanup_errors = []
@@ -197,7 +202,7 @@ def main():
 
         postgres_image = json.loads(acceptance.command(['docker', 'inspect', options.postgres_container]))[0]['Image']
         s3_inspect = json.loads(acceptance.command(['docker', 'inspect', options.s3_container]))[0]
-        pg_port, s3_port, http_port, grpc_port = free_ports(4)
+        pg_port, s3_port, http_port, grpc_port, control_port = free_ports(5)
         password = urllib.parse.unquote(urllib.parse.urlsplit(saved['DATABASE_URL']).password)
         (restored / 'database-password').write_text(password)
         postgres = service('postgres', postgres_image, ['-p', f'127.0.0.1:{pg_port}:5432', '-e', 'POSTGRES_DB=artifactory', '-e', 'POSTGRES_USER=artifactory', '-e', 'POSTGRES_PASSWORD_FILE=/run/db-password', '-v', str(restored / 'database-password') + ':/run/db-password:ro'], '/var/lib/postgresql/data')
@@ -217,7 +222,7 @@ def main():
         acceptance.check('restored CA, signing key and server identity match the backup', all((restored / 'pki' / path.name).read_bytes() == path.read_bytes() for path in (backup / 'pki').iterdir() if path.is_file()))
 
         base = f'http://127.0.0.1:{http_port}'
-        environment = dict(saved, DATABASE_URL=f'postgres://artifactory:{urllib.parse.quote(password, safe="")}@127.0.0.1:{pg_port}/artifactory', ARTIFACTORY_HTTP_BIND=f'127.0.0.1:{http_port}', ARTIFACTORY_GRPC_BIND=f'127.0.0.1:{grpc_port}', ARTIFACTORY_PUBLIC_URL=base, ARTIFACTORY_PKI_DIR=str(restored / 'pki'), ARTIFACTORY_DATA_DIR=str(restored / "control's data with spaces"), ARTIFACTORY_S3_ENDPOINT=s3_endpoint, ARTIFACTORY_S3_PUBLIC_ENDPOINT=s3_endpoint, GIT_SSL_CAINFO=str(restored / 'pki/ca.pem'))
+        environment = dict(saved, DATABASE_URL=f'postgres://artifactory:{urllib.parse.quote(password, safe="")}@127.0.0.1:{pg_port}/artifactory', ARTIFACTORY_HTTP_BIND=f'127.0.0.1:{control_port}', ARTIFACTORY_GRPC_BIND=f'127.0.0.1:{grpc_port}', ARTIFACTORY_PUBLIC_URL=base, ARTIFACTORY_PKI_DIR=str(restored / 'pki'), ARTIFACTORY_DATA_DIR=str(restored / "control's data with spaces"), ARTIFACTORY_S3_ENDPOINT=s3_endpoint, GIT_SSL_CAINFO=str(restored / 'pki/ca.pem'))
         log = (directory / 'control-plane.log').open('ab')
         handles.append(log)
         control = subprocess.Popen([str(acceptance.ROOT / 'target/debug/artifactory-control-plane')], cwd=acceptance.ROOT, env=environment, stdout=log, stderr=log)
@@ -225,10 +230,20 @@ def main():
         def control_ready():
             if control.poll() is not None:
                 raise RuntimeError('restored control exited: ' + (directory / 'control-plane.log').read_text()[-8192:])
-            with urllib.request.urlopen(base + '/healthz', timeout=2) as response:
+            with urllib.request.urlopen(f'http://127.0.0.1:{control_port}/healthz', timeout=2) as response:
                 return response.status == 200
 
         acceptance.wait_for(control_ready, 30)
+        gateway_log = (directory / 'gateway.log').open('ab')
+        handles.append(gateway_log)
+        gateway = subprocess.Popen([str(acceptance.ROOT / 'target/debug/artifactory-gateway')], cwd=acceptance.ROOT,
+            env=local_gateway.environment(environment, f'127.0.0.1:{http_port}', f'http://127.0.0.1:{control_port}'), stdout=gateway_log, stderr=gateway_log)
+        def gateway_ready():
+            if gateway.poll() is not None:
+                raise RuntimeError('restored gateway exited; see gateway.log')
+            with urllib.request.urlopen(base + '/api/v1/auth/config', timeout=2) as response:
+                return response.status == 200
+        acceptance.wait_for(gateway_ready, 30)
         acceptance.BASE = base
         acceptance.FIXTURE_DATABASE_URL = environment['DATABASE_URL']
         os.environ['ARTIFACTORY_PUBLIC_URL'] = base
@@ -302,7 +317,7 @@ def main():
         acceptance.EVIDENCE['failure'] = str(error)
         raise
     finally:
-        for process in (emissary, ssh_server, control):
+        for process in (emissary, ssh_server, gateway, control):
             try:
                 acceptance.stop_process(process)
             except Exception as error:

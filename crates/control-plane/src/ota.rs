@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖签名升级清单、节点命令与网关制品票据。
+//! [OUTPUT]: 验证升级版本并下发固定摘要升级包。
+//! [POS]: 设备升级协调边界；不向设备暴露私有 S3。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{protocol::Command, state::AppState};
 use anyhow::{Context, Result, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -304,7 +308,7 @@ pub async fn next(state: &AppState, node: Uuid, session: Uuid) -> Result<Option<
     let Some(offer) = state.store.next_emissary_update(node, session).await? else {
         return Ok(None);
     };
-    let url = state.storage.emissary_download_url(&offer.object_key);
+    let url = state.storage.emissary_download_url(&offer.object_key)?;
     Ok(Some(Command { command_id: offer.id.to_string(), kind: "emissary_update".into(),
         payload_json: json!({"id":offer.id,"generation":offer.generation,"action":if offer.cancel {"cancel"} else {"apply"},"manifest":offer.manifest,"signature":offer.signature,"url":url}).to_string(), ..Default::default() }))
 }

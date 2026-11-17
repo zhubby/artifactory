@@ -39,3 +39,8 @@ snapshot_name = "0006_snapshot.toml"
 id = 2026111601
 name = "0007_managed_signing.sql"
 snapshot_name = "0007_snapshot.toml"
+
+[[migrations]]
+id = 2026111701
+name = "0008_image_builds.sql"
+snapshot_name = "0008_snapshot.toml"

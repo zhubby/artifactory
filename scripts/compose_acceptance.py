@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Exercise the production Compose stack with an isolated CA and disposable volumes."""
+"""[INPUT]: 固定源码版本、独立镜像和隔离 TLS 域名。
+[OUTPUT]: 验证 Compose 的公网 TLS、Pingora 与设备交付。
+[POS]: 只创建带归属标签的网络、容器和临时卷。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 
 import argparse
 import hashlib
@@ -48,6 +52,7 @@ def main():
     parser.add_argument('--control-plane-image', '--control-image', dest='control_plane_image', help='reuse a control plane image labelled with the exact current Git revision')
     parser.add_argument('--web-image', help='reuse an image labelled with the exact current Git revision')
     parser.add_argument('--agent-worker-image', help='reuse an Agent worker image labelled with the exact current Git revision')
+    parser.add_argument('--gateway-image', help='reuse a Pingora image labelled with the exact current Git revision')
     parser.add_argument('--probe-image', help='reuse a Linux test-tooling image with python3, Git, cc and OpenSSL')
     options = parser.parse_args()
     if os.getuid() == 0:
@@ -130,6 +135,7 @@ def main():
         control_image = build('control-plane', snapshot, (snapshot / 'Dockerfile').read_text(), options.control_plane_image)
         web_image = build('web', snapshot, (snapshot / 'web/Dockerfile').read_text(), options.web_image)
         agent_worker_image = build('agent-worker', snapshot, (snapshot / 'packages/agent-worker/Dockerfile').read_text(), options.agent_worker_image)
+        gateway_image = build('gateway', snapshot, (snapshot / 'crates/gateway/Dockerfile').read_text(), options.gateway_image)
         architecture = capture(['docker', 'image', 'inspect', control_image, '--format', '{{.Architecture}}'])
         check('probe image uses a supported Emissary architecture', architecture in ('amd64', 'arm64'))
         probe_dockerfile = f'FROM {control_image}\nUSER 0\nRUN apt-get update && apt-get install -y --no-install-recommends python3 gcc libc6-dev postgresql-client && rm -rf /var/lib/apt/lists/*\nUSER 10001:10001\n'
@@ -143,9 +149,8 @@ def main():
         finally:
             execute(['docker', 'rm', extract])
         console = 'console-' + run_id + '.test'
-        objects = 'objects-' + run_id + '.test'
         environment = {key: value for key, value in os.environ.items() if not key.startswith(('ARTIFACTORY_', 'COMPOSE_')) and key != 'DATABASE_URL'}
-        execute(['sh', str(snapshot / 'scripts/init-deploy.sh')], cwd=snapshot, env=dict(environment, ARTIFACTORY_DOMAIN=console, ARTIFACTORY_S3_DOMAIN=objects, ARTIFACTORY_GRPC_HOST='control-plane'), capture_output=True, text=True)
+        execute(['sh', str(snapshot / 'scripts/init-deploy.sh')], cwd=snapshot, env=dict(environment, ARTIFACTORY_DOMAIN=console, ARTIFACTORY_GRPC_HOST='control-plane'), capture_output=True, text=True)
         settings = dict(line.split('=', 1) for line in (snapshot / '.deploy/env').read_text().splitlines())
         shutil.copyfile(snapshot / '.deploy/pki/ca.pem', probe / 'grpc-ca.pem')
         with (directory / 'certificate-generation.log').open('w') as log:
@@ -154,28 +159,29 @@ def main():
             execute(['openssl', 'x509', '-req', '-in', str(probe / 'git.csr'), '-CA', str(snapshot / '.deploy/pki/ca.pem'), '-CAkey', str(snapshot / '.deploy/pki/ca.key'), '-CAcreateserial', '-out', str(probe / 'git.pem'), '-days', '1', '-sha256', '-extfile', str(probe / 'git.ext')], stdout=log, stderr=log)
         caddy = snapshot / 'deploy/Caddyfile'
         source_caddy = caddy.read_text()
-        for name in ('ARTIFACTORY_DOMAIN', 'ARTIFACTORY_S3_DOMAIN'):
+        for name in ('ARTIFACTORY_DOMAIN',):
             token = '{$' + name + '} {'
             if source_caddy.count(token) != 1:
                 raise RuntimeError('production Caddy host blocks changed; review the acceptance override')
             source_caddy = source_caddy.replace(token, token + '\n    tls internal')
         caddy.write_text('{\n    admin off\n    auto_https disable_redirects\n    skip_install_trust\n}\n\n' + source_caddy)
         manifest = json.loads(capture(['docker', 'compose', '--project-name', project, '--project-directory', str(snapshot), '--env-file', str(snapshot / '.deploy/env'), '-f', str(snapshot / 'compose.yaml'), 'config', '--format', 'json'], env=environment))
-        check('production Compose includes independent telemetry', set(manifest['services']) == {'postgres', 's3', 'control-plane', 'web', 'gateway','agent-worker','telemetry'})
+        check('production Compose includes independent Pingora and telemetry', set(manifest['services']) == {'postgres', 's3', 'control-plane', 'web', 'gateway', 'tls-edge', 'agent-worker','telemetry'})
         manifest['services']['control-plane']['image'] = control_image
         manifest['services']['telemetry']['image'] = control_image
         manifest['services']['web']['image'] = web_image
         manifest['services']['agent-worker']['image'] = agent_worker_image
-        for name in ('control-plane', 'web', 'agent-worker','telemetry'):
+        manifest['services']['gateway']['image'] = gateway_image
+        for name in ('control-plane', 'web', 'agent-worker','telemetry', 'gateway'):
             manifest['services'][name].pop('build', None)
-        for name in ('postgres', 's3', 'gateway'):
+        for name in ('postgres', 's3', 'tls-edge'):
             service = manifest['services'][name]
             service['image'] = registry(service['image'])
         http_port, https_port, grpc_port, telemetry_port = free_ports(4)
-        manifest['services']['gateway']['ports'] = [{'target': 80, 'published': str(http_port), 'host_ip': '127.0.0.1', 'protocol': 'tcp'}, {'target': 443, 'published': str(https_port), 'host_ip': '127.0.0.1', 'protocol': 'tcp'}]
+        manifest['services']['tls-edge']['ports'] = [{'target': 80, 'published': str(http_port), 'host_ip': '127.0.0.1', 'protocol': 'tcp'}, {'target': 443, 'published': str(https_port), 'host_ip': '127.0.0.1', 'protocol': 'tcp'}]
         manifest['services']['control-plane']['ports'] = [{'target': 8443, 'published': str(grpc_port), 'host_ip': '127.0.0.1', 'protocol': 'tcp'}]
         manifest['services']['telemetry']['ports'] = [{'target':8444,'published':str(telemetry_port),'host_ip':'127.0.0.1','protocol':'tcp'}]
-        manifest['services']['gateway']['networks'] = {'default': {'aliases': [console, objects]}}
+        manifest['services']['tls-edge']['networks'] = {'default': {'aliases': [console]}}
         manifest['services']['control-plane']['environment'].update({'SSL_CERT_FILE': '/run/acceptance/https-ca.pem', 'GIT_SSL_CAINFO': '/run/artifactory-pki/ca.pem'})
         manifest['services']['control-plane']['volumes'].append({'type': 'bind', 'source': str(probe / 'https-ca.pem'), 'target': '/run/acceptance/https-ca.pem', 'read_only': True, 'bind': {'create_host_path': False}})
         for kind in ('services', 'volumes', 'networks'):
@@ -186,7 +192,7 @@ def main():
         check('all host mounts belong to the private acceptance directory', all(Path(volume['source']).resolve().is_relative_to(directory.resolve()) for service in manifest['services'].values() for volume in service.get('volumes', []) if volume['type'] == 'bind'))
         check('production insecure-development bypass stays disabled', manifest['services']['control-plane']['environment'].get('ARTIFACTORY_INSECURE_DEV') != 'true')
         evidence.update({'images': {}, 'image_platforms': {}, 'ports': {'https': https_port, 'http': http_port, 'grpc': grpc_port}})
-        for name, image in [('control-plane', control_image), ('web', web_image), ('agent-worker', agent_worker_image), ('probe', probe_image), *[(name, manifest['services'][name]['image']) for name in ('postgres', 's3', 'gateway')]]:
+        for name, image in [('control-plane', control_image), ('web', web_image), ('agent-worker', agent_worker_image), ('gateway', gateway_image), ('probe', probe_image), *[(name, manifest['services'][name]['image']) for name in ('postgres', 's3', 'tls-edge')]]:
             # Pull infrastructure images through the chosen registry without changing global Docker settings.
             inspected = subprocess.run(['docker', 'image', 'inspect', image], capture_output=True, text=True, timeout=15)
             if inspected.returncode:
@@ -202,10 +208,10 @@ def main():
         compose_file.write_text(json.dumps(manifest, indent=2) + '\n')
         started = True
         with (directory / 'startup.log').open('w') as log:
-            execute(compose + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never', 'postgres', 's3', 'web', 'gateway'], stdout=log, stderr=log, timeout=180)
+            execute(compose + ['up', '-d', '--no-deps', '--no-build', '--pull', 'never', 'postgres', 's3', 'web', 'gateway', 'tls-edge'], stdout=log, stderr=log, timeout=180)
             deadline = time.monotonic() + 60
             while True:
-                result = subprocess.run(compose + ['exec', '-T', 'gateway', 'cat', '/data/caddy/pki/authorities/local/root.crt'], capture_output=True, timeout=15)
+                result = subprocess.run(compose + ['exec', '-T', 'tls-edge', 'cat', '/data/caddy/pki/authorities/local/root.crt'], capture_output=True, timeout=15)
                 if result.returncode == 0 and b'BEGIN CERTIFICATE' in result.stdout:
                     (probe / 'https-ca.pem').write_bytes(result.stdout)
                     break
@@ -215,13 +221,13 @@ def main():
             execute(compose + ['up', '-d', '--no-build', '--pull', 'never', 'control-plane', 'agent-worker','telemetry'], stdout=log, stderr=log, timeout=180)
         details = json.loads(capture(['docker', 'inspect', capture(compose + ['ps', '-q', 'control-plane'])]))[0]
         check('control runs non-root with a read-only root filesystem and no capabilities', details['Config']['User'].split(':')[0] != '0' and details['HostConfig']['ReadonlyRootfs'] and 'ALL' in (details['HostConfig']['CapDrop'] or []) and 'no-new-privileges:true' in (details['HostConfig']['SecurityOpt'] or []))
-        for service in ('postgres', 's3', 'web', 'gateway', 'control-plane', 'agent-worker','telemetry'):
+        for service in ('postgres', 's3', 'web', 'gateway', 'tls-edge', 'control-plane', 'agent-worker','telemetry'):
             details = json.loads(capture(['docker', 'inspect', capture(compose + ['ps', '-aq', service])]))[0]
             bindings = details['HostConfig'].get('PortBindings') or {}
             check(service + ' exposes no non-loopback host ports', all(binding['HostIp'] == '127.0.0.1' for values in bindings.values() for binding in values))
-        worker_environment = dict(environment, ARTIFACTORY_BOOTSTRAP_PASSWORD=settings['ARTIFACTORY_BOOTSTRAP_PASSWORD'], ARTIFACTORY_COMPOSE_CONSOLE_URL='https://' + console, ARTIFACTORY_COMPOSE_S3_URL='https://' + objects, SSL_CERT_FILE='/acceptance/https-ca.pem', DATABASE_URL=manifest['services']['control-plane']['environment']['DATABASE_URL'])
+        worker_environment = dict(environment, ARTIFACTORY_BOOTSTRAP_PASSWORD=settings['ARTIFACTORY_BOOTSTRAP_PASSWORD'], ARTIFACTORY_COMPOSE_CONSOLE_URL='https://' + console, SSL_CERT_FILE='/acceptance/https-ca.pem', DATABASE_URL=manifest['services']['control-plane']['environment']['DATABASE_URL'])
         arguments = ['docker', 'run', '--init', '--platform', evidence['image_platforms']['probe'], '--name', worker_name, '--label', LABEL + '=' + run_id, '--network', manifest['networks']['default']['name'], '--network-alias', 'probe', '--user', f'{os.getuid()}:{os.getgid()}', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--tmpfs', '/tmp:mode=1777', '--mount', 'type=bind,src=' + str(probe) + ',dst=/acceptance', '--workdir', '/acceptance']
-        for name in ('ARTIFACTORY_BOOTSTRAP_PASSWORD', 'ARTIFACTORY_COMPOSE_CONSOLE_URL', 'ARTIFACTORY_COMPOSE_S3_URL', 'SSL_CERT_FILE', 'DATABASE_URL'):
+        for name in ('ARTIFACTORY_BOOTSTRAP_PASSWORD', 'ARTIFACTORY_COMPOSE_CONSOLE_URL', 'SSL_CERT_FILE', 'DATABASE_URL'):
             arguments += ['--env', name]
         with (directory / 'probe.log').open('w') as log:
             worker = subprocess.Popen(arguments + ['--entrypoint', 'python3', probe_image, '/acceptance/probe.py'], env=worker_environment, stdout=log, stderr=log)
