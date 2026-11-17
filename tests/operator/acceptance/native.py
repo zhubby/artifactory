@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """[INPUT]: 已保存的隔离命名空间、验收租户和主机原生 Rust 工具链。
-[OUTPUT]: 隔离原设备后验证主机构建，并保存脱敏终态证据。
-[POS]: 切换公告地址；结束时恢复原路由与设备排空状态。
+[OUTPUT]: 验证主机构建；清理完成后写入成功证据。
+[POS]: 切换公告地址与客户端 Origin，再恢复原设备排空状态。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
@@ -175,7 +175,7 @@ def run(args):
         processes=a.wait(lambda: (v if (v:=a.api(f'/api/v1/attempts/{attempt}/processes?'+params))['samples'] else None))
         assert any(p['step']==0 for p in processes['samples']) and all(p['started_at']>0 for p in processes['samples'])
         evidence['telemetry']={'inventory_os':inventory['os'],'inventory_arch':inventory['arch'],'host_fresh':True,'managed_process_samples':len(processes['samples'])}
-        evidence.update({'passed': True, 'build_id': build, 'node_id': node['id'], 'snapshot_id': snapshot, 'commit': detail['commit_sha'], 'emissary_binary_sha256': hashlib.sha256(agent.read_bytes()).hexdigest(), 'origins': origins, 'artifact_sha256': detail['artifacts'][0]['sha256'], 'git_lfs_downloaded_directly': True, 'business_source_bytes_delta': 0, 'accepted_plans': 1})
+        evidence.update({'build_id': build, 'node_id': node['id'], 'snapshot_id': snapshot, 'commit': detail['commit_sha'], 'emissary_binary_sha256': hashlib.sha256(agent.read_bytes()).hexdigest(), 'origins': origins, 'artifact_sha256': detail['artifacts'][0]['sha256'], 'git_lfs_downloaded_directly': True, 'business_source_bytes_delta': 0, 'accepted_plans': 1})
         evidence['images'] = a.images()
         if args.live_protocol:
             a.forward('service/postgres', '38543:5432')
@@ -196,7 +196,6 @@ def run(args):
             with (directory/'live-protocol.log').open('wb') as log:
                 subprocess.run(['cargo','test','--locked','-p','artifactory-emissary','--test','live_protocol','--','--ignored','--nocapture'],cwd=ROOT,env=live_environment,stdout=log,stderr=log,check=True,timeout=600)
             evidence['live_protocol_passed']=True
-        print('HOST NATIVE ACCEPTANCE PASSED', directory/'evidence.json', flush=True)
     finally:
         try:
             if build:
@@ -214,6 +213,7 @@ def run(args):
                 evidence['temporary_device_identity_revoked'] = True
             set_environment(a, 'upstream', {key: original_upstream.get(key) for key in ['FIXTURE_OS','FIXTURE_ARCH']})
             set_environment(a, 'control-plane', {'ARTIFACTORY_PUBLIC_URL': original_control.get('ARTIFACTORY_PUBLIC_URL')})
+            a.origin = a.kubectl('exec', 'deploy/control-plane', '--', 'printenv', 'ARTIFACTORY_PUBLIC_URL').strip()
             a.kubectl('patch', 'sourcepool', 'sources', '--type=merge', '-p', json.dumps({'spec': {'publicUrlTemplate': source_pool.get('publicUrlTemplate')}}))
             a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': agent_pool}))
             a.wait(lambda: json.loads(a.kubectl('get','sourcepool','sources','-o','json'))['metadata']['generation'] == json.loads(a.kubectl('get','sourcepool','sources','-o','json')).get('status',{}).get('observedGeneration'))
@@ -226,6 +226,9 @@ def run(args):
             finally:
                 (directory/'evidence.json').write_text(json.dumps(evidence, indent=2))
                 a.cleanup()
+    evidence['passed'] = True
+    (directory/'evidence.json').write_text(json.dumps(evidence, indent=2))
+    print('HOST NATIVE ACCEPTANCE PASSED', directory/'evidence.json', flush=True)
 
 
 if __name__ == '__main__':

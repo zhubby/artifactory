@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、真实控制面与活跃快照夹具。
- * [OUTPUT]: 验证控制台登录、构建与租户访问。
+ * [OUTPUT]: 验证控制台业务链路，保存焦点失败的脱敏证据。
  * [POS]: 需要可用后端的端到端浏览器入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -293,7 +293,26 @@ test("dialogs are keyboard accessible and mobile navigation works", async ({
   });
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(trigger).toBeFocused();
+  try {
+    await expect(trigger).toBeFocused();
+  } catch (error) {
+    const focus = await trigger.evaluate((element) => {
+      const active = document.activeElement;
+      return {
+        documentHasFocus: document.hasFocus(),
+        activeElement: active
+          ? { tag: active.tagName, id: active.id, role: active.getAttribute("role") }
+          : null,
+        triggerIsConnected: element.isConnected,
+        triggerIsActiveElement: active === element,
+      };
+    }).catch(() => ({ diagnosticUnavailable: true }));
+    await testInfo.attach("dialog-focus-state", {
+      body: JSON.stringify(focus, null, 2),
+      contentType: "application/json",
+    }).catch(() => {});
+    throw error;
+  }
   if (testInfo.project.name === "mobile") {
     await page.getByRole("button", { name: "打开导航", exact: true }).click();
     await expect(
