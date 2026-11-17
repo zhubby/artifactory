@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖节点 API、元数据、遥测及 OTA 控件。
+ * [OUTPUT]: 提供 NodeDetailDialog 节点详情。
+ * [POS]: 在侧面板展示设备信息与授权操作。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -681,6 +687,7 @@ export function NodeDetailDialog({
         if (!open) onClose();
       }}
       size="wide"
+      placement="side"
       title={
         <span className="flex flex-wrap items-center gap-3">
           <span className="min-w-0 break-all">{node.name}</span>

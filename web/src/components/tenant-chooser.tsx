@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖账户上下文、租户 API 与共享表单。
+ * [OUTPUT]: 提供租户选择、创建与邀请页面。
+ * [POS]: 登录后的工作区入口；复用控制台统一样式。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import Link from "next/link";
@@ -46,7 +52,7 @@ export function TenantChooser() {
         </Link>
         <a href="/docs">{t("navigation.docs")} ↗</a>
       </header>
-      <main className="hall-main space-enter">
+      <main className="hall-main">
         <div className="hall-heading">
           <div>
             <p className="eyebrow">{t("workspace.tenantHall")}</p>

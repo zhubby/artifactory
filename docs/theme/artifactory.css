@@ -1,27 +1,57 @@
-.light {
-  --bg: #f4f5ee;
-  --fg: #101312;
-  --sidebar-bg: #eceee9;
-  --sidebar-fg: #101312;
-  --links: #80591d;
-  --sidebar-active: #80591d;
+/**
+ * [INPUT]: 依赖 mdBook 结构与本地字体文件。
+ * [OUTPUT]: 提供公开文档的颜色、字体和控件样式。
+ * [POS]: 将文档外观与控制台设计规范对齐。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+@font-face { font-family: "Inter Variable"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("../../fonts/inter-latin-wght-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("../../fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2"); }
+:root { --sidebar-width: 240px; --menu-bar-height: 48px; --content-max-width: 840px; --border: #e8e8e8; --focus: #737373; --mono-font: "IBM Plex Mono", monospace; }
+.light, .rust {
+  color-scheme: light; --bg: #fff; --fg: #202020; --sidebar-bg: #f7f7f7; --sidebar-fg: #686868; --links: #202020;
+  --sidebar-active: #202020; --sidebar-non-existant: #686868; --quote-bg: #f7f7f7; --quote-border: #e8e8e8;
+  --table-border-color: #e8e8e8; --table-header-bg: #f7f7f7; --table-alternate-bg: #fafafa;
+  --searchbar-border-color: #e8e8e8; --searchbar-bg: #fff; --searchbar-fg: #202020; --searchresults-header-fg: #202020; --searchresults-border-color: #e8e8e8;
+  --theme-popup-bg: #fff; --theme-popup-border: #e8e8e8; --theme-hover: #f3f3f3; --icons: #686868; --icons-hover: #202020;
+  --border: #e8e8e8; --focus: #737373;
 }
-
-.navy {
-  --bg: #101312;
-  --fg: #eceee9;
-  --sidebar-bg: #181d1a;
-  --sidebar-fg: #eceee9;
-  --links: #e1ba75;
-  --sidebar-active: #e1ba75;
+.navy, .coal, .ayu {
+  color-scheme: dark; --bg: #151515; --fg: #ededed; --sidebar-bg: #191919; --sidebar-fg: #a1a1a1; --links: #ededed;
+  --sidebar-active: #ededed; --sidebar-non-existant: #a1a1a1; --quote-bg: #191919; --quote-border: #2e2e2e;
+  --table-border-color: #2e2e2e; --table-header-bg: #191919; --table-alternate-bg: #1c1c1c;
+  --searchbar-border-color: #2e2e2e; --searchbar-bg: #191919; --searchbar-fg: #ededed; --searchresults-header-fg: #ededed; --searchresults-border-color: #2e2e2e;
+  --theme-popup-bg: #191919; --theme-popup-border: #2e2e2e; --theme-hover: #232323; --icons: #a1a1a1; --icons-hover: #ededed;
+  --border: #2e2e2e; --focus: #b5b5b5;
 }
-
-.content img,
-.mermaid svg {
-  max-width: 100%;
-  height: auto;
-}
-
-.mermaid {
-  overflow-x: auto;
+html { font-family: "Inter Variable", "PingFang SC", "Microsoft YaHei", sans-serif; }
+body { font-size: 14px; line-height: 1.8; }
+.content { padding: 28px 32px 64px; }
+.content h1 { margin-top: 20px; font-size: 26px; font-weight: 600; letter-spacing: -.6px; }
+.content h2 { margin-top: 40px; padding-bottom: 10px; border-bottom: 1px solid var(--border); font-size: 20px; font-weight: 550; }
+.content h3 { font-size: 16px; font-weight: 550; }
+.content a { text-decoration: underline; text-underline-offset: 3px; }
+.content h1 a, .content h2 a, .content h3 a { text-decoration: none; }
+.content p, .content li { line-height: 1.9; }
+.content code { border-radius: 4px; padding: 2px 5px; background: var(--quote-bg); font-family: var(--mono-font); font-size: 12px; }
+.content pre { padding: 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--quote-bg); }
+.content pre > code { padding: 0; font-size: 12px; }
+.content table { font-size: 12px; }
+.content img, .mermaid svg { max-width: 100%; height: auto; }
+.mermaid { overflow-x: auto; }
+.sidebar { border-right: 1px solid var(--border); font-size: 12px; }
+.sidebar .sidebar-scrollbox { padding: 24px 16px; }
+.sidebar .chapter li a { padding: 5px 7px; border-radius: 4px; }
+.sidebar .chapter li a.active { font-weight: 600; background: var(--theme-hover); }
+.menu-bar { border-bottom: 1px solid var(--border); background: var(--bg); }
+.menu-title { font-size: 14px; font-weight: 550; }
+.theme-popup { border-radius: 6px; padding: 4px; }
+.theme-popup .theme, .theme-system { width: 100%; min-height: 34px; padding: 6px 12px; border: 0; border-radius: 4px; background: transparent; color: var(--fg); text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
+.theme-system:hover { background: var(--theme-hover); }
+.theme-popup li:has(#rust), .theme-popup li:has(#coal), .theme-popup li:has(#ayu) { display: none; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+@media (max-width: 767px) {
+  .content { padding: 20px 20px 48px; }
+  .content h1 { font-size: 24px; }
+  .sidebar .chapter li a, .theme-popup button, .menu-bar .icon-button { min-height: 44px; }
+  .content table { display: block; max-width: 100%; overflow-x: auto; }
 }

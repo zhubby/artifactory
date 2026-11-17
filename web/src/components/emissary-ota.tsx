@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 OTA API、表单和节点类型。
+ * [OUTPUT]: 提供 NodeOTA 与 EmissarySettings。
+ * [POS]: 连接节点更新操作和 OTA 设置。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import { useState } from "react";
@@ -45,7 +51,7 @@ export function NodeOTA({ node, user, releases, updates, reload, actionsReady = 
       <dt className="text-muted-foreground">{t("ota.phase")}</dt><dd>{supported ? t(`ota.stages.${latest?.status || "idle"}`) : t("ota.bootstrap")}</dd>
     </dl>
     {node.ota_draining && <p className="notice">{t(active?.status === "activating" ? "ota.activatingHint" : "ota.drainHint")}</p>}
-    {node.emissary_pool_paused && <p className="text-amber-600 dark:text-amber-400">{t("ota.poolPaused")}</p>}
+    {node.emissary_pool_paused && <p className="text-warning">{t("ota.poolPaused")}</p>}
     {latest?.error && <p className="break-words text-destructive" role="status">{latest.error}</p>}
     {latest?.status === "rolled_back" && <p>{t("ota.restored", { version: node.emissary_current_version || "—" })}</p>}
     {user.role === "admin" && actionsReady && <div className="flex flex-wrap items-start gap-2">

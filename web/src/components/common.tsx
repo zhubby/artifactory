@@ -1,14 +1,12 @@
-"use client";
 /**
- * [INPUT]: 依赖公开领域类型、租户 API 与统一 UI。
- * [OUTPUT]: 提供表单辅助、页面骨架和带验签证据的制品表。
- * [POS]: 控制台跨页面共享组件。
+ * [INPUT]: 依赖租户下载 API、UI 词条和带验签证据的制品类型。
+ * [OUTPUT]: 提供状态、字段反馈及展示签名证据的制品表。
+ * [POS]: 业务页面复用的展示与反馈边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+"use client";
 import { api } from "@/lib/api";
 
-import { usePathname } from "next/navigation";
-import AnimatedContent from "@/components/react-bits/AnimatedContent";
 import { useUI } from "@/components/providers";
 
 import {
@@ -23,7 +21,8 @@ import {
   LoaderCircle,
   XCircle,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Artifact } from "@/lib/types";
@@ -110,10 +109,11 @@ export function Loading() {
   return (
     <div
       role="status"
-      className="flex items-center gap-3 py-20 text-sm text-muted-foreground"
+      className="loading-state"
     >
       <LoaderCircle className="size-4 animate-spin" />
       {t("common.loading")}
+      <span className="skeleton-line" aria-hidden="true" />
     </div>
   );
 }
@@ -166,9 +166,17 @@ export function PageTitle({
   description: string;
   children?: ReactNode;
 }) {
-  const pathname = usePathname();
+  const [actionTarget, setActionTarget] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const sync = () => setActionTarget(desktop.matches ? document.getElementById("workspace-page-actions") : null);
+    sync();
+    desktop.addEventListener("change", sync);
+    return () => desktop.removeEventListener("change", sync);
+  }, []);
+  const actions = children && <div className="page-actions">{children}</div>;
   return (
-    <AnimatedContent className="page-title" replayKey={pathname}>
+    <div className="page-title">
       <div>
         <p className="eyebrow">{eyebrow}</p>
         <h1>{title}</h1>
@@ -176,8 +184,8 @@ export function PageTitle({
           {description}
         </p>
       </div>
-      <div className="flex shrink-0 gap-2">{children}</div>
-    </AnimatedContent>
+      {actionTarget ? createPortal(actions, actionTarget) : actions}
+    </div>
   );
 }
 export function SectionTitle({
@@ -232,6 +240,7 @@ export function CopyButton({ value }: { value: string }) {
 export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
   const { t } = useUI();
   const [error, setError] = useState<Error>();
+  if (!artifacts.length) return <Empty title={t("builds.noArtifacts")} detail={t("builds.noArtifactsDetail")} />;
   return (
     <div>
       <ErrorBox message={error} />

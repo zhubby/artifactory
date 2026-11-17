@@ -1,204 +1,168 @@
-import { expect, test, type Page } from "@playwright/test";
-import {
-  fixtureAPI,
-  openPreferences,
-  closePreferences,
-  tenantURL,
-} from "./fixtures";
+/**
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [OUTPUT]: 验证弹窗入场、布局位置和减少动效设置。
+ * [POS]: 使用模拟 API 的界面浏览器回归入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+import { expect, test, type Locator } from "@playwright/test";
+import { fixtureAPI, openPreferences, closePreferences, tenantURL } from "./fixtures";
 
-async function instrumentDraws(page: Page) {
-  await page.addInitScript(() => {
-    const state = window as typeof window & {
-      __auroraDraws: number;
-      __auroraPaints: number[];
+async function entranceFrames(panel: Locator) {
+  return panel.evaluate(element => {
+    const animation = element.getAnimations().find(item => item.effect instanceof KeyframeEffect && item.effect.target === element);
+    if (!animation) throw new Error("The panel entrance animation did not start");
+    animation.pause();
+    const duration = Number(animation.effect!.getTiming().duration);
+    const read = () => {
+      const box = element.getBoundingClientRect();
+      return { x: box.x, y: box.y, width: box.width, height: box.height, opacity: Number(getComputedStyle(element).opacity) };
     };
-    state.__auroraDraws = 0;
-    state.__auroraPaints = [];
-    const original = WebGL2RenderingContext.prototype.drawArrays;
-    WebGL2RenderingContext.prototype.drawArrays = function (...args) {
-      state.__auroraDraws++;
-      state.__auroraPaints.push(performance.now());
-      return original.apply(this, args);
-    };
+    const frames = [0, .25, .5, .9999].map(progress => {
+      animation.currentTime = duration * progress;
+      return read();
+    });
+    animation.finish();
+    return { duration, frames, settled: read(), viewport: { width: innerWidth, height: innerHeight } };
   });
 }
-const draws = (page: Page) =>
-  page.evaluate(
-    () => (window as typeof window & { __auroraDraws: number }).__auroraDraws,
-  );
 
-test("running effects stop immediately for reduced motion and the saved manual switch", async ({
-  page,
-}) => {
-  await instrumentDraws(page);
-  await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.goto(tenantURL("/login"));
-  await expect(page.locator("canvas")).toHaveCount(1);
-  await expect.poll(() => draws(page)).toBeGreaterThan(2);
-  if (page.viewportSize()!.width <= 760) {
-    await expect.poll(() => draws(page)).toBeGreaterThan(10);
-    const fastestFrame = await page.evaluate(() => {
-      const paints = (
-        window as typeof window & { __auroraPaints: number[] }
-      ).__auroraPaints.slice(-8);
-      return Math.min(...paints.slice(1).map((time, i) => time - paints[i]));
-    });
-    expect(fastestFrame).toBeGreaterThan(36);
-    const canvas = page.locator("canvas");
-    expect(
-      await canvas.evaluate((node) => (node as HTMLCanvasElement).width),
-    ).toBeLessThanOrEqual(Math.ceil((await canvas.boundingBox())!.width));
-  }
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
-  await expect(page.locator("canvas")).toHaveCount(0);
-  const stopped = await draws(page);
-  await page.waitForTimeout(150);
-  expect(await draws(page)).toBe(stopped);
-  await page.emulateMedia({ reducedMotion: "no-preference" });
-  await expect(page.locator("canvas")).toHaveCount(1);
-  await openPreferences(page);
-  await page.getByRole("button", { name: "暂停视觉动效", exact: true }).click();
-  await closePreferences(page);
-  await expect(page.locator("canvas")).toHaveCount(0);
-  await page.reload();
-  await openPreferences(page);
-  await expect(
-    page.getByRole("button", { name: "启用视觉动效", exact: true }),
-  ).toHaveAttribute("aria-pressed", "false");
-  await expect(page.locator("canvas")).toHaveCount(0);
-});
-
-test("offscreen and visibility changes pause actual WebGL draws and resume on return", async ({
-  page,
-}) => {
-  await page.setViewportSize({
-    width: page.viewportSize()!.width,
-    height: 600,
+for (const kind of ["quick navigation", "personal settings"]) {
+  test(`${kind} stays centered throughout its entrance without a final jump`, async ({ page }) => {
+    await fixtureAPI(page);
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto(tenantURL("/projects/desktop-client"));
+    await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
+    // Pause only the playback so first-frame geometry remains observable even
+    // when automation reaches the dialog after its short entrance would end.
+    await page.addStyleTag({ content: ".modal-panel, .account-panel { animation-play-state: paused !important; }" });
+    const trigger = kind === "quick navigation"
+      ? page.getByRole("button", { name: "快捷导航", exact: true })
+      : page.locator(".account-trigger");
+    if (kind === "quick navigation") await trigger.click();
+    else await openPreferences(page);
+    const panel = page.locator(kind === "quick navigation" ? ".modal-panel" : ".account-panel");
+    await expect(panel).toBeVisible();
+    const { frames, settled, viewport, duration } = await entranceFrames(panel);
+    expect(duration).toBeGreaterThanOrEqual(120);
+    expect(duration).toBeLessThanOrEqual(180);
+    for (const frame of frames) {
+      expect(Math.abs(frame.x + frame.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
+      expect(Math.abs(frame.y + frame.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(5);
+    }
+    expect(Math.abs(frames.at(-1)!.x - settled.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(frames.at(-1)!.y - settled.y)).toBeLessThanOrEqual(1);
+    await page.keyboard.press("Escape");
+    await expect(trigger).toBeFocused();
+    await expect(panel).toHaveCount(0);
   });
-  await instrumentDraws(page);
+}
+
+test("device drawers keep their right edge and vertical position during entrance", async ({ page }) => {
   await fixtureAPI(page);
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.goto(tenantURL("/projects/desktop-client/builds/128"));
-  await expect(page.getByRole("log")).toContainText(
-    "native compilation complete",
-  );
-  await expect.poll(() => draws(page)).toBeGreaterThan(2);
-  await page.locator(".workspace-atmosphere").evaluate((element) => {
-    (element as HTMLElement).style.transform = "translateY(-200vh)";
-  });
-  await expect
-    .poll(() =>
-      page
-        .locator(".workspace-atmosphere")
-        .evaluate((element) => element.getBoundingClientRect().bottom < 0),
-    )
-    .toBe(true);
-  await page.waitForTimeout(100);
-  const offscreen = await draws(page);
-  await page.waitForTimeout(150);
-  expect(await draws(page)).toBe(offscreen);
-  // A theme update from another tab must not wake an offscreen canvas.
-  await page.evaluate(() => {
-    window.dispatchEvent(
-      new StorageEvent("storage", {
-        key: "artifactory-theme",
-        newValue: "light",
-      }),
-    );
-  });
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.waitForTimeout(100);
-  expect(await draws(page)).toBe(offscreen);
-  await page.locator(".workspace-atmosphere").evaluate((element) => {
-    (element as HTMLElement).style.transform = "";
-  });
-  await expect.poll(() => draws(page)).toBeGreaterThan(offscreen);
-  // Exercise the native visibility event handler; headless pages do not expose real tab minimization.
-  await page.evaluate(() => {
-    Object.defineProperty(document, "hidden", {
-      configurable: true,
-      value: true,
-    });
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  const hidden = await draws(page);
-  await page.waitForTimeout(150);
-  expect(await draws(page)).toBe(hidden);
-  await page.evaluate(() => {
-    delete (document as unknown as { hidden?: boolean }).hidden;
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  await expect.poll(() => draws(page)).toBeGreaterThan(hidden);
+  await page.goto(tenantURL("/nodes"));
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
+  await page.addStyleTag({ content: ".modal-panel { animation-play-state: paused !important; }" });
+  const trigger = page.getByRole("button", { name: "查看 Mac Studio 的详情", exact: true });
+  await trigger.click();
+  const panel = page.locator(".drawer-panel");
+  await expect(panel).toBeVisible();
+  const { frames, settled, viewport } = await entranceFrames(panel);
+  for (const frame of frames) {
+    expect(Math.abs(frame.y)).toBeLessThanOrEqual(1);
+    expect(frame.x + frame.width - viewport.width).toBeGreaterThanOrEqual(-1);
+    expect(frame.x + frame.width - viewport.width).toBeLessThanOrEqual(17);
+  }
+  expect(Math.abs(frames.at(-1)!.x - settled.x)).toBeLessThanOrEqual(1);
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
 });
 
-test("WebGL failure keeps a static atmosphere and an accessible working form", async ({
-  page,
-}) => {
+test("enabling reduced motion during an entrance leaves the dialog centered and usable", async ({ page }) => {
+  await fixtureAPI(page);
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.addInitScript(() => {
-    const original = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function (
-      this: HTMLCanvasElement,
-      type: string,
-      ...args: unknown[]
-    ) {
-      if (type === "webgl2") return null;
-      return original.apply(this, [type, ...args] as Parameters<
-        typeof original
-      >);
-    } as typeof original;
+  await page.goto(tenantURL("/projects/desktop-client"));
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
+  const pause = await page.addStyleTag({ content: ".modal-panel { animation-play-state: paused !important; }" });
+  const trigger = page.getByRole("button", { name: "快捷导航", exact: true });
+  await trigger.click();
+  const panel = page.locator(".modal-panel");
+  await expect(panel).toBeVisible();
+  await panel.evaluate(element => { element.getAnimations()[0].currentTime = 60; });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await pause.evaluate(element => { element.parentNode?.removeChild(element); });
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
+  await expect.poll(() => panel.evaluate(element => element.getAnimations().filter(animation => animation.playState === "running").length)).toBe(0);
+  const offset = await panel.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return { x: box.x + box.width / 2 - innerWidth / 2, y: box.y + box.height / 2 - innerHeight / 2 };
   });
-  await page.goto(tenantURL("/login"));
-  await expect(page.locator('[data-renderer="fallback"]')).toBeAttached();
-  await expect(page.locator(".atmosphere-static")).not.toHaveCSS(
-    "background-image",
-    "none",
-  );
-  await page
-    .getByRole("textbox", { name: "用户名", exact: true })
-    .fill("fallback-draft");
-  await openPreferences(page);
-  await page
-    .getByRole("combobox", { name: "界面语言", exact: true })
-    .selectOption("en");
-  await closePreferences(page);
-  await expect(
-    page.getByRole("textbox", { name: "Username", exact: true }),
-  ).toHaveValue("fallback-draft");
+  expect(Math.abs(offset.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(offset.y)).toBeLessThanOrEqual(1);
+  await expect(page.getByRole("combobox", { name: "搜索项目或页面", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
 });
 
-test("polling and locale updates preserve the title element and do not restart its entrance", async ({
-  page,
-}) => {
+test("reduced motion and the saved manual preference disable interface transitions", async ({ page }) => {
+  await fixtureAPI(page);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto(tenantURL("/"));
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
+  await expect(page.locator("canvas,.atmosphere,.spotlight-card")).toHaveCount(0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
+  await expect(page.locator(".nav-item").first()).toHaveCSS("transition-duration", "1e-05s");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await openPreferences(page);
+  await page.getByRole("button", { name: "关闭界面动效", exact: true }).click();
+  await closePreferences(page);
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
+  await page.goto(tenantURL("/nodes"));
+  await page.getByRole("button", { name: "查看 Mac Studio 的详情", exact: true }).click();
+  const drawer = page.locator(".drawer-panel");
+  const geometry = await drawer.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return { right: box.right, viewport: innerWidth, animation: getComputedStyle(element).animationName };
+  });
+  expect(geometry.animation).toBe("none");
+  expect(Math.abs(geometry.right - geometry.viewport)).toBeLessThanOrEqual(1);
+  await page.keyboard.press("Escape");
+  await page.reload();
+  await openPreferences(page);
+  await expect(page.getByRole("button", { name: "开启界面动效", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await closePreferences(page);
+  await expect(page.locator("canvas")).toHaveCount(0);
+});
+
+test("the login form works without graphics contexts and retains its draft across preferences", async ({ page }) => {
+  const failures: string[] = [];
+  page.on("pageerror", error => failures.push(error.message));
+  await page.addInitScript(() => {
+    HTMLCanvasElement.prototype.getContext = (() => { throw new Error("Graphics are unavailable"); }) as typeof HTMLCanvasElement.prototype.getContext;
+  });
+  await page.goto("/login");
+  await expect(page.locator("canvas,.atmosphere")).toHaveCount(0);
+  await page.getByRole("textbox", { name: "用户名", exact: true }).fill("retained-draft");
+  await openPreferences(page);
+  await page.getByRole("combobox", { name: "界面语言", exact: true }).selectOption("en");
+  await closePreferences(page);
+  await expect(page.getByRole("textbox", { name: "Username", exact: true })).toHaveValue("retained-draft");
+  expect(failures).toEqual([]);
+});
+
+test("polling and locale updates preserve the title element without an entrance animation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await fixtureAPI(page);
   await page.goto(tenantURL("/"));
   const title = page.locator(".page-title");
-  await expect(
-    page.getByRole("heading", { name: "Build Team", exact: true }),
-  ).toBeVisible();
-  await expect(title).toHaveCSS("transform", "none");
-  await title.evaluate((node) => {
-    (window as typeof window & { __originalTitle: Element }).__originalTitle =
-      node;
-  });
+  await expect(page.getByRole("heading", { name: "Build Team", exact: true })).toBeVisible();
+  const original = await title.elementHandle();
   await page.waitForTimeout(5100);
   await openPreferences(page);
-  await page
-    .getByRole("combobox", { name: "界面语言", exact: true })
-    .selectOption("en");
+  await page.getByRole("combobox", { name: "界面语言", exact: true }).selectOption("en");
   await closePreferences(page);
-  await expect(
-    page.getByRole("heading", { name: "Build Team", exact: true }),
-  ).toBeVisible();
-  expect(
-    await title.evaluate(
-      (node) =>
-        node ===
-        (window as typeof window & { __originalTitle: Element })
-          .__originalTitle,
-    ),
-  ).toBe(true);
+  expect(await title.evaluate((node, previous) => node === previous, original)).toBe(true);
   await expect(title).toHaveCSS("transform", "none");
+  await expect(page.locator("canvas")).toHaveCount(0);
 });

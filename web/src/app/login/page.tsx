@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖认证 API、AuthShell 和共享表单。
+ * [OUTPUT]: 提供 Login 登录页面。
+ * [POS]: 保留登录草稿并呈现本地化请求错误。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import Link from "next/link";
@@ -69,7 +75,7 @@ export default function Login() {
       {registrationEnabled && (
         <p className="mt-5 text-center text-sm text-muted-foreground">
           {t("register.noAccount")} {" "}
-          <Link className="text-primary underline-offset-4 hover:underline" href={invite ? `/register?invite=${encodeURIComponent(invite)}` : "/register"}>
+          <Link className="text-primary underline underline-offset-4" href={invite ? `/register?invite=${encodeURIComponent(invite)}` : "/register"}>
             {t("register.createAccount")}
           </Link>
         </p>

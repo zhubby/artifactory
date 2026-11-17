@@ -1,6 +1,12 @@
+/**
+ * [INPUT]: 依赖节点 API、列表工具栏和节点侧面板。
+ * [OUTPUT]: 提供 NodesWorkspace 设备工作区。
+ * [POS]: 衔接节点筛选、列表与详情交互。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 import { useEffect, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { useRemote, mutation } from "@/lib/api";
 import type { Node, Pool, User } from "@/lib/types";
@@ -9,6 +15,7 @@ import { NodeDetailDialog } from "@/components/node-detail-dialog";
 import { SecretDialog, SubmitForm } from "@/components/forms";
 import { Modal } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { ListToolbar } from "@/components/ui/list-toolbar";
 import {
   PageTitle,
   ErrorBox,
@@ -60,18 +67,12 @@ export function NodesWorkspace({
           </Button>
         )}
       </PageTitle>
-      <label className="workspace-filter">
-        <Search size={16} />
-        <input
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
+      <ListToolbar query={query} count={nodes.data?.length}
+          onQueryChange={(value) => {
+            setQuery(value);
             setOffset(0);
           }}
-          aria-label={t("search.label")}
-          placeholder={t("search.placeholder")}
-        />
-      </label>
+      />
       <ErrorBox message={nodes.error} />
       {removed && (
         <p className="notice" role="status">

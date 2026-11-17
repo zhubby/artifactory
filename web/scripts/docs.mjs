@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖固定版本 mdBook、Mermaid 和本地字体。
+ * [OUTPUT]: 生成公开文档及字体资产，提供预览命令。
+ * [POS]: Web 构建与 mdBook 预览共用的资产入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { spawnSync, spawn } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,6 +41,17 @@ try {
   run("mdbook-mermaid", ["install", scratch]);
   for (const name of ["mermaid.min.js", "mermaid-init.js"]) {
     cpSync(join(scratch, name), join(root, name));
+  }
+
+  // Keep generated fonts in the book's source assets so mdbook serve also
+  // retains them on rebuild. The dependency versions are pinned by npm.
+  const fonts = join(root, "docs/fonts");
+  mkdirSync(fonts, { recursive: true });
+  for (const [packageName, file] of [
+    ["@fontsource-variable/inter", "inter-latin-wght-normal.woff2"],
+    ["@fontsource/ibm-plex-mono", "ibm-plex-mono-latin-400-normal.woff2"],
+  ]) {
+    cpSync(join(root, "web/node_modules", packageName, "files", file), join(fonts, file));
   }
 
   if (mode === "build") {

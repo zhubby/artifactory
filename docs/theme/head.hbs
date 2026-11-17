@@ -1,0 +1,8 @@
+{{!--
+[INPUT]: 依赖 mdBook 路径前缀及本地主题资源。
+[OUTPUT]: 插入首帧主题脚本和字体预加载。
+[POS]: 在文档头部准备配色与字体。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+--}}
+<script src="{{ path_to_root }}docs/theme/appearance-init.js"></script>
+<link rel="preload" href="{{ path_to_root }}fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>

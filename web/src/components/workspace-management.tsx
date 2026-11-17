@@ -1,10 +1,11 @@
-"use client";
 /**
- * [INPUT]: 依赖工作区权限、路由和资源设置组件。
- * [OUTPUT]: 提供租户与项目配置导航。
- * [POS]: 签名资源和项目默认方案的路由入口。
+ * [INPUT]: 依赖租户路由、项目 API、签名配置和设置分区。
+ * [OUTPUT]: 提供 WorkspaceManagement 工作区设置。
+ * [POS]: 将授权设置与生命周期操作组合为分区。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+"use client";
+import { useState } from "react";
 import { Link } from "@/lib/tenant";
 import { useUI } from "@/components/providers";
 import { useRemote, mutation } from "@/lib/api";
@@ -42,6 +43,7 @@ export function WorkspaceManagement({
   reload: () => void;
 }) {
   const { t } = useUI();
+  const [formVersion, setFormVersion] = useState(0);
   const admin = project
     ? project.effective_role === "admin"
     : user.role === "admin";
@@ -65,11 +67,28 @@ export function WorkspaceManagement({
       ? "/credentials"
       : null,
   );
-  const tabs = project
-    ? ["general", "members", "resources", "signing", "lifecycle"]
-    : admin
-      ? ["general", "members", "resources", "signing", "security", "lifecycle"]
-      : ["security"];
+  const commonSections = ["general", "members"].map((id) => ({ id, label: t(`workspace.section_${id}`) }));
+  const securitySections = [
+    { id: "tokens", label: t("security.tokens") },
+    ...(admin ? [
+      { id: "credentials", label: t("security.credentials") },
+      { id: "audit", label: t("security.audit") },
+    ] : []),
+  ];
+  const groups = project ? [{
+    label: "",
+    items: [...commonSections, ...["resources", "signing", "lifecycle"].map((id) => ({ id, label: t(`workspace.section_${id}`) }))],
+  }] : admin ? [
+    { label: t("workspace.tenant"), items: commonSections },
+    { label: t("workspace.section_resources"), items: [
+      { id: "ai", label: t("ai.settings") },
+      { id: "emissary", label: t("ota.title") },
+      { id: "signing", label: t("workspace.section_signing") },
+    ] },
+    { label: t("workspace.section_security"), items: securitySections },
+    { label: "", items: [{ id: "lifecycle", label: t("workspace.section_lifecycle") }] },
+  ] : [{ label: "", items: securitySections }];
+  const selectedSection = section === "security" ? "tokens" : section === "resources" && !project ? "ai" : section;
   let content;
   if (current === "signing")
     content = project ? (
@@ -87,7 +106,7 @@ export function WorkspaceManagement({
     ) : (
       <p className="notice">{t("workspace.adminRequired")}</p>
     );
-  else if (!admin && !(current === "security" && !project))
+  else if (!admin && !(current === "security" && !project && ["security", "tokens"].includes(section)))
     content = <p className="notice">{t("workspace.adminRequired")}</p>;
   else if (current === "lifecycle")
     content = (
@@ -131,12 +150,13 @@ export function WorkspaceManagement({
             }
           >
             <ProjectForm
-              key={`${project.id}/${section}`}
+              key={`${project.id}/${section}/${formVersion}`}
               section={section === "resources" ? "resources" : "general"}
               project={project}
               pools={pools.data}
               credentials={credentials.data || []}
               canManageResources={user.role === "admin"}
+              onCancel={() => setFormVersion(value => value + 1)}
               done={reload}
             />
           </fieldset>
@@ -173,24 +193,6 @@ export function WorkspaceManagement({
     );
   else if (resources)
     content = (
-      <>
-        <nav
-          className="management-subnav"
-          aria-label={t("workspace.section_resources")}
-        >
-          <Link
-            href="/settings/ai"
-            aria-current={section !== "emissary" ? "page" : undefined}
-          >
-            {t("ai.settings")}
-          </Link>
-          <Link
-            href="/settings/emissary"
-            aria-current={section === "emissary" ? "page" : undefined}
-          >
-            {t("ota.title")}
-          </Link>
-        </nav>
         <fieldset disabled={readOnly}>
           {section === "emissary" ? (
             <EmissarySettings user={user} />
@@ -198,7 +200,6 @@ export function WorkspaceManagement({
             <AISettings />
           )}
         </fieldset>
-      </>
     );
   else
     content = (
@@ -219,21 +220,20 @@ export function WorkspaceManagement({
         )}
         description={project?.name || context.tenant.name}
       />
+      <div className="management-layout">
       <nav
         className="management-tabs"
         aria-label={t("workspace.managementSections")}
       >
-        {tabs.map((tab) => (
-          <Link
-            key={tab}
-            href={`${base}/${tab}`}
-            aria-current={current === tab ? "page" : undefined}
-          >
-            {t(`workspace.section_${tab}`)}
-          </Link>
-        ))}
+        {groups.map((group, index) => <div className="management-nav-group" key={index}>
+          {group.label && <p>{group.label}</p>}
+          {group.items.map((item) => <Link key={item.id} href={`${base}/${item.id}`} aria-current={selectedSection === item.id ? "page" : undefined}>
+            {item.label}
+          </Link>)}
+        </div>)}
       </nav>
-      {content}
+      <div className="management-content">{content}</div>
+      </div>
     </>
   );
 }

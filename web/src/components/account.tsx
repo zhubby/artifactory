@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖账户 API、Radix 弹窗和未保存保护。
+ * [OUTPUT]: 提供 AccountProvider 与 useAccount。
+ * [POS]: 账户偏好覆盖面板，保留业务页面状态。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 import {
   createContext,
@@ -21,12 +27,14 @@ import { useRemote, mutation } from "@/lib/api";
 import type { Account } from "@/lib/types";
 import { useUI } from "@/components/providers";
 import { PreferenceFields } from "@/components/preferences-controls";
-import { ErrorBox, Field, Loading } from "@/components/common";
+import { ErrorBox, Field } from "@/components/common";
 import { SubmitForm } from "@/components/forms";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { UnsavedChanges, confirmLeave } from "@/lib/unsaved";
+import { tenantFromPath } from "@/lib/routes";
+import { asError } from "@/lib/errors";
 
 const Context = createContext<ReturnType<typeof useRemote<Account>> | null>(
   null,
@@ -60,10 +68,13 @@ function AccountMenu({
   update: (account: Account) => void;
 }) {
   const { t } = useUI();
+  const pathname = usePathname();
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState(false);
   const [section, setSection] = useState("profile");
   const [saved, setSaved] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<Error>();
   const trigger = useRef<HTMLButtonElement>(null);
   const sections = [
     { id: "profile", icon: UserRound },
@@ -78,7 +89,7 @@ function AccountMenu({
   }
   return (
     <>
-      <div className="account-anchor">
+      <div className={cn("account-anchor", tenantFromPath(pathname) ? "workspace-account" : "global-account")}>
         {menu && (
           <>
             <button
@@ -93,7 +104,7 @@ function AccountMenu({
               onKeyDown={(event) => {
                 const items = Array.from(
                   event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                    '[role="menuitem"]',
+                    '[role="menuitem"]:not(:disabled)',
                   ),
                 );
                 const index = items.indexOf(
@@ -134,15 +145,25 @@ function AccountMenu({
               </button>
               <button
                 role="menuitem"
+                disabled={loggingOut}
                 onClick={async () => {
-                  if (!confirmLeave()) return;
-                  await mutation("/auth/logout", {});
-                  window.location.assign("/login");
+                  if (loggingOut || !confirmLeave()) return;
+                  setLoggingOut(true);
+                  setLogoutError(undefined);
+                  try {
+                    await mutation("/auth/logout", {});
+                    window.location.assign("/login");
+                  } catch (error) {
+                    setLogoutError(asError(error));
+                  } finally {
+                    setLoggingOut(false);
+                  }
                 }}
               >
                 <LogOut />
                 {t("navigation.logout")}
               </button>
+              <ErrorBox message={logoutError} />
             </div>
           </>
         )}
@@ -152,7 +173,10 @@ function AccountMenu({
           aria-label={t("account.menu")}
           aria-haspopup="menu"
           aria-expanded={menu}
-          onClick={() => setMenu(!menu)}
+          onClick={() => {
+            setLogoutError(undefined);
+            setMenu(!menu);
+          }}
         >
           <span className="account-avatar" aria-hidden="true">
             {Array.from(account.display_name).slice(0, 2).join("")}
@@ -175,6 +199,7 @@ function AccountMenu({
         <Dialog.Portal>
           <Dialog.Overlay className="account-overlay" />
           <Dialog.Content
+            aria-modal="true"
             className="account-panel"
             onCloseAutoFocus={(event) => {
               event.preventDefault();

@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖注册 API、AuthShell 和共享表单。
+ * [OUTPUT]: 提供 Register 注册页面。
+ * [POS]: 校验注册输入并衔接账户创建结果。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import Link from "next/link";
@@ -132,7 +138,7 @@ export default function Register() {
         </>
       )}
       <p className="mt-5 text-center text-sm">
-        <Link className="text-primary underline-offset-4 hover:underline" href={invite ? `/login?invite=${encodeURIComponent(invite)}` : "/login"}>
+        <Link className="text-primary underline underline-offset-4" href={invite ? `/login?invite=${encodeURIComponent(invite)}` : "/login"}>
           {translate("register.backToLogin")}
         </Link>
       </p>

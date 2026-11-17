@@ -1,9 +1,16 @@
+/**
+ * [INPUT]: 依赖本地错误词条键和原始异常。
+ * [OUTPUT]: 提供 LocalizedError 与 asError。
+ * [POS]: 将请求异常转换为可随语言切换的错误。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 type LocalErrorKey =
   | "common.networkFailed"
   | "common.httpFailed"
   | "common.invalidJson"
   | "common.operationFailed"
   | "common.requestFailed"
+  | "projects.nameTooLong"
   | "wizard.invalidProject"
   | "wizard.invalidRef"
   | "wizard.invalidGoal"

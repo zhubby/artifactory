@@ -1,17 +1,33 @@
+/**
+ * [INPUT]: 依赖 React 状态与 UI 确认词条。
+ * [OUTPUT]: 提供 confirmLeave 与 UnsavedChanges。
+ * [POS]: 在页面切换和退出前保护未提交表单。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 import { useEffect } from "react";
 import { useUI } from "@/components/providers";
 
 let message = "Leave without saving your changes?";
 let acceptedUntil = 0;
+let acceptedLocation = "";
+let acceptedDrafts: Element[] = [];
 export function confirmLeave() {
+  const drafts = Array.from(
+    document.querySelectorAll('form[data-dirty="true"], [data-unsaved="true"]'),
+  );
   if (
-    Date.now() < acceptedUntil ||
-    !document.querySelector('form[data-dirty="true"], [data-unsaved="true"]')
+    !drafts.length ||
+    (Date.now() < acceptedUntil &&
+      location.href === acceptedLocation &&
+      drafts.length === acceptedDrafts.length &&
+      drafts.every((draft, index) => draft === acceptedDrafts[index]))
   )
     return true;
   if (!window.confirm(message)) return false;
   acceptedUntil = Date.now() + 700;
+  acceptedLocation = location.href;
+  acceptedDrafts = drafts;
   return true;
 }
 export function UnsavedChanges() {

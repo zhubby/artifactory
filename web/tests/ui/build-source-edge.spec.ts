@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [OUTPUT]: 验证build-source-edge页面行为。
+ * [POS]: 使用模拟 API 的界面浏览器回归入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { expect, test } from "@playwright/test";
 import { fixtureAPI, repositoryRefs, tenantURL } from "./fixtures";
 
@@ -52,7 +58,7 @@ test("large reference lists keep the default and selected branch visible without
     page.getByRole("radio", { name: "分支 zz-default", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "继续", exact: true }).click();
-  await expect(page.locator(".wizard-transcript")).toContainText(
+  await expect(page.locator(".wizard-summary")).toContainText(
     "refs/heads/topic/124",
   );
 });
@@ -84,7 +90,7 @@ test("a late initial reference response cannot replace an explicit manual source
   ).not.toBeChecked();
   await page.getByRole("button", { name: "手动输入", exact: true }).click();
   await page.getByRole("button", { name: "继续", exact: true }).click();
-  await expect(page.locator(".wizard-transcript")).toContainText(
+  await expect(page.locator(".wizard-summary")).toContainText(
     "c".repeat(40),
   );
   expect(events.writes).toEqual([]);

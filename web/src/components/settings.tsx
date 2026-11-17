@@ -1,17 +1,20 @@
+/**
+ * [INPUT]: 依赖设置 API、表单及 UI 词条。
+ * [OUTPUT]: 提供 Settings 设置分区。
+ * [POS]: 在工作区内编辑凭据、令牌和审计设置。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import { useUI } from "@/components/providers";
 
-import { useEffect, useRef, useState } from "react";
-import { Link, useRouter } from "@/lib/tenant";
+import { useEffect, useState } from "react";
 import { KeyRound, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import {
-  CopyButton,
   Empty,
   ErrorBox,
   Field,
   Loading,
-  PageTitle,
   SectionTitle,
 } from "@/components/common";
 import { Button } from "@/components/ui/button";
@@ -21,7 +24,7 @@ import { CredentialForm, SecretDialog, SubmitForm } from "@/components/forms";
 import { api, mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
 import type { Audit, Credential, Project, Token, User } from "@/lib/types";
-import { cn, short } from "@/lib/utils";
+import { short } from "@/lib/utils";
 
 export function Settings({
   user,
@@ -34,21 +37,14 @@ export function Settings({
 }) {
   const { t, date } = useUI();
   const tab = section;
-  const router = useRouter();
-  const setTab = (tab: string) => router.push(`/settings/${tab}`);
   const [adding, setAdding] = useState(false);
   const [secret, setSecret] = useState<string>();
   const [error, setError] = useState<Error>();
   const [tokenProjects, setTokenProjects] = useState<string[]>([]);
-  const focusTab = useRef(false);
   useEffect(() => {
     setAdding(false);
     setSecret(undefined);
     setError(undefined);
-    if (focusTab.current) {
-      document.getElementById(`settings-tab-${tab}`)?.focus();
-      focusTab.current = false;
-    }
   }, [tab]);
   const remote = useRemote<unknown[]>(
     ["users", "emissary", "ai"].includes(tab)
@@ -77,7 +73,7 @@ export function Settings({
     <>
       <div className="management-section-heading">
         <div>
-          <h2>{t("navigation.security")}</h2>
+          <h2 id="security-section-title">{tabs.find((entry) => entry.id === tab)?.label}</h2>
           <p>{t("security.description")}</p>
         </div>
         {tab !== "audit" && (
@@ -91,50 +87,11 @@ export function Settings({
           </Button>
         )}
       </div>
-      <div className="tabs" role="tablist" aria-label={t("security.tabs")}>
-        {tabs.map((entry) => (
-          <button
-            key={entry.id}
-            role="tab"
-            id={`settings-tab-${entry.id}`}
-            aria-controls="settings-panel"
-            tabIndex={tab === entry.id ? 0 : -1}
-            aria-selected={tab === entry.id}
-            className={cn("tab", tab === entry.id && "active")}
-            onClick={() => {
-              setTab(entry.id);
-              setAdding(false);
-            }}
-            onKeyDown={(event) => {
-              const index = tabs.findIndex((item) => item.id === entry.id);
-              const next =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? tabs.length - 1
-                    : event.key === "ArrowRight"
-                      ? (index + 1) % tabs.length
-                      : event.key === "ArrowLeft"
-                        ? (index + tabs.length - 1) % tabs.length
-                        : undefined;
-              if (next === undefined) return;
-              event.preventDefault();
-              focusTab.current = true;
-              setTab(tabs[next].id);
-              setAdding(false);
-              document.getElementById(`settings-tab-${tabs[next].id}`)?.focus();
-            }}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </div>
       <ErrorBox message={error || remote.error} />
       <div
         id="settings-panel"
-        role="tabpanel"
-        aria-labelledby={`settings-tab-${tab}`}
-        tabIndex={0}
+        role="region"
+        aria-labelledby="security-section-title"
       >
         {tab === "credentials" && (
           <div className="notice mb-5 flex gap-3">

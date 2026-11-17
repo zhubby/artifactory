@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [OUTPUT]: 验证workspace-hierarchy页面行为。
+ * [POS]: 使用模拟 API 的界面浏览器回归入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { expect, test } from "@playwright/test";
 import {
   fixtureAPI,
@@ -37,6 +43,9 @@ test("searchable project switch preserves lists and resets detail and creation c
     "settings",
   ]) {
     await page.goto(tenantURL(`/projects/desktop-client/${section}`));
+    if (page.viewportSize()!.width < 1024) {
+      await page.getByRole("button", { name: "打开导航", exact: true }).click();
+    }
     await page.locator(".space-selector.project summary").click();
     const search = page.getByRole("textbox", { name: "搜索项目", exact: true });
     await expect(search).toBeFocused();
@@ -191,6 +200,12 @@ test("navigation drawer traps focus, closes on Escape and returns focus", async 
   await expect(drawer.getByRole("link", { name: /文档/ })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(first).toBeFocused();
+  const switcher = drawer.locator(".space-selector.tenant summary");
+  await switcher.click();
+  await expect(drawer.getByRole("textbox", { name: "搜索租户", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(switcher).toBeFocused();
+  await expect(drawer).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(trigger).toBeFocused();
   await expect(page.locator(".workspace")).not.toHaveAttribute("inert", "");

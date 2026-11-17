@@ -1,22 +1,16 @@
-"use client";
 /**
- * [INPUT]: 依赖项目公开配置、源码引用和构建提交 API。
- * [OUTPUT]: 提供构建向导和默认签名版本预览。
- * [POS]: 构建创建入口；服务器在创建时冻结签名版本。
+ * [INPUT]: 依赖项目 API、引用查询 Hook、签名预览和表单控件。
+ * [OUTPUT]: 提供保留草稿的三步构建引导和固定签名版本预览。
+ * [POS]: 构建创建入口；服务器在确认提交时冻结签名版本。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+"use client";
 
 import { SigningSummary } from "@/components/signing-settings";
-import { useRemote } from "@/lib/api";
-import type { SigningBinding } from "@/lib/types";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
-import { useSearchParams } from "next/navigation";
+import { mutation, useRemote } from "@/lib/api";
+import { useRepositoryRefs } from "@/lib/repository-refs";
+import type { Project, SigningBinding, User } from "@/lib/types";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "@/lib/tenant";
 import {
   ArrowLeft,
@@ -32,17 +26,9 @@ import { Empty, ErrorBox, Field, PageTitle } from "@/components/common";
 import { usePreferences, useUI } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
-import { api, mutation } from "@/lib/api";
 import { asError, LocalizedError } from "@/lib/errors";
-import type { Project, User } from "@/lib/types";
 
 type SourceMode = "branches" | "tags" | "manual";
-type GitRef = { name: string; ref: string; oid: string };
-type RepositoryRefs = {
-  default_ref: string | null;
-  branches: GitRef[];
-  tags: GitRef[];
-};
 
 const platforms = [
   { value: "darwin/arm64", label: "platformMacArm" },
@@ -51,20 +37,6 @@ const platforms = [
   { value: "linux/arm64", label: "platformLinuxArm" },
   { value: "windows/amd64", label: "platformWindows" },
 ] as const;
-const questions = [
-  "projectQuestion",
-  "sourceQuestion",
-  "goalQuestion",
-  "platformQuestion",
-  "reviewQuestion",
-] as const;
-const hints = [
-  "projectHint",
-  "sourceHint",
-  "goalHint",
-  "platformHint",
-  "reviewHint",
-] as const;
 const editLabels = [
   "editProject",
   "editSource",
@@ -72,44 +44,6 @@ const editLabels = [
   "editPlatforms",
 ] as const;
 const byteLength = (value: string) => new TextEncoder().encode(value).length;
-
-function useRepositoryRefs(projectID: string) {
-  const [revision, setRevision] = useState(0);
-  const [snapshot, setSnapshot] = useState<{
-    projectID: string;
-    data?: RepositoryRefs;
-    error?: Error;
-    loading: boolean;
-  }>({ projectID: "", loading: false });
-  useEffect(() => {
-    if (!projectID) return;
-    let active = true;
-    const controller = new AbortController();
-    setSnapshot({ projectID, loading: true });
-    void api<RepositoryRefs>(
-      `/projects/${encodeURIComponent(projectID)}/refs`,
-      { signal: controller.signal },
-    )
-      .then((data) => {
-        if (active) setSnapshot({ projectID, data, loading: false });
-      })
-      .catch((error) => {
-        if (active)
-          setSnapshot({ projectID, error: asError(error), loading: false });
-      });
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [projectID, revision]);
-  const current = snapshot.projectID === projectID ? snapshot : undefined;
-  return {
-    data: current?.data,
-    error: current?.error,
-    loading: current?.loading ?? Boolean(projectID),
-    reload: () => setRevision((previous) => previous + 1),
-  };
-}
 
 function Choice({
   name,
@@ -182,12 +116,11 @@ function Wizard({
     : projects.length === 1
       ? projects[0]
       : undefined;
-  const [projectID, setProjectID] = useState(initialProject?.id || "");
-  const [step, setStep] = useState(initialProject ? 1 : 0);
+  const projectID = initialProject?.id || "";
+  const [step, setStep] = useState<1 | 2 | 4>(1);
   const [returnToReview, setReturnToReview] = useState(false);
   const [sourceMode, setSourceMode] = useState<SourceMode>("branches");
   const [selectedRef, setSelectedRef] = useState("");
-  const [sourceConfirmed, setSourceConfirmed] = useState(false);
   const [manualRef, setManualRef] = useState("");
   const [search, setSearch] = useState("");
   const [goalTemplate, setGoalTemplate] = useState("");
@@ -229,21 +162,9 @@ function Wizard({
     });
   }, [step]);
 
-  function selectProject(nextProjectID: string) {
-    if (projectID !== nextProjectID) {
-      setProjectID(nextProjectID);
-      setSelectedRef("");
-      setSourceConfirmed(false);
-      setManualRef("");
-      setSourceMode("branches");
-      setSearch("");
-      sourceInitialized.current = false;
-    }
-    setError(undefined);
-  }
   function edit(index: number) {
     setReturnToReview(step === 4 || returnToReview);
-    setStep(index);
+    setStep(index <= 1 ? 1 : 2);
     setError(undefined);
   }
   function validSource() {
@@ -272,17 +193,10 @@ function Wizard({
   function advance() {
     try {
       validate(step);
+      if (step === 2) validate(3);
       setError(undefined);
-      if (step === 1) setSourceConfirmed(true);
-      if (
-        returnToReview &&
-        (step !== 0 || (sourceConfirmed && validSource()))
-      ) {
-        setStep(4);
-        setReturnToReview(false);
-      } else {
-        setStep((previous) => previous + 1);
-      }
+      setStep(returnToReview || step === 2 ? 4 : 2);
+      setReturnToReview(false);
     } catch (error) {
       setError(asError(error));
     }
@@ -443,76 +357,29 @@ function Wizard({
         onChangeCapture={() => setDirty(true)}
       >
         <div className="min-w-0">
-          <ol
-            className="wizard-transcript"
-            aria-label={t("wizard.conversation")}
-          >
-            {questions.slice(0, Math.min(step, 4)).map((question, index) => (
-              <li key={question}>
-                <p className="wizard-past-question">
-                  <span className="wizard-step-dot">
-                    <Check size={12} aria-hidden="true" />
-                  </span>
-                  {t(`wizard.${question}`)}
-                </p>
-                <div className="wizard-answer">
-                  <p className={index === 1 ? "font-mono text-xs" : "text-sm"}>
-                    {answers[index]}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={t(`wizard.${editLabels[index]}`)}
-                    disabled={busy}
-                    onClick={() => edit(index)}
-                  >
-                    <Pencil />
-                  </Button>
-                </div>
-              </li>
-            ))}
+          <ol className="wizard-steps" aria-label={t("redesign.wizardSteps")}>
+            {["sourceStep", "goalPlatformStep", "reviewStep"].map((label, index) => {
+              const current = step === 1 ? 0 : step === 2 ? 1 : 2;
+              return <li key={label} aria-current={index === current ? "step" : undefined}>
+                <span className="wizard-step-dot">{index < current ? <Check size={12} aria-hidden="true" /> : index + 1}</span>
+                {t("redesign." + label)}
+              </li>;
+            })}
           </ol>
           <section
             className="wizard-current"
             aria-label={t("wizard.currentQuestion")}
           >
             <p className="eyebrow mb-3">
-              {t("wizard.progress", { current: step + 1, total: 5 })}
+              {t("wizard.progress", { current: step === 1 ? 1 : step === 2 ? 2 : 3, total: 3 })}
             </p>
             <h2 ref={questionRef} tabIndex={-1} className="wizard-question">
-              {t(`wizard.${questions[step]}`)}
+              {t(step === 1 ? "wizard.sourceQuestion" : step === 2 ? "redesign.goalPlatformTitle" : "wizard.reviewQuestion")}
             </h2>
             <p className="mb-6 mt-3 text-sm leading-6 text-muted-foreground">
-              {t(`wizard.${hints[step]}`)}
+              {t(step === 1 ? "wizard.sourceHint" : step === 2 ? "redesign.goalPlatformHint" : "wizard.reviewHint")}
             </p>
             <ErrorBox message={error} />
-            {step === 0 && (
-              <fieldset
-                className="wizard-options"
-                aria-label={t("projects.project")}
-              >
-                {initialProjectSlug && !initialProject && (
-                  <p className="text-sm text-destructive">
-                    {t("wizard.invalidProject")}
-                  </p>
-                )}
-                {projects.map((candidate) => (
-                  <Choice
-                    key={candidate.id}
-                    name="project_id"
-                    value={candidate.id}
-                    checked={projectID === candidate.id}
-                    onChange={() => selectProject(candidate.id)}
-                    label={candidate.name}
-                  >
-                    <span className="wizard-choice-detail break-all">
-                      {candidate.repository_url}
-                    </span>
-                  </Choice>
-                ))}
-              </fieldset>
-            )}
             {step === 1 && (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -680,8 +547,9 @@ function Wizard({
                 </Field>
               </div>
             )}
-            {step === 3 && (
-              <div className="space-y-4">
+            {step === 2 && (
+              <div className="wizard-platforms space-y-4">
+                <h3>{t("builds.platforms")}</h3>
                 <fieldset
                   className="wizard-options"
                   aria-label={t("builds.platforms")}
@@ -768,6 +636,7 @@ function Wizard({
                           variant="ghost"
                           size="icon"
                           aria-label={t(`wizard.${editLabels[index]}`)}
+                          className={index === 0 ? "hidden" : undefined}
                           onClick={() => edit(index)}
                         >
                           <Pencil />
@@ -840,7 +709,7 @@ function Wizard({
                       type="button"
                       variant="secondary"
                       onClick={() => {
-                        setStep(3);
+                        setStep(2);
                         setError(undefined);
                       }}
                     >
@@ -861,12 +730,12 @@ function Wizard({
             )}
             {step < 4 && (
               <div className="wizard-actions">
-                {step > 0 && (
+                {step > 1 && (
                   <Button
                     type="button"
                     variant="secondary"
                     onClick={() => {
-                      setStep((previous) => previous - 1);
+                      setStep(1);
                       setError(undefined);
                     }}
                   >
@@ -904,7 +773,8 @@ function Wizard({
                     variant="ghost"
                     size="icon"
                     aria-label={t(`wizard.${editLabels[index]}`)}
-                    disabled={busy || index === step || index > step}
+                          className={index === 0 ? "hidden" : undefined}
+                    disabled={busy || (step === 1 ? index > 1 : false)}
                     onClick={() => edit(index)}
                   >
                     <Pencil />

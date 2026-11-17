@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [OUTPUT]: 验证node-details页面行为。
+ * [POS]: 使用模拟 API 的界面浏览器回归入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { expect, test, type Page } from "@playwright/test";
 import { effectsStorage, themeStorage } from "../../src/lib/preferences";
 import {fixtureAPI, nodes, nodeTelemetry, tenantURL } from "./fixtures";
@@ -31,7 +37,10 @@ async function noOverflow(page: Page) {
   if (await dialog.count()) {
     const box = await dialog.boundingBox();
     expect(box!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
-    expect(box!.height).toBeLessThanOrEqual(page.viewportSize()!.height * 0.91);
+    expect(box!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
     expect(
       await dialog.evaluate(
         (element) => element.scrollWidth <= element.clientWidth + 1,

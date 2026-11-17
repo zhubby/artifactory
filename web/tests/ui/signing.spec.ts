@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制台浏览器夹具和签名公开接口。
- * [OUTPUT]: 验证凭据导入、项目默认方案和制品签名状态。
+ * [OUTPUT]: 验证签名导航、凭据导入、项目默认方案和制品签名状态。
  * [POS]: 托管签名的用户流程验收，后端密码学另行验证。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -69,7 +69,12 @@ test("credential import submits private material once and clears the form", asyn
       },
     });
   });
-  await page.goto(tenantURL("/settings/signing"));
+  await page.goto(tenantURL("/settings/general"));
+  await page.getByRole("navigation", { name: "管理分区", exact: true })
+    .getByRole("link", { name: "应用签名", exact: true }).click();
+  await expect(page).toHaveURL(tenantURL("/settings/signing"));
+  await expect(page.getByRole("link", { name: "应用签名", exact: true }))
+    .toHaveAttribute("aria-current", "page");
   const form = page.locator("form").first();
   await form.getByLabel("凭据名称").fill("Release");
   await form.locator('input[name="file"]').setInputFiles({
@@ -119,7 +124,12 @@ test("project defaults save profile names and display the fixed identity preview
       return route.fulfill({ json: { ok: true } });
     },
   );
-  await page.goto(tenantURL(`/projects/${project.slug}/settings/signing`));
+  await page.goto(tenantURL(`/projects/${project.slug}/settings/general`));
+  await page.getByRole("navigation", { name: "管理分区", exact: true })
+    .getByRole("link", { name: "应用签名", exact: true }).click();
+  await expect(page).toHaveURL(tenantURL(`/projects/${project.slug}/settings/signing`));
+  await expect(page.getByRole("link", { name: "应用签名", exact: true }))
+    .toHaveAttribute("aria-current", "page");
   await expect(
     page.getByText("Android Release", { exact: false }),
   ).toBeVisible();

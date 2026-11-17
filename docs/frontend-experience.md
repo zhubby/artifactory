@@ -1,26 +1,25 @@
 # 控制台语言、主题与动效
 
-界面延续 IBM Plex、墨绿与香槟金，增加青绿极光、卡片聚光和一次性内容入场。业务 API、角色权限、构建与发布状态、日志及用户配置保持原有含义。
+界面采用黑白灰配色、本地 Inter 和 IBM Plex Mono，以及项目优先的统一侧栏。具体颜色、排版、组件与响应式规则见[界面设计规范](design-system.md)。业务 API、角色权限、构建与发布状态、日志及用户配置保持原有含义。
 
 ## 偏好与翻译
 
 - `next-intl` 提供 `zh-CN`、`en` 词条、参数插值与复数；词条位于 `web/src/messages/`。新增界面文案需同时更新两个语言文件。
 - 默认简体中文。`artifactory-locale` Cookie 保存一年，服务端读取以输出 HTML `lang`、标题及初始文案；切换时更新同一 Provider 的状态，不刷新路由或重新挂载业务组件。
 - `next-themes` 使用 `artifactory-theme` 保存 `system`、`dark`、`light`，默认跟随系统；启动脚本在首屏应用配色。语义 CSS 变量同时覆盖页面、侧栏、表格、错误、状态和日志区域。
-- `artifactory-effects` 保存视觉动效开关，默认启用；系统 `prefers-reduced-motion` 优先。关闭后停止装饰画布及 CSS/GSAP 动画，保留状态文字。存储不可用时保留本次会话选择。
-- 登录后的语言、主题和动效统一放在右下角个人设置覆盖面板中，手机使用全屏面板；匿名页面保留基础偏好入口。面板不会卸载业务页面，见[工作台与个人设置](workspaces.md)。
+- `artifactory-effects` 保存界面动效开关，默认启用；系统 `prefers-reduced-motion` 优先。关闭后减少 CSS 动画和过渡，保留状态文字。存储不可用时保留本次会话选择。
+- 登录后的语言、主题和动效统一放在个人设置覆盖面板中，账号入口位于桌面侧栏底部、窄屏顶栏右侧；匿名页面保留基础偏好入口。面板不会卸载业务页面，见[工作台与个人设置](workspaces.md)。
+- 公开文档使用相同字体与黑白灰主题，共享 `artifactory-theme`，支持系统主题变化和跨标签页同步；保留 mdBook 搜索、目录及 Mermaid。
 - 日期按所选语言及浏览器本地时区显示；数据计数按语言格式化。仓库、项目名、日志、配置快照、审计 action 及服务端错误详情原样显示；请求错误有本地化标题。
 - 网络异常、无错误详情的 HTTP 失败与本地 JSON 格式错误保留翻译键，已显示的错误会随语言切换更新；服务端提供的错误详情逐字保留。
 
 ## 动效生命周期
 
-React Bits 源码版本、完整许可证与适配说明见 `web/THIRD_PARTY_NOTICES.md`。Aurora 动态加载，单屏一个画布，桌面 DPR 上限 1.5／40fps，手机 DPR 1／24fps；页面隐藏或画布离屏即暂停。WebGL 不可用、着色器初始化失败或上下文丢失时保留静态光场。手动关闭动效或系统启用减少动态效果时卸载画布并清理资源。
-
-AnimatedContent 使用 450ms 入场、60ms 组内错开，只在首次进入或路由变化时播放；轮询、SSE、语言及主题变化不重播。SpotlightCard 只在鼠标移动时按帧更新，不为触屏启动持续循环。
+菜单、弹窗和状态切换采用 120–180ms 过渡。减少动效或关闭界面动效时直接禁用动画，防止侧面板显示偏移的首帧。页面不使用装饰画布、极光或聚光效果；React Bits 和 GSAP 已移除。轮询、SSE、语言及主题变化不触发页面入场，构建详情标签切换保留日志节点及订阅。
 
 ## 对话式构建引导
 
-`/tenants/{tenant}/projects/{project}/builds/new` 在项目工作台内展示独立的选项式对话，一次只显示一个当前问题，保留之前的回答。桌面端右侧展示配置摘要，较窄屏幕改为单列；所有选项使用原生单选或复选控件，进入新问题时管理标题焦点，并遵循现有减少动效偏好，不播放打字动画。
+`/tenants/{tenant}/projects/{project}/builds/new` 在项目工作台内展示「源码 → 目标与平台 → 确认」三步引导，保留之前的回答。桌面端右侧展示配置摘要，较窄屏幕改为单列；所有选项使用原生单选或复选控件，进入新步骤时管理标题焦点，并遵循减少动效偏好。高级参数在确认阶段展开。
 
 当前项目的源码选择、返回编辑、异步引用查询和提交状态由独立 `BuildWizard` 管理，不再使用构建弹窗。引用只在项目切换或显式刷新时查询，旧请求取消且迟到的响应不会覆盖当前项目。未确认前不创建构建、不调用模型；取消、刷新或离开页面后不保存草稿。详细接口及边界见 `docs/ai-builds.md`。
 
@@ -33,18 +32,21 @@ cd web
 rtk npm ci
 rtk npm run typecheck
 rtk npm run build
-ARTIFACTORY_UI_PRODUCTION=1 rtk npm run test:ui
+rtk proxy env ARTIFACTORY_UI_PRODUCTION=1 npm run test:ui
+rtk npm run test:docs
 ```
 
-独立 UI 测试使用完整 API fixtures，不需要账号、数据库或 Agent；覆盖桌面 1440px、平板 820px、手机 390px，中英双语、深浅配色、系统主题变化、偏好持久化、原始内容、无横向页面溢出、对话框焦点、权限控件及切换偏好时的状态保留。动效测试计数实际 WebGL draw，验证减少动态效果、手动关闭、离屏与 visibility 事件处理；headless visibility 事件测试不等同于实体浏览器最小化验收。
+独立 UI 测试使用完整 API fixtures，不需要账号、数据库或 Agent；覆盖桌面 1440px、平板 820px、手机 390px，中英双语、深浅配色、系统主题变化、偏好持久化、原始内容、无横向页面溢出、对话框焦点、权限控件及切换偏好时的状态保留。动效测试验证系统减少动态效果、手动关闭和偏好持久化。axe 自动检查覆盖核心页面、设备侧面板、个人设置与快捷面板。
 
-截图保存到忽略的 `.local/frontend-evidence/`，trace 与报告位于 `web/test-results/ui/`、`web/playwright-report/ui/`。真实后台验收继续运行原有 `rtk npm test`，需要按 README 启动 `scripts/acceptance.py --keep-alive` 并加载 `.local/env`。fixtures 不能代替真实构建、SSE、下载、发布和权限验收。
+当前截图保存到忽略的 `.local/workspace-evidence/`、`.local/ux-evidence/` 和 `.local/docs-evidence/`，trace 与报告位于 `web/test-results/ui/`、`web/playwright-report/ui/`。真实后台验收继续运行 `rtk npm test`，需要按 README 启动 `scripts/acceptance.py --keep-alive` 并加载私有配置。fixtures 与真实构建、SSE、下载、发布和权限验收分开记录。
 
 两套测试的输出目录相互独立：真实后台用例使用 `web/test-results/live/`、`web/playwright-report/live/`，避免清理其他套件的 trace。
 
 隔离运行真实后台时，可通过 `ARTIFACTORY_BROWSER_EVIDENCE` 指定该运行独立的 evidence JSON，通过 `ARTIFACTORY_BROWSER_URL` 指定浏览器地址，不需要覆盖已有的 `.local/acceptance/latest.json`。
 
 ## 2026-11-10 本地验收记录
+
+以下为当时版本的历史记录，包含已在本次重构中移除的视觉组件。
 
 | 验收项 | 结果 |
 | --- | --- |

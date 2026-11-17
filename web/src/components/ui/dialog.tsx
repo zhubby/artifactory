@@ -1,10 +1,16 @@
+/**
+ * [INPUT]: 依赖 Radix Dialog、UI 词条及 cn 工具。
+ * [OUTPUT]: 提供 Modal 弹窗与侧面板。
+ * [POS]: 统一焦点约束、关闭恢复和入场布局。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import { useUI } from "@/components/providers";
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import { createContext, useContext, useRef, type ReactNode } from "react";
+import { createContext, useContext, useRef, type ReactNode, type RefObject } from "react";
 import { cn } from "@/lib/utils";
 
 const modalClosers = new WeakMap<HTMLElement, () => void>();
@@ -18,6 +24,8 @@ export function Modal({
   children,
   size = "default",
   navigation,
+  placement = "center",
+  initialFocus,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -26,6 +34,8 @@ export function Modal({
   children: ReactNode;
   size?: "default" | "wide";
   navigation?: ReactNode;
+  placement?: "center" | "side";
+  initialFocus?: RefObject<HTMLElement | null>;
 }) {
   const { t } = useUI();
   const depth = useContext(ModalDepth);
@@ -47,10 +57,11 @@ export function Modal({
       <Dialog.Root open={open} onOpenChange={change}>
         <Dialog.Portal>
           <Dialog.Overlay
-            className="fixed inset-0 z-40 bg-black/65 backdrop-blur-xs"
+            className="modal-overlay"
             style={{ zIndex: 40 + depth * 20 }}
           />
           <Dialog.Content
+            aria-modal="true"
             data-app-modal=""
             style={{ zIndex: 50 + depth * 20 }}
             ref={(element) => {
@@ -58,7 +69,8 @@ export function Modal({
               if (element) modalClosers.set(element, () => change(false));
             }}
             className={cn(
-              "modal-panel fixed top-1/2 left-1/2 z-50 max-h-[90dvh] w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card shadow-2xl",
+              "modal-panel fixed z-50 max-h-[90dvh] w-[calc(100%-2rem)] rounded-xl border border-border bg-card shadow-2xl",
+              placement === "side" ? "drawer-panel" : "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2",
               size === "wide"
                 ? "flex h-[90dvh] max-w-[960px] flex-col overflow-hidden sm:h-[min(760px,90dvh)]"
                 : "max-w-xl overflow-auto p-6",
@@ -75,11 +87,15 @@ export function Modal({
               ).at(-1);
               if (top) modalClosers.get(top)?.();
             }}
-            onOpenAutoFocus={() => {
+            onOpenAutoFocus={(event) => {
               previousFocus.current =
                 document.activeElement instanceof HTMLElement
                   ? document.activeElement
                   : null;
+              if (initialFocus?.current) {
+                event.preventDefault();
+                initialFocus.current.focus();
+              }
             }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
@@ -100,7 +116,7 @@ export function Modal({
               </Dialog.Description>
             </div>
             <Dialog.Close
-              className="absolute top-4 right-4 rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="absolute top-3 right-3 flex size-8 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-md:size-11"
               aria-label={t("dialog.close")}
             >
               <X size={18} />

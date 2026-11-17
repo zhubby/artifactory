@@ -11,6 +11,7 @@
 - [应用签名与凭据下发](signing.md)
 - [执行配方与历史配置](configuration.md)
 - [控制台语言、主题与动效](frontend-experience.md)
+- [界面设计规范](design-system.md)
 
 # 部署与运维
 
@@ -33,8 +34,14 @@
 # 验收记录
 
 - [实施与验收总览](acceptance.md)
+- [新版 UI 恢复与旧代码清理 · 2026-11-17](acceptance/ui/2026-11-17-restore-and-remove-legacy.md)
 - [AI-Workspace macOS 托管证书签名 · 2026-11-17](ai-workspace-signing-acceptance-2026-11-17.md)
 - [AI-Workspace 双平台真实构建 · 2026-11-16](ai-workspace-build-acceptance-2026-11-16.md)
+- [工作树备份比对与源码恢复 · 2026-11-16](acceptance/2026-11-16-worktree-recovery.md)
+- [全站 UX/UI 重构 · 2026-11-15](acceptance/ui/2026-11-15.md)
+- [真实浏览器巡检与修复 · 2026-11-15](acceptance/ui/2026-11-15-browser-audit.md)
+- [交互与视觉复查 · 2026-11-16](acceptance/ui/2026-11-16-interaction-visual.md)
+- [弹窗入场跳位修复 · 2026-11-16](acceptance/ui/2026-11-16-modal-motion.md)
 - [节点元数据、MCP 与 AI 选机 · 2026-11-14](acceptance/nodes/2026-11-14.md)
 - [控制平面 HA 与 Toasty · 2026-11-14](acceptance/control-ha/2026-11-14-toasty.md)
 - [控制平面 HA · SQLx 阶段归档](acceptance/control-ha/2026-11-14.md)
@@ -61,6 +68,7 @@
 - [多租户实施与审查修复 · 2026-11-15](plans/2026-11-15-multitenancy.md)
 - [可读租户、项目与构建路由计划 · 2026-11-15](superpowers/plans/2026-11-15-readable-routes.md)
 - [租户与项目工作台实施计划 · 2026-11-15](superpowers/plans/2026-11-15-workspace-hierarchy.md)
+- [中性色控制台重构计划 · 2026-11-15](superpowers/plans/2026-11-15-monochrome-console.md)
 - [托管应用签名实施计划 · 2026-11-16](superpowers/plans/2026-11-16-managed-signing.md)
 
 # 品牌与变更记录
@@ -70,6 +78,7 @@
 - [多租户 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-multitenancy-kubernetes.md)
 - [可读路由 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-readable-routes-kubernetes.md)
 - [租户与项目工作台 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-workspace-hierarchy-kubernetes.md)
+- [中性色控制台 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-monochrome-console-kubernetes.md)
 - [托管应用签名 Kubernetes 升级记录 · 2026-11-16](releases/2026-11-16-managed-signing-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)
@@ -77,6 +86,9 @@
 # 文档维护地图
 
 - [文档模块地图](AGENTS.md)
+- [验收模块地图](acceptance/AGENTS.md)
+- [界面验收模块地图](acceptance/ui/AGENTS.md)
 - [交付记录模块地图](releases/AGENTS.md)
+- [文档主题模块地图](theme/AGENTS.md)
 - [设计与计划模块地图](superpowers/AGENTS.md)
 - [实施计划模块地图](superpowers/plans/AGENTS.md)

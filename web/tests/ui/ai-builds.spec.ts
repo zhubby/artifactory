@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [OUTPUT]: 验证ai-builds页面行为。
+ * [POS]: 使用模拟 API 的界面浏览器回归入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { expect, test } from "@playwright/test";
 import { fixtureAPI, build, tenantURL } from "./fixtures";
 
@@ -85,6 +91,7 @@ for (const locale of ["zh-CN", "en"] as const) {
       },
     );
     await page.goto(tenantURL("/projects/desktop-client/builds/128"));
+    await page.getByRole("tab", { name: locale === "en" ? "Plan" : "计划", exact: true }).click();
     await expect(
       page.getByText("Which application should be built?", { exact: true }),
     ).toBeVisible();

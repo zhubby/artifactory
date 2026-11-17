@@ -1,9 +1,14 @@
+/**
+ * [INPUT]: 依赖租户 API、项目路由及业务页面。
+ * [OUTPUT]: 提供 Console 项目控制台。
+ * [POS]: 组合导航、项目上下文和页面内容。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   Activity,
-  ArrowLeft,
   ArrowRight,
   ArrowUpRight,
   BookOpen,
@@ -19,11 +24,14 @@ import {
   Settings2,
   X,
   GitBranch,
+  ChevronRight,
 } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { useAccount } from "@/components/account";
 import { BrandMark } from "@/components/brand-mark";
 import { SpaceSwitcher } from "@/components/space-switcher";
+import { CommandPalette } from "@/components/command-palette";
+import { ListToolbar } from "@/components/ui/list-toolbar";
 import { WorkspaceManagement } from "@/components/workspace-management";
 import { NodesWorkspace } from "@/components/nodes-workspace";
 import { OperationHistory } from "@/components/lifecycle";
@@ -45,7 +53,7 @@ import {
 } from "@/components/common";
 import { useRemote, cancelBusinessRequests } from "@/lib/api";
 import { Link } from "@/lib/tenant";
-import { projectFromPath, tenantFromPath, projectPath } from "@/lib/routes";
+import { projectFromPath, tenantFromPath, projectPath, buildPath } from "@/lib/routes";
 import type {
   TenantContext,
   User,
@@ -101,7 +109,7 @@ function Workspace({
   useEffect(() => {
     setMobile(false);
   }, [pathname]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!mobile) return;
     const previous = document.activeElement as HTMLElement | null;
     const regions = Array.from(
@@ -112,6 +120,7 @@ function Workspace({
     document.body.style.overflow = "hidden";
     navigationRef.current?.querySelector<HTMLElement>("a,button")?.focus();
     const key = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (event.key === "Escape") {
         event.preventDefault();
         setMobile(false);
@@ -119,7 +128,7 @@ function Workspace({
       if (event.key !== "Tab") return;
       const items = Array.from(
         navigationRef.current?.querySelectorAll<HTMLElement>(
-          "a[href],button",
+          'a[href],button:not(:disabled),summary,input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]',
         ) || [],
       ).filter((element) => element.getClientRects().length);
       const first = items[0],
@@ -211,11 +220,14 @@ function Workspace({
             ]),
       ];
   const readOnly = context.data?.tenant.status !== "active";
+  const workspaceError = account.error || context.error || projects.error || detail.error;
   return (
     <div className="app-shell workspace-shell">
       {mobile && (
         <button
           className="workspace-nav-dismiss"
+          tabIndex={-1}
+          aria-hidden="true"
           aria-label={t("navigation.close")}
           onClick={() => setMobile(false)}
         />
@@ -243,21 +255,12 @@ function Workspace({
           </span>
           Artifactory
         </Link>
-        {projectSlug && (
-          <Link href="/" className="sidebar-back">
-            <ArrowLeft size={14} />
-            {t("workspace.allProjects")}
-          </Link>
-        )}
-        <div className="sidebar-space">
-          <small>
-            {t(projectSlug ? "workspace.project" : "workspace.tenant")}
-          </small>
-          <strong>{project?.name || context.data?.tenant.name || "…"}</strong>
-          <span>{projectSlug || tenant}</span>
-        </div>
+        {context.data && <SpaceSwitcher tenant={context.data.tenant} project={project} projects={projects.data || []} />}
+        <div className="sidebar-navigation">
+        {projectSlug && <Link href="/" className="sidebar-back"><FolderGit2 size={14} />{t("workspace.allProjects")}</Link>}
+        <div className="nav-label">{t(projectSlug ? "workspace.project" : "navigation.workspaceGroup")}</div>
         <nav>
-          {nav.map((entry) => (
+          {nav.filter(entry => entry.path === "/" || (projectSlug && !entry.path.endsWith("/settings"))).map((entry) => (
             <Link
               key={entry.path}
               href={entry.path}
@@ -287,14 +290,20 @@ function Workspace({
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <Link href="/tenants" className="nav-item">
-            <Boxes />
-            {t("tenants.choose")}
+          <Link href="/nodes" className={cn("nav-item", pieces[0] === "nodes" && "active")} aria-current={pieces[0] === "nodes" ? "page" : undefined}>
+            <Server />{t("workspace.sharedDevices")}
           </Link>
+          {project?.effective_role === "admin" && <Link href={base + "/settings"} className={cn("nav-item", pieces[2] === "settings" && "active")}>
+            <Settings2 />{t("workspace.manageProject")}
+          </Link>}
+          {user && <Link href={user.role === "admin" ? "/settings" : "/settings/security"} className={cn("nav-item", pieces[0] === "settings" && "active")}>
+            <Settings2 />{t(user.role === "admin" ? "workspace.manageTenant" : "security.tokens")}
+          </Link>}
           <a className="nav-item" href="/docs">
             <BookOpen />
             {t("navigation.docs")}
           </a>
+        </div>
         </div>
       </aside>
       <div className="workspace">
@@ -310,24 +319,30 @@ function Workspace({
           >
             {mobile ? <X /> : <Menu />}
           </Button>
-          {context.data ? (
-            <SpaceSwitcher
-              tenant={context.data.tenant}
-              project={project}
-              projects={projects.data || []}
-            />
-          ) : (
-            <span className="text-sm text-muted-foreground">Artifactory</span>
-          )}
+          <nav className="workspace-breadcrumb" aria-label={t("redesign.navigation")}>
+            <Link href="/">{context.data?.tenant.name || "Artifactory"}</Link>
+            {project ? <><ChevronRight aria-hidden="true" /><Link href={base}>{project.name}</Link>
+              {pieces[2] && <><ChevronRight aria-hidden="true" /><span>{t(pieces[2] === "settings" ? "workspace.manageProject" : "navigation." + pieces[2])}</span></>}
+              {pieces[2] === "builds" && pieces[3] && <><ChevronRight aria-hidden="true" /><span>{pieces[3] === "new" ? t("builds.start") : "#" + pieces[3]}</span></>}
+            </> : pieces[0] && <><ChevronRight aria-hidden="true" /><span>{t(pieces[0] === "nodes" ? "workspace.sharedDevices" : "workspace.manageTenant")}</span></>}
+          </nav>
+          <div className="workspace-tools">
+            {user && <CommandPalette projects={projects.data || []} project={project} user={user} readOnly={readOnly || (!!project && project.status !== "active")} />}
+            <div id="workspace-page-actions" />
+          </div>
         </header>
-        <main className="main space-enter" id="workspace-content">
-          <ErrorBox
-            message={
-              account.error || context.error || projects.error || detail.error
-            }
-          />
-          {!user || !context.data || (projectSlug && !project) ? (
-            <Loading />
+        <main className="main" id="workspace-content">
+          {workspaceError && <div className="mb-5">
+            <ErrorBox message={workspaceError} />
+            <Button variant="secondary" onClick={() => {
+              void account.reload();
+              void context.reload();
+              void projects.reload();
+              if (projectSlug) void detail.reload();
+            }}>{t("common.retry")}</Button>
+          </div>}
+          {!user || !context.data || !projects.data || (projectSlug && !project) ? (
+            workspaceError ? null : <Loading />
           ) : (
             <>
               {(readOnly || (project && project.status !== "active")) && (
@@ -388,13 +403,6 @@ function Workspace({
             </>
           )}
         </main>
-        <footer className="workspace-footer">
-          <span>Artifactory</span>
-          <span>
-            {context.data?.tenant.name}
-            {project && ` / ${project.name}`}
-          </span>
-        </footer>
       </div>
     </div>
   );
@@ -478,54 +486,21 @@ function TenantHome({
         <div className="project-grid">
           {filtered.map((project) => (
             <article className="project-card" key={project.id}>
-              <div className="project-card-top">
-                <span className="project-glyph">
-                  <FolderGit2 size={21} />
-                </span>
-                <Status small value={project.status} />
+              <div className="project-card-identity">
+                <span className="project-glyph"><FolderGit2 size={17} aria-hidden="true" /></span>
+                <div className="min-w-0">
+                  <Link className="project-card-title" href={projectPath(project.slug)}>{project.name}<ArrowUpRight aria-hidden="true" /></Link>
+                  <p className="project-card-repository" title={project.repository_url}>{project.repository_url}</p>
+                </div>
               </div>
-              <Link
-                className="project-card-title"
-                href={projectPath(project.slug)}
-              >
-                {project.name}
-                <ArrowUpRight size={18} />
-              </Link>
-              <p
-                className="project-card-repository"
-                title={project.repository_url}
-              >
-                {project.repository_url}
-              </p>
-              <div className="project-card-metrics">
-                <span>
-                  <strong>{number(project.build_count)}</strong>
-                  {t("navigation.builds")}
-                </span>
-                <span>
-                  {project.last_build ? (
-                    <>
-                      <Status small value={project.last_build.status} />
-                      <small>{date(project.last_build.created_at)}</small>
-                    </>
-                  ) : (
-                    t("projects.noBuilds")
-                  )}
-                </span>
+              <div className="project-card-latest">
+                <Status small value={project.last_build?.status || project.status} />
+                <span>{project.last_build ? date(project.last_build.created_at) : t("projects.noBuilds")}</span>
               </div>
-              <div className="project-card-footer">
-                <code>{project.slug}</code>
-                {project.effective_role === "admin" && (
-                  <Link
-                    href={`${projectPath(project.slug)}/settings`}
-                    aria-label={t("projects.settingsNamed", {
-                      name: project.name,
-                    })}
-                  >
-                    <Settings2 size={16} />
-                  </Link>
-                )}
-              </div>
+              <span className="project-card-count">{number(project.build_count)} {t("navigation.builds")}</span>
+              {project.effective_role === "admin" ? <Link href={projectPath(project.slug) + "/settings"}
+                className="inline-flex size-8 items-center justify-center rounded hover:bg-secondary max-md:size-11"
+                aria-label={t("projects.settingsNamed", { name: project.name })}><Settings2 size={15} /></Link> : <span />}
             </article>
           ))}
         </div>
@@ -582,6 +557,8 @@ function ProjectWorkspace({
 }) {
   const { t, date } = useUI();
   const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [order, setOrder] = useState("newest");
   const column = pieces[0] || "overview";
   const base = projectPath(project.slug);
   const builds = useRemote<Build[]>(
@@ -594,11 +571,11 @@ function ProjectWorkspace({
     column === "artifacts" ? `/artifacts?project_id=${project.id}` : null,
   );
   const releases = useRemote<Release[]>(
-    column === "releases" && !pieces[1]
+    ["overview", "releases"].includes(column) && !pieces[1]
       ? `/releases?project_id=${project.id}`
       : null,
   );
-  useEffect(() => setQuery(""), [column]);
+  useEffect(() => { setQuery(""); setStatus(""); }, [column]);
   if (column === "settings")
     return (
       <WorkspaceManagement
@@ -632,6 +609,14 @@ function ProjectWorkspace({
     return <ReleaseDetail id={pieces[1]} projectId={project.id} />;
   const matches = (...values: (string | null | undefined)[]) =>
     values.some((value) => value?.toLowerCase().includes(query.toLowerCase()));
+  const chronological = (a: { created_at: string }, b: { created_at: string }) =>
+    (Date.parse(b.created_at) - Date.parse(a.created_at)) * (order === "newest" ? 1 : -1);
+  const visibleBuilds = builds.data?.filter(build => (!status || build.status === status) &&
+    matches(String(build.number), build.requested_ref, build.release_version, build.status)).sort(chronological);
+  const visibleArtifacts = artifacts.data?.filter(artifact => matches(artifact.path, artifact.target)).sort(chronological);
+  const visibleReleases = releases.data?.filter(release => matches(release.version, release.commit_sha)).sort(chronological);
+  const running = builds.data?.filter(build => ["planning", "resolving", "queued", "running", "needs_input", "replanning"].includes(build.status)) || [];
+  const failed = builds.data?.filter(build => build.status === "failed") || [];
   return (
     <>
       <PageTitle
@@ -666,6 +651,10 @@ function ProjectWorkspace({
             </span>
             <Status small value={project.status} />
           </div>
+          {(running.length > 0 || failed.length > 0) && <div className="project-focus">
+            {running.length > 0 && <Link href={buildPath(project.slug, running[0].number)}><Status small value={running[0].status} />{t("redesign.runningFocus", { count: running.length })}</Link>}
+            {failed.length > 0 && <Link href={buildPath(project.slug, failed[0].number)}><Status small value="failed" />{t("redesign.failedFocus", { count: failed.length })}</Link>}
+          </div>}
           <section className="panel">
             <SectionTitle title={t("projects.builds")}>
               <Link href={`${base}/builds`} className="text-xs text-primary">
@@ -679,6 +668,9 @@ function ProjectWorkspace({
               <Loading />
             )}
           </section>
+          {releases.data?.[0] && <div className="latest-release"><span>{t("redesign.latestRelease")}</span>
+            <Link href={base + "/releases/" + releases.data[0].id}>{releases.data[0].version} <ArrowUpRight size={13} className="inline" aria-hidden="true" /></Link>
+          </div>}
           <div className="project-shortcuts">
             <Link href={`${base}/artifacts`}>
               <Boxes />
@@ -700,15 +692,16 @@ function ProjectWorkspace({
         </>
       ) : (
         <>
-          <label className="workspace-filter mb-5">
-            <Search size={16} />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t("search.placeholder")}
-              aria-label={t("search.label")}
-            />
-          </label>
+          <ListToolbar query={query} onQueryChange={setQuery}
+            count={column === "builds" ? visibleBuilds?.length : column === "artifacts" ? visibleArtifacts?.length : visibleReleases?.length}>
+            {column === "builds" && <select className="input" aria-label={t("redesign.filterStatus")} value={status} onChange={event => setStatus(event.target.value)}>
+              <option value="">{t("redesign.allStatus")}</option>
+              {Array.from(new Set(builds.data?.map(build => build.status))).map(value => <option key={value} value={value}>{t("status." + value)}</option>)}
+            </select>}
+            <select className="input" aria-label={t("redesign.order")} value={order} onChange={event => setOrder(event.target.value)}>
+              <option value="newest">{t("redesign.newest")}</option><option value="oldest">{t("redesign.oldest")}</option>
+            </select>
+          </ListToolbar>
           <ErrorBox
             message={builds.error || artifacts.error || releases.error}
           />
@@ -716,14 +709,7 @@ function ProjectWorkspace({
             {column === "builds" ? (
               builds.data ? (
                 <BuildTable
-                  builds={builds.data.filter((build) =>
-                    matches(
-                      String(build.number),
-                      build.requested_ref,
-                      build.release_version,
-                      build.status,
-                    ),
-                  )}
+                  builds={visibleBuilds || []}
                 />
               ) : (
                 <Loading />
@@ -731,15 +717,13 @@ function ProjectWorkspace({
             ) : column === "artifacts" ? (
               artifacts.data ? (
                 <ArtifactTable
-                  artifacts={artifacts.data.filter((artifact) =>
-                    matches(artifact.path, artifact.target),
-                  )}
+                  artifacts={visibleArtifacts || []}
                 />
               ) : (
                 <Loading />
               )
             ) : releases.data ? (
-              releases.data.length ? (
+              visibleReleases?.length ? (
                 <div className="table-scroll">
                   <table>
                     <thead>
@@ -751,10 +735,7 @@ function ProjectWorkspace({
                       </tr>
                     </thead>
                     <tbody>
-                      {releases.data
-                        .filter((release) =>
-                          matches(release.version, release.commit_sha),
-                        )
+                      {visibleReleases
                         .map((release) => (
                           <tr key={release.id}>
                             <td>

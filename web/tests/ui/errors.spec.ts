@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [OUTPUT]: 验证errors页面行为。
+ * [POS]: 使用模拟 API 的界面浏览器回归入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { expect, test } from "@playwright/test";
 import {
   fixtureAPI,
@@ -72,7 +78,6 @@ test("invalid JSON is a localized form error and never reaches the backend", asy
   await page
     .locator('textarea[name="goal"]')
     .fill("Build the desktop executable");
-  await page.getByRole("button", { name: "继续", exact: true }).click();
   await page.getByRole("button", { name: "继续", exact: true }).click();
   await page.getByText("高级参数（可选）", { exact: true }).click();
   await page.locator('textarea[name="parameters"]').fill('{"unfinished":');

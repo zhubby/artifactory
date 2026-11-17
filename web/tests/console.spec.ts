@@ -1,6 +1,13 @@
+/**
+ * [INPUT]: 依赖 Playwright 与真实控制面测试会话。
+ * [OUTPUT]: 验证控制台登录、构建与租户访问。
+ * [POS]: 需要可用后端的端到端浏览器入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { expect, request, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
 
 const evidence = JSON.parse(
   readFileSync(
@@ -118,6 +125,12 @@ test("self-registration requires explicit tenant and project grants before artif
     path: testInfo.outputPath("registration.png"),
     fullPage: true,
   });
+  let registrationIdentity: { id: string } | undefined;
+  await page.route("**/api/v1/auth/register", async route => {
+    const upstream = await route.fetch();
+    registrationIdentity = await upstream.json();
+    await route.fulfill({ response: upstream });
+  });
   const registered = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === "/api/v1/auth/register" &&
@@ -132,7 +145,8 @@ test("self-registration requires explicit tenant and project grants before artif
     username: registeredUser,
     password: registeredPassword,
   });
-  const registeredIdentity = (await response.json()) as { id: string };
+  expect(registrationIdentity).toBeDefined();
+  const registeredIdentity = registrationIdentity!;
   await expect(page).toHaveURL(/\/tenants$/);
   const session = (await context.cookies()).find(
     (cookie) => cookie.name === "artifactory_session",
@@ -190,6 +204,7 @@ test("self-registration requires explicit tenant and project grants before artif
     ).toBe(403);
   }
   await page.goto(buildURL(evidence.build_number));
+  await page.getByRole("tab", { name: "制品", exact: true }).click();
   const downloading = page.waitForEvent("download");
   await page.getByRole("link", { name: "下载 dist/app", exact: true }).click();
   expect(await (await downloading).failure()).toBeNull();
@@ -241,6 +256,7 @@ test("real console, native logs, artifact download and immutable release", async
     path: testInfo.outputPath("native-build.png"),
     fullPage: true,
   });
+  await page.getByRole("tab", { name: "制品", exact: true }).click();
   const downloadEvent = page.waitForEvent("download");
   await page.getByRole("link", { name: "下载 dist/app", exact: true }).click();
   const download = await downloadEvent;
@@ -268,6 +284,7 @@ test("dialogs are keyboard accessible and mobile navigation works", async ({
   await trigger.click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("button", { name: "关闭对话框" })).toBeFocused();
+  await expect(page.locator('input[name="name"]')).toBeVisible();
   await page.keyboard.press("Tab");
   await expect(page.locator('input[name="name"]')).toBeFocused();
   await page.screenshot({
@@ -430,7 +447,6 @@ test("real repository references and the build wizard preserve model configurati
     .locator('textarea[name="goal"]')
     .fill("Build the native C application and collect dist/app");
   await page.getByRole("button", { name: "继续", exact: true }).click();
-  await page.getByRole("button", { name: "继续", exact: true }).click();
   await page.getByRole("button", { name: "发起构建", exact: true }).click();
   // This regression server seeds pre-migration builds and has no model key.
   // Real-provider execution is covered by scripts/ai_acceptance.py.
@@ -438,9 +454,40 @@ test("real repository references and the build wizard preserve model configurati
   await expect(page.locator(".error-box[role=alert]")).toContainText(
     /model profile/i,
   );
+  await page.getByRole("tab", { name: "计划", exact: true }).click();
   await expect(
     page.getByText("Build the native C application and collect dist/app", {
       exact: true,
     }),
   ).toBeVisible();
+});
+
+test("native fixture builds can be canceled and published through the interface", async ({ page }, info) => {
+  test.skip(!process.env.DATABASE_URL, "requires the isolated historical-build fixture database");
+  test.setTimeout(120000);
+  await login(page);
+  const seed = (mode: string) => JSON.parse(execFileSync("python3", [resolve("../scripts/legacy_fixture.py")], {
+    input: JSON.stringify({ project: evidence.project_id, body: { ref: "main", targets: ["native"], parameters: { MODE: mode } } }),
+    encoding: "utf8",
+  })) as { id: string };
+  const current = async (id: string) => (await (await page.request.get(`/api/v1/builds/${id}`, { headers: tenantHeaders })).json()) as { number: number; status: string; publish_status: string };
+  const slow = seed("slow");
+  await expect.poll(async () => (await current(slow.id)).status, { timeout: 45000 }).toBe("running");
+  await page.goto(buildURL((await current(slow.id)).number));
+  await page.getByRole("button", { name: "取消构建", exact: true }).click();
+  await expect.poll(async () => (await current(slow.id)).status, { timeout: 30000 }).toBe("canceled");
+  await expect(page.locator(".page-actions .status-canceled")).toBeVisible();
+  const native = seed("normal");
+  await expect.poll(async () => (await current(native.id)).status, { timeout: 45000 }).toBe("succeeded");
+  await page.goto(buildURL((await current(native.id)).number));
+  await page.getByRole("button", { name: "发布制品", exact: true }).click();
+  await page.getByRole("textbox", { name: "版本名称", exact: true }).fill(`ux-${info.project.name}-${Date.now()}`);
+  await page.getByRole("button", { name: "生成内部 Release", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect.poll(async () => (await current(native.id)).publish_status).toBe("succeeded");
+  await expect(page.locator(".build-meta .status-succeeded")).toBeVisible();
+  await page.getByRole("tab", { name: "制品", exact: true }).click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("link", { name: "下载 dist/app", exact: true }).click();
+  expect(await (await download).failure()).toBeNull();
 });

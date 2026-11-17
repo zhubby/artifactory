@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖构建 API、事件订阅和共享控件。
+ * [OUTPUT]: 提供 BuildDetail 构建详情。
+ * [POS]: 展示执行、计划和制品；维持事件订阅。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 import { subscribeBuild } from "@/lib/events";
 
@@ -32,6 +38,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/dialog";
+import { Tabs } from "@/components/ui/tabs";
 import { SubmitForm } from "@/components/forms";
 import { BuildPlanning } from "@/components/build-planning";
 import { Field } from "@/components/common";
@@ -75,6 +82,7 @@ export function BuildDetail({
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<Error>();
   const [publish, setPublish] = useState(false);
+  const [tab, setTab] = useState("execution");
   const [clipped, setClipped] = useState(false);
   const terminal = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -106,9 +114,9 @@ export function BuildDetail({
     return () => controller.abort();
   }, [id, remote.setData]);
   useEffect(() => {
-    if (follow && terminal.current)
+    if (tab === "execution" && follow && terminal.current)
       terminal.current.scrollTop = terminal.current.scrollHeight;
-  }, [logs, follow, filter, selected]);
+  }, [logs, follow, filter, selected, tab]);
   async function action(path: string, body: unknown = {}) {
     setError(undefined);
     try {
@@ -145,7 +153,7 @@ export function BuildDetail({
     <>
       <Link
         href={`/projects/${projectSlug}/builds`}
-        className="mb-5 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-primary"
+        className="mb-5 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-primary max-md:min-h-11"
       >
         <ArrowLeft size={13} />
         {t("builds.all")}
@@ -209,10 +217,16 @@ export function BuildDetail({
           </span>
         )}
       </div>
-      {build.goal && (
-        <BuildPlanning build={build} user={user} refresh={remote.reload} />
-      )}
-      <div className="build-layout">
+      {build.publish_error && <ErrorBox message={t("builds.publishError", { detail: build.publish_error })} />}
+      {build.status === "needs_input" && <div className="notice build-attention" role="status">
+        <span>{t("redesign.needsInput")}</span><Button size="sm" variant="secondary" onClick={() => setTab("plan")}>{t("redesign.viewPlan")}</Button>
+      </div>}
+      <Tabs value={tab} onChange={setTab} label={t("redesign.buildTabs")} items={[
+        { value: "execution", label: t("redesign.execution") }, { value: "plan", label: t("redesign.plan") }, { value: "artifacts", label: t("redesign.output") },
+      ]}>{activeTab => <>
+        <div hidden={activeTab !== "execution"}>
+          <div className="build-layout">
+            <div className="min-w-0 space-y-4">
         <section className="panel self-start">
           <SectionTitle
             title={t("builds.targets")}
@@ -269,7 +283,6 @@ export function BuildDetail({
             )}
           </div>
         </section>
-        <div className="min-w-0 space-y-5">
           <section className="panel">
             <SectionTitle
               title={t("builds.steps")}
@@ -341,6 +354,7 @@ export function BuildDetail({
                 </div>
               )}
           </section>
+            </div>
           <section className="panel">
             <SectionTitle
               live
@@ -398,9 +412,24 @@ export function BuildDetail({
               )}
             </div>
           </section>
+          </div>
         </div>
-      </div>
-      <section className="panel mt-6">
+        <div hidden={activeTab !== "plan"}>
+          {build.goal ? <BuildPlanning build={build} user={{ ...user, role }} refresh={remote.reload} />
+            : <Empty title={t("redesign.plan")} detail={t("builds.noConfig")} />}
+      <details className="panel mt-5">
+        <summary className="cursor-pointer px-5 py-4 text-xs text-muted-foreground">
+          {t("builds.snapshot")}
+        </summary>
+        <pre className="log-console min-h-0">
+          {build.config_yaml ||
+            (build.config_snapshot
+              ? JSON.stringify(build.config_snapshot, null, 2)
+              : t("builds.noConfig"))}
+        </pre>
+      </details>
+        </div>
+      <section className="panel" hidden={activeTab !== "artifacts"}>
         <SectionTitle
           title={t("builds.verified")}
           detail={t("artifacts.shaVerified")}
@@ -414,24 +443,8 @@ export function BuildDetail({
           />
         )}
       </section>
-      {build.publish_error && (
-        <div className="mt-5">
-          <ErrorBox
-            message={t("builds.publishError", { detail: build.publish_error })}
-          />
-        </div>
-      )}
-      <details className="panel mt-5">
-        <summary className="cursor-pointer px-5 py-4 text-xs text-muted-foreground">
-          {t("builds.snapshot")}
-        </summary>
-        <pre className="log-console min-h-0">
-          {build.config_yaml ||
-            (build.config_snapshot
-              ? JSON.stringify(build.config_snapshot, null, 2)
-              : t("builds.noConfig"))}
-        </pre>
-      </details>
+      </>}</Tabs>
+
       <Modal
         open={publish}
         onOpenChange={setPublish}

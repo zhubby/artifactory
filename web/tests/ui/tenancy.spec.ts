@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [OUTPUT]: 验证tenancy页面行为。
+ * [POS]: 使用模拟 API 的界面浏览器回归入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { expect, test } from "@playwright/test";
 import {
   build,
@@ -268,7 +274,7 @@ test("invited registration confirms membership without creating an empty tenant"
   expect(createdTenants).toBe(0);
 });
 
-test("tenant member settings support keyboard tabs and ownership confirmation", async ({
+test("tenant settings use grouped keyboard navigation and preserve ownership confirmation", async ({
   page,
 }, info) => {
   await fixtureAPI(page);
@@ -293,12 +299,14 @@ test("tenant member settings support keyboard tabs and ownership confirmation", 
     }),
   );
   await page.goto(tenantURL("/settings/security"));
-  const tab = page.getByRole("tab").first();
-  await tab.focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(
-    page.getByRole("tab", { name: "Git 凭据", exact: true }),
-  ).toBeFocused();
+  const navigation = page.getByRole("navigation", { name: "管理分区", exact: true });
+  const credentials = navigation.getByRole("link", { name: "Git 凭据", exact: true });
+  await credentials.focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(tenantURL("/settings/credentials"));
+  await expect(credentials).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "Git 凭据", exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("tablist")).toHaveCount(0);
   await page.goto(tenantURL("/settings/members"));
   await page.getByRole("button", { name: "转移所有权", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("Member");

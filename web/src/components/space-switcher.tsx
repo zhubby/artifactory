@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖租户 API、项目路由及 UI 词条。
+ * [OUTPUT]: 提供 SpaceSwitcher 租户和项目切换器。
+ * [POS]: 保留栏目并拒绝切换后的迟到响应。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -29,6 +35,7 @@ function Selector({
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDetailsElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const focusFrame = useRef(0);
   useEffect(() => {
     const outside = (event: PointerEvent) => {
       if (
@@ -38,7 +45,10 @@ function Selector({
         ref.current.open = false;
     };
     document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      cancelAnimationFrame(focusFrame.current);
+    };
   }, []);
   return (
     <details
@@ -46,6 +56,7 @@ function Selector({
       name="workspace-selector"
       className={`space-selector ${kind}`}
       onToggle={(event) => {
+        cancelAnimationFrame(focusFrame.current);
         if (event.currentTarget.open) {
           document
             .querySelectorAll<HTMLDetailsElement>(".space-selector[open]")
@@ -53,11 +64,13 @@ function Selector({
               if (other !== event.currentTarget) other.open = false;
             });
           setQuery("");
-          requestAnimationFrame(() => input.current?.focus());
+          focusFrame.current = requestAnimationFrame(() => {
+            if (ref.current?.open) input.current?.focus({ preventScroll: true });
+          });
         }
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape") {
+        if (event.key === "Escape" && ref.current?.open) {
           event.preventDefault();
           ref.current!.open = false;
           ref.current?.querySelector("summary")?.focus();
@@ -90,7 +103,9 @@ function Selector({
               ? items.length - 1
               : event.key === "ArrowDown"
                 ? (current + 1) % items.length
-                : (current - 1 + items.length) % items.length;
+                : current < 0
+                  ? items.length - 1
+                  : (current - 1 + items.length) % items.length;
         items[next]?.focus();
       }}
     >
@@ -188,7 +203,6 @@ export function SpaceSwitcher({
           </>
         )}
       </Selector>
-      <span className="space-divider">/</span>
       <Selector
         kind="project"
         label={project?.name || t("workspace.allProjects")}

@@ -1,8 +1,14 @@
+/**
+ * [INPUT]: 依赖业务 API、UI 词条和输入控件。
+ * [OUTPUT]: 提供项目、节点、凭据及密钥表单。
+ * [POS]: 收集业务输入并呈现提交反馈。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import { useUI } from "@/components/providers";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { CopyButton, ErrorBox, Field } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -92,6 +98,7 @@ export function ProjectForm({
   nodes = [],
   canManageResources = true,
   section = "all",
+  onCancel,
   done,
 }: {
   pools: Pool[];
@@ -100,10 +107,12 @@ export function ProjectForm({
   nodes?: Node[];
   canManageResources?: boolean;
   section?: "all" | "general" | "resources";
+  onCancel?: () => void;
   done: () => void;
 }) {
   const { t } = useUI();
   const general = section !== "resources";
+  const nameInput = useRef<HTMLInputElement>(null);
   const resources = section !== "general";
   const grantsEditable = canManageResources && resources;
   const models =
@@ -136,12 +145,17 @@ export function ProjectForm({
   const [bindings, setBindings] = useState(project?.source_credentials || []);
   return (
     <SubmitForm
-      onCancel={done}
+      onCancel={onCancel ?? done}
       onSubmit={async (form) => {
+        const name = general ? string(form, "name") : project!.name;
+        if (general && new TextEncoder().encode(name).length > 100) {
+          nameInput.current?.focus();
+          throw new LocalizedError("projects.nameTooLong");
+        }
         await mutation(
           project ? `/projects/${project.id}` : "/projects",
           {
-            name: general ? string(form, "name") : project!.name,
+            name,
             repository_url: general
               ? string(form, "repository_url")
               : project!.repository_url,
@@ -171,6 +185,7 @@ export function ProjectForm({
         <>
           <Field label={t("projects.name")}>
             <Input
+              ref={nameInput}
               name="name"
               defaultValue={project?.name}
               required
@@ -392,9 +407,10 @@ export function ProjectForm({
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={() =>
-                    setBindings(bindings.filter((_, i) => i !== index))
-                  }
+                  onClick={(event) => {
+                    event.currentTarget.form?.setAttribute("data-dirty", "true");
+                    setBindings(bindings.filter((_, i) => i !== index));
+                  }}
                 >
                   {t("ai.remove")}
                 </Button>
@@ -404,12 +420,13 @@ export function ProjectForm({
           <Button
             type="button"
             variant="secondary"
-            onClick={() =>
+            onClick={(event) => {
+              event.currentTarget.form?.setAttribute("data-dirty", "true");
               setBindings([
                 ...bindings,
                 { repository_url: "", credential_id: "" },
-              ])
-            }
+              ]);
+            }}
           >
             {t("ai.addBinding")}
           </Button>

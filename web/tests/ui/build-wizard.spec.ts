@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [OUTPUT]: 验证build-wizard页面行为。
+ * [POS]: 使用模拟 API 的界面浏览器回归入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { expect, test, type Page } from "@playwright/test";
 import {
   fixtureAPI,
@@ -5,7 +11,6 @@ import {
   repositoryRefs,
   openPreferences,
   closePreferences,
-  tenantId,
   tenantURL,
 } from "./fixtures";
 
@@ -21,7 +26,6 @@ async function reachReview(page: Page) {
   await page
     .getByRole("radio", { name: "构建并收集产物", exact: true })
     .check();
-  await next(page);
   await expect(
     page.getByRole("radio", { name: "自动选择平台", exact: true }),
   ).toBeChecked();
@@ -123,7 +127,6 @@ test("tags, manual platforms, release and parameters keep the existing payload a
   await page
     .locator('textarea[name="goal"]')
     .fill("Build and test the desktop application");
-  await next(page);
   await page.getByRole("radio", { name: "指定目标平台", exact: true }).check();
   await next(page);
   await expect(page.locator(".error-box[role=alert]")).toContainText(
@@ -214,7 +217,7 @@ test("source failures allow retry or explicit manual input without silently usin
   await page.locator('input[name="ref"]').fill("a".repeat(40));
   await next(page);
   await expect(
-    page.getByRole("heading", { name: "这次构建要完成什么？", exact: true }),
+    page.getByRole("heading", { name: "这次要构建什么？", exact: true }),
   ).toBeVisible();
   expect(events.writes).toEqual([]);
 });
@@ -250,7 +253,7 @@ test("empty or unknown default branches are never guessed and refresh discovers 
   await main.check();
   await next(page);
   await expect(
-    page.getByRole("heading", { name: "这次构建要完成什么？", exact: true }),
+    page.getByRole("heading", { name: "这次要构建什么？", exact: true }),
   ).toBeVisible();
   expect(events.writes).toEqual([]);
 });
@@ -332,7 +335,7 @@ test("preference changes preserve answers and keyboard navigation honors reduced
   await page.getByRole("button", { name: "继续", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(
-    page.getByRole("heading", { name: "这次构建要完成什么？", exact: true }),
+    page.getByRole("heading", { name: "这次要构建什么？", exact: true }),
   ).toBeFocused();
   await page
     .locator('textarea[name="goal"]')
@@ -352,7 +355,6 @@ test("preference changes preserve answers and keyboard navigation honors reduced
     "refs/heads/release/v1",
   );
   await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(
     page.getByRole("radio", {
       name: "Choose platforms automatically",
@@ -364,7 +366,7 @@ test("preference changes preserve answers and keyboard navigation honors reduced
 
 for (const locale of ["zh-CN", "en"] as const) {
   for (const theme of ["light", "dark"] as const) {
-    test(`${locale} ${theme}: conversational review has no overflow and retains editable answers`, async ({
+    test(`${locale} ${theme}: three-step review has no overflow and retains editable answers`, async ({
       page,
     }, info) => {
       const events = await fixtureAPI(page);
@@ -400,7 +402,6 @@ for (const locale of ["zh-CN", "en"] as const) {
           exact: true,
         })
         .check();
-      await continueButton.click();
       await continueButton.click();
       await expect(
         page.getByRole("heading", {

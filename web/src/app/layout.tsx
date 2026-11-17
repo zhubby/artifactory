@@ -1,10 +1,14 @@
+/**
+ * [INPUT]: 依赖语言 Cookie、Providers 与本地字体。
+ * [OUTPUT]: 提供 RootLayout 与本地化页面元数据。
+ * [POS]: App Router 根布局，建立主题和语言上下文。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { Providers } from "@/components/providers";
 import { isLocale, localeCookie } from "@/lib/preferences";
-import "@fontsource/ibm-plex-sans/400.css";
-import "@fontsource/ibm-plex-sans/500.css";
-import "@fontsource/ibm-plex-sans/600.css";
+import "@fontsource-variable/inter";
 import "@fontsource/ibm-plex-mono/400.css";
 import "./globals.css";
 

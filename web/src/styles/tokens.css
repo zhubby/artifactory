@@ -1,0 +1,67 @@
+/**
+ * [INPUT]: 依赖根主题属性和系统主题选择。
+ * [OUTPUT]: 提供明暗主题的语义 CSS 变量。
+ * [POS]: 全部控制台样式的颜色与尺寸来源。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+:root {
+  color-scheme: dark;
+  --background: #151515;
+  --foreground: #ededed;
+  --card: #191919;
+  --secondary: #232323;
+  --accent: #2b2b2b;
+  --border: #2e2e2e;
+  --muted-foreground: #a1a1a1;
+  --primary: #ededed;
+  --primary-foreground: #151515;
+  --ring: #b5b5b5;
+  --destructive: #f29b9b;
+  --success: #89cfa3;
+  --warning: #e3bf78;
+  --sidebar: #191919;
+  --header: #151515;
+  --table-header: #191919;
+  --table-border: #2e2e2e;
+  --subtle-foreground: #a1a1a1;
+  --placeholder: #858585;
+  --quiet: #1c1c1c;
+  --row-hover: #ffffff06;
+  --log-background: #151515;
+  --log-foreground: #dedede;
+  --log-muted: #9c9c9c;
+  --selection: #ffffff26;
+  --shadow: 0 8px 28px #00000026;
+  --font-sans: "Inter Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --background: #ffffff;
+  --foreground: #202020;
+  --card: #ffffff;
+  --secondary: #f3f3f3;
+  --accent: #eaeaea;
+  --border: #e8e8e8;
+  --muted-foreground: #686868;
+  --primary: #202020;
+  --primary-foreground: #ffffff;
+  --ring: #737373;
+  --destructive: #b4232d;
+  --success: #217346;
+  --warning: #8b6508;
+  --sidebar: #f7f7f7;
+  --header: #ffffff;
+  --table-header: #fafafa;
+  --table-border: #ededed;
+  --subtle-foreground: #686868;
+  --placeholder: #737373;
+  --quiet: #fafafa;
+  --row-hover: #00000004;
+  --log-background: #fafafa;
+  --log-foreground: #303030;
+  --log-muted: #707070;
+  --selection: #00000018;
+  --shadow: 0 8px 28px #0000000f;
+}

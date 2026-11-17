@@ -16,13 +16,14 @@ command = "node web/scripts/mdbook-frontmatter.mjs"
 renderers = ["html"]
 
 [output.html]
+theme = "docs/theme"
 site-url = "/docs/"
 default-theme = "light"
 preferred-dark-theme = "navy"
 git-repository-url = "https://github.com/zhubby/artifactory"
-edit-url-template = "https://github.com/zhubby/artifactory/edit/main/docs/{path}"
+edit-url-template = "https://github.com/zhubby/artifactory/edit/main/{path}"
 additional-css = ["docs/theme/artifactory.css"]
-additional-js = ["mermaid.min.js", "mermaid-init.js"]
+additional-js = ["docs/theme/appearance-init.js", "mermaid.min.js", "mermaid-init.js", "docs/theme/appearance.js"]
 input-404 = "404.md"
 
 [output.html.fold]
