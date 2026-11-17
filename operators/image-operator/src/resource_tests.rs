@@ -87,6 +87,10 @@ fn crd_fences_publication_mode_and_cancellation() {
         true
     );
     let value = serde_json::to_value(&crds[1]).unwrap();
+    let platforms = &value["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]
+        ["properties"]["platforms"];
+    assert!(platforms.get("uniqueItems").is_none());
+    assert_eq!(platforms["x-kubernetes-list-type"], "set");
     let rules=value["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]["x-kubernetes-validations"].as_array().unwrap();
     assert!(
         rules

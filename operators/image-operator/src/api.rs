@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 kube CRD、Serde 和固定执行身份。
-//! [OUTPUT]: 提供含 sidecar 模式的 BuilderPool、ImageBuild 与状态定义。
+//! [OUTPUT]: 提供 sidecar 模式、平台集合与不可变执行契约。
 //! [POS]: Image Operator 的 Kubernetes 公开契约。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use kube::{CustomResource, CustomResourceExt};
@@ -106,7 +106,7 @@ pub fn crds()
     }
     spec["properties"]["platforms"]["minItems"] = serde_json::json!(1);
     spec["properties"]["platforms"]["maxItems"] = serde_json::json!(2);
-    spec["properties"]["platforms"]["uniqueItems"] = serde_json::json!(true);
+    spec["properties"]["platforms"]["x-kubernetes-list-type"] = serde_json::json!("set");
     spec["properties"]["platforms"]["items"]["enum"] =
         serde_json::json!(["linux/amd64", "linux/arm64"]);
     let mut validations: Vec<_> = ["executionId", "tenantId", "projectId", "pool", "snapshotId", "snapshotDigest", "taskSecret", "platforms", "allowEmulation", "publishOnly", "timeoutSeconds"].iter().map(|f| serde_json::json!({"rule":format!("self.{f} == oldSelf.{f}"),"message":"execution context is immutable"})).collect();

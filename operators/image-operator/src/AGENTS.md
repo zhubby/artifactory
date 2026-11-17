@@ -1,7 +1,7 @@
 # image-operator/src/
 > L2 | Parent: ../AGENTS.md
 
-api.rs: 定义含 sidecar 模式的 BuilderPool 和 ImageBuild 契约。
+api.rs: 定义 sidecar 模式、平台集合与 ImageBuild 不可变契约。
 resources.rs: 创建原生或普通 sidecar 构建 Job 与独立发布 Job。
 controller.rs: 协调任务准入、子资源归属、终态与取消。
 leadership.rs: 使用独立 Lease 保护 Image 控制器写入。
