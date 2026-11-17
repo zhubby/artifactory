@@ -11,7 +11,7 @@ native.py: 验证主机原生设备并恢复临时公告地址。
 network.py: 验证新 Pi Pod 首次网络访问的隔离策略。
 telemetry.py: 验证遥测中断期间构建和持久重放。
 recovery.py: 恢复四个数据库、私有对象和密钥。
-cleanup.py: 创建私有证据目录，验证 kubelet 不可达时的撤权和清理。
+cleanup.py: 传递独立 curl 会话租户，验证节点失联时的撤权和清理。
 kind-cilium.yaml: 创建允许安装 Cilium 的隔离 kind 配置。
 test_harness.py: 验证网关凭据边界和独立镜像构建上下文。
 

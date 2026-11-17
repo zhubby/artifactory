@@ -34,6 +34,11 @@ that suite were opt-in; this baseline does not claim they ran.
 Integration test targets are files in `tests/`. Related live tests share a fixture
 and retain separate scenario functions; native service acceptance remains opt-in.
 
+真实协议夹具位于 `tests/support/live_protocol.rs`。
+CI 从隔离验收记录传入 `ARTIFACTORY_LIVE_TENANT_ID`。
+会话 API、事件流和下载入口携带同一租户头。
+手工创建的构建和任务使用该租户 ID。
+
 | Original test | Rust test target/name |
 | --- | --- |
 | TestBoundedSpoolDoesNotSkipSequenceOnOverflow | runner::tests::bounded_spool_does_not_skip_sequence_on_overflow |

@@ -1,4 +1,4 @@
-# [INPUT]: 提交源码、固定 kind/Android 版本及隔离服务。
+# [INPUT]: 提交源码、固定 kind/Android 版本及隔离租户服务。
 # [OUTPUT]: 验证版本、原生签名与跨服务契约。
 # [POS]: 合并交付的自动化验证入口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -141,7 +141,8 @@ jobs:
           export ARTIFACTORY_LIVE_S3_CONTAINER=artifactory-s3-test
           ARTIFACTORY_LIVE_EMISSARY_CONFIG="$(python3 -c 'import json; print(json.load(open(".local/acceptance/latest.json"))["emissary_config"])')"
           ARTIFACTORY_LIVE_PROJECT_ID="$(python3 -c 'import json; print(json.load(open(".local/acceptance/latest.json"))["project_id"])')"
-          export ARTIFACTORY_LIVE_EMISSARY_CONFIG ARTIFACTORY_LIVE_PROJECT_ID
+          ARTIFACTORY_LIVE_TENANT_ID="$(python3 -c 'import json; print(json.load(open(".local/acceptance/latest.json"))["tenant_id"])')"
+          export ARTIFACTORY_LIVE_EMISSARY_CONFIG ARTIFACTORY_LIVE_PROJECT_ID ARTIFACTORY_LIVE_TENANT_ID
           cargo test --locked -p artifactory-emissary --test live_protocol -- --ignored --nocapture | tee .local/protocol-live.log
           (cd web && npm test)
           python3 -u scripts/ssh_acceptance.py --sudo-sshd

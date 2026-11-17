@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 独立 kind 节点、已保存的命名空间与私有 PKI。
-[OUTPUT]: 验证 kubelet 不可达时的授权撤销与清理。
+[OUTPUT]: 显式传递会话租户，验证节点失联时的撤权与清理。
 [POS]: 创建私有证据目录，暂停 Pi 并最终恢复 Pi 与 kubelet。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -65,7 +65,8 @@ def run(args):
             config = ['silent', 'show-error', 'fail', 'max-time = 15', 'noproxy = "*"']
             if role == 'control-plane':
                 url = 'http://' + control['status']['podIP'] + ':8080' + path
-                headers = {'Cookie': cookie, 'Origin': a.origin, 'x-artifactory-csrf': '1'}
+                headers = {'Cookie': cookie, 'Origin': a.origin, 'x-artifactory-csrf': '1',
+                           'X-Artifactory-Tenant': a.tenant_id}
             else:
                 pod = runtime if role == 'artifactory-runtime' else upstream
                 port = 8091 if role == 'artifactory-runtime' else 9443
