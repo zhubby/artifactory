@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖独立仓库 RSA 密钥、平台 API 令牌和镜像执行授权。
-//! [OUTPUT]: 校验 RSA 签名材料并签发 Distribution 仓库范围 JWT。
+//! [OUTPUT]: 校验 RSA 材料并签发 RFC 7638 kid 的 Distribution 3 JWT。
 //! [POS]: 内建仓库认证入口；不签发外部仓库凭据。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::Config;
@@ -117,7 +117,14 @@ fn sign(claims: &Value, key_bytes: &[u8], cert_bytes: &[u8]) -> Result<String> {
     let cert = pem
         .parse_x509()
         .map_err(|_| anyhow::anyhow!("invalid registry signing certificate"))?;
-    let kid = key_id(cert.public_key().raw);
+    let public_key = cert
+        .public_key()
+        .parsed()
+        .map_err(|_| anyhow::anyhow!("invalid registry signing public key"))?;
+    let x509_parser::public_key::PublicKey::RSA(public_key) = public_key else {
+        return Err(anyhow::anyhow!("registry signing certificate must use RSA").into());
+    };
+    let kid = key_id(public_key.modulus, public_key.exponent);
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     header.kid = Some(kid);
     Ok(jsonwebtoken::encode(&header, claims, &key).map_err(anyhow::Error::from)?)
@@ -181,26 +188,20 @@ fn repository_scope(scope: &str) -> Result<(&str, Vec<&str>)> {
     }
     Ok((repo, actions))
 }
-fn key_id(der: &[u8]) -> String {
+fn key_id(modulus: &[u8], exponent: &[u8]) -> String {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(der);
-    let bytes = &digest[..30];
-    let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    let mut out = String::new();
-    let mut bits = 0u32;
-    let mut count = 0;
-    for byte in bytes {
-        bits = (bits << 8) | u32::from(*byte);
-        count += 8;
-        while count >= 5 {
-            count -= 5;
-            if !out.is_empty() && out.len() % 5 == 4 {
-                out.push(':')
-            }
-            out.push(alphabet[((bits >> count) & 31) as usize] as char);
-        }
-    }
-    out
+    // JWK 使用无符号最短整数，去掉 DER INTEGER 的符号填充。
+    let integer = |bytes: &[u8]| {
+        let padding = bytes.iter().take_while(|byte| **byte == 0).count();
+        URL_SAFE_NO_PAD.encode(&bytes[padding..])
+    };
+    let canonical = format!(
+        r#"{{"e":"{}","kty":"RSA","n":"{}"}}"#,
+        integer(exponent),
+        integer(modulus)
+    );
+    URL_SAFE_NO_PAD.encode(Sha256::digest(canonical.as_bytes()))
 }
 #[cfg(test)]
 mod tests {
@@ -218,11 +219,24 @@ mod tests {
         assert!(repository_scope("repository:a/b:pull,push").is_ok());
     }
     #[test]
-    fn libtrust_id_uses_twelve_base32_groups() {
-        let id = key_id(b"public key DER");
-        assert_eq!(id.len(), 59);
-        assert_eq!(id.split(':').count(), 12);
-        assert!(id.split(':').all(|s| s.len() == 4));
+    fn distribution_3_key_id_matches_rfc7638_example_and_ignores_der_padding() {
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+        // RFC 7638 第 3.1 节的公钥和固定预期，不由被测函数生成。
+        let modulus = URL_SAFE_NO_PAD
+            .decode(concat!(
+                "0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAt",
+                "VT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn6",
+                "4tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FD",
+                "W2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n9",
+                "1CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINH",
+                "aQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw"
+            ))
+            .unwrap();
+        let expected = "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs";
+        assert_eq!(key_id(&modulus, &[1, 0, 1]), expected);
+        let mut padded = vec![0];
+        padded.extend_from_slice(&modulus);
+        assert_eq!(key_id(&padded, &[0, 1, 0, 1]), expected);
     }
     #[test]
     fn repeated_scope_parameters_preserve_all_requested_repositories() {
@@ -299,7 +313,24 @@ mod tests {
         validation.leeway = 0;
         let result = jsonwebtoken::decode::<Value>(&token, &decoding, &validation).unwrap();
         assert_eq!(result.claims, claims);
-        assert_eq!(result.header.kid.as_ref().unwrap().split(':').count(), 12);
+        // OpenSSL 独立导出公钥整数，核对 Distribution 3 的 RFC 7638 信任键。
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+        use sha2::{Digest, Sha256};
+        let modulus = command(&["x509", "-in", "signing.crt", "-modulus", "-noout"]);
+        let modulus = hex::decode(
+            String::from_utf8(modulus)
+                .unwrap()
+                .trim()
+                .strip_prefix("Modulus=")
+                .unwrap(),
+        )
+        .unwrap();
+        let jwk = format!(
+            r#"{{"e":"AQAB","kty":"RSA","n":"{}"}}"#,
+            URL_SAFE_NO_PAD.encode(modulus)
+        );
+        let expected = URL_SAFE_NO_PAD.encode(Sha256::digest(jwk.as_bytes()));
+        assert_eq!(result.header.kid.as_deref(), Some(expected.as_str()));
         validation.set_audience(&["other-registry"]);
         assert!(jsonwebtoken::decode::<Value>(&token, &decoding, &validation).is_err());
         validation.set_audience(&["registry-test"]);
