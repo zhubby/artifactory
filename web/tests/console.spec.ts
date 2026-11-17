@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 Playwright 与真实控制面测试会话。
+ * [INPUT]: 依赖 Playwright、真实控制面与活跃快照夹具。
  * [OUTPUT]: 验证控制台登录、构建与租户访问。
  * [POS]: 需要可用后端的端到端浏览器入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -358,10 +358,28 @@ test("SSE reconnect and failed publication never imply overall success", async (
   page,
 }, testInfo) => {
   await login(page);
-  await page.route("**/api/v1/builds/*/events", (route) =>
-    route.abort("connectionfailed"),
+  // 验收构建已终态；首个活跃快照开启订阅，恢复后读取真实终态事件。
+  await page.route(
+    `**/api/v1/projects/by-slug/${evidence.project_slug}/builds/${evidence.build_number}`,
+    async (route) => {
+      const response = await route.fetch();
+      expect(response.ok()).toBeTruthy();
+      const snapshot = await response.json();
+      expect(snapshot.status).toBe("succeeded");
+      await route.fulfill({
+        response,
+        json: { ...snapshot, status: "running", finished_at: null },
+      });
+    },
+    { times: 1 },
   );
+  let interruptedStreams = 0;
+  await page.route("**/api/v1/builds/*/events", (route) => {
+    interruptedStreams++;
+    return route.abort("connectionfailed");
+  });
   await page.goto(buildURL(evidence.build_number));
+  await expect.poll(() => interruptedStreams).toBeGreaterThan(0);
   await expect(
     page.getByText("等待连接 / 重连中", { exact: true }),
   ).toBeVisible();
@@ -370,6 +388,7 @@ test("SSE reconnect and failed publication never imply overall success", async (
     "native compilation complete",
     { timeout: 25000 },
   );
+  await expect(page.getByText("历史日志", { exact: true })).toBeVisible();
   if (evidence.partial_build_id) {
     await page.goto(buildURL(evidence.partial_build_number));
     await expect(
