@@ -8,6 +8,6 @@ live_protocol.rs: 复用隔离租户夹具，验证会话、租约、事件与�
 process_tree.rs: 验证取消、进程退出与子进程回收。
 native_service.rs: 在显式启用的宿主验证原生服务生命周期。
 runtime.rs: 验证前台运行、OTA 和双向 TLS，暴露首连前的监督错误。
-support/: 共享平台证书夹具与真实租户协议夹具。
+support/: 共享平台证书夹具、首连超时诊断与真实租户协议夹具。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

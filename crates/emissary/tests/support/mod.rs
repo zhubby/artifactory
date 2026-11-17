@@ -1,12 +1,12 @@
 //! [INPUT]: 依赖 loopback mTLS、测试任务和日志存储。
-//! [OUTPUT]: 提供运行时验收的认证平台夹具。
-//! [POS]: Emissary 集成测试共享支持。
+//! [OUTPUT]: 提供认证平台夹具和首连超时的传输、进程诊断。
+//! [POS]: Emissary 集成测试共享支持；诊断不输出配置和命令。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Loopback mTLS peer for runtime lifecycle tests; no business scheduler is simulated.
 use artifactory_emissary::{config::Config, protocol as pb};
 use rcgen::{BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, KeyPair};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::Path,
     sync::{
@@ -60,7 +60,10 @@ struct Peer {
 
 #[derive(Default)]
 pub struct TransportMetrics {
+    pub tcp_accepted: AtomicUsize,
     pub accepted: AtomicUsize,
+    pub tls_rejected: AtomicUsize,
+    pub last_tls_error: Mutex<Option<String>>,
     pub log_batches: AtomicUsize,
     pub fail_next_log: AtomicBool,
 }
@@ -288,12 +291,22 @@ impl Fixture {
             |(listener, acceptor, accepted)| async move {
                 loop {
                     let (socket, _) = listener.accept().await.unwrap();
-                    if let Ok(tls) = acceptor.accept(socket).await {
-                        accepted.accepted.fetch_add(1, Ordering::SeqCst);
-                        return Some((
-                            Ok::<_, std::io::Error>(tls),
-                            (listener, acceptor, accepted),
-                        ));
+                    accepted.tcp_accepted.fetch_add(1, Ordering::SeqCst);
+                    match acceptor.accept(socket).await {
+                        Ok(tls) => {
+                            accepted.accepted.fetch_add(1, Ordering::SeqCst);
+                            return Some((
+                                Ok::<_, std::io::Error>(tls),
+                                (listener, acceptor, accepted),
+                            ));
+                        }
+                        Err(error) => {
+                            accepted.tls_rejected.fetch_add(1, Ordering::SeqCst);
+                            *accepted
+                                .last_tls_error
+                                .lock()
+                                .expect("TLS diagnostics mutex poisoned") = Some(error.to_string());
+                        }
                     }
                 }
             },
@@ -335,10 +348,69 @@ impl Fixture {
         }
     }
     pub async fn connection(&mut self) -> Connection {
-        tokio::time::timeout(Duration::from_secs(30), self.connections.recv())
-            .await
-            .unwrap()
-            .unwrap()
+        match tokio::time::timeout(Duration::from_secs(30), self.connections.recv()).await {
+            Ok(connection) => connection.expect("mTLS fixture connection channel closed"),
+            Err(_) => {
+                self.connection_diagnostics();
+                panic!("runtime did not establish an mTLS control connection within 30 seconds");
+            }
+        }
+    }
+    fn connection_diagnostics(&self) {
+        eprintln!(
+            "mTLS fixture transport: tcp_accepted={} tls_accepted={} tls_rejected={} last_tls_error={:?} server_finished={}",
+            self.metrics.tcp_accepted.load(Ordering::SeqCst),
+            self.metrics.accepted.load(Ordering::SeqCst),
+            self.metrics.tls_rejected.load(Ordering::SeqCst),
+            self.metrics
+                .last_tls_error
+                .lock()
+                .expect("TLS diagnostics mutex poisoned"),
+            self.server.is_finished(),
+        );
+        let mut system = sysinfo::System::new();
+        system.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::All,
+            true,
+            sysinfo::ProcessRefreshKind::nothing().without_tasks(),
+        );
+        let root = sysinfo::Pid::from_u32(std::process::id());
+        let mut descendants = HashSet::from([root]);
+        loop {
+            let children = system
+                .processes()
+                .iter()
+                .filter(|(pid, process)| {
+                    !descendants.contains(*pid)
+                        && process
+                            .parent()
+                            .is_some_and(|parent| descendants.contains(&parent))
+                })
+                .map(|(pid, _)| *pid)
+                .collect::<Vec<_>>();
+            if children.is_empty() {
+                break;
+            }
+            descendants.extend(children);
+        }
+        let mut processes = system
+            .processes()
+            .iter()
+            .filter(|(pid, _)| descendants.contains(*pid))
+            .collect::<Vec<_>>();
+        processes.sort_unstable_by_key(|(pid, _)| pid.as_u32());
+        for (pid, process) in processes {
+            eprintln!(
+                "mTLS fixture startup process: {}",
+                serde_json::json!({
+                    "pid": pid.as_u32(),
+                    "parent_pid": process.parent().map(|parent| parent.as_u32()),
+                    "name": process.name().to_string_lossy(),
+                    "status": process.status().to_string(),
+                    "run_seconds": process.run_time(),
+                }),
+            );
+        }
     }
     #[cfg(unix)]
     pub fn logs(&self, id: &str) -> Vec<u8> {
@@ -353,9 +425,11 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         eprintln!(
-            "mTLS fixture: connections={} log_batches={}",
+            "mTLS fixture: connections={} log_batches={} tcp_accepted={} tls_rejected={}",
             self.metrics.accepted.load(Ordering::SeqCst),
-            self.metrics.log_batches.load(Ordering::SeqCst)
+            self.metrics.log_batches.load(Ordering::SeqCst),
+            self.metrics.tcp_accepted.load(Ordering::SeqCst),
+            self.metrics.tls_rejected.load(Ordering::SeqCst),
         );
         self.cancel.cancel();
         self.server.abort();
