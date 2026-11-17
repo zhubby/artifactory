@@ -1,3 +1,7 @@
+//! [INPUT]: 遥测连接预算、TimescaleDB 与嵌入的业务迁移契约。
+//! [OUTPUT]: 连接隔离的遥测读写库与只读业务授权库。
+//! [POS]: 服务启动边界，业务连接只校验版本，不执行迁移。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{BusinessAuthorizationRepository, TelemetryStore};
 use crate::Service;
 use anyhow::{Context, Result};

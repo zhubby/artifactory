@@ -1,4 +1,8 @@
 //! Telemetry persistence and read-only business authorization.
+//! [INPUT]: 共享数据库连接与遥测模型。
+//! [OUTPUT]: 遥测读写存储、业务授权查询和生命周期清扫。
+//! [POS]: 隔离遥测持久化与业务只读访问的存储边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_database::{params, sql};
 mod history;
 mod ingest;

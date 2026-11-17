@@ -1,24 +1,20 @@
-use super::business_authorization;
+//! [INPUT]: 当前业务迁移元数据与隔离 TimescaleDB 管理连接。
+//! [OUTPUT]: 验证文档授权、只读连接和业务版本校验。
+//! [POS]: 使用最小业务表验证遥测授权连接的访问边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
+use super::{BUSINESS_MIGRATIONS, business_authorization};
 use anyhow::{Result, ensure};
 use artifactory_database::{PoolSettings, connect, migrate, params, sql, with_database};
 use toasty::migration::{MigrationFile, MigrationSet};
 use uuid::Uuid;
 
-static BUSINESS: MigrationSet = MigrationSet::new(&[
-    MigrationFile::new(
-        2026111301,
-        "0000_baseline.sql",
-        "CREATE TABLE nodes(id uuid PRIMARY KEY,certificate_hash text,revoked boolean NOT NULL DEFAULT false,certificate_expires_at timestamptz NOT NULL DEFAULT now()+interval '1 day');
+static BUSINESS: MigrationSet = MigrationSet::new(&[MigrationFile::new(
+    2026111301,
+    "0000_baseline.sql",
+    "CREATE TABLE nodes(id uuid PRIMARY KEY,certificate_hash text,revoked boolean NOT NULL DEFAULT false,certificate_expires_at timestamptz NOT NULL DEFAULT now()+interval '1 day');
      CREATE TABLE attempts(id uuid PRIMARY KEY,node_id uuid NOT NULL);
      CREATE TABLE private_business_data(secret text);",
-    ),
-    MigrationFile::new(2026111401, "0001_control_replication.sql", "SELECT 1;"),
-    MigrationFile::new(2026111402, "0002_node_placements.sql", "SELECT 1;"),
-    MigrationFile::new(2026111501, "0003_multitenancy.sql", "SELECT 1;"),
-    MigrationFile::new(2026111503, "0004_readable_routes.sql", "SELECT 1;"),
-    MigrationFile::new(2026111504, "0005_account_settings.sql", "SELECT 1;"),
-    MigrationFile::new(2026111505, "0006_workspace_lifecycle.sql", "SELECT 1;"),
-]);
+)]);
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL on an isolated TimescaleDB administrator database"]
@@ -44,6 +40,15 @@ async fn business_authorization_starts_with_only_documented_read_grants() -> Res
         let mut owner = connect(&scoped, Default::default(), PoolSettings::new(1)).await?;
         sql::execute(&mut owner, "CREATE EXTENSION timescaledb", params![]).await?;
         migrate(&owner, &BUSINESS).await?;
+        // 只创建授权表。版本元数据跟随真实业务迁移集。
+        for migration in BUSINESS_MIGRATIONS.migrations().iter().skip(1) {
+            sql::execute(
+                &mut owner,
+                "INSERT INTO __toasty_migrations(id,name,applied_at) VALUES($1,$2,now())",
+                params![migration.id() as i64, migration.name()],
+            )
+            .await?;
+        }
         let node = Uuid::new_v4();
         let attempt = Uuid::new_v4();
         sql::execute(
@@ -143,13 +148,31 @@ async fn business_authorization_starts_with_only_documented_read_grants() -> Res
                 "the documented grants must not permit {statement}"
             );
         }
-        sql::execute(&mut owner, "DELETE FROM __toasty_migrations WHERE id=2026111503", params![]).await?;
-        ensure!(business_authorization(identity.as_str()).await.is_err(),
-            "startup requires the current coordinated business schema");
-        sql::execute(&mut owner, "INSERT INTO __toasty_migrations(id,name,applied_at) VALUES(2026111503,'0004_readable_routes.sql',now())", params![]).await?;
+        let latest = BUSINESS_MIGRATIONS.migrations().last().unwrap();
+        sql::execute(
+            &mut owner,
+            "DELETE FROM __toasty_migrations WHERE id=$1",
+            params![latest.id() as i64],
+        )
+        .await?;
+        ensure!(
+            business_authorization(identity.as_str()).await.is_err(),
+            "startup requires the current coordinated business schema"
+        );
+        sql::execute(
+            &mut owner,
+            "INSERT INTO __toasty_migrations(id,name,applied_at) VALUES($1,$2,now())",
+            params![latest.id() as i64, latest.name()],
+        )
+        .await?;
         let current = business_authorization(identity.as_str()).await?;
         current.authorize_attempts(node, &[attempt]).await?;
-        sql::execute(&mut owner, "UPDATE __toasty_migrations SET id=0 WHERE id=2026111301", params![]).await?;
+        sql::execute(
+            &mut owner,
+            "UPDATE __toasty_migrations SET id=0 WHERE id=2026111301",
+            params![],
+        )
+        .await?;
         ensure!(
             business_authorization(identity.as_str()).await.is_err(),
             "a readable but unrecognized migration must still prevent startup"

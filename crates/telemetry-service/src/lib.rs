@@ -1,4 +1,8 @@
 //! Independent Emissary telemetry ingestion and authenticated historical queries.
+//! [INPUT]: 设备遥测协议、业务授权库与遥测存储。
+//! [OUTPUT]: 遥测接收服务、查询接口和有界指标。
+//! [POS]: 独立遥测服务入口，限制并发并校验设备身份。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub mod query;
 pub mod store;
 
