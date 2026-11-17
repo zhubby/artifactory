@@ -26,7 +26,7 @@ Runtime/Source 使用独立 ClusterIP `https://<release>-gateway-internal:8445`�
 部署前准备 Kubernetes、StorageClass、业务 PostgreSQL、制品 S3、仓库 S3 和可达的 HTTPS 网关。主 Chart 的内建制品 S3 使用私有 ClusterIP HTTP；外部私有 HTTP 端点须显式设置 `s3.allowHttp=true`。仓库的 Kubernetes 测试配置使用 1.37。BuildKit 默认使用原生 sidecar。未启用 `SidecarContainers` 的集群须配置 `builderPool.nativeSidecar=false`。两种模式均使用 rootless user namespace、Unconfined seccomp/AppArmor，以及 `--oci-worker-no-process-sandbox`。节点和准入策略必须允许这些设置。任务只运行可信项目源码；rootless 不能替代租户安全沙箱。
 
 1. 按 [Helm 指南](helm.md) 准备主部署 Secret。设备 CA 与仓库 RSA 签名身份独立。仓库签名私钥只挂载到 Control；Distribution 只挂载公开证书。
-2. 预先创建仓库 Bucket。使用独立 S3 身份，仅授权该 Bucket。不要复用原生制品 Bucket。保持 Bucket 私有，并限制网络入口。
+2. 预先创建仓库 Bucket。使用独立 S3 身份，仅授权该 Bucket。Distribution 3 写对象时设置私有 ACL，身份须具备 `s3:PutObjectAcl`。SeaweedFS 除读写、列举与标签权限外，还须授予 `WriteAcp:<bucket>`。不要改用全局 `Admin` 权限。不要复用原生制品 Bucket。保持 Bucket 私有，并限制网络入口。
 3. 创建 `artifactory-registry-storage` Secret，键为 `access-key`、`secret-key`、`http-secret`。所有 Distribution 副本共享同一个 `http-secret`，升级时保留。
 4. 应用镜像 CRD，再安装独立 Image Operator Chart。Helm 只在首次安装时创建 CRD，升级时须显式审查和应用 CRD。
 5. 安装 Registry Chart。配置认证 realm、service、issuer 和公开证书，随后启用主 Chart 的 `imageBuilds.enabled`。

@@ -1,4 +1,4 @@
-# [INPUT]: 独立私有 Bucket 和预建身份 Secret。
+# [INPUT]: 独立私有 Bucket、含私有 ACL 写权限的身份 Secret。
 # [OUTPUT]: Distribution 多副本与令牌信任参数。
 # [POS]: 只作为平台内建仓库，不配置上游镜像缓存。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -10,6 +10,7 @@ s3:
   region: us-east-1
   endpoint: https://s3.example.com
   # access-key, secret-key, http-secret. Same http-secret on every replica.
+  # 存储身份须能设置对象私有 ACL；SeaweedFS 使用 WriteAcp:<bucket>。
   secretName: artifactory-registry-storage
   secure: true
   forcePathStyle: true

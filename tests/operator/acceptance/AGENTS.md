@@ -2,7 +2,7 @@
 > L2 | Parent: ../AGENTS.md
 
 run.py: 创建隔离服务栈，验证固定源码和网关制品路径。
-prepare.py: 为单一架构构建并导入独立服务镜像。
+prepare.py: 构建独立镜像，以目标架构临时归档导入 kind。
 Dockerfile: 在 Emissary 镜像中加入模型与 Git 夹具。
 fixture.go: 提供确定性模型、Git/LFS 和故障开关。
 live_provider.go: 转发显式选择的真实模型并记录脱敏时序。

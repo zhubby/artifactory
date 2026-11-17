@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 工作区源码、目标架构和隔离集群镜像地址。
-[OUTPUT]: 构建独立服务、网关、Pi 和设备夹具镜像。
+[OUTPUT]: 构建独立镜像，以目标架构归档导入 kind。
 [POS]: 仅构建并导入指定镜像，不创建集群工作负载。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -9,6 +9,7 @@ from pathlib import Path
 import os
 import shutil
 import subprocess
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -58,6 +59,9 @@ if __name__ == '__main__':
         if actual != args.platform:
             raise RuntimeError(f'Wrong architecture for {image}: {actual}')
         if args.kind:
-            run(['kind', 'load', 'docker-image', '--name', args.kind, image])
+            with tempfile.TemporaryDirectory(prefix='kind-', dir=directory) as temporary:
+                archive = Path(temporary) / 'image.tar'
+                run(['docker', 'image', 'save', '--platform', args.platform, '--output', str(archive), image])
+                run(['kind', 'load', 'image-archive', '--name', args.kind, str(archive)])
         else:
             run(['docker', 'push', image])
