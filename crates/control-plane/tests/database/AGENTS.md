@@ -5,7 +5,9 @@ account_settings.rs: 验证个人设置和项目资源权限。
 build_logs.rs: 验证历史日志分页、过滤、授权和终态流结束。
 device_load.rs: 验证大规模设备查询和调度预算。
 local_source.rs: 验证源码服务与固定快照。
-node_metadata.rs: 验证节点元数据及查询范围。
+node_metadata.rs: 验证节点元数据及查询范围，提供候选和工具夹具。
+node_placement.rs: 按持久轮次验证有限重排、候选准入与脚本不可变性。
+node_tools.rs: 验证 Control、Runtime 节点工具及真实 MCP SDK 的授权。
 readable_routes.rs: 验证 slug 路由与对象权限。
 registration.rs: 验证账号生命周期、项目权限和网关对象票据。
 replication.rs: 验证副本锁和租约回收。

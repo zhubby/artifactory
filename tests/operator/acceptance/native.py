@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """[INPUT]: 已保存的隔离命名空间、验收租户和主机原生 Rust 工具链。
-[OUTPUT]: 验证主机 Emissary、分片源码和网关制品交付。
-[POS]: 只创建临时进程与设备身份；结束时恢复公告地址。
+[OUTPUT]: 等待旧 Pod 退出后验证主机 Emissary、源码和网关制品。
+[POS]: 切换公告地址并排空旧连接；结束时恢复原配置。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
@@ -32,8 +32,22 @@ def environment(a, deployment):
 
 
 def set_environment(a, deployment, values):
+    before = json.loads(a.kubectl('get', 'deployment', deployment, '-o', 'json'))
+    selector = ','.join(key + '=' + value for key, value in sorted(before['spec']['selector']['matchLabels'].items()))
+    previous = json.loads(a.kubectl('get', 'pods', '-l', selector, '-o', 'json'))['items']
+    previous_uids = {pod['metadata']['uid'] for pod in previous}
     a.kubectl('set', 'env', 'deployment/' + deployment, *[key + ('-' if value is None else '=' + value) for key, value in values.items()])
     a.kubectl('rollout', 'status', 'deployment/' + deployment, '--timeout=180s')
+    after = json.loads(a.kubectl('get', 'deployment', deployment, '-o', 'json'))
+    if before['spec']['template'] == after['spec']['template']:
+        return
+
+    # rollout 完成时，旧 Pod 仍能在排空期接受网关复用连接。
+    def previous_pods_gone():
+        pods = json.loads(a.kubectl('get', 'pods', '-l', selector, '-o', 'json'))['items']
+        return previous_uids.isdisjoint(pod['metadata']['uid'] for pod in pods)
+
+    a.wait(previous_pods_gone, 180)
 
 
 def run(args):

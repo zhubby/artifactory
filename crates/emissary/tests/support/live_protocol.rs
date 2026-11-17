@@ -1,5 +1,5 @@
 //! [INPUT]: 验收租户、Control 会话、数据库和设备 mTLS 配置。
-//! [OUTPUT]: 提供租户请求、已规划任务和数据库锁夹具。
+//! [OUTPUT]: 提供租户请求、已规划任务和兼容外键的协议行锁。
 //! [POS]: live_protocol 场景复用此夹具；签名上传不附会话凭据。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
@@ -234,9 +234,10 @@ impl<'a> Probe<'a> {
         let task = tokio::spawn(async move {
             let mut tx = db.transaction().await?;
             let pid: i32 = sql::scalar(&mut tx, "SELECT pg_backend_pid()", params![]).await?;
+            // 阻断事件更新与授权共享锁，允许取消命令的外键 KEY SHARE。
             sql::scalar::<Uuid>(
                 &mut tx,
-                &format!("SELECT id FROM {table} WHERE id=$1 FOR UPDATE"),
+                &format!("SELECT id FROM {table} WHERE id=$1 FOR NO KEY UPDATE"),
                 params![id],
             )
             .await?;
