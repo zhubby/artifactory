@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """[INPUT]: 独立 kind 节点、已保存的命名空间与私有 PKI。
 [OUTPUT]: 验证 kubelet 不可达时的授权撤销与清理。
-[POS]: 暂停真实 Pi；结束时恢复 Pi 与 kubelet。
+[POS]: 创建私有证据目录，暂停 Pi 并最终恢复 Pi 与 kubelet。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
@@ -24,7 +24,7 @@ def docker(node, *args, data=None, check=True):
 def run(args):
     a = Acceptance(args.context, args.namespace, resume=True)
     directory = ROOT / '.local/operator-load' / (time.strftime('%Y%m%d-%H%M%S') + '-cleanup')
-    directory.mkdir(mode=0o700)
+    directory.mkdir(mode=0o700, parents=True)
     evidence = {'fault': 'Pi SIGSTOP and kubelet stopped; API and Docker reachable',
                 'context': a.context, 'namespace': a.ns, 'passed': False}
     frozen_pid = None
