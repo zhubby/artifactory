@@ -8,6 +8,8 @@ Operator、Runtime、Source 与 Artifactory Emissary 均由 Rust 编写；Pi Age
 
 首期锁定 Rust 1.95.0、kube-rs 5.0.0、k8s-openapi 0.29.0 `v1_37`、Tonic/Prost 0.14。Cargo.lock 为依赖依据；CRD group `agents.artifactory.dev/v1alpha1`。实际集群及平台证据见 [验收记录](acceptance/operator/2026-11-12.md)，其他 Kubernetes minor 需要单独验证。
 
+Agent Chart 最小版本为 Kubernetes 1.28。Agent 工作负载不使用原生 sidecar。集群须接受 CRD CEL 校验、投射 ServiceAccount Token 和 StatefulSet PVC 保留策略。启用 `StatefulSetAutoDeletePVC`，并核对服务器保留 `persistentVolumeClaimRetentionPolicy` 字段。2026-11-17 在 1.28.3 验证了 CRD、Lease 选主、Runtime/Source 独立数据库迁移、TLS 认证和 Source PVC 挂载。本次未切换既有项目的 `planner_backend`，未在该集群验证 Pi 任务和设备构建。镜像 BuildKit 的节点要求见 [镜像构建](image-builds.md)。
+
 1. 备份业务数据库、原主密钥和 PKI。为 Runtime/Source 分别配置数据库/角色、32 字节 base64 加密 key；配置 S3、Service TLS、服务间随机 token。数据库与 S3 需独立容量及备份策略，chart 不创建生产数据库。
 2. 审查并独立应用 `operators/agent-operator/config/crd/resources.yaml`。Helm CRD 目录用于首次安装，Helm 不自动升级或删除已有 CRD。CRD 兼容性变化需要单独审查。
 3. 在新命名空间创建 `service-tls` Secret，含 `tls.crt/tls.key/ca.crt`。SAN 应覆盖 Runtime HTTP/gRPC 地址及每个 Source shard FQDN。Pi 和 Operator 只挂载 CA；服务器挂载证书及私钥。不要授予 Pi Secret 读取权限。
