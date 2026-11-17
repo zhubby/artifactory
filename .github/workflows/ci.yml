@@ -1,5 +1,5 @@
 # [INPUT]: 提交源码、固定 kind/Android 版本、protoc 与隔离租户服务。
-# [OUTPUT]: 验证版本、原生签名与跨服务契约。
+# [OUTPUT]: 验证版本、原生签名与跨服务契约，保留脱敏失败证据。
 # [POS]: 合并交付的自动化验证入口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: platform-contracts
@@ -233,6 +233,7 @@ jobs:
             .local/operator-acceptance/*/native-telemetry.log
             .local/operator-acceptance/*/device.log
             .local/operator-load/*/evidence.json
+            .local/operator-load/*-native/build.json
             .local/operator-load/*/runtime-before-restart.log
             .local/operator-load/*/runtime-failure.log
             .local/operator-load/*/operator-failure.log

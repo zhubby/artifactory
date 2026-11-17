@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """[INPUT]: 已保存的隔离命名空间、验收租户和主机原生 Rust 工具链。
-[OUTPUT]: 等待旧 Pod 退出后验证主机 Emissary、源码和网关制品。
-[POS]: 切换公告地址并排空旧连接；结束时恢复原配置。
+[OUTPUT]: 隔离原设备后验证主机构建，并保存脱敏终态证据。
+[POS]: 切换公告地址；结束时恢复原路由与设备排空状态。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
@@ -12,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import time
@@ -50,6 +52,51 @@ def set_environment(a, deployment, values):
     a.wait(previous_pods_gone, 180)
 
 
+def drain_existing_devices(a):
+    with ExitStack() as restore:
+        offset = 0
+        while True:
+            nodes = a.api(f'/api/v1/nodes?limit=500&offset={offset}')
+            for node in nodes:
+                if node['revoked'] or node['draining']:
+                    continue
+                path = '/api/v1/nodes/' + node['id']
+                original = {key: node[key] for key in
+                            ('draining', 'revoked', 'slots', 'labels', 'signing_profiles', 'pool_id')}
+                # 先登记恢复动作，覆盖服务端已写入但响应中断的情况。
+                restore.callback(a.api, path, original, method='PATCH')
+                a.api(path, dict(original, draining=True), method='PATCH')
+            if len(nodes) < 500:
+                return restore.pop_all()
+            offset += len(nodes)
+
+
+def diagnostic_error(value):
+    if not isinstance(value, str):
+        return None
+    value = re.sub(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s<>\"']+", '[redacted URL]', value)
+    return re.sub(r'(?i)\b(?:Bearer|Basic)\s+\S+', '[redacted authorization]', value)
+
+
+def host_build_terminal(a, build_id, directory, evidence):
+    value = a.api('/api/v1/builds/' + build_id)
+    diagnostic = {key: value.get(key) for key in ('id', 'status')}
+    diagnostic['error'] = diagnostic_error(value.get('error'))
+    diagnostic['jobs'] = [
+        {'target': job.get('target'), 'status': job.get('status'), 'attempts': [
+            {**{key: attempt.get(key) for key in
+                ('id', 'status', 'node_id', 'node_name', 'failure_kind')},
+             'error': diagnostic_error(attempt.get('error'))}
+            for attempt in job.get('attempts', [])]}
+        for job in value.get('jobs', [])]
+    (directory / 'build.json').write_text(json.dumps(diagnostic, indent=2))
+    if value['status'] in ('failed', 'lost', 'canceled', 'needs_input'):
+        evidence['failed_build'] = diagnostic
+        (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
+        raise AssertionError('Host build failed: ' + json.dumps(diagnostic))
+    return value if value['status'] == 'succeeded' else None
+
+
 def run(args):
     a = module.Acceptance(args.context, args.namespace, resume=True)
     directory = ROOT / '.local/operator-load' / (time.strftime('%Y%m%d-%H%M%S') + '-native')
@@ -63,6 +110,7 @@ def run(args):
     process = None
     build = None
     node = None
+    restore_devices = ExitStack()
     source_pool = json.loads(a.kubectl('get', 'sourcepool', 'sources', '-o', 'json'))['spec']
     agent_pool = json.loads(a.kubectl('get', 'agentpool', 'default', '-o', 'json'))['spec']
     original_control = environment(a, 'control-plane')
@@ -83,6 +131,7 @@ def run(args):
             forward.wait(timeout=10)
         a.processes.clear()
         a.resume()
+        restore_devices.enter_context(drain_existing_devices(a))
         a.forward('pod/sources-0', '38090:8090')
         a.forward('service/control-plane', '38443:8443')
         a.forward('service/artifactory-telemetry','38444:8444')
@@ -100,17 +149,14 @@ def run(args):
         with (directory/'emissary.log').open('wb') as log:
             process = subprocess.Popen([str(agent), 'run', '--config', str(config)], stdout=log, stderr=log)
         node = a.wait(lambda: next((n for n in a.api('/api/v1/nodes') if n['name'] == name and n['online']), None))
+        evidence['node_id'] = node['id']
+        (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
         before = int(a.sql('business', 'SELECT coalesce(sum(git_download_bytes+lfs_download_bytes),0) FROM source_repositories'))
         project = a.api('/api/v1/projects', {'name': name, 'repository_url': 'https://upstream:9443/repo.git', 'planner_backend': 'kubernetes'})['id']
         build = a.api('/api/v1/projects/' + project + '/builds', {'ref': 'v-fixture', 'goal': 'Inspect source and build dist/result.txt on the host-native device', 'target_requirements': [{'os': host_os, 'arch': arch}]})['id']
-
-        def terminal():
-            value = a.api('/api/v1/builds/' + build)
-            if value['status'] in ['failed', 'lost', 'canceled', 'needs_input']:
-                raise AssertionError('Host build failed: ' + json.dumps({k: value.get(k) for k in ['id','status','error']}))
-            return value if value['status'] == 'succeeded' else None
-
-        detail = a.wait(terminal, 600)
+        evidence['build_id'] = build
+        (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
+        detail = a.wait(lambda: host_build_terminal(a, build, directory, evidence), 600)
         snapshot = detail['source_snapshot_id']
         origins = json.loads(a.sql('business', "SELECT json_build_object('internal',service_origin,'public',public_origin) FROM source_snapshots WHERE id='" + snapshot + "'"))
         assert '.svc:8090' in origins['internal'] and origins['public'] == 'https://127.0.0.1:38090'
@@ -152,28 +198,34 @@ def run(args):
             evidence['live_protocol_passed']=True
         print('HOST NATIVE ACCEPTANCE PASSED', directory/'evidence.json', flush=True)
     finally:
-        if build:
+        try:
+            if build:
+                try:
+                    if a.api('/api/v1/builds/' + build)['status'] not in ['succeeded','failed','lost','canceled']:
+                        a.api('/api/v1/builds/' + build + '/cancel', {})
+                except (OSError, RuntimeError):
+                    pass
+            if process:
+                process.terminate()
+                process.wait(timeout=30)
+            if node:
+                a.api('/api/v1/nodes/' + node['id'], {'draining': True, 'revoked': True, 'slots': node['slots'], 'labels': node['labels'], 'signing_profiles': node['signing_profiles'], 'pool_id': node['pool_id']}, method='PATCH')
+                assert a.sql('business', "SELECT revoked AND draining FROM nodes WHERE id='" + node['id'] + "'") == 't', 'Temporary device identity must be revoked'
+                evidence['temporary_device_identity_revoked'] = True
+            set_environment(a, 'upstream', {key: original_upstream.get(key) for key in ['FIXTURE_OS','FIXTURE_ARCH']})
+            set_environment(a, 'control-plane', {'ARTIFACTORY_PUBLIC_URL': original_control.get('ARTIFACTORY_PUBLIC_URL')})
+            a.kubectl('patch', 'sourcepool', 'sources', '--type=merge', '-p', json.dumps({'spec': {'publicUrlTemplate': source_pool.get('publicUrlTemplate')}}))
+            a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': agent_pool}))
+            a.wait(lambda: json.loads(a.kubectl('get','sourcepool','sources','-o','json'))['metadata']['generation'] == json.loads(a.kubectl('get','sourcepool','sources','-o','json')).get('status',{}).get('observedGeneration'))
+            a.kubectl('rollout', 'status', 'statefulset/sources', '--timeout=180s')
+            evidence['temporary_routes_restored'] = True
+        finally:
             try:
-                if a.api('/api/v1/builds/' + build)['status'] not in ['succeeded','failed','lost','canceled']:
-                    a.api('/api/v1/builds/' + build + '/cancel', {})
-            except (OSError, RuntimeError):
-                pass
-        if process:
-            process.terminate()
-            process.wait(timeout=30)
-        if node:
-            a.api('/api/v1/nodes/' + node['id'], {'draining': True, 'revoked': True, 'slots': node['slots'], 'labels': node['labels'], 'signing_profiles': node['signing_profiles'], 'pool_id': node['pool_id']}, method='PATCH')
-            assert a.sql('business', "SELECT revoked AND draining FROM nodes WHERE id='" + node['id'] + "'") == 't', 'Temporary device identity must be revoked'
-            evidence['temporary_device_identity_revoked'] = True
-        set_environment(a, 'upstream', {key: original_upstream.get(key) for key in ['FIXTURE_OS','FIXTURE_ARCH']})
-        set_environment(a, 'control-plane', {'ARTIFACTORY_PUBLIC_URL': original_control.get('ARTIFACTORY_PUBLIC_URL')})
-        a.kubectl('patch', 'sourcepool', 'sources', '--type=merge', '-p', json.dumps({'spec': {'publicUrlTemplate': source_pool.get('publicUrlTemplate')}}))
-        a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': agent_pool}))
-        a.wait(lambda: json.loads(a.kubectl('get','sourcepool','sources','-o','json'))['metadata']['generation'] == json.loads(a.kubectl('get','sourcepool','sources','-o','json')).get('status',{}).get('observedGeneration'))
-        a.kubectl('rollout', 'status', 'statefulset/sources', '--timeout=180s')
-        evidence['temporary_routes_restored'] = True
-        (directory/'evidence.json').write_text(json.dumps(evidence, indent=2))
-        a.cleanup()
+                restore_devices.close()
+                evidence['existing_device_draining_restored'] = True
+            finally:
+                (directory/'evidence.json').write_text(json.dumps(evidence, indent=2))
+                a.cleanup()
 
 
 if __name__ == '__main__':

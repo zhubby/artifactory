@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 验收清单渲染器、本机 HTTP 服务和工作区 Dockerfile。
-[OUTPUT]: 验证网关最小凭据、构建上下文和公告地址切换。
+[OUTPUT]: 验证网关凭据、公告地址切换与原生设备隔离恢复。
 [POS]: 只执行本机检查，不访问 Docker 或 Kubernetes。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -9,8 +9,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import shlex
+import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 import urllib.error
 import urllib.request
 
@@ -21,6 +24,132 @@ SPEC.loader.exec_module(MODULE)
 NATIVE_SPEC = importlib.util.spec_from_file_location('native_acceptance', Path(__file__).with_name('native.py'))
 NATIVE = importlib.util.module_from_spec(NATIVE_SPEC)
 NATIVE_SPEC.loader.exec_module(NATIVE)
+
+
+class DeviceFixture:
+    def __init__(self):
+        self.nodes = {name: {'id': name, 'os': 'linux', 'arch': 'amd64',
+            'draining': draining, 'revoked': revoked, 'slots': 2,
+            'labels': {'fixture': name}, 'signing_profiles': [], 'pool_id': 'fixture-pool'}
+            for name, draining, revoked in [('old-device', False, False),
+                                          ('already-drained', True, False),
+                                          ('revoked-device', False, True)]}
+        self.updates = []
+        self.fail_drain = None
+
+    def api(self, path, body=None, method=None):
+        if path.startswith('/api/v1/nodes?'):
+            return json.loads(json.dumps(list(self.nodes.values())))
+        node_id = path.removeprefix('/api/v1/nodes/')
+        if method != 'PATCH' or node_id not in self.nodes:
+            raise AssertionError('unexpected fixture request: ' + path)
+        self.updates.append((node_id, dict(body)))
+        self.nodes[node_id].update(body)
+        if node_id == self.fail_drain and body['draining']:
+            raise RuntimeError('fixture response lost after draining')
+        return self.nodes[node_id]
+
+
+class NativeDeviceIsolationTests(unittest.TestCase):
+    def test_same_platform_host_is_the_only_available_device_and_original_flags_return(self):
+        fixture = DeviceFixture()
+        original = json.loads(json.dumps(fixture.nodes))
+        with NATIVE.drain_existing_devices(fixture):
+            fixture.nodes['host-device'] = dict(original['old-device'], id='host-device')
+            available = [node['id'] for node in fixture.nodes.values()
+                         if not node['revoked'] and not node['draining']
+                         and (node['os'], node['arch']) == ('linux', 'amd64')]
+            self.assertEqual(available, ['host-device'])
+        for node_id, node in original.items():
+            self.assertEqual(fixture.nodes[node_id], node)
+        self.assertEqual([node_id for node_id, _ in fixture.updates], ['old-device', 'old-device'])
+
+    def test_partial_drain_failure_restores_every_modified_device(self):
+        fixture = DeviceFixture()
+        fixture.nodes['second-device'] = dict(fixture.nodes['old-device'], id='second-device')
+        original = json.loads(json.dumps(fixture.nodes))
+        fixture.fail_drain = 'second-device'
+        with self.assertRaisesRegex(RuntimeError, 'response lost'):
+            NATIVE.drain_existing_devices(fixture)
+        self.assertEqual(fixture.nodes, original)
+
+    def test_run_restores_original_devices_after_host_compilation_failure(self):
+        self.assert_run_failure_cleanup(route_failure=False)
+
+    def test_route_cleanup_error_still_restores_devices_and_preserves_evidence(self):
+        self.assert_run_failure_cleanup(route_failure=True)
+
+    def assert_run_failure_cleanup(self, route_failure):
+        fixture = DeviceFixture()
+        original = json.loads(json.dumps(fixture.nodes))
+        fixture.processes = []
+        fixture.base = 'http://127.0.0.1:38081'
+        fixture.resume = lambda: None
+        fixture.sql = lambda *_: '0'
+        fixture.forward = lambda *_: None
+        fixture.wait = lambda callback, *_: callback()
+        fixture.service_request = lambda *_: 'ok'
+        cleaned = []
+        fixture.cleanup = lambda: cleaned.append(True)
+
+        def kubectl(*args):
+            if args[:2] == ('get', 'deployment'):
+                return json.dumps({'spec': {'template': {'spec': {'containers': [{'env': []}]}}}})
+            if args[:2] == ('get', 'sourcepool'):
+                return json.dumps({'spec': {'publicUrlTemplate': 'https://source.invalid'},
+                                   'metadata': {'generation': 1}, 'status': {'observedGeneration': 1}})
+            if args[:2] == ('get', 'agentpool'):
+                return json.dumps({'spec': {'maxActive': 2}})
+            if args[:2] == ('get', 'statefulset'):
+                return 'https://127.0.0.1:38090'
+            return ''
+
+        fixture.kubectl = kubectl
+        def cargo_failure(*_args, **_kwargs):
+            self.assertTrue(fixture.nodes['old-device']['draining'])
+            raise RuntimeError('fixture cargo failure')
+
+        route_updates = [None, None, RuntimeError('fixture route cleanup failure')] if route_failure else None
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / '.local/operator-load').mkdir(parents=True)
+            with patch.object(NATIVE, 'ROOT', root), \
+                    patch.object(NATIVE.module, 'Acceptance', return_value=fixture), \
+                    patch.object(NATIVE, 'set_environment', side_effect=route_updates), \
+                    patch.object(NATIVE.subprocess, 'run', side_effect=cargo_failure):
+                error = 'fixture route cleanup failure' if route_failure else 'fixture cargo failure'
+                with self.assertRaisesRegex(RuntimeError, error):
+                    NATIVE.run(SimpleNamespace(context='fixture', namespace='fixture', live_protocol=False))
+            evidence = json.loads(next((root / '.local/operator-load').glob('*/evidence.json')).read_text())
+            self.assertTrue(evidence['existing_device_draining_restored'])
+            self.assertFalse(evidence['passed'])
+        self.assertEqual(fixture.nodes, original)
+        self.assertEqual(cleaned, [True])
+
+    def test_failed_host_build_records_only_safe_diagnostic_fields(self):
+        detail = {'id': 'failed-build', 'status': 'failed',
+                  'error': 'fetch https://user:password@source.invalid/file?ticket=raw-ticket Bearer raw-auth',
+                  'source_credential': 'must-not-appear',
+                  'jobs': [{'target': 'app', 'status': 'failed', 'target_config': {'secret': 'must-not-appear'},
+                            'attempts': [{'id': 'failed-attempt', 'status': 'failed',
+                                          'node_id': 'old-device', 'node_name': 'cluster device',
+                                          'failure_kind': 'source', 'error': 'checkout failed',
+                                          'lease_token': 'must-not-appear'}]}]}
+        evidence = {'build_id': 'failed-build', 'node_id': 'host-device', 'passed': False}
+        fixture = SimpleNamespace(api=lambda _path: detail)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            with self.assertRaisesRegex(AssertionError, 'checkout failed') as failure:
+                NATIVE.host_build_terminal(fixture, 'failed-build', directory, evidence)
+            projection = json.loads((directory / 'build.json').read_text())
+            recorded = (directory / 'evidence.json').read_text()
+            combined = json.dumps(projection) + recorded + str(failure.exception)
+            for secret in ('must-not-appear', 'password', 'raw-ticket', 'raw-auth', 'source.invalid',
+                           'lease_token', 'target_config', 'source_credential'):
+                self.assertNotIn(secret, combined)
+            self.assertEqual(projection['jobs'][0]['attempts'][0]['node_id'], 'old-device')
+            self.assertEqual(json.loads(recorded)['node_id'], 'host-device')
+            self.assertEqual(json.loads(recorded)['failed_build'], projection)
 
 
 class HarnessTests(unittest.TestCase):
