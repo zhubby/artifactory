@@ -1,3 +1,7 @@
+//! [INPUT]: 隔离 TimescaleDB、真实遥测批次与 mTLS 服务。
+//! [OUTPUT]: 验证幂等重放、微秒时间、列存、聚合和设备授权。
+//! [POS]: 遥测持久化与 RPC 的跨边界集成回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_database::{PoolSettings, connect, with_database, with_options};
 use artifactory_database::{params, sql};
 use artifactory_telemetry_model::{Batch, HostSample, Inventory, ProcessSample};
@@ -113,7 +117,11 @@ async fn durable_replay_ordering_nulls_columnstore_and_rollups() {
     )
     .await
     .unwrap();
-    assert_eq!(latest, newest, "old replay must not replace latest state");
+    assert_eq!(
+        latest.timestamp_micros(),
+        newest.timestamp_micros(),
+        "old replay must not replace latest state at PostgreSQL timestamp precision"
+    );
     let count: i64 = sql::scalar(
         &mut pool.clone(),
         "SELECT count(*) FROM inventory_versions",

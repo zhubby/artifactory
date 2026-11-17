@@ -1,6 +1,13 @@
+<!--
+[INPUT]: 已批准的镜像方案、源码实现与真实集群验收。
+[OUTPUT]: 记录实施完成项与环境验收边界。
+[POS]: 独立 Operator、镜像仓库和 Pingora 的交付计划。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
+
 # 镜像构建与独立 Operator 实施计划
 
-> 用户已批准。实施分支：`codex/image-builds-and-operators`。
+> 用户已批准。实现已合并并推送 `main`。
 
 ## 已确定的边界
 
@@ -25,7 +32,7 @@
 - [x] 实现 Pingora HTTP、制品票据和 TCP 入口。
 - [x] 增加独立 Chart、镜像 CI、控制台和运维说明。
 - [x] 执行本机回归、构建、Chart 与网关协议验收。
-- [ ] 完成真实集群镜像构建与仓库端到端验收。
+- [x] 完成真实集群 amd64 镜像与内建仓库端到端验收。
 
 ## 验收
 
@@ -33,14 +40,15 @@
 双架构 Index；外部发布重试；跨租户拒绝；大文件流式传输；
 Range/HEAD 与分段上传；设备 mTLS 和副本恢复。
 
-真实集群验收只使用本任务创建的隔离资源，不升级已有部署。
+真实集群先备份数据库与部署参数，再升级现有平台。
+构建验收使用隔离项目，不修改既有项目的规划后端。
 
 ## 本机验证记录
 
 - Rust 工作区默认测试、全目标 Clippy 和格式检查通过。
 - 依赖真实服务的 ignored 测试没有计入默认测试结果。
-- Agent Operator：10 项资源、选主与清理回归通过。
-- Image Operator：6 项节点选择、任务隔离、CRD 与日志脱敏回归通过。
+- Agent Operator：11 项资源、选主与清理回归通过。
+- Image Operator：9 项节点选择、容器生命周期、CRD 与日志回归通过。
 - OCI 协议与客户端：6 项完整图复制、内容校验和损坏拒绝回归通过。
 - PostgreSQL：11 项隔离镜像回归通过，包含 40 个执行的轮转认领。
 - Registry Token：RSA 证书签名及多仓库 scope 的离线验证通过。
@@ -53,17 +61,26 @@ Range/HEAD 与分段上传；设备 mTLS 和副本恢复。
 - Actionlint 和十个镜像的发布矩阵一致性检查通过。
 - 文档检查通过：73 章、8813 个本地链接和资产。
 
-## 未执行的环境验收
+## 环境验收范围
 
-Docker Hub 拉取测试镜像超时。本机没有双原生架构 Kubernetes 集群。
-以下项目保留为部署后的验收，不计为本机已通过：
+目标集群为 Kubernetes 1.28.3，六台节点均为 amd64。
+固定摘要的依赖镜像缓存解决 Docker Hub 直连超时。
+详细证据见[集群验收记录](../../image-builds-kubernetes-acceptance-2026-11-17.md)。
 
-- [ ] 在真实 Distribution 上验证登录、推送和摘要拉取。
+- [x] 在真实 Distribution 上验证令牌、推送和摘要拉取。
+- [x] 在 Kubernetes 上构建原生 amd64 镜像并发布 OCI Index 与 Release。
 - [ ] 在 Kubernetes 上执行 rootless BuildKit 双原生架构构建。
 - [ ] 在实际外部仓库上验证完整复制与失败重试。
-- [ ] 在运行中的镜像任务上验证取消、超时与控制器切主。
+- [x] 运行中的镜像任务取消后清理 Pod、Job 与任务 Secret。
+- [x] Image Operator 双副本切主并恢复正常续租。
+- [ ] 在真实运行的镜像任务上验证超时。
 
-本次只修改源码、交付清单和文档，没有升级现有集群。
+四个独立 Helm release 已部署。原数据库、PVC 和设备 CA 保留。
+最终检查的 16 个工作负载全部就绪。
+镜像 Index、manifest、config 与 layer 的摘要读回通过。
+镜像 HEAD、Range 与项目 Release 摘要一致性通过。
+临时代理、端口转发、探针和保留的诊断 Job 已清理。
+arm64、外部仓库和运行中超时仍保留为环境验收。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 

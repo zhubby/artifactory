@@ -1,4 +1,8 @@
 //! Measure the real historical-query path with a result far larger than its cap.
+//! [INPUT]: 隔离 PostgreSQL、大结果集与进程内存计数器。
+//! [OUTPUT]: 验证历史查询的结果上限和内存预算。
+//! [POS]: 实测数据库查询路径的客户端内存回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_database::{PoolSettings, connect, params, sql, with_options};
 use artifactory_telemetry_service::{
     query::{Range, Resolution},

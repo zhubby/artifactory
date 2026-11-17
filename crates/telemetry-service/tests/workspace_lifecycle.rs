@@ -1,3 +1,7 @@
+//! [INPUT]: 隔离 TimescaleDB、列存遥测与工作区归属。
+//! [OUTPUT]: 验证定向清扫、其他身份保留和重放隔离。
+//! [POS]: 工作区生命周期的遥测数据删除回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_database::{PoolSettings, connect, params, sql, with_database};
 use artifactory_telemetry_model::{Batch, HostSample, ProcessSample};
 use artifactory_telemetry_service::store::{self, TelemetryStore};

@@ -21,12 +21,13 @@ emissary-ota.md: 定义 Emissary 升级与恢复流程。
 frontend-experience.md: 定义语言、主题与动效行为。
 helm.md: 定义 Helm 安装和 Kubernetes 配置。
 image-builds.md: 定义双架构镜像、私有仓库、反向代理与独立发布。
+image-builds-kubernetes-acceptance-2026-11-17.md: 记录集群镜像构建、摘要读回、显式 Release 与独立 Operator 验收。
 local-macmini-acceptance-2026-11-11.md: 记录本机和 Mac mini 的验收。
 module-layout.md: 定义模块命名和依赖边界。
 multitenancy.md: 定义租户权限和设备共享边界。
 node-placement.md: 定义节点能力查询与 AI 选机。
 operations.md: 定义部署、备份和故障恢复。
-operator-operations.md: 定义 Kubernetes Pi Job 运维。
+operator-operations.md: 定义 Kubernetes Pi Job 运维和 Docker/kind 验收版本。
 protocol.md: 定义 Emissary 通信和状态迁移。
 registration-acceptance-2026-11-11.md: 记录用户注册的本地验收。
 runtime-protocol.md: 定义 Runtime 和 Source 的运行契约。

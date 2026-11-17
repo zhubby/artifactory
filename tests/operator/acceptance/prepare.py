@@ -25,7 +25,7 @@ if __name__ == '__main__':
     parser.add_argument('--base-image', default='debian:bookworm-slim')
     parser.add_argument('--pi-base', help='Optional Agent worker image using the current layout and identical pinned Pi dependencies')
     parser.add_argument('--skip-runtime-build', action='store_true', help='Reuse all previously built independent service and gateway images')
-    parser.add_argument('--kind', help='Load into this kind cluster instead of pushing')
+    parser.add_argument('--kind', help='Load platform archives into this kind cluster (Docker CLI 28+, Engine API 1.48+)')
     args = parser.parse_args()
     directory = ROOT / '.local/operator-test'; directory.mkdir(parents=True, exist_ok=True)
     components = {'agent-operator':'operators/agent-operator/Dockerfile','planner-runtime':'crates/planner-runtime/Dockerfile','source-service':'crates/source-service/Dockerfile','control-plane':'Dockerfile','emissary':'crates/emissary/Dockerfile','gateway':'crates/gateway/Dockerfile'}

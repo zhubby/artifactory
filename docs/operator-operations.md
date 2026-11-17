@@ -77,6 +77,8 @@ python3 -u tests/operator/acceptance/run.py --context kind-substrate-orbstack
 
 prepare 构建独立 Agent、Runtime、Source、Control、Gateway、Emissary 和 fixture 镜像并推入本地 registry；可用 `--kind <name>` 加载到临时 kind。run 创建全新 `artifact-operator-*` 命名空间和随机 CA/密钥、三个独立数据库、S3、真实 Pi 推理循环与 Rust Emissary 构建 Pod。制品通过本次 Gateway 传输。模型 fixture 包含一次非法计划与修正。保留命名空间供检查；`.local/operator-acceptance/<namespace>` 含秘密，不能整目录公开。清理仅删除本次资源和专属 TokenReview 权限；共享 CRD 不删除。
 
+`prepare.py --kind` 要求 Docker CLI 28.0 或更高版本，Engine API 至少为 1.48。它通过 `docker image save --platform` 导出目标架构的临时归档，再执行 `kind load image-archive`。这样可避免多架构索引引用尚未下载的平台内容。导入后自动删除归档。CI 固定 kind 0.33.0 与该版本配套的 Kubernetes 1.37.0 镜像 digest；本机验收使用同一组合。
+
 隔离集群应使用支持 NetworkPolicy 的 CNI；仓库提供 `tests/operator/acceptance/kind-cilium.yaml`，CI 固定 Cilium 1.20.4。先安装 CNI 并等待 Node Ready，再运行 harness。`network.py --context <context> --namespace <saved-namespace> --controller 'Cilium 1.20.4'` 从三个全新 Pod 的第一次 TCP 请求检查 Runtime/Source 可达、control-plane/provider/PG/S3 被阻断，同时使用不受限 Pod 做正向对照。仅后台安装 policy controller 并等待规则收敛不足以证明启动期间隔离。
 
 `native.py` 在宿主启动独立 Rust Emissary 进程，用临时 localhost 下载网关验证集群外 Git/LFS 和制品上传，结束后撤销身份、读回撤销状态并恢复路由，不安装系统服务。`recovery.py` 停止准入和服务，备份三库、S3、服务密钥和路由，再恢复到每次唯一的全新数据 Pod；等待 PostgreSQL 认证 SQL 和 S3 端口就绪后复制数据，校验哈希后提升 Service，并从无缓存/上游不可达状态恢复源码，最后重跑业务链路。旧数据 Pod 保留供回退。该脚本只支持明确的专用验收 context 与本机保存 PKI 对应的 namespace。私有备份目录不能整体上传；生产仍需自己的备份存储、密钥托管与 RPO/RTO 演练。

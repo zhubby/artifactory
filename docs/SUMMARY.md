@@ -35,6 +35,7 @@
 # 验收记录
 
 - [实施与验收总览](acceptance.md)
+- [集群镜像构建与独立 Operator · 2026-11-17](image-builds-kubernetes-acceptance-2026-11-17.md)
 - [新版 UI 恢复与旧代码清理 · 2026-11-17](acceptance/ui/2026-11-17-restore-and-remove-legacy.md)
 - [AI-Workspace macOS 托管证书签名 · 2026-11-17](ai-workspace-signing-acceptance-2026-11-17.md)
 - [AI-Workspace 双平台真实构建 · 2026-11-16](ai-workspace-build-acceptance-2026-11-16.md)
