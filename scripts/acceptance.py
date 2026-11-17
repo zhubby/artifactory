@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 本机数据库、私有对象源与原生设备工具链。
-[OUTPUT]: 验证隔离 Control、Pingora 和 Emissary 构建链路。
+[OUTPUT]: 验证隔离构建链路及断网租约终止与禁止重跑。
 [POS]: 会话同源值跟随网关入口；制品始终经网关交付。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -205,11 +205,25 @@ def build(project, mode='normal', version=None):
     return api(f'/projects/{project}/builds', {'ref': 'main', 'parameters': {'MODE': mode}, 'targets': ['native'], 'release_version': version})['id']
 
 
-def terminal(build_id, status):
+def partition_lease_expired(value):
+    jobs = value.get('jobs', [])
+    if len(jobs) != 1 or value.get('artifacts') != []:
+        return False
+    attempts = jobs[0].get('attempts', [])
+    status = value['status']
+    return (status in ('lost', 'failed')
+            and jobs[0].get('status') == status
+            and len(attempts) == 1
+            and attempts[0].get('status') == status
+            and attempts[0].get('error') == 'execution lease expired')
+
+
+def terminal(build_id, status, *, validator=None):
     def complete():
         value = api('/builds/' + build_id)
         if value['status'] in ('succeeded', 'failed', 'canceled', 'lost'):
-            if value['status'] != status:
+            accepted = validator(value) if validator else value['status'] == status
+            if not accepted:
                 failure = {
                     'build_id': build_id,
                     'expected': status,
@@ -224,7 +238,7 @@ def terminal(build_id, status):
                 EVIDENCE['unexpected_build'] = failure
                 (DIRECTORY / 'evidence.json').write_text(json.dumps(EVIDENCE, indent=2) + '\n')
                 raise AssertionError('unexpected build result: ' + json.dumps(failure))
-            check(f'build {status}', value['status'] == status)
+            check(f'build {value["status"]}', accepted)
             return value
         return None
     return wait_for(complete, 120)
@@ -405,7 +419,7 @@ def main():
         wait_for(partition_child_exited, 105)
         check('network partition enforces local monotonic lease and kills child tree', True)
         control = start_control()
-        partition = terminal(partition_id, 'lost')
+        partition = terminal(partition_id, 'lost or lease-expired failed', validator=partition_lease_expired)
         check('expired running attempt is never automatically rerun', len(partition['jobs'][0]['attempts']) == 1)
         for failure in ('cancel', 'emissary-crash'):
             slow_id = build(project, 'slow')

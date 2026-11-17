@@ -1,5 +1,5 @@
 """[INPUT]: 本机构建验收与可执行进程夹具。
-[OUTPUT]: 验证启动失败、成组回收、会话同源和凭据隔离。
+[OUTPUT]: 验证启动回收、会话同源、租约终态和凭据隔离。
 [POS]: 不连接数据库、Docker 或已有服务。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -221,6 +221,71 @@ class BuildFailureDiagnosticsTests(unittest.TestCase):
             diagnostic = json.loads(recorded)['unexpected_build']
             self.assertEqual(diagnostic['actual'], 'failed')
             self.assertEqual(diagnostic['attempts'][0]['error'], 'checkout failed')
+
+
+class PartitionLeaseTests(unittest.TestCase):
+    def result(self, status):
+        return {'id': 'fixture-build', 'status': status, 'artifacts': [], 'jobs': [
+            {'target': 'native', 'status': status, 'attempts': [
+                {'status': status, 'error': 'execution lease expired'}]}]}
+
+    def assert_terminal(self, result, accepted):
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.multiple(acceptance, DIRECTORY=Path(temporary), EVIDENCE={'checks': []}), \
+                    patch.object(acceptance, 'api', return_value=result):
+                if accepted:
+                    self.assertIs(acceptance.terminal('fixture-build', 'lost or lease-expired failed',
+                        validator=acceptance.partition_lease_expired), result)
+                else:
+                    with self.assertRaisesRegex(AssertionError, 'unexpected build result'):
+                        acceptance.terminal('fixture-build', 'lost or lease-expired failed',
+                            validator=acceptance.partition_lease_expired)
+
+    def test_accepts_watchdog_loss_and_worker_lease_failure(self):
+        for status in ('lost', 'failed'):
+            with self.subTest(status=status):
+                self.assert_terminal(self.result(status), accepted=True)
+
+    def test_rejects_failures_without_exact_lease_expiry_reason(self):
+        for status in ('lost', 'failed'):
+            for error in ('checkout failed', 'execution lease expired or revoked', '', None):
+                with self.subTest(status=status, error=error):
+                    result = self.result(status)
+                    result['jobs'][0]['attempts'][0]['error'] = error
+                    self.assert_terminal(result, accepted=False)
+
+    def test_rejects_retries_artifacts_and_inconsistent_terminal_states(self):
+        for scenario in ('retry', 'extra-job', 'no-job', 'no-attempt', 'artifacts', 'missing-artifacts',
+                         'job-status', 'attempt-status', 'succeeded', 'canceled'):
+            with self.subTest(scenario=scenario):
+                result = self.result('failed')
+                job = result['jobs'][0]
+                if scenario == 'retry':
+                    job['attempts'].append(dict(job['attempts'][0]))
+                elif scenario == 'extra-job':
+                    result['jobs'].append(dict(job))
+                elif scenario == 'no-job':
+                    result['jobs'] = []
+                elif scenario == 'no-attempt':
+                    job['attempts'] = []
+                elif scenario == 'artifacts':
+                    result['artifacts'] = [{'id': 'unexpected-artifact'}]
+                elif scenario == 'missing-artifacts':
+                    del result['artifacts']
+                elif scenario == 'job-status':
+                    job['status'] = 'lost'
+                elif scenario == 'attempt-status':
+                    job['attempts'][0]['status'] = 'lost'
+                else:
+                    result = self.result(scenario)
+                self.assert_terminal(result, accepted=False)
+
+    def test_other_terminal_expectations_remain_strict(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.multiple(acceptance, DIRECTORY=Path(temporary), EVIDENCE={'checks': []}), \
+                    patch.object(acceptance, 'api', return_value=self.result('failed')):
+                with self.assertRaisesRegex(AssertionError, 'unexpected build result'):
+                    acceptance.terminal('fixture-build', 'lost')
 
 
 if __name__ == "__main__":

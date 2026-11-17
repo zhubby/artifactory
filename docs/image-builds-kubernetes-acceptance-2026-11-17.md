@@ -516,8 +516,15 @@ Helm 回归共十一项通过，覆盖旧遥测入口拒绝。
 CI 的流式网关与端到端设备 mTLS 检查通过。
 部署镜像的十个组件发布均成功。
 [镜像发布记录](https://github.com/zhubby/artifactory/actions/runs/44117843206)
-与[平台契约记录](https://github.com/zhubby/artifactory/actions/runs/44117817140)
+与[首次平台契约记录](https://github.com/zhubby/artifactory/actions/runs/44117817140)
 均固定到本次源码提交。
+首次完整 CI 有九项通过。
+Linux 断网验收误拒绝设备先上报的租约过期 `failed`。
+后续只修正该验收脚本，不改变业务终态。
+该场景限定租约过期、唯一 attempt、终态一致且无制品。
+其他终态检查保持精确匹配。
+修复后的完整执行保存在
+[平台契约工作流](https://github.com/zhubby/artifactory/actions/workflows/ci.yml)。
 
 ## 证据位置
 
