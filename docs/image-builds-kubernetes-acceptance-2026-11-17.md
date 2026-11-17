@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 依赖目标集群、Helm release、隔离协议回归与私有证据。
-[OUTPUT]: 提供镜像交付快照、Operator 验收、取消锁回归与未验证边界。
+[OUTPUT]: 提供镜像交付、独立 Operator 与统一网关迁移验收。
 [POS]: docs/ 的真实环境记录；补充 image-builds.md 和 operator-operations.md。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -436,6 +436,89 @@ AI Worker 在线，公开 internal API 继续返回 `403`。
 后续逐接口读取和完整制品复验均通过。
 该现象不归因为锁修复或网关连接。
 
+## 统一网关与设备迁移追加验收
+
+追加验收日期为 2026-11-18，Asia/Shanghai。
+本节记录后续升级，不覆盖前面的历史快照。
+源码 `8544b467103f853388bb56585d87d9918e70ef91` 已推送至 `main`。
+`artifactory` Helm revision 为 `17`，状态为 deployed。
+其他三个 Helm release 保持原 revision。
+
+只保留一个 `artifactory-gateway` Deployment。
+两个副本分别在 node235 与 node238 就绪，重启次数均为零。
+旧 edge、device、internal 三个 Deployment 已删除。
+升级先预建新双副本并逐 Pod 验证，再切换 Service。
+运行镜像固定为 `linux/amd64` manifest：
+`sha256:bfb6517fbabc92fc06f2a1054f2613f37c187e9745df109350f6c23d20f5aee5`。
+镜像 revision 标签与源码一致。
+本次只更新 Gateway 镜像。
+
+| 同 Pod 监听 | 正式 Service | 现场入口与边界 |
+| --- | --- | --- |
+| `8080` | `artifactory-web:80` | `10.169.1.239:30810`，网页、API、OCI 与制品 |
+| `8443` | `artifactory-grpc:8443` | `10.169.1.237:30843`，设备控制 mTLS 透传 |
+| `8444` | `artifactory-grpc:8444` | `10.169.1.237:30844`，设备遥测 mTLS 透传 |
+| `8445` | `artifactory-gateway-internal:8445` | ClusterIP HTTPS，仅同 namespace Pod |
+
+公开、设备和内部 Service 均选择这两个 Gateway Pod。
+各监听保留独立连接预算。
+公开与设备端口限定 LAN 和 PodCIDR 来源。
+内部端口的 NetworkPolicy 只允许同 namespace Pod。
+遥测后端 `artifactory-telemetry-grpc` 固定为 ClusterIP。
+Chart 拒绝旧后端 NodePort 和 LoadBalancer 参数。
+
+逐 Pod 检查四个监听通过。
+公开健康与内部 HTTPS 健康均返回 `200`。
+公开 internal 路由返回 `403`。
+内部公开 API 路由返回 `404`。
+设备控制和遥测均使用原节点身份完成 mTLS。
+
+Cassiopeia、codehub-mac-mini、codehub-windows 均已迁移。
+Control 地址为 `10.169.1.237:30843`。
+Telemetry 地址为 `https://10.169.1.237:30844`。
+三设备均在线，且收到迁移后的最新遥测。
+节点 ID、节点证书、私钥与服务账户均保持不变。
+原 CA 和服务器私钥保持不变。
+仅续签 `server.pem`，保留原 SAN 并增加 master 与节点 IP。
+十一个业务 Secret 的 UID 保留。
+除该服务器证书外，各 Secret 数据指纹均保留。
+五个 PVC 的 UID 和 PV 保留，状态均为 Bound。
+
+旧 `artifactory-emissary-gateway` StatefulSet 和 Service 已删除。
+删除前四个旧入口的活动连接均为零。
+专用 Role、RoleBinding 和两个转发 ServiceAccount 已删除。
+两个专用 ServiceAccount token Secret 随授权一并注销。
+Mac、Windows 与本机的旧转发任务和活动定义均已移除。
+原定义只存于私有恢复备份。
+不再保留旧设备 S3 转发。
+旧 edge 来源策略已由统一网关策略替代。
+集群剩余十三个工作负载全部就绪。
+
+既有 OCI Index、manifest、config 和 layer 的摘要与 HEAD 通过。
+config、layer 与原生制品的 Range 字节检查通过。
+既有 Build、Release 和原生制品摘要保持不变。
+临时只读 token 已撤销，验收会话已退出。
+本次没有新增 Release。
+
+双平台微型任务通过平台模型生成计划。
+任务仅生成文本，不编译或签名产品。
+darwin/arm64 与 windows/amd64 均完成执行和制品上传。
+两个制品经 `/artifacts/object` 下载，SHA-256 一致。
+删除旧 relay 后，再次执行 Windows 单目标任务。
+构建 `674d4cf5-3c50-444f-99c4-d510d6ba8e73` 成功。
+该次文本制品上传、网关下载和 SHA-256 检查通过。
+首次新 GitHub 源码拉取失败。
+成功验证复用既有项目的固定源码 `8b2800641bf82c69d8a850fbeb15a7f37304d832`。
+该原生验证不扩展前文的 arm64 镜像验收范围。
+
+本地 Rust 测试、clippy、格式和文档检查通过。
+Helm 回归共十一项通过，覆盖旧遥测入口拒绝。
+CI 的流式网关与端到端设备 mTLS 检查通过。
+部署镜像的十个组件发布均成功。
+[镜像发布记录](https://github.com/zhubby/artifactory/actions/runs/44117843206)
+与[平台契约记录](https://github.com/zhubby/artifactory/actions/runs/44117817140)
+均固定到本次源码提交。
+
 ## 证据位置
 
 私有证据保存在 `.deploy/k8s-image-verification/`。
@@ -471,5 +554,15 @@ AI Worker 在线，公开 internal API 继续返回 `403`。
 | `lock-fix-upgrade-20261117T104303Z/` | revision 16 升级前备份、旧 Pod UID 和滚动升级读回 |
 | `lock-fix-pre-rollout-baseline.json` | 十三个 Secret 与五个 PVC 的升级前身份指纹 |
 | `post-lock-fix-service-verification-recheck.json` | 锁修复升级后的 OCI、原生制品、持久身份与 token 清理 |
+| `unified-gateway/before/` | 统一网关升级前清单、设备与持久身份备份 |
+| `unified-gateway/listener-verification.json` | 两个 Pod 的四监听、mTLS 与路由边界 |
+| `unified-gateway/certificate-verification.json` | 原 CA、服务器私钥和预期证书续签指纹 |
+| `unified-gateway/device-migration-*.json` | 两远端设备新连接、身份与转发清理 |
+| `unified-gateway/local-device-migration.json` | 本机设备新地址与旧 LaunchAgent 清理 |
+| `unified-gateway/artifact-verification.json` | OCI、原生制品与持久身份复验 |
+| `unified-gateway/native-smoke-post-migration.json` | 双平台微型任务、自动恢复和制品摘要 |
+| `unified-gateway/native-smoke-windows-final.json` | 删除旧 relay 后的 Windows 任务与网关制品传输 |
+| `unified-gateway/legacy-cleanup.json` | 旧 relay、专用 RBAC 与过时策略删除 |
+| `unified-gateway/verification.json` | 单 Deployment 双副本、三设备最新遥测和工作负载就绪 |
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

@@ -1,3 +1,7 @@
+//! [INPUT]: 租户权限、节点身份与私有遥测查询服务。
+//! [OUTPUT]: 提供设备最新遥测、历史和任务观测查询。
+//! [POS]: HTTP 权限边界；用服务令牌查询遥测后端。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::auth::TenantState;
 use crate::{
     auth::Auth,
