@@ -1,8 +1,34 @@
 //! [INPUT]: 依赖父模块控制器与隔离 Kubernetes peer。
-//! [OUTPUT]: 验证资源归属、回收和故障恢复。
+//! [OUTPUT]: 验证资源归属、Source 配额、回收和故障恢复。
 //! [POS]: Agent 控制器的行为回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
+
+#[test]
+fn source_shards_declare_cpu_and_memory_limits_for_resource_quota() {
+    for tls in ["", "service-tls"] {
+        let spec: SourcePoolSpec = serde_json::from_value(json!({
+            "shards": 1, "image": "source:fixed", "runtimeUrl": "https://runtime",
+            "controlUrl": "https://control", "secretName": "source",
+            "storageClass": "local-path", "storageSize": "5Gi",
+            "cpu": "250m", "memory": "768Mi", "tlsSecretName": tls,
+            "publicUrlTemplate": "https://{pod}.source.example.com"
+        }))
+        .unwrap();
+        let pool = SourcePool::new("sources", spec);
+        let workload = source_stateful_set(&pool, "builds").unwrap();
+        let pod = workload.spec.template.spec.unwrap();
+        let resources = pod.containers[0].resources.as_ref().unwrap();
+        let limits = resources
+            .limits
+            .as_ref()
+            .expect("Source must declare CPU and memory limits for quota admission");
+        assert_eq!(limits.get("cpu").unwrap().0, "250m");
+        assert_eq!(limits.get("memory").unwrap().0, "768Mi");
+        assert_eq!(resources.requests.as_ref(), Some(limits));
+    }
+}
+
 #[tokio::test]
 async fn status_transitions_clear_stale_fields_and_steady_reconcile_does_not_write() {
     use axum::{

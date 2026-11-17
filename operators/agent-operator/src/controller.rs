@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖Agent CRD、Kubernetes API 与选主租约。
-//! [OUTPUT]: 协调规划 Job、Source 分片和快照回收。
+//! [OUTPUT]: 协调规划 Job、有界 Source 分片和快照回收。
 //! [POS]: Agent 工作负载的资源生命周期。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{api::*, leadership::Leadership};
@@ -426,12 +426,34 @@ fn snapshot_reclaimable(snapshot: &SourceSnapshot, protected: &HashSet<String>, 
             .as_ref()
             .is_some_and(|t| t.0.as_second() < now - HISTORY_SECONDS)
 }
+fn source_stateful_set(pool: &SourcePool, namespace: &str) -> Result<StatefulSet> {
+    let name = pool.name_any();
+    let spec = &pool.spec;
+    let public_url = spec.download_url(&name, namespace)?;
+    let mut sts_value = json!({"apiVersion":"apps/v1","kind":"StatefulSet","metadata":{"name":name},"spec":{"serviceName":name,"replicas":spec.shards,"persistentVolumeClaimRetentionPolicy":{"whenDeleted":"Retain","whenScaled":"Retain"},"selector":{"matchLabels":{"artifactory.dev/source-pool":name}},"template":{"metadata":{"labels":{"artifactory.dev/source-pool":name,"app.kubernetes.io/name":"artifactory-source"}},"spec":{"securityContext":{"fsGroup":10001,"runAsUser":10001,"runAsNonRoot":true},"containers":[{"name":"source","image":spec.image,"imagePullPolicy":spec.image_pull_policy,"args":["source"],"ports":[{"containerPort":8090}],"envFrom":[{"secretRef":{"name":spec.secret_name}}],"env":[{"name":"POD_NAME","valueFrom":{"fieldRef":{"fieldPath":"metadata.name"}}},{"name":"ARTIFACTORY_SOURCE_PUBLIC_URL","value":format!("http://$(POD_NAME).{name}.{}.svc:8090",namespace)},{"name":"ARTIFACTORY_RUNTIME_URL","value":spec.runtime_url},{"name":"ARTIFACTORY_CONTROL_URL","value":spec.control_url},{"name":"ARTIFACTORY_SOURCE_DATA_DIR","value":"/var/lib/artifactory-source"}],"resources":{"requests":{"cpu":spec.cpu,"memory":spec.memory}},"readinessProbe":{"httpGet":{"path":"/healthz","port":8090},"initialDelaySeconds":3},"volumeMounts":[{"name":"cache","mountPath":"/var/lib/artifactory-source"}]}] }},"volumeClaimTemplates":[{"metadata":{"name":"cache"},"spec":{"accessModes":["ReadWriteOnce"],"storageClassName":spec.storage_class,"resources":{"requests":{"storage":spec.storage_size}}}}]}});
+    let pod = &mut sts_value["spec"]["template"]["spec"];
+    pod["containers"][0]["resources"]["limits"] = json!({"cpu": spec.cpu, "memory": spec.memory});
+    pod["containers"][0]["env"][1]["value"] = json!(public_url);
+    if !spec.tls_secret_name.is_empty() {
+        pod["containers"][0]["env"].as_array_mut().unwrap().extend([
+            json!({"name":"ARTIFACTORY_SERVICE_CA","value":"/run/service-tls/ca.crt"}),
+            json!({"name":"ARTIFACTORY_SERVICE_TLS_CERT","value":"/run/service-tls/tls.crt"}),
+            json!({"name":"ARTIFACTORY_SERVICE_TLS_KEY","value":"/run/service-tls/tls.key"}),
+        ]);
+        pod["containers"][0]["volumeMounts"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name":"tls","mountPath":"/run/service-tls","readOnly":true}));
+        pod["volumes"] = json!([{"name":"tls","secret":{"secretName":spec.tls_secret_name}}]);
+        pod["containers"][0]["readinessProbe"]["httpGet"]["scheme"] = json!("HTTPS");
+    }
+    Ok(serde_json::from_value(sts_value)?)
+}
 async fn source_pools(ctx: &Context, protected_snapshots: &HashSet<String>) -> Result<()> {
     let api: Api<SourcePool> = Api::namespaced(ctx.client.clone(), &ctx.namespace);
     for pool in api.list(&ListParams::default()).await? {
         let name = pool.name_any();
         let spec = &pool.spec;
-        let public_url = spec.download_url(&name, &ctx.namespace)?;
         let service: Service = serde_json::from_value(
             json!({"apiVersion":"v1","kind":"Service","metadata":{"name":name},"spec":{"clusterIP":"None","selector":{"artifactory.dev/source-pool":name},"ports":[{"port":8090,"targetPort":8090}]}}),
         )?;
@@ -452,23 +474,7 @@ async fn source_pools(ctx: &Context, protected_snapshots: &HashSet<String>) -> R
                 )
                 .await?;
         }
-        let mut sts_value = json!({"apiVersion":"apps/v1","kind":"StatefulSet","metadata":{"name":name},"spec":{"serviceName":name,"replicas":spec.shards,"persistentVolumeClaimRetentionPolicy":{"whenDeleted":"Retain","whenScaled":"Retain"},"selector":{"matchLabels":{"artifactory.dev/source-pool":name}},"template":{"metadata":{"labels":{"artifactory.dev/source-pool":name,"app.kubernetes.io/name":"artifactory-source"}},"spec":{"securityContext":{"fsGroup":10001,"runAsUser":10001,"runAsNonRoot":true},"containers":[{"name":"source","image":spec.image,"imagePullPolicy":spec.image_pull_policy,"args":["source"],"ports":[{"containerPort":8090}],"envFrom":[{"secretRef":{"name":spec.secret_name}}],"env":[{"name":"POD_NAME","valueFrom":{"fieldRef":{"fieldPath":"metadata.name"}}},{"name":"ARTIFACTORY_SOURCE_PUBLIC_URL","value":format!("http://$(POD_NAME).{name}.{}.svc:8090",ctx.namespace)},{"name":"ARTIFACTORY_RUNTIME_URL","value":spec.runtime_url},{"name":"ARTIFACTORY_CONTROL_URL","value":spec.control_url},{"name":"ARTIFACTORY_SOURCE_DATA_DIR","value":"/var/lib/artifactory-source"}],"resources":{"requests":{"cpu":spec.cpu,"memory":spec.memory}},"readinessProbe":{"httpGet":{"path":"/healthz","port":8090},"initialDelaySeconds":3},"volumeMounts":[{"name":"cache","mountPath":"/var/lib/artifactory-source"}]}] }},"volumeClaimTemplates":[{"metadata":{"name":"cache"},"spec":{"accessModes":["ReadWriteOnce"],"storageClassName":spec.storage_class,"resources":{"requests":{"storage":spec.storage_size}}}}]}});
-        let pod = &mut sts_value["spec"]["template"]["spec"];
-        pod["containers"][0]["env"][1]["value"] = json!(public_url);
-        if !spec.tls_secret_name.is_empty() {
-            pod["containers"][0]["env"].as_array_mut().unwrap().extend([
-                json!({"name":"ARTIFACTORY_SERVICE_CA","value":"/run/service-tls/ca.crt"}),
-                json!({"name":"ARTIFACTORY_SERVICE_TLS_CERT","value":"/run/service-tls/tls.crt"}),
-                json!({"name":"ARTIFACTORY_SERVICE_TLS_KEY","value":"/run/service-tls/tls.key"}),
-            ]);
-            pod["containers"][0]["volumeMounts"]
-                .as_array_mut()
-                .unwrap()
-                .push(json!({"name":"tls","mountPath":"/run/service-tls","readOnly":true}));
-            pod["volumes"] = json!([{"name":"tls","secret":{"secretName":spec.tls_secret_name}}]);
-            pod["containers"][0]["readinessProbe"]["httpGet"]["scheme"] = json!("HTTPS");
-        }
-        let sts: StatefulSet = serde_json::from_value(sts_value)?;
+        let sts = source_stateful_set(&pool, &ctx.namespace)?;
         let sets: Api<StatefulSet> = Api::namespaced(ctx.client.clone(), &ctx.namespace);
         ctx.leader.ensure().await?;
         let current = sets.get_opt(&name).await?;

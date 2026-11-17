@@ -20,7 +20,7 @@ helm upgrade --install native charts/artifactory-agent-operator -n agent-runtime
 kubectl -n agent-runtime get agentpools,sourcepools,deploy,statefulsets,pvc
 ```
 
-values 至少配置 `image.repository/tag`、`runtime.image`、`sourcePool.image`、`runtime.secretName/url/grpcUrl`、`controlUrl`、`tls.secretName`、`agentPool.image`、`sourcePool.secretName/storageClass/storageSize/shards`。主 Chart 提供私有 `https://<release>-gateway-internal:8445` 入口。`controlUrl` 指向它，Runtime/Source 的服务 CA 必须信任该服务器证书。默认 Gateway 沿用设备 PKI；独立服务 CA 部署设置主 Chart 的 `gateway.internalTlsSecret`。该 Secret 使用服务 CA 签发的独立服务器身份，包含 `ca.pem/server.pem/server.key`，SAN 覆盖 Gateway 内部 DNS。公开入口拒绝 `/internal/*`。每个命名空间部署一套服务/Pool，Operator 两副本共享一个 Lease。
+values 至少配置 `image.repository/tag`、`runtime.image`、`sourcePool.image`、`runtime.secretName/url/grpcUrl`、`controlUrl`、`tls.secretName`、`agentPool.image`、`sourcePool.secretName/storageClass/storageSize/shards`。Source 分片把 `sourcePool.cpu/memory` 同时用作请求和限额。命名空间设置 ResourceQuota 时，分片仍能声明完整预算。主 Chart 提供私有 `https://<release>-gateway-internal:8445` 入口。`controlUrl` 指向它，Runtime/Source 的服务 CA 必须信任该服务器证书。默认 Gateway 沿用设备 PKI；独立服务 CA 部署设置主 Chart 的 `gateway.internalTlsSecret`。该 Secret 使用服务 CA 签发的独立服务器身份，包含 `ca.pem/server.pem/server.key`，SAN 覆盖 Gateway 内部 DNS。公开入口拒绝 `/internal/*`。每个命名空间部署一套服务/Pool，Operator 两副本共享一个 Lease。
 
 主 chart 配置 `planning.runtimeUrl`、`planning.sourceUrls`（逗号分隔每个 shard 的 HTTPS FQDN）、`planning.agentPool`、`planning.serviceSecretName`、`planning.serviceCaSecretName`。服务 token 必须一致；业务 DB、Runtime DB、Source DB 的密钥必须分别保管。开启项目 `planner_backend: kubernetes` 后，新 Build 使用该路径；默认仍为 poll。
 
