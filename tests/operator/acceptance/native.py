@@ -87,7 +87,7 @@ def run(args):
         a.forward('service/control-plane', '38443:8443')
         a.forward('service/artifactory-telemetry','38444:8444')
         a.wait(lambda: a.service_request(39443,'/test/mode',{'build_seconds':25}) is not None)
-        subprocess.run(['cargo', 'build', '--locked', '--bin', 'artifactory-emissary'], cwd=ROOT, check=True)
+        subprocess.run(['cargo', 'build', '--locked', '-p', 'artifactory-emissary', '--bin', 'artifactory-emissary'], cwd=ROOT, check=True)
         shutil.copy2(ROOT/'target/debug/artifactory-emissary', agent)
         name = 'operator-host-native-' + uuid.uuid4().hex[:8]
         token = a.api('/api/v1/enrollment-tokens', {'pool_id': '00000000-0000-0000-0000-000000000001'})['token']

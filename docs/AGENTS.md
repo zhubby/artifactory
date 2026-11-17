@@ -21,7 +21,7 @@ emissary-ota.md: 定义 Emissary 升级与恢复流程。
 frontend-experience.md: 定义语言、主题与动效行为。
 helm.md: 定义 Helm 安装和 Kubernetes 配置。
 image-builds.md: 定义双架构镜像、私有仓库、反向代理与独立发布。
-image-builds-kubernetes-acceptance-2026-11-17.md: 记录集群镜像构建、摘要读回、显式 Release 与独立 Operator 验收。
+image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像交付快照、独立 Operator 验收与控制平面取消锁回归。
 local-macmini-acceptance-2026-11-11.md: 记录本机和 Mac mini 的验收。
 module-layout.md: 定义模块命名和依赖边界。
 multitenancy.md: 定义租户权限和设备共享边界。

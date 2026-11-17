@@ -7,7 +7,7 @@ Dockerfile: 在 Emissary 镜像中加入模型与 Git 夹具。
 fixture.go: 提供确定性模型、Git/LFS 和故障开关。
 live_provider.go: 转发显式选择的真实模型并记录脱敏时序。
 provider.py: 验证真实模型预算、取消和供应商故障。
-native.py: 等待旧 Pod 退出后切换公告地址，验证原生设备并恢复原配置。
+native.py: 精确编译 Emissary 包，等待旧 Pod 退出后切换公告地址，验证原生设备并恢复原配置。
 network.py: 验证新 Pi Pod 首次网络访问的隔离策略。
 telemetry.py: 验证遥测中断期间构建和持久重放。
 recovery.py: 恢复四个数据库、私有对象和密钥。

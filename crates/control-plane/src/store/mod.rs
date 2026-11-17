@@ -141,6 +141,8 @@ impl ControlStore {
 mod errors;
 
 #[cfg(test)]
+mod execution_fences;
+#[cfg(test)]
 mod performance;
 
 pub static MIGRATIONS: toasty::migration::MigrationSet = toasty::embed_migrations!("migrations");

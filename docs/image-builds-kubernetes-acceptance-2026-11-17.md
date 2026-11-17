@@ -1,6 +1,6 @@
 <!--
-[INPUT]: 依赖目标集群、Helm release 与私有验收目录的实际检查结果。
-[OUTPUT]: 提供镜像构建部署、独立 Operator 与网关的验收证据和未验证边界。
+[INPUT]: 依赖目标集群、Helm release、隔离协议回归与私有证据。
+[OUTPUT]: 提供镜像交付快照、Operator 验收、取消锁回归与未验证边界。
 [POS]: docs/ 的真实环境记录；补充 image-builds.md 和 operator-operations.md。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -8,6 +8,8 @@
 # 集群镜像构建与独立 Operator 验收
 
 日期：2026-11-17，Asia/Shanghai。
+本记录保存首次完整镜像验收的集群快照。
+表内 revision 和镜像摘要均对应该快照。
 四个 Helm release 已部署，服务副本均就绪。
 独立 Agent Operator 的 TLS、认证、存储与限额恢复通过。
 Image Operator 的空闲 leader 删除与副本接管通过。
@@ -74,7 +76,7 @@ Pingora 反向代理本平台仓库和制品，不缓存公共上游仓库。
 
 项目镜像采用固定源码 SHA tag 与 digest。
 本轮从 `ghcr.nju.edu.cn/zhubby/` 拉取项目镜像。
-最终源码为 `fef4b9aac54511b09369dc1055cb9aade1e4bf54`。
+该快照的源码为 `fef4b9aac54511b09369dc1055cb9aade1e4bf54`。
 项目镜像摘要固定到 `linux/amd64` manifest。
 Distribution 保持原固定引用。
 下表摘要均为 `sha256`。
@@ -371,6 +373,35 @@ HTTP 开发入口和单节点构建也不证明生产可用性。
 - 镜像构建超时、运行中任务故障恢复和跨租户拒绝。
 - 生产域名、TLS、网关负载和设备连接恢复。
 - 独立 Runtime 的 Pi 任务、设备构建和存储身份隔离。
+
+## 控制平面取消锁回归
+
+后续 Linux 协议验收发现节点锁等待问题。
+事件和心跳先锁定 attempt，再等待节点授权。
+旧 `FOR UPDATE` 阻断取消命令的外键检查。
+因此，等待节点授权的事件会阻塞取消提交。
+
+`renew_attempt` 和 `submit_execution_event` 改用 `FOR NO KEY UPDATE`。
+执行身份保持不变，取消命令可引用该身份。
+事件写入仍互斥，节点授权仍持有共享锁。
+事务在锁等待后重新检查权限、租约与取消状态。
+
+本机回归执行全部九个真实业务迁移。
+真实 Store 验证 accept、finished 和 heartbeat。
+三类操作等待节点时，取消均能提交。
+撤权、证书过期和 session 替换的九组请求均被拒绝。
+另有三组请求在 attempt 锁等待后拒绝过期租约。
+预期状态在释放夹具锁前读取，拒绝请求不改变状态。
+
+本机完整 `live_protocol` 通过，耗时 `209.28` 秒。
+独立 PostgreSQL、S3 兼容 rclone 与 Pingora 实际运行。
+Control API、gRPC 和调度复用应用实现。
+数据库先执行全部迁移，再创建 Store。
+该协议启动器与 Timescale 验收分开执行。
+取消、授权、制品、并发请求、存储暂停与完成重放均通过。
+
+私有锁链证据位于 `.deploy/ci-live-cancel/`。
+该回归不改变上表的首次镜像验收快照。
 
 ## 证据位置
 

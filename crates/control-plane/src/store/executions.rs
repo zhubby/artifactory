@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖节点 session、任务租约和制品登记。
-//! [OUTPUT]: 提供执行事件、上传校验和签名完成约束。
+//! [OUTPUT]: 提供兼容取消外键的执行写锁、上传校验和签名完成约束。
 //! [POS]: 节点执行状态的事务边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Node identity, execution leases, events and upload persistence.
@@ -425,9 +425,10 @@ impl ControlStore {
     ) -> Result<bool, Status> {
         let mut transaction_db = self.pool.clone();
         let mut transaction = transaction_db.transaction().await.map_err(internal)?;
+        // 身份字段保持不变；允许取消命令持有外键 KEY SHARE。
         sql::execute(
             &mut transaction,
-            "SELECT id FROM attempts WHERE id=$1 AND node_id=$2 FOR UPDATE",
+            "SELECT id FROM attempts WHERE id=$1 AND node_id=$2 FOR NO KEY UPDATE",
             params![id, node],
         )
         .await
@@ -447,7 +448,8 @@ impl ControlStore {
     ) -> Result<EventReceipt, Status> {
         let mut transaction_db = self.pool.clone();
         let mut transaction = transaction_db.transaction().await.map_err(internal)?;
-        let row=sql::optional_record(&mut transaction, "SELECT a.id,a.job_id,a.node_id,a.lease_token,a.lease_expires_at,a.status,a.command_id,a.last_sequence,a.error,a.started_at,a.finished_at,a.created_at,a.plan_revision_id,a.source_snapshot_id,a.failure_kind,j.target_config FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=$1 AND a.node_id=$2 AND a.lease_token=$3 AND a.lease_expires_at>now() FOR UPDATE OF a,j", params![id, node, event.lease_token], &[("id", Type::Uuid),("job_id", Type::Uuid),("node_id", Type::Uuid),("lease_token", Type::String),("lease_expires_at", Type::Timestamp),("status", Type::String),("command_id", Type::Uuid),("last_sequence", Type::I64),("error", Type::String),("started_at", Type::Timestamp),("finished_at", Type::Timestamp),("created_at", Type::Timestamp),("plan_revision_id", Type::Uuid),("source_snapshot_id", Type::Uuid),("failure_kind", Type::String),("target_config", Type::String)]).await.map_err(internal)?
+        // 串行化事件写入，同时允许等待节点授权期间提交取消命令。
+        let row=sql::optional_record(&mut transaction, "SELECT a.id,a.job_id,a.node_id,a.lease_token,a.lease_expires_at,a.status,a.command_id,a.last_sequence,a.error,a.started_at,a.finished_at,a.created_at,a.plan_revision_id,a.source_snapshot_id,a.failure_kind,j.target_config FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=$1 AND a.node_id=$2 AND a.lease_token=$3 AND a.lease_expires_at>now() FOR NO KEY UPDATE OF a,j", params![id, node, event.lease_token], &[("id", Type::Uuid),("job_id", Type::Uuid),("node_id", Type::Uuid),("lease_token", Type::String),("lease_expires_at", Type::Timestamp),("status", Type::String),("command_id", Type::Uuid),("last_sequence", Type::I64),("error", Type::String),("started_at", Type::Timestamp),("finished_at", Type::Timestamp),("created_at", Type::Timestamp),("plan_revision_id", Type::Uuid),("source_snapshot_id", Type::Uuid),("failure_kind", Type::String),("target_config", Type::String)]).await.map_err(internal)?
         .ok_or_else(|| Status::failed_precondition("attempt lease expired or unknown"))?;
         lock_authorized_node(&mut transaction, node, session).await?;
         // Cancellation can commit while either row lock waits. Read it with the
