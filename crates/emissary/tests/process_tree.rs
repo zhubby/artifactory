@@ -76,14 +76,14 @@ async fn process_tree_terminates_descendants() {
         let mut command = Command::new("sh");
         command.args([
             "-c",
-            "sh -c 'sleep 120 & wait' & echo $! > \"$MARKER\"; wait",
+            "sh -c 'sleep 120 & wait' & pid=$!; printf '%s\\n' \"$pid\" > \"$MARKER.tmp\" && mv \"$MARKER.tmp\" \"$MARKER\"; wait",
         ]);
         command
     };
     #[cfg(windows)]
     let mut command = {
         let mut command = Command::new("pwsh");
-        command.args(["-NoProfile","-Command","$p=Start-Process pwsh -ArgumentList '-NoProfile','-Command','Start-Sleep 120' -PassThru; [IO.File]::WriteAllText($env:MARKER,$p.Id.ToString()); Wait-Process -Id $p.Id"]);
+        command.args(["-NoProfile","-Command","$p=Start-Process pwsh -ArgumentList '-NoProfile','-Command','Start-Sleep 120' -PassThru; [IO.File]::WriteAllText($env:MARKER+'.tmp',$p.Id.ToString()); [IO.File]::Move($env:MARKER+'.tmp',$env:MARKER); Wait-Process -Id $p.Id"]);
         command
     };
     command.env("MARKER", &marker);

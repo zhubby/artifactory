@@ -31,7 +31,7 @@ async fn durable_replay_ordering_nulls_columnstore_and_rollups() {
     artifactory_database::migrate(&pool, &store::MIGRATIONS)
         .await
         .unwrap();
-    // This fixture manually refreshes aggregates. Stop scheduled refreshes first.
+    // 本用例手动刷新聚合。先停用后台策略，再等待在途任务退出。
     sql::execute(
         &mut pool.clone(),
         "SELECT alter_job(job_id, scheduled=>false) FROM timescaledb_information.jobs WHERE proc_name IN ('policy_retention','policy_refresh_continuous_aggregate','policy_compression')",
