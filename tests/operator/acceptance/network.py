@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""[INPUT]: 隔离集群中的 Pi 策略与新 Pod 网络身份。
-[OUTPUT]: 验证 Runtime/Source 可达且数据与供应商入口隔离。
-[POS]: 每次创建新 Pod，以首次连接证明策略生效。
+"""[INPUT]: Pi 策略、Service 地址和新 Pod 网络身份。
+[OUTPUT]: 验证首次 TCP 策略，独立记录 DNS 与组件就绪状态。
+[POS]: TCP 使用 Kubernetes 地址快照；完整业务验收仍使用 DNS。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
@@ -16,19 +16,98 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
+def targets(a):
+    values = {}
+    for key, service, port in [('runtime', 'artifactory-runtime', 8091),
+                               ('business', 'control-plane', 8080),
+                               ('gateway', 'gateway', 8080),
+                               ('provider', 'upstream', 9443),
+                               ('database', 'postgres', 5432), ('objects', 's3', 8333)]:
+        address = json.loads(a.kubectl('get', 'service', service, '-o', 'json'))['spec']['clusterIP']
+        values[key] = {'host': service, 'address': address, 'port': port}
+    source = json.loads(a.kubectl('get', 'pod', 'sources-0', '-o', 'json'))['status']['podIP']
+    values['source'] = {'host': 'sources-0.sources.' + a.ns + '.svc', 'address': source, 'port': 8090}
+    values['provider_ip'] = dict(values['provider'], host=values['provider']['address'])
+    return values
+
+
+def probe_script(addresses):
+    return '''
+const net = require("node:net");
+const dns = require("node:dns");
+const targets = __TARGETS__;
+function connect([key, target]) {
+  return new Promise(resolve => {
+    const started = performance.now();
+    const socket = net.createConnection({host: target.address, port: target.port});
+    let done = false;
+    const finish = (connected, code) => {
+      if (done) return;
+      done = true;
+      socket.destroy();
+      resolve([key, {...target, connected, code, elapsed_ms: Math.round(performance.now() - started)}]);
+    };
+    socket.setTimeout(3000, () => finish(false, "TCP_TIMEOUT"));
+    socket.on("connect", () => finish(true, null));
+    socket.on("error", error => finish(false, error.code || "TCP_ERROR"));
+  });
+}
+function lookup([key, target]) {
+  return new Promise(resolve => {
+    const started = performance.now();
+    let done = false;
+    const finish = value => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve([key, {host: target.host, elapsed_ms: Math.round(performance.now() - started), ...value}]);
+    };
+    const timer = setTimeout(() => finish({code: "DNS_TIMEOUT"}), 3000);
+    dns.lookup(target.host, (error, address, family) => finish(error
+      ? {code: error.code || "DNS_ERROR"} : {code: null, address, family}));
+  });
+}
+// 首次 TCP 全部结束后才观测 DNS，避免解析流量预热冷 Pod。
+Promise.all(Object.entries(targets).map(connect)).then(async tcp => {
+  const lookups = await Promise.all(Object.entries(targets)
+    .filter(([, target]) => !net.isIP(target.host)).map(lookup));
+  console.log(JSON.stringify({connections: Object.fromEntries(tcp),
+    dns: Object.fromEntries(lookups),
+    resolv_conf: require("node:fs").readFileSync("/etc/resolv.conf", "utf8"),
+  }));
+});
+'''.replace('__TARGETS__', json.dumps(addresses))
+
+
 def probe(a, restricted):
     name = 'pi-network-' + ('restricted' if restricted else 'control')
-    upstream = json.loads(a.kubectl('get', 'service', 'upstream', '-o', 'json'))['spec']['clusterIP']
-    targets = {'runtime': ['artifactory-runtime', 8091], 'source': ['sources-0.sources.' + a.ns + '.svc', 8090], 'business': ['control-plane', 8080], 'gateway': ['gateway', 8080], 'provider': ['upstream', 9443], 'provider_ip': [upstream, 9443], 'database': ['postgres', 5432], 'objects': ['s3', 8333]}
-    code = 'const net=require("node:net"); const targets=' + json.dumps(targets) + '; Promise.all(Object.entries(targets).map(([key,[host,port]])=>new Promise(resolve=>{ const s=net.createConnection({host,port}); let done=false; const finish=ok=>{if(done)return;done=true;s.destroy();resolve([key,ok]);}; s.setTimeout(3000,()=>finish(false));s.on("connect",()=>finish(true));s.on("error",()=>finish(false));}))).then(x=>console.log(JSON.stringify(Object.fromEntries(x))));'
     pool = json.loads(a.kubectl('get', 'agentpool', 'default', '-o', 'json'))['spec']
-    pod = {'apiVersion': 'v1', 'kind': 'Pod', 'metadata': {'name': name, 'labels': {'app.kubernetes.io/name': 'artifactory-pi' if restricted else 'network-control', 'artifactory.dev/network-probe': str(time.time_ns())}}, 'spec': {'restartPolicy': 'Never', 'automountServiceAccountToken': False, 'containers': [{'name': 'probe', 'image': pool['image'], 'imagePullPolicy': pool.get('imagePullPolicy', 'IfNotPresent'), 'command': ['node', '-e', code]}]}}
+    pod = {'apiVersion': 'v1', 'kind': 'Pod', 'metadata': {'name': name, 'labels': {'app.kubernetes.io/name': 'artifactory-pi' if restricted else 'network-control', 'artifactory.dev/network-probe': str(time.time_ns())}}, 'spec': {'restartPolicy': 'Never', 'automountServiceAccountToken': False, 'containers': [{'name': 'probe', 'image': pool['image'], 'imagePullPolicy': pool.get('imagePullPolicy', 'IfNotPresent'), 'command': ['node', '-e', probe_script(targets(a))]}]}}
     a.kubectl('delete', 'pod', name, '--ignore-not-found')
     a.apply(pod)
     a.wait(lambda: json.loads(a.kubectl('get', 'pod', name, '-o', 'json'))['status']['phase'] in ['Succeeded', 'Failed'])
     values = json.loads(a.kubectl('logs', name).strip())
+    observed = json.loads(a.kubectl('get', 'pod', name, '-o', 'json'))
+    values['pod'] = {'name': name, 'uid': observed['metadata']['uid'],
+                     'address': observed['status'].get('podIP'),
+                     'phase': observed['status']['phase']}
     a.kubectl('delete', 'pod', name)
     return values
+
+
+def network_components(a):
+    pods = json.loads(a.command(['kubectl', '--context', a.context, '-n', 'kube-system',
+                                'get', 'pods', '-o', 'json']))['items']
+    return [{'name': pod['metadata']['name'], 'uid': pod['metadata']['uid'],
+             'phase': pod['status']['phase'],
+             'containers': [{'name': c['name'], 'ready': c['ready'], 'restarts': c['restartCount']}
+                            for c in pod['status'].get('containerStatuses', [])]}
+            for pod in pods if pod['metadata'].get('labels', {}).get('k8s-app') in ['cilium', 'kube-dns']]
+
+
+def assert_isolation(unrestricted, restricted):
+    assert all(unrestricted.values()), 'Positive control must reach all addresses before asserting isolation'
+    assert restricted and all(value == {key: key in ['runtime', 'source'] for key in unrestricted} for value in restricted), 'Pi must reach Runtime/Source addresses while direct data/provider paths are blocked'
 
 
 if __name__ == '__main__':
@@ -45,13 +124,20 @@ if __name__ == '__main__':
     directory.mkdir(parents=True)
     try:
         a.resume()
-        unrestricted = probe(a, False)
-        restricted = [probe(a, True) for _ in range(args.repeat)]
+        components = network_components(a)
+        observations = {'unrestricted': probe(a, False), 'restricted': [probe(a, True) for _ in range(args.repeat)]}
+        connected = lambda result: {key: value['connected'] for key, value in result['connections'].items()}
+        unrestricted = connected(observations['unrestricted'])
+        restricted = [connected(value) for value in observations['restricted']]
         print('NETWORK PROBES', {'unrestricted': unrestricted, 'restricted': restricted}, flush=True)
-        evidence = {'context': args.context, 'namespace': args.namespace, 'controller': args.controller, 'images': a.images(), 'unrestricted': unrestricted, 'restricted': restricted, 'cold_pod_probe': True, 'e2e': False, 'passed': False}
+        evidence = {'context': args.context, 'namespace': args.namespace, 'controller': args.controller, 'images': a.images(), 'unrestricted': unrestricted, 'restricted': restricted, 'observations': observations, 'network_components': components, 'scope': 'first TCP connection to Kubernetes addresses; DNS observed independently', 'cold_pod_probe': True, 'e2e': False, 'passed': False}
         (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
-        assert all(unrestricted.values()), 'Positive control must reach all targets before asserting isolation'
-        assert args.repeat > 0 and all(value == {key: key in ['runtime', 'source'] for key in unrestricted} for value in restricted), 'Pi must reach Runtime/Source while direct data/provider paths are blocked'
+        try:
+            assert_isolation(unrestricted, restricted)
+        except AssertionError:
+            evidence['network_components_after_failure'] = network_components(a)
+            (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
+            raise
         evidence['passed'] = True
         (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
         print('NETWORK ENFORCEMENT PASSED', evidence, flush=True)

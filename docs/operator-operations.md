@@ -1,3 +1,9 @@
+<!--
+[INPUT]: 独立 Operator、部署配置和隔离验收脚本。
+[OUTPUT]: 定义安装、升级、故障诊断与验收边界。
+[POS]: Operator 运维入口；区分 TCP 策略与 DNS 观测。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # Kubernetes Pi Operator 运维
 
 Operator、Runtime、Source 与 Artifactory Emissary 均由 Rust 编写；Pi Agent 复用 Node 24 / Pi SDK 1.5.2。设备部署 Emissary，主动连接业务控制平面。Kubernetes 中的 Pi 只读分析与规划，构建/签名在设备 Emissary 上执行。
@@ -80,6 +86,8 @@ prepare 构建独立 Agent、Runtime、Source、Control、Gateway、Emissary 和
 `prepare.py --kind` 要求 Docker CLI 28.0 或更高版本，Engine API 至少为 1.48。它通过 `docker image save --platform` 导出目标架构的临时归档，再执行 `kind load image-archive`。这样可避免多架构索引引用尚未下载的平台内容。导入后自动删除归档。CI 固定 kind 0.33.0 与该版本配套的 Kubernetes 1.37.0 镜像 digest；本机验收使用同一组合。
 
 隔离集群应使用支持 NetworkPolicy 的 CNI；仓库提供 `tests/operator/acceptance/kind-cilium.yaml`，CI 固定 Cilium 1.20.4。先安装 CNI 并等待 Node Ready，再运行 harness。`network.py --context <context> --namespace <saved-namespace> --controller 'Cilium 1.20.4'` 从三个全新 Pod 的第一次 TCP 请求检查 Runtime/Source 可达、control-plane/provider/PG/S3 被阻断，同时使用不受限 Pod 做正向对照。仅后台安装 policy controller 并等待规则收敛不足以证明启动期间隔离。
+
+TCP 探针使用 Service ClusterIP 和 Source PodIP。每个目标只连接一次，超时保持 3 秒。首次 TCP 全部结束后，探针才执行独立 DNS 查询，记录域名、地址、错误码、耗时和解析配置。证据同时保存 Pod UID、Cilium/CoreDNS 就绪状态。TCP 策略通过不代表 DNS 正常；后续完整业务验收仍通过域名访问服务。此分离防止 DNS 暂态失败被误报为策略拒绝，不修复 DNS 本身。
 
 `native.py` 在宿主启动独立 Rust Emissary 进程，用临时 localhost 下载网关验证集群外 Git/LFS 和制品上传，结束后撤销身份、读回撤销状态并恢复路由，不安装系统服务。`recovery.py` 停止准入和服务，备份三库、S3、服务密钥和路由，再恢复到每次唯一的全新数据 Pod；等待 PostgreSQL 认证 SQL 和 S3 端口就绪后复制数据，校验哈希后提升 Service，并从无缓存/上游不可达状态恢复源码，最后重跑业务链路。旧数据 Pod 保留供回退。该脚本只支持明确的专用验收 context 与本机保存 PKI 对应的 namespace。私有备份目录不能整体上传；生产仍需自己的备份存储、密钥托管与 RPO/RTO 演练。
 
