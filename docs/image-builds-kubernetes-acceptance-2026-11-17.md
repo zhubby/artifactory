@@ -403,6 +403,39 @@ Control API、gRPC 和调度复用应用实现。
 私有锁链证据位于 `.deploy/ci-live-cancel/`。
 该回归不改变上表的首次镜像验收快照。
 
+## 取消锁修复的集群升级
+
+18:50，主平台升级为 Helm revision `16`。
+源码提交为 `db86735cf7b837a75c449e9e73a1c046f3f8ff7b`。
+[镜像发布流水线](https://github.com/zhubby/artifactory/actions/runs/44067324865)
+的十个服务镜像均发布成功。
+仅更新本次发生业务代码变化的 Control 镜像。
+该镜像也承载 local-source 与 telemetry。
+其他组件保留首次验收时的固定摘要。
+
+新镜像摘要为 `sha256:4a352d0cd741cedb3dc71743dbf3ff3b74317eecdd13f5c7b92b9857441c3c18`。
+GHCR 与镜像代理均通过 manifest 和 config 摘要验证。
+平台为 `linux/amd64`，revision 标签与源码提交一致。
+Control、local-source、telemetry 分别为 `3/3`、`1/1`、`1/1` Ready。
+五个旧 Pod UID 全部消失。
+
+升级后完整制品复验通过。
+OCI Index、manifest、config、layer 的 SHA-256 和 HEAD 均通过。
+config、layer 和原生制品的 Range 均返回正确字节。
+原生制品的 SHA-256 和 HEAD 也通过。
+既有 Build、Release 和镜像摘要保持不变。
+AI Worker 在线，公开 internal API 继续返回 `403`。
+匿名 Registry 返回 `401`，健康入口和首页返回 `200`。
+十三个业务 Secret 的 UID 和数据指纹保持不变。
+五个 PVC 的 UID 和 PV 保持不变，状态均为 Bound。
+临时项目只读 token 已撤销，验收会话已退出。
+本轮没有新建构建或 Release。
+
+首次历史数据读取出现一次未定位的 `ApiFailure`。
+该次记录未包含具体接口和 HTTP 状态。
+后续逐接口读取和完整制品复验均通过。
+该现象不归因为锁修复或网关连接。
+
 ## 证据位置
 
 私有证据保存在 `.deploy/k8s-image-verification/`。
@@ -435,5 +468,8 @@ Control API、gRPC 和调度复用应用实现。
 | `namespace-quota-verification.json` | namespace quota 调整前后与使用量读回 |
 | `verification-network-policy.json` | 现场验证的限定网络规则 |
 | `source-git-after-network-policy.json` | 网络修正后的 Source Git 检查 |
+| `lock-fix-upgrade-20261117T104303Z/` | revision 16 升级前备份、旧 Pod UID 和滚动升级读回 |
+| `lock-fix-pre-rollout-baseline.json` | 十三个 Secret 与五个 PVC 的升级前身份指纹 |
+| `post-lock-fix-service-verification-recheck.json` | 锁修复升级后的 OCI、原生制品、持久身份与 token 清理 |
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md
