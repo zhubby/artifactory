@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """[INPUT]: 本机数据库、私有对象源与原生设备工具链。
 [OUTPUT]: 验证隔离 Control、Pingora 和 Emissary 构建链路。
-[POS]: 只创建本机进程；制品始终经网关交付。
+[POS]: 会话同源值跟随网关入口；制品始终经网关交付。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
@@ -71,7 +71,7 @@ HTTP.addheaders.append(('X-Artifactory-Tenant', TENANT_ID))
 
 
 def request(path, body=None, method=None, authenticated=True, token=None):
-    headers = {'Content-Type': 'application/json', 'x-artifactory-csrf': '1', 'Origin': os.environ['ARTIFACTORY_PUBLIC_URL']}
+    headers = {'Content-Type': 'application/json', 'x-artifactory-csrf': '1', 'Origin': BASE}
     if token:
         headers['Authorization'] = 'Bearer ' + token
     payload = None if body is None else json.dumps(body).encode()

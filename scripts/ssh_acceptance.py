@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Exercise real SSH Git through the running local acceptance control plane and emissary."""
+"""[INPUT]: 已运行的隔离控制平面、Emissary 和本机 OpenSSH。
+[OUTPUT]: 验证 SSH 身份、主机指纹、原生构建和制品发布。
+[POS]: 复用本机验收服务，独立创建并回收 SSH 夹具。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 
 import argparse
 import getpass

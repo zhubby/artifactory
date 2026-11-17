@@ -1,14 +1,18 @@
 """[INPUT]: 本机构建验收与可执行进程夹具。
-[OUTPUT]: 验证启动失败、成组回收和凭据隔离。
+[OUTPUT]: 验证启动失败、成组回收、会话同源和凭据隔离。
 [POS]: 不连接数据库、Docker 或已有服务。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
+import http.server
 import importlib.util
 import json
 import os
 import signal
 import socket
+import subprocess
+import sys
 import tempfile
+import threading
 import time
 import unittest
 import local_gateway
@@ -152,6 +156,55 @@ class GatewayEnvironmentTests(unittest.TestCase):
             'ARTIFACTORY_GATEWAY_WEB': 'http://127.0.0.1:39000'}, '127.0.0.1:38080', 'http://127.0.0.1:38082')
         self.assertEqual(result['ARTIFACTORY_GATEWAY_WEB'], 'http://127.0.0.1:39000')
         self.assertEqual(result['ARTIFACTORY_GATEWAY_CONTROL'], 'http://127.0.0.1:38082')
+
+
+class SessionOriginTests(unittest.TestCase):
+    def test_new_process_and_recovery_use_the_destination_origin(self):
+        origins = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers['Content-Length']))
+                origins.append((self.headers.get('Origin'), self.headers.get('x-artifactory-csrf')))
+                valid = origins[-1] == (self.server.public_url, '1')
+                self.send_response(200 if valid else 403)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'accepted': valid}).encode())
+
+            def log_message(self, *_):
+                pass
+
+        with http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler) as initial, \
+                http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler) as restored:
+            threads = []
+            for server in (initial, restored):
+                server.public_url = f'http://127.0.0.1:{server.server_port}'
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                threads.append(thread)
+            try:
+                snippet = (
+                    'import json, sys, acceptance\n'
+                    'try:\n'
+                    '    print(json.dumps(acceptance.request("/auth/login", {"username":"fixture","password":"fixture"})))\n'
+                    '    acceptance.BASE=sys.argv[1]\n'
+                    '    print(json.dumps(acceptance.request("/auth/login", {"username":"fixture","password":"fixture"})))\n'
+                    'finally:\n'
+                    '    acceptance.DIRECTORY.rmdir()\n'
+                )
+                environment = dict(os.environ, ARTIFACTORY_ACCEPTANCE_HTTP_URL=initial.public_url,
+                                   ARTIFACTORY_PUBLIC_URL='http://127.0.0.1:8081')
+                result = subprocess.run([sys.executable, '-c', snippet, restored.public_url],
+                                        cwd=Path(__file__).parent, env=environment,
+                                        capture_output=True, text=True, check=True, timeout=10)
+                self.assertEqual([json.loads(line)[0] for line in result.stdout.splitlines()], [200, 200])
+                self.assertEqual(origins, [(initial.public_url, '1'), (restored.public_url, '1')])
+            finally:
+                for server in (initial, restored):
+                    server.shutdown()
+                for thread in threads:
+                    thread.join(timeout=5)
 
 
 class BuildFailureDiagnosticsTests(unittest.TestCase):

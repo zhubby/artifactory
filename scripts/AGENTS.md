@@ -1,7 +1,7 @@
 # scripts/
 > L2 | Parent: ../AGENTS.md
 
-acceptance.py: 创建独立 Control、Pingora、Emissary 与 Git 构建验收。
+acceptance.py: 创建独立服务验收，会话 Origin 跟随当前网关入口。
 agent-worker.sh: 启动本地规划 Worker。
 ai_acceptance.py: 验证真实模型规划和构建交接。
 ai_remote_acceptance.py: 验证远端模型与节点构建。
@@ -20,9 +20,9 @@ local-services.sh: 启动独立数据库与对象存储。
 native-service-account.ps1: 准备 Windows 原生服务验收账号。
 recovery_acceptance.py: 在新数据服务与 Pingora 入口验证备份恢复。
 run-telemetry.sh: 启动本机遥测服务。
-ssh_acceptance.py: 验证 SSH Git 身份、指纹与构建。
+ssh_acceptance.py: 复用隔离服务，验证 SSH Git 身份、指纹与构建。
 tenant_migrate.py: 执行既有数据的租户迁移。
-test_acceptance.py: 验证隔离验收脚本边界。
+test_acceptance.py: 验证服务回收、凭据隔离和新进程及恢复入口同源。
 test_data_access.py: 验证数据库访问规则。
 test_deploy.py: 验证单机部署清单。
 test_init_helm.py: 验证网关入口、独立服务和持久 Secret。
