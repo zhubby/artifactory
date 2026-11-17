@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""[INPUT]: 已保存的隔离命名空间和主机原生 Rust 工具链。
+"""[INPUT]: 已保存的隔离命名空间、验收租户和主机原生 Rust 工具链。
 [OUTPUT]: 验证主机 Emissary、分片源码和网关制品交付。
 [POS]: 只创建临时进程与设备身份；结束时恢复公告地址。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -125,7 +125,8 @@ def run(args):
             live_environment = dict(os.environ, DATABASE_URL=database,
                 ARTIFACTORY_BOOTSTRAP_USERNAME=base64.b64decode(values['ARTIFACTORY_BOOTSTRAP_USERNAME']).decode(),
                 ARTIFACTORY_BOOTSTRAP_PASSWORD=base64.b64decode(values['ARTIFACTORY_BOOTSTRAP_PASSWORD']).decode(),
-                ARTIFACTORY_LIVE_HTTP_URL=a.base, ARTIFACTORY_LIVE_EMISSARY_CONFIG=str(config),ARTIFACTORY_LIVE_PROJECT_ID=project)
+                ARTIFACTORY_LIVE_HTTP_URL=a.base, ARTIFACTORY_LIVE_EMISSARY_CONFIG=str(config),
+                ARTIFACTORY_LIVE_PROJECT_ID=project, ARTIFACTORY_LIVE_TENANT_ID=a.tenant_id)
             if args.storage_node:
                 selector=json.loads(a.kubectl('get','service','s3','-o','json'))['spec']['selector']
                 pod=json.loads(a.kubectl('get','pods','-l',','.join(k+'='+v for k,v in selector.items()),'-o','json'))['items'][0]

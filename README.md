@@ -1,3 +1,10 @@
+<!--
+[INPUT]: 工作区实现、部署文档与隔离租户验收入口。
+[OUTPUT]: 提供项目简介、本机启动与验证命令。
+[POS]: 根目录入口，链接模块文档与历史验收记录。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
+
 # Artifactory
 
 项目统一版本以根目录 `VERSION` 为准。版本检查、Release 与受限 Kubernetes 试部署见[统一版本与发布](docs/versioning.md)。
@@ -102,6 +109,7 @@ export ARTIFACTORY_LIVE_TESTS=1
 export ARTIFACTORY_LIVE_S3_CONTAINER=artifactory-s3-test
 export ARTIFACTORY_LIVE_EMISSARY_CONFIG="$(python3 -c 'import json; print(json.load(open(".local/acceptance/latest.json"))["emissary_config"])')"
 export ARTIFACTORY_LIVE_PROJECT_ID="$(python3 -c 'import json; print(json.load(open(".local/acceptance/latest.json"))["project_id"])')"
+export ARTIFACTORY_LIVE_TENANT_ID="$(python3 -c 'import json; print(json.load(open(".local/acceptance/latest.json"))["tenant_id"])')"
 cargo test --locked -p artifactory-emissary --test live_protocol -- --ignored --nocapture
 (cd web && npm test)
 ```

@@ -30,7 +30,7 @@ dependencies: []
 
 代码实现已合并 main 并推送。四个 Helm release 已部署。
 当前集群的 amd64 与内建仓库完整验证通过。
-保留 arm64 硬件与实际外部仓库的后续验收。
+保留 arm64、外部仓库与运行中任务超时验收。
 
 ## Acceptance Criteria
 
@@ -43,6 +43,7 @@ dependencies: []
 - [x] 真实集群通过 amd64 构建、Distribution 与镜像 Release 验收。
 - [ ] 真实集群通过 arm64/amd64 双原生架构构建。
 - [ ] 使用实际外部仓库验证发布与重试。
+- [ ] 验证真实运行中镜像任务的超时清理。
 
 ## Work Log
 

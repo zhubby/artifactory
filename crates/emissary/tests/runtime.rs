@@ -1,3 +1,7 @@
+//! [INPUT]: 本机执行程序、mTLS 平台夹具和 OTA 签名组件。
+//! [OUTPUT]: 验证 TLS 约束、运行时停机、OTA 升级和回滚。
+//! [POS]: 使用真实子进程；首连前暴露监督任务退出原因。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod support;
 #[cfg(unix)]
 use artifactory_emissary::config;
@@ -367,9 +371,12 @@ async fn ota_supervisor_mtls_upgrade_and_rollback() {
     });
     let cancel = CancellationToken::new();
     let stop = cancel.clone();
-    let supervisor =
+    let mut supervisor =
         tokio::spawn(async move { ota::supervise(&path, "test-launcher", stop).await });
-    let mut first = fixture.connection().await;
+    let mut first = tokio::select! {
+        connection = fixture.connection() => connection,
+        result = &mut supervisor => panic!("OTA supervisor exited before initial mTLS connection: {result:?}"),
+    };
     assert!(first.hello.payload_json.contains("emissary-ota-v1"));
     apply(
         &first,
