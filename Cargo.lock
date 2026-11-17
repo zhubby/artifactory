@@ -437,6 +437,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
  "x509-parser 0.18.1",
 ]

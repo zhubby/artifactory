@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 本机构建的 Pingora 网关和 Python HTTP/TLS 夹具。
-[OUTPUT]: 验证同进程公开、内部和设备监听的协议与资源边界。
+[OUTPUT]: 验证统一监听、HTTP 空闲连接回收与写请求禁止重放。
 [POS]: 使用真实 TCP/TLS 和流式对象；不连接已有集群。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -20,6 +20,8 @@ from urllib.parse import urlsplit
 
 DATA = bytes(range(256)) * 32768
 TOKEN = 'isolated-gateway-test-token-' + 'a' * 32
+UPSTREAM_IDLE_TTL = 2
+GATEWAY_IDLE_WAIT = 32
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
@@ -78,6 +80,73 @@ class Handler(BaseHTTPRequestHandler):
         size = int(self.headers['Content-Length'])
         self.server.upload = self.rfile.read(size)
         self.reply(200)
+
+
+class IdleHandler(Handler):
+    def setup(self):
+        super().setup()
+        with self.server.lock:
+            self.server.connections += 1
+            self.connection_id = self.server.connections
+        self.last_response = time.monotonic()
+
+    def do_POST(self):
+        assert self.path == '/api/idle-connection'
+        body = self.rfile.read(int(self.headers['Content-Length']))
+        expired = time.monotonic() - self.last_response > UPSTREAM_IDLE_TTL
+        with self.server.lock:
+            self.server.requests.append((self.connection_id, body))
+            if expired:
+                self.server.stale_requests += 1
+            else:
+                self.server.executions[body] = self.server.executions.get(body, 0) + 1
+        # 模拟中间层静默丢失连接状态，直到后续请求到达才断开。
+        if expired or body == b'consume-then-disconnect':
+            self.close_connection = True
+            self.connection.shutdown(socket.SHUT_RDWR)
+            return
+        self.reply(200, str(self.connection_id).encode())
+        self.last_response = time.monotonic()
+
+
+def idle_connection_regression(binary, base, tls, processes):
+    upstream = ThreadingHTTPServer(('127.0.0.1', 0), IdleHandler)
+    upstream.socket = tls.wrap_socket(upstream.socket, server_side=True)
+    upstream.lock = threading.Lock()
+    upstream.connections, upstream.stale_requests = 0, 0
+    upstream.requests, upstream.executions = [], {}
+    threading.Thread(target=upstream.serve_forever, daemon=True).start()
+    try:
+        http_port = port()
+        origin = f'https://127.0.0.1:{upstream.server_port}'
+        env = dict(base, ARTIFACTORY_GATEWAY_PROFILE='all',
+                   ARTIFACTORY_GATEWAY_HTTP_BIND=f'127.0.0.1:{http_port}',
+                   ARTIFACTORY_GATEWAY_CONTROL=origin)
+        process = subprocess.Popen([binary], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        processes.append(process)
+        wait(http_port, process)
+        first = request(http_port, 'POST', '/api/idle-connection', b'first')
+        immediate = request(http_port, 'POST', '/api/idle-connection', b'immediate')
+        assert first[0] == immediate[0] == 200, (first, immediate)
+        assert first[2] == immediate[2], 'immediate requests must reuse the same upstream TCP connection'
+        print('PASS: immediate POST requests reuse upstream TCP; waiting for the production idle deadline', flush=True)
+        time.sleep(GATEWAY_IDLE_WAIT)
+        after_idle = request(http_port, 'POST', '/api/idle-connection', b'after-idle')
+        assert after_idle[0] == 200, f'first POST after idle returned {after_idle[0]}'
+        assert after_idle[2] != first[2], 'idle connection must be replaced before the next POST'
+        dropped = request(http_port, 'POST', '/api/idle-connection', b'consume-then-disconnect')
+        assert dropped[0] == 502, f'consumed POST with a lost response returned {dropped[0]}'
+        with upstream.lock:
+            assert upstream.stale_requests == 0, 'gateway sent a request over an expired upstream connection'
+            assert upstream.executions == {b'first': 1, b'immediate': 1, b'after-idle': 1,
+                                           b'consume-then-disconnect': 1}, upstream.executions
+            assert [body for _, body in upstream.requests] == [
+                b'first', b'immediate', b'after-idle', b'consume-then-disconnect'], upstream.requests
+        print('PASS: idle HTTP connections are replaced and consumed POST requests are never replayed', flush=True)
+    finally:
+        upstream.shutdown()
+        upstream.server_close()
+
 
 def port():
     with socket.socket() as sock:
@@ -220,6 +289,7 @@ def main():
                 server.hold_release.set()
                 pending.join(timeout=10)
             assert held and held[0][0] == 200
+            idle_connection_regression(binary, base, service_tls, processes)
             print('PASS: unified listeners, isolated HTTP budgets, 8 MiB upload, Range, HEAD, ticket scope, origin restriction, identity headers, resumable registry upload, private TLS API and real mTLS passthrough')
         finally:
             for process in processes:

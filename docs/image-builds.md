@@ -33,6 +33,8 @@ Gateway NetworkPolicy 将 8445 限制为同命名空间 Pod。`gateway.networkPo
 
 Runtime/Source 使用独立 ClusterIP `https://<release>-gateway-internal:8445`。该入口只接受内部 API 和健康检查，强制 TLS，并由 Control 校验既有服务令牌。默认服务器身份来自设备 PKI；已有独立服务 CA 使用 `gateway.internalTlsSecret` 提供受 Runtime/Source 信任的证书。不要将内部 Service 添加到公开 Ingress。
 
+HTTP 上游连接回池后最多空闲三十秒。该时限不终止活动中的流式上传或下载。网关不自动重放失败的写请求。错误日志只记录类型、来源、监听角色和连接复用状态，不记录请求头、查询串或对象地址。
+
 原生制品的上传、下载、Range 和 HEAD 均通过 `/artifacts/object`。Control 生成绑定对象、方法和期限的加密票据。Gateway 通过内部认证接口换取私有 S3 签名地址，并流式转发字节。浏览器、Emissary 和外部客户端不取得 S3 地址或凭据。网关拒绝公开访问 `/internal/*`。
 
 ## 安装顺序

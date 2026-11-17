@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖固定 HTTP 后端、加密对象票据和请求预算。
-//! [OUTPUT]: 流式代理控制、内建 OCI 仓库和私有制品。
+//! [INPUT]: 依赖固定 HTTP 后端、加密对象票据、请求预算与结构化日志。
+//! [OUTPUT]: 流式代理 HTTP，限制上游空闲复用并记录脱敏错误。
 //! [POS]: 不缓存认证结果，不缓冲镜像层，不重放写请求。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::config::Config;
@@ -15,11 +15,16 @@ use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
+
+/// 只限制回池连接的空闲时间，保留流式传输的独立读写时限。
+const UPSTREAM_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 #[derive(Default)]
 pub struct Context {
     upstream: Option<url::Url>,
     object: bool,
     permit: Option<tokio::sync::OwnedSemaphorePermit>,
+    upstream_reused: Option<bool>,
 }
 pub struct Gateway {
     config: Config,
@@ -224,6 +229,7 @@ impl ProxyHttp for Gateway {
         let mut peer = HttpPeer::new(address, url.scheme() == "https", host.into());
         peer.options.ca = self.ca.clone();
         peer.options.connection_timeout = Some(std::time::Duration::from_secs(5));
+        peer.options.idle_timeout = Some(UPSTREAM_IDLE_TIMEOUT);
         peer.options.read_timeout = Some(std::time::Duration::from_secs(1800));
         peer.options.write_timeout = Some(std::time::Duration::from_secs(1800));
         Ok(Box::new(peer))
@@ -298,14 +304,30 @@ impl ProxyHttp for Gateway {
             session.req_header().uri.path()
         )
     }
+    fn suppress_error_log(&self, _session: &Session, _ctx: &Context, _error: &Error) -> bool {
+        // Pingora 的完整错误上下文改由 logging 输出固定字段。
+        true
+    }
+    async fn logging(&self, _session: &mut Session, error: Option<&Error>, ctx: &mut Context) {
+        if let Some(error) = error {
+            tracing::warn!(
+                error_type = error.etype().as_str(),
+                error_source = ?error.esource(),
+                upstream_reused = ctx.upstream_reused,
+                profile = self.config.profile.as_str(),
+                "网关请求失败"
+            );
+        }
+    }
     fn error_while_proxy(
         &self,
         _peer: &HttpPeer,
         _session: &mut Session,
         mut error: Box<Error>,
-        _ctx: &mut Context,
-        _reused: bool,
+        ctx: &mut Context,
+        reused: bool,
     ) -> Box<Error> {
+        ctx.upstream_reused = Some(reused);
         error.set_retry(false);
         error
     }
@@ -313,9 +335,10 @@ impl ProxyHttp for Gateway {
         &self,
         _session: &mut Session,
         _peer: &HttpPeer,
-        _ctx: &mut Context,
+        ctx: &mut Context,
         mut error: Box<Error>,
     ) -> Box<Error> {
+        ctx.upstream_reused = Some(false);
         error.set_retry(false);
         error
     }

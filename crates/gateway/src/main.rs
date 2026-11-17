@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖 Pingora、固定后端和网关对象票据。
-//! [OUTPUT]: 同进程提供公开 HTTP、内部 HTTPS 与设备和遥测 TLS 透传。
+//! [INPUT]: 依赖 Pingora、固定后端、对象票据与结构化日志。
+//! [OUTPUT]: 同进程提供四监听，并固定日志上限为 info。
 //! [POS]: 各监听保留路由边界与独立连接预算。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod config;
@@ -19,6 +19,10 @@ fn add_http(server: &mut pingora::server::Server, config: config::Config) -> any
     Ok(())
 }
 fn main() -> anyhow::Result<()> {
+    // Pingora 的 debug 日志包含请求头，网关固定日志上限为 info。
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
     let config = config::Config::load()?;
     let unified = config.profile == "unified";
     let mut server = pingora::server::Server::new(None)?;

@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 依赖目标集群、Helm release、隔离协议回归与私有证据。
-[OUTPUT]: 提供镜像交付、独立 Operator 与统一网关迁移验收。
+[OUTPUT]: 提供镜像交付、独立 Operator、网关迁移与空闲连接验收。
 [POS]: docs/ 的真实环境记录；补充 image-builds.md 和 operator-operations.md。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -537,6 +537,27 @@ Kubernetes 最后一项外部原生 Git/LFS 验收失败。
 该变更不修改业务调度或终态。
 修复后的完整执行保存在
 [平台契约工作流](https://github.com/zhubby/artifactory/actions/workflows/ci.yml)。
+
+### HTTP 上游空闲连接修正
+
+后续长时间空闲复查再次出现首请求 `502`。
+逐 Pod 检查发现一条首请求失败，其后十一条成功。
+Pingora 默认无限保留 HTTP 回池连接。
+客户端的 `Connection: close` 不阻止上游连接复用。
+现将 HTTP 上游回池后的空闲时限固定为三十秒。
+活动中的流式上传和下载不受该时限影响。
+两个错误钩子继续禁止自动重放请求。
+日志上限固定为 INFO，错误只输出白名单字段。
+日志不输出请求头、查询串、对象地址或完整错误上下文。
+
+真实 TLS 夹具模拟静默失效的空闲连接。
+旧二进制在三十二秒后的首个 POST 返回 `502`。
+修复版改用新 TCP，首个 POST 返回 `200`。
+上游处理 POST 后断开响应时，网关返回 `502`。
+四个 POST 均只抵达并执行一次。
+完整流式传输、双 CA、独立预算与设备 mTLS 回归通过。
+实际网络的具体回收阈值尚未据此断言。
+修正版本的镜像、滚动升级与持久身份复验保存于私有证据。
 
 ## 证据位置
 
