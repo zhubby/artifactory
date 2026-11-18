@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """[INPUT]: 已保存的隔离命名空间与遥测服务。
-[OUTPUT]: 验证遥测离线期间构建与恢复重放。
-[POS]: 仅修改本次命名空间内的遥测副本。
+[OUTPUT]: 验证离线重放，保存白名单构建与准入诊断。
+[POS]: 只改变遥测副本；准入检查保留原池容量。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import urllib.parse
 import urllib.request
+import uuid
 
 ROOT = Path(__file__).resolve().parents[3]
 spec = importlib.util.spec_from_file_location('operator_acceptance', Path(__file__).with_name('run.py'))
@@ -19,11 +20,69 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
+def record_build(a, build, detail=None):
+    snapshot = {'id': build}
+    try:
+        detail = detail if detail is not None else a.api('/api/v1/builds/' + build)
+        snapshot.update({key: detail.get(key) for key in ('id', 'status', 'source_manifest_id', 'failure_kind')})
+        snapshot['jobs'] = [
+            {'id': job.get('id'), 'status': job.get('status'), 'attempts': [
+                {key: attempt.get(key) for key in ('id', 'status', 'node_id', 'failure_kind')}
+                for attempt in job.get('attempts', [])]}
+            for job in detail.get('jobs', [])]
+    except (OSError, RuntimeError, ValueError):
+        snapshot['build_unavailable'] = True
+    runs = []
+    try:
+        runs = a.api('/api/v1/builds/' + build + '/plans')['runs']
+        snapshot['runs'] = [{key: run.get(key) for key in ('id', 'status', 'generation')} for run in runs]
+        if runs:
+            run_id = str(uuid.UUID(runs[0]['id']))
+            raw = a.sql('planner', "SELECT jsonb_build_object('id',id,'status',status,'generation',lifecycle->'generation','calls',lifecycle->'calls','pending',lifecycle->'pending','canceled',lifecycle->'canceled','deadline_ms',lifecycle->'deadline_ms') FROM runtime_runs WHERE id='" + run_id + "'")
+            state = json.loads(raw) if raw else None
+            snapshot['current_run'] = None if state is None else {key: state.get(key) for key in
+                ('id', 'status', 'generation', 'calls', 'pending', 'canceled', 'deadline_ms')}
+    except (OSError, RuntimeError, ValueError, KeyError):
+        snapshot['runtime_unavailable'] = True
+    try:
+        resources = json.loads(a.kubectl('get', 'sourcetasks,agentruns,agentpools', '-o', 'json'))['items']
+        run_ids = {run['id'] for run in runs}
+        snapshot['resources'] = []
+        for value in resources:
+            spec = value.get('spec', {})
+            if (value['kind'] != 'AgentPool' and spec.get('taskId') != build and
+                    spec.get('runId') not in run_ids):
+                continue
+            snapshot['resources'].append({
+                'kind': value['kind'],
+                'metadata': {key: value.get('metadata', {}).get(key) for key in ('name', 'uid', 'generation', 'deletionTimestamp')},
+                'spec': {key: spec.get(key) for key in ('taskId', 'runId', 'generation', 'pool', 'maxActive', 'cancelRequested') if key in spec},
+                'status': {key: value.get('status', {}).get(key) for key in ('phase', 'observedGeneration', 'podUid')},
+            })
+    except (OSError, RuntimeError, ValueError, KeyError):
+        snapshot['resources_unavailable'] = True
+    a.evidence['telemetry_build_snapshot'] = snapshot
+    (a.run / 'build.json').write_text(json.dumps(snapshot, indent=2))
+    (a.run / 'evidence.json').write_text(json.dumps(a.evidence, indent=2))
+    return detail
+
+
+def require_admission(a):
+    pool = json.loads(a.kubectl('get', 'agentpool', 'default', '-o', 'json'))
+    status = pool.get('status', {})
+    a.evidence['telemetry_pool'] = {'max_active': pool['spec']['maxActive'], 'phase': status.get('phase')}
+    (a.run / 'evidence.json').write_text(json.dumps(a.evidence, indent=2))
+    a.check('telemetry build has an admitting AgentPool', pool['spec']['maxActive'] > 0 and
+            status.get('phase') == 'Ready' and status.get('observedGeneration') == pool['metadata']['generation'])
+
+
 def run(args):
     a = module.Acceptance(args.context, args.namespace, resume=True)
     stopped = False
+    build = None
     try:
         a.resume()
+        require_admission(a)
         for database in ('business', 'planner', 'telemetry'):
             a.check(database+' uses TimescaleDB', a.sql(database, "SELECT extversion FROM pg_extension WHERE extname='timescaledb'") == '2.32.0')
         node = next(n for n in a.api('/api/v1/nodes') if n['name'] == 'operator-native-device' and n['online'])
@@ -36,9 +95,10 @@ def run(args):
         a.service_request(39443,'/test/mode',{'build_seconds':25})
         build = a.api(f'/api/v1/projects/{a.project}/builds',{'ref':'v-fixture','goal':'Build dist/result.txt while telemetry is unavailable','target_requirements':[{'os':'linux','arch':a.arch}]})['id']
         def terminal():
-            value=a.api('/api/v1/builds/'+build)
+            value=record_build(a, build)
+            if value is None:return None
             if value['status'] in ('failed','lost','canceled','needs_input'):
-                raise AssertionError('Build failed during telemetry outage: '+json.dumps({k:value.get(k) for k in ('id','status','error')}))
+                raise AssertionError('Build failed during telemetry outage: '+json.dumps(a.evidence['telemetry_build_snapshot']))
             return value if value['status']=='succeeded' else None
         detail=a.wait(terminal,600)
         current=next(n for n in a.api('/api/v1/nodes') if n['id']==node['id'])
@@ -65,9 +125,13 @@ def run(args):
         a.check('Timescale telemetry end-to-end acceptance',True)
         print('EVIDENCE',a.run/'evidence.json',flush=True)
     finally:
-        if stopped:a.kubectl('scale','deploy/native-telemetry','--replicas=1')
-        try:a.service_request(39443,'/test/mode',{})
-        finally:a.cleanup()
+        try:
+            if build:record_build(a, build)
+        finally:
+            try:
+                if stopped:a.kubectl('scale','deploy/native-telemetry','--replicas=1')
+                a.service_request(39443,'/test/mode',{})
+            finally:a.cleanup()
 
 
 if __name__=='__main__':

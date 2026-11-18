@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 验收清单渲染器、本机 HTTP 服务和工作区 Dockerfile。
-[OUTPUT]: 验证会话分页与回执收敛、设备隔离和独立镜像。
+[OUTPUT]: 验证会话收敛、池恢复、设备隔离和独立镜像。
 [POS]: 只执行本机检查，不访问 Docker 或 Kubernetes。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -106,6 +106,59 @@ class NativeDeviceIsolationTests(unittest.TestCase):
 
 
 class HarnessTests(unittest.TestCase):
+    def test_pool_pause_restores_original_capacity_after_success_and_failure(self):
+        for failure in (None, 'assertion', 'lost-patch-response'):
+            with self.subTest(failure=failure):
+                acceptance = MODULE.Acceptance.__new__(MODULE.Acceptance)
+                state = {'capacity': 7, 'generation': 1, 'phase': 'Ready'}
+                writes = []
+
+                def kubectl(*args):
+                    if args[0] == 'get':
+                        return json.dumps({'metadata': {'generation': state['generation']},
+                            'spec': {'maxActive': state['capacity']},
+                            'status': {'phase': state['phase'], 'observedGeneration': state['generation']}})
+                    capacity = json.loads(args[-1])['spec']['maxActive']
+                    state.update(capacity=capacity, generation=state['generation'] + 1,
+                                 phase='Paused' if capacity == 0 else 'Ready')
+                    writes.append(capacity)
+                    if failure == 'lost-patch-response' and capacity == 0:
+                        raise RuntimeError('response lost after committed pause')
+                    return ''
+
+                def wait(callback, seconds):
+                    self.assertEqual(seconds, 30)
+                    self.assertTrue(callback())
+
+                def check(_name, value):
+                    self.assertTrue(value)
+                    if failure == 'assertion':raise AssertionError('fixture assertion')
+
+                acceptance.kubectl, acceptance.wait, acceptance.check = kubectl, wait, check
+                if failure:
+                    with self.assertRaises((AssertionError, RuntimeError)):
+                        acceptance.verify_pool_pause()
+                else:acceptance.verify_pool_pause()
+                self.assertEqual(writes, [0, 7])
+                self.assertEqual((state['capacity'], state['phase']), (7, 'Ready'))
+
+    def test_cleanup_collects_every_operator_replica_with_prefixes(self):
+        acceptance = MODULE.Acceptance.__new__(MODULE.Acceptance)
+        calls = []
+        acceptance.processes = []
+        def kubectl(*args):
+            calls.append(args)
+            return '[pod/leader/operator] leader\n[pod/follower/operator] follower\n'
+        acceptance.kubectl = kubectl
+        with tempfile.TemporaryDirectory() as temporary:
+            acceptance.run = Path(temporary)
+            acceptance.cleanup()
+            operator = next(call for call in calls if '-l' in call)
+            self.assertIn('app.kubernetes.io/name=artifactory-agent-operator', operator)
+            self.assertIn('--prefix=true', operator)
+            self.assertNotIn('deploy/native-agent-operator', operator)
+            self.assertIn('follower', (acceptance.run / 'native-agent-operator.log').read_text())
+
     def test_changed_origin_login_waits_for_old_control_pod_exit(self):
         state = {'public_url': 'http://gateway:8080', 'desired_url': 'http://gateway:8080',
                  'generation': 1, 'transition_polls': 0, 'old_pod_removed': False}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 独立服务镜像、临时命名空间和确定性模型夹具。
-[OUTPUT]: 验证规划、持久会话、原生构建与网关制品交付。
+[OUTPUT]: 验证任务交付、恢复暂停池，并收集全副本日志。
 [POS]: 仅修改指定验收命名空间；私密证据保存在 .local/。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -88,6 +88,25 @@ class Acceptance:
         self.evidence['checks'].append(name)
         (self.run / 'evidence.json').write_text(json.dumps(self.evidence, indent=2))
         print('PASS', name, flush=True)
+
+    def verify_pool_pause(self):
+        original = json.loads(self.kubectl('get', 'agentpool', 'default', '-o', 'json'))['spec']['maxActive']
+        if original <= 0:
+            raise AssertionError('Pause acceptance requires an admitting AgentPool')
+
+        def phase_ready(expected):
+            pool = json.loads(self.kubectl('get', 'agentpool', 'default', '-o', 'json'))
+            status = pool.get('status', {})
+            return (status.get('phase') == expected and
+                    status.get('observedGeneration') == pool['metadata']['generation'])
+
+        try:
+            self.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': {'maxActive': 0}}))
+            self.wait(lambda: phase_ready('Paused'), 30)
+            self.check('pool can pause new admission', True)
+        finally:
+            self.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': {'maxActive': original}}))
+            self.wait(lambda: phase_ready('Ready'), 30)
 
     def api(self, path, body=None, method=None):
         data = None if body is None else json.dumps(body).encode()
@@ -398,10 +417,8 @@ class Acceptance:
         self.kubectl('rollout','status','deploy/native-runtime','--timeout=120s')
         persisted=json.loads(self.sql('planner',f"SELECT lifecycle FROM runtime_runs WHERE id='{run}'"))
         self.check('Runtime restart preserves cancellation, budget and deadline',persisted['canceled'] and persisted['calls']==2 and persisted['deadline_ms']==before['life']['deadline_ms'])
-        # 暂停只阻止新准入，不改变已结束运行的预算。
-        self.kubectl('patch','agentpool','default','--type=merge','-p','{"spec":{"maxActive":0}}')
-        self.wait(lambda:json.loads(self.kubectl('get','agentpool','default','-o','json')).get('status',{}).get('phase')=='Paused',30)
-        self.check('pool can pause new admission',True)
+        # 暂停只阻止新准入；验收退出前恢复原容量。
+        self.verify_pool_pause()
 
     def real_model(self, environment_file):
         # Reuse an explicitly selected local development profile in memory only.
@@ -447,7 +464,8 @@ class Acceptance:
     def cleanup(self):
         for process in self.processes:process.terminate()
         for name in ['control-plane','gateway','native-agent-operator','native-runtime','native-telemetry','upstream','device']:
-            try:(self.run/(name+'.log')).write_text(self.kubectl('logs','deploy/'+name,'--all-containers=true','--tail=500'))
+            target = ['-l', 'app.kubernetes.io/name=artifactory-agent-operator', '--prefix=true', '--max-log-requests=10'] if name == 'native-agent-operator' else ['deploy/'+name]
+            try:(self.run/(name+'.log')).write_text(self.kubectl('logs',*target,'--all-containers=true','--tail=500'))
             except RuntimeError:pass
         # Keep the namespace for inspection; explicit user cleanup is separate.
 
