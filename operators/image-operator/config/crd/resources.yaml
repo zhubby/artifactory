@@ -146,11 +146,10 @@ spec:
               publishOnly:
                 default: false
                 type: boolean
-              snapshotId:
-                format: uuid
               sourceDigest:
                 type: string
               sourceManifestId:
+                format: uuid
                 type: string
               taskSecret:
                 type: string

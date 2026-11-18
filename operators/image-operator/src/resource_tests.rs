@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖声明式资源生成器和模拟节点能力。
-//! [OUTPUT]: 验证架构、sidecar 生命周期、发布临时卷与材料隔离。
+//! [OUTPUT]: 验证架构、sidecar 生命周期、临时卷与固定清单 CRD。
 //! [POS]: 不连接集群的工作负载契约回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -76,6 +76,22 @@ fn workers_mount_only_their_task_and_sidecar_stops_with_job() {
         "publish.json"
     );
 }
+#[test]
+fn crd_uses_typed_source_manifest_identity() {
+    let crds = crate::api::crds();
+    let value = serde_json::to_value(&crds[1]).unwrap();
+    let properties = &value["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]
+        ["properties"];
+    assert!(
+        properties.get("snapshotId").is_none(),
+        "removed snapshot identity must not create an untyped CRD property"
+    );
+    for name in ["executionId", "tenantId", "projectId", "sourceManifestId"] {
+        assert_eq!(properties[name]["type"], "string", "identity {name}");
+        assert_eq!(properties[name]["format"], "uuid", "identity {name}");
+    }
+}
+
 #[test]
 fn crd_fences_publication_mode_and_cancellation() {
     let crds = crate::api::crds();

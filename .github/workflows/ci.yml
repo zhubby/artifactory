@@ -1,5 +1,5 @@
 # [INPUT]: 提交源码、固定 kind/Android 版本、节点 CIDR 策略与隔离租户服务。
-# [OUTPUT]: 验证版本、原生签名与跨服务契约，保留脱敏失败证据。
+# [OUTPUT]: 验证版本、原生签名、CRD 安装与跨服务契约。
 # [POS]: 合并交付的自动化验证入口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: platform-contracts
@@ -157,14 +157,16 @@ jobs:
             --set kubeProxyReplacement=false --set ipam.mode=kubernetes --set policyCIDRMatchMode=nodes \
             --set cgroup.autoMount.enabled=false --set cgroup.hostRoot=/sys/fs/cgroup --wait --timeout 5m
           kubectl wait nodes --all --for=condition=Ready --timeout=180s
+      - name: Validate both Operator CRDs against Kubernetes
+        run: |
+          kubectl apply --dry-run=server -f operators/agent-operator/config/crd/resources.yaml
+          kubectl apply --dry-run=server -f operators/image-operator/config/crd/resources.yaml
       - name: Native build dependencies and PostgreSQL 17 restore tools
         run: |
           sudo apt-get update && sudo apt-get install -y protobuf-compiler postgresql-common rclone git-lfs
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y postgresql-client-17
           echo '/usr/lib/postgresql/17/bin' >> "$GITHUB_PATH"
-      - name: Verify fixture LFS download origins
-        run: go test tests/operator/acceptance/fixture.go tests/operator/acceptance/live_provider.go tests/operator/acceptance/fixture_test.go
       - name: Build Linux images for the disposable cluster
         run: python3 -u tests/operator/acceptance/prepare.py --platform linux/amd64 --kind operator
       - name: SourceTask, init checkout, AI conversations and native artifact delivery

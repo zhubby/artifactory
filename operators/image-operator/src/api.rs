@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 kube CRD、Serde 和固定执行身份。
-//! [OUTPUT]: 提供临时源码与平台集合与不可变执行契约。
+//! [OUTPUT]: 提供固定清单身份、平台集合与不可变执行 CRD。
 //! [POS]: Image Operator 的 Kubernetes 公开契约。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use kube::{CustomResource, CustomResourceExt};
@@ -98,7 +98,7 @@ pub fn crds()
     let pool = BuilderPool::crd();
     let mut image = serde_json::to_value(ImageBuild::crd()).unwrap();
     let spec = &mut image["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"];
-    for name in ["executionId", "tenantId", "projectId", "snapshotId"] {
+    for name in ["executionId", "tenantId", "projectId", "sourceManifestId"] {
         spec["properties"][name]["format"] = serde_json::json!("uuid");
     }
     spec["properties"]["platforms"]["minItems"] = serde_json::json!(1);
