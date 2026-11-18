@@ -1,13 +1,13 @@
 ---
 title: 临时源码与任务独立拉取
-status: active
+status: complete
 date: 2026-11-18
 ---
 
 <!--
 [INPUT]: 固定清单、临时执行与现有 Kubernetes 1.28 部署要求。
 [OUTPUT]: 跟踪实施单元、不变量与验收边界。
-[POS]: 临时源码执行的实施计划与剩余部署入口。
+[POS]: 临时源码执行的完成清单与正式部署边界。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
 
@@ -29,7 +29,7 @@ AI 工具引用的源码片段随对话保存，最终镜像作为制品保存�
 - [x] 删除 Registry 构建缓存，任务终态后确认 Pod 和临时目录清理。
 - [x] 更新控制台、交付镜像、Helm、文档和验收。
 - [x] 完成测试、代码审查和独立环境验收。
-- [ ] 1.28 隔离验收通过后，在现有 1.28.3 集群切换服务并重置原型数据。
+- [x] 1.28 隔离验收通过后，在现有 1.28.3 集群切换服务并重置原型数据。
 
 ## 不变量
 
@@ -53,7 +53,7 @@ ImageBuild 整次终态且结果、日志已持久化后回收所有 Job/Pod。
 当前业务集群为 Kubernetes 1.28.3。
 两个 Operator Chart 已统一最低版本为 1.28。
 用户已明确不升级集群，目标固定为现有 1.28.3。
-按 [1.28 构建方案](2026-11-18-001-refactor-kubernetes-128-build-plan.md) 完成普通容器生命周期的真实验收，再正式切换。
+已按 [1.28 构建方案](2026-11-18-001-refactor-kubernetes-128-build-plan.md) 完成真实验收和正式切换。
 此前 Kubernetes 1.37 验收只作为历史证据。
 重置前阻断写入口，停止旧任务，确认在途写入与票据失效。
 业务与 Runtime 使用新初始化基线，设备重新注册。
@@ -68,5 +68,6 @@ ImageBuild 整次终态且结果、日志已持久化后回收所有 Job/Pod。
 覆盖失败、取消、超时、OOM、Operator 重启、原生进程强杀与重启清理。
 完成 macOS、Windows、amd64/arm64 镜像、内外仓库推送及制品下载验收。
 检查无 Source/Poll 常驻资源、源码 PVC、源码包及 Registry 缓存 manifest。
+正式结果与验证边界见 [1.28 验收记录](../image-builds-kubernetes-128-acceptance-2026-11-18.md)。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

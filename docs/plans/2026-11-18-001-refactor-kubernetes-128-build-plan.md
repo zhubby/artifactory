@@ -1,7 +1,7 @@
 ---
 title: "refactor: Kubernetes 1.28 一次性镜像构建"
 type: refactor
-status: active
+status: complete
 date: 2026-11-18
 origin: docs/plans/2026-11-18-ephemeral-source-execution.md
 ---
@@ -18,7 +18,7 @@ origin: docs/plans/2026-11-18-ephemeral-source-execution.md
 ## 问题与范围
 
 正式集群为 Kubernetes 1.28.3。用户明确不升级集群。
-现有实现把 BuildKit 放入可重启 init container。
+方案实施前，BuildKit 放入可重启 init container。
 该字段在 1.28 属于默认关闭的 Alpha 功能。
 结构化 AppArmor 字段也超出 1.28 API。
 只降低 Helm 版本门槛不能解决这些问题。
@@ -312,7 +312,7 @@ Control 将候选结果回报与最终成功提交分开。
 
 **测试：** 1.28 版本下 Helm lint/template；镜像产物可启动且 ABI 正确；Release 清单包含新镜像；BuilderPool 引用匹配监督程序入口；生成 CRD 无漂移。
 
-- [ ] **U5：隔离验收、文档和正式部署**
+- [x] **U5：隔离验收、文档和正式部署**
 
 **要求：** R1–R7。依赖 U1–U4。
 
@@ -332,18 +332,21 @@ Control 将候选结果回报与最终成功提交分开。
 正式数据库、PKI、S3 和 Registry 的操作边界沿用原计划。
 本方案未实施前，不因版本要求而重置正式数据库。
 
-## 仍须由实施验证的事项
+## 实施结果与验证边界
 
-- 六个正式节点的 userns、subuid/subgid、运行时、AppArmor 和准入策略。
-- 固定 rootless 镜像在目标内核上的 snapshotter 和 `/proc` 隔离行为。
-- 新监督程序的静态构建及双架构运行产物。
-- kube 5.0.0 对本项目实际 1.28 操作的完整验证。
-- 真实 arm64 节点与 amd64 仿真节点的验收条件。
-- 终止计时、磁盘压力和正式 CNI 网络边界。
+- 六节点能力已检查。五个 worker 支持 userns，master 未作为构建节点。
+- 正式 3.10 内核通过非特权 rootless RUN。snapshotter 使用 native。
+- 1.28 会重置 Unmasked；实现已移除额外 rootlesskit PID namespace。
+- 两架构监督程序使用静态产物。原生 arm64 与 amd64 显式仿真分别验证。
+- kube 5.0.0 在真实 1.28 完成源码、AI、镜像、原生和故障主链。
+- 正式 1.28.3/Calico 完成内外仓、制品下载、取消、失败和材料清理。
+- 正式集群的 arm64 使用 node239 显式仿真。原生 arm64 证据来自独立环境。
+- 正式共享节点未注入节点级磁盘压力。该项不列为已通过的实测。
 
-这些事项是上线前的验收条件，本文未将其标记为通过。
-若目标节点不满足 rootless 条件，先给出具体节点配置差异，再实施最小调整。
-不得静默切换为特权构建。
+正式切换、两业务库重置与三台设备重新注册均已完成。
+保留 PKI、主密钥、制品与三组存储身份。
+旧源码专属卷的 API 对象与物理目录均已回收。
+完整计时、故障与部署结果见 [1.28 验收记录](../image-builds-kubernetes-128-acceptance-2026-11-18.md)。
 
 ## 依据
 

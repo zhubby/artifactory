@@ -1,5 +1,5 @@
 ---
-status: ready
+status: complete
 priority: p1
 issue_id: "009"
 tags: [operators, buildkit, registry, gateway]
@@ -8,7 +8,7 @@ dependencies: []
 
 <!--
 [INPUT]: 镜像实施计划、本机回归与真实集群证据。
-[OUTPUT]: 记录镜像交付完成项和待执行的环境验证。
+[OUTPUT]: 记录镜像交付完成项和真实环境验证范围。
 [POS]: todos/ 的镜像构建交付状态。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -28,22 +28,24 @@ dependencies: []
 
 ## Recommended Action
 
-代码实现已合并 main 并推送。四个 Helm release 已部署。
-当前集群的 amd64 与内建仓库完整验证通过。
-保留 arm64、外部仓库与运行中任务超时验收。
+四个 Helm release 已部署到现有 Kubernetes 1.28.3。
+原生 amd64 与 arm64、显式仿真、外仓和超时分别完成真实验收。
+正式集群只有 amd64 节点，arm64 使用 node239 显式仿真。
+原生 arm64 来自独立 1.28 环境，不混记为正式节点能力。
+完整结果见 `docs/image-builds-kubernetes-128-acceptance-2026-11-18.md`。
 
 ## Acceptance Criteria
 
-- [x] Agent Operator 兼容迁移并独立交付。
+- [x] Agent Operator 按新契约独立交付，不保留兼容或迁移代码。
 - [x] Image Operator 实现双架构构建和独立外部发布。
 - [x] Registry 与制品接入 Pingora 反向代理。
 - [x] 本机权限、恢复、协议、界面与交付清单回归通过。
 - [x] 真实集群部署两个独立 Operator、Registry 与 Pingora。
 - [x] 真实镜像任务取消清理与 Image Operator 切主恢复。
 - [x] 真实集群通过 amd64 构建、Distribution 与镜像 Release 验收。
-- [ ] 真实集群通过 arm64/amd64 双原生架构构建。
-- [ ] 使用实际外部仓库验证发布与重试。
-- [ ] 验证真实运行中镜像任务的超时清理。
+- [x] 独立 1.28 环境分别通过 arm64/amd64 原生构建，正式集群通过显式仿真。
+- [x] 使用实际认证外部仓库验证发布与重试。
+- [x] 独立 1.28 故障矩阵验证真实运行中任务的 DeadlineExceeded 与清理。
 
 ## Work Log
 
@@ -63,5 +65,10 @@ dependencies: []
 - 2026-11-17：原生 amd64 构建与候选推送成功，OCI Index 逐摘要读回、HEAD/Range 和 Release 均通过。
 - 2026-11-17：四个 release 为主平台 15、Registry 2、Image Operator 2、Agent Operator 3；16 个工作负载就绪。
 - 2026-11-17：临时代理、端口转发和诊断工作负载已清理，保留成功项目与镜像供复查。
+- 2026-11-18：完成普通源码 init、Runner/BuildKit 双普通容器和 Rust PID 1 监督。
+- 2026-11-18：独立 1.28 完成十项真实故障、原生双架构、显式仿真和内外仓。
+- 2026-11-18：正式 1.28.3 完成切换、双副本网关、三种镜像模式和三台原生设备验收。
+- 2026-11-18：修复镜像任务 CA Secret 投影，只挂载公开 ca.crt，正式容器已核对。
+- 2026-11-18：取消与受控失败资源归零；旧源码物理目录、Registry 缓存和临时验收资源已清理。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

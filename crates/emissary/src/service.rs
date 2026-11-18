@@ -1,3 +1,7 @@
+// [INPUT]: 节点可执行文件、配置路径与专用非特权账号。
+// [OUTPUT]: 生成 launchd/systemd 定义，安装并控制原生服务。
+// [POS]: 将 CLI 服务操作映射到宿主服务接口，Windows SCM 实现位于子模块。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
 use std::path::Path;
 pub const NAME: &str = "artifactory-emissary";

@@ -43,7 +43,7 @@ init 直接领取完整清单并写入任务临时卷。
 Runner 核对清单身份和内容后校验只读工作树。
 旧 `source` 字段被拒绝，原 900 KiB 材料上限保留。
 
-## 实际环境状态
+## 历史独立环境验收
 
 本机为 macOS arm64，原生进程测试已执行。
 专属 kind 集群使用原生 arm64 节点。
@@ -84,8 +84,8 @@ LFS 下载地址使用本次 HTTPS 请求的源地址。
 本段历史验收曾采用要求 1.33+ 的原生 sidecar。
 当前实现已改为普通容器，保留现有 1.28 集群。
 本轮结果见 [1.28 验收](image-builds-kubernetes-128-acceptance-2026-11-18.md)。
-业务部署和原型数据库重置均尚未执行。
-现有业务集群的部署下载链仍待验收。
+现有业务集群已完成 1.28 切换与两业务库重置。
+正式部署结果见本文末节与上述 1.28 验收记录。
 提交 `d08e782` 的六平台原生生命周期全部通过。
 覆盖 Linux、macOS、Windows 的 amd64 与 arm64。
 提交 `d08e782` 的完整平台 CI 十项全部通过。
@@ -94,10 +94,12 @@ LFS 下载地址使用本次 HTTPS 请求的源地址。
 提交 `d08e782` 的十个 amd64 镜像发布成功。
 四个 Chart 和十六个镜像配置槽已校验。
 项目镜像固定完整源码 SHA 和公布的摘要。
-PostgreSQL、S3、Registry 与 BuildKit 镜像保持部署前引用。
-部署候选已渲染，尚未应用到业务集群。
+上述历史候选保留 PostgreSQL、S3、Registry 与官方 BuildKit 引用。
+它未用于本轮 1.28 正式部署。
 镜像站十个组件的标签和固定摘要共二十个 manifest 校验通过。
-本次只读取 manifest，正式集群拉取镜像层仍待部署验收。
+该历史发布只核对 manifest。
+本轮正式节点已拉取十一组件发布中的固定镜像并完成构建。
+BuildKit 已使用新增的监督镜像。
 
 [平台 CI](https://github.com/zhubby/artifactory/actions/runs/44244785790)
 与[不可变镜像发布](https://github.com/zhubby/artifactory/actions/runs/44244880860)
@@ -124,20 +126,30 @@ PID、步骤身份与隐私字段隔离检查通过。
 本次不提供有效 p95 结论。
 原生 shell 只接受可信项目，不提供系统级沙箱。
 
-## 部署观察
+## 正式部署观察
 
-部署后观察 SourceTask、AgentRun 和 ImageBuild。
-检查准备、规划、构建和清理的状态收敛。
-检查 `CleanupPending`、材料授权拒绝和 503 日志。
-空闲后运行 `scripts/check_ephemeral_source.py --idle`。
-该检查要求任务 Pod、Job、材料 Secret 全部消失。
-检查不再存在 Source 服务或源码 PVC。
-复核 Registry 只保留最终制品和有效引用。
+现有 Kubernetes 1.28.3 已切换普通容器实现。
+发布基线为 `ecc980d`，Image Operator 使用 CA 投影修复 `f1fe2db`。
+逐组件固定镜像摘要并保留发布来源。
+公开与内部 Service 共享唯一双副本 Gateway Deployment。
 
-重置前停止写入口及后台任务。
-等待最长 15 分钟的在途票据失效。
-保留制品对象、Registry 对象、PKI 和主密钥。
-新业务与 Runtime 库不恢复旧授权和列表。
-设备重新注册后再验收原生执行。
+重置前阻断公开入口、停止写入并完整等待 900 秒。
+两份完整数据库备份通过读取校验。
+新 Control 与 Runtime 库不恢复旧授权和业务列表。
+保留 PKI、主密钥、遥测库与最终制品。
+保留 Secret 指纹和三组存储 UID 均未改变。
+两个专属源码 PVC/PV 与宿主物理目录均已回收。
+三个固定旧源码对象前缀为空。
+Registry 安全 GC 删除旧缓存，不删除最终镜像图。
+
+公开入口已完成三种镜像模式、外仓和三台原生设备链。
+任务固定源码提交，逐任务检出 Git 与 LFS。
+网关制品 GET、HEAD、Range 和哈希核对通过。
+运行中取消与受控 COPY 失败均完成终态和资源清理。
+最终空闲检查通过，任务 Pod、Job、材料 Secret 归零。
+三台设备的临时 Git CA 已恢复，在线且无活动任务。
+本轮夹具、预检 namespace、专属 kind 与临时网络策略已清理。
+短期凭据、叶私钥和旧 Registry 缓存恢复点已回收。
+完整证据与验证边界见 [1.28 验收记录](image-builds-kubernetes-128-acceptance-2026-11-18.md)。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

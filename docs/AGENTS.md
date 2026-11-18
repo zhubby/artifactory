@@ -22,7 +22,7 @@ frontend-experience.md: 定义语言、主题与动效行为。
 helm.md: 定义 Kubernetes 1.28 新实例安装与临时源码验收。
 image-builds.md: 定义普通容器镜像生命周期、交付与网关边界。
 image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像、独立 Operator、网关迁移与空闲连接验收。
-image-builds-kubernetes-128-acceptance-2026-11-18.md: 记录 1.28 普通容器生命周期与正式节点实测。
+image-builds-kubernetes-128-acceptance-2026-11-18.md: 记录 1.28 生命周期、正式部署与原生设备验收。
 local-macmini-acceptance-2026-11-11.md: 记录本机和 Mac mini 的验收。
 module-layout.md: 定义模块命名和依赖边界。
 multitenancy.md: 定义租户权限和设备共享边界。
@@ -32,7 +32,7 @@ operator-operations.md: 定义临时源码、规划和镜像任务的收尾与�
 protocol.md: 定义 Emissary 通信和状态迁移。
 registration-acceptance-2026-11-11.md: 记录用户注册的本地验收。
 runtime-protocol.md: 定义 Runtime 与任务源码准备契约。
-ephemeral-source-acceptance-2026-11-18.md: 记录临时源码代码验证及实际环境边界。
+ephemeral-source-acceptance-2026-11-18.md: 记录临时源码验证、存储回收与正式切换。
 substrate-scheduling-assessment-2026-11-12.md: 评估可选调度后端的适用边界。
 telemetry.md: 定义主机与构建的时序观测。
 toasty-acceptance-2026-11-13.md: 记录 Toasty 数据迁移验收。

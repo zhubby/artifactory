@@ -1,4 +1,13 @@
+<!--
+[INPUT]: 各阶段源码、自动化与真实环境验收记录。
+[OUTPUT]: 索引最新验收，保留历史结论及其适用范围。
+[POS]: 文档验收总入口；子系统记录提供具体证据。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
+
 # 实施与验收记录
+
+2026-11-18 新增 [Kubernetes 1.28 镜像构建验收](image-builds-kubernetes-128-acceptance-2026-11-18.md) 和 [临时源码执行验收](ephemeral-source-acceptance-2026-11-18.md)：现有 1.28.3 已完成正式切换，普通源码 init、双普通构建容器、内外仓、双副本网关及三台原生设备交付通过。旧源码专属卷和任务材料已清理。原生 arm64 与正式集群的显式仿真分别记录。
 
 2026-11-17 新增 [AI-Workspace macOS 托管证书签名验收](ai-workspace-signing-acceptance-2026-11-17.md)：第 8 次真实构建完成 Developer ID 签名，129 项 Mach-O、两项 S3 下载制品及临时材料清理通过。未公证，Gatekeeper 当前拒绝分发。
 

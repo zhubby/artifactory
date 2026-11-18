@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖节点配置、运行时与 Windows SCM。
+//! [OUTPUT]: 注册服务入口并提供安装、启停和删除。
+//! [POS]: service 模块的 Windows 实现，服务运行复用节点运行时。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use std::{ffi::OsString, path::PathBuf, sync::OnceLock, time::Duration};
 use tokio_util::sync::CancellationToken;
