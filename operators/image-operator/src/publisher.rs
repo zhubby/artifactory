@@ -1,11 +1,14 @@
-//! [INPUT]: 依赖发布专属 Secret、已验证平台结果与 OCI 客户端。
+//! [INPUT]: 依赖发布专属 Secret、OCI 客户端与 /work 临时磁盘卷。
 //! [OUTPUT]: 发布完整 OCI Index 或复制到外部仓库。
-//! [POS]: 镜像构建与最终标签之间的独立发布进程。
+//! [POS]: 镜像构建与最终标签之间的独立发布进程，不写源码卷。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::transport::Control;
 use anyhow::{Result, ensure};
 use artifactory_image_protocol::{PublishTask, Report, index, sha256};
 use tokio_util::sync::CancellationToken;
+
+/// Blob 校验的临时目录必须落在 Job 的可写磁盘卷。
+pub(crate) const TEMPORARY_DIRECTORY: &str = "/work";
 
 pub async fn run() -> Result<()> {
     let bytes = tokio::fs::read(std::env::var("ARTIFACTORY_IMAGE_TASK")?).await?;
@@ -44,7 +47,7 @@ pub async fn run() -> Result<()> {
                 &task.destination_repository,
                 &digest,
                 &task.tags,
-                std::path::Path::new("/workspace"),
+                std::path::Path::new(TEMPORARY_DIRECTORY),
             )
             .await?;
         control.report(&Report::Published { digest }).await

@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖声明式资源生成器和模拟节点能力。
-//! [OUTPUT]: 验证架构选择、sidecar 生命周期、任务材料隔离与归属。
+//! [OUTPUT]: 验证架构、sidecar 生命周期、发布临时卷与材料隔离。
 //! [POS]: 不连接集群的工作负载契约回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -133,4 +133,53 @@ fn source_init_has_exclusive_auth_and_no_persistent_cache() {
             .iter()
             .all(|v| v.get("persistentVolumeClaim").is_none())
     );
+}
+
+#[test]
+fn publisher_blob_staging_has_a_writable_disk_volume() {
+    let job = resources::job(&build(), &pool(), None, Default::default()).unwrap();
+    let pod = job.spec.unwrap().template.spec.unwrap();
+    let worker = &pod.containers[0];
+    let staging = worker
+        .volume_mounts
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|mount| mount.mount_path == crate::publisher::TEMPORARY_DIRECTORY)
+        .expect("publisher blob staging directory has a volume mount");
+    assert!(
+        !staging.read_only.unwrap_or(false),
+        "publisher must create blob verification files on a writable volume"
+    );
+    let volume = pod
+        .volumes
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|volume| volume.name == staging.name)
+        .unwrap();
+    let disk = volume
+        .empty_dir
+        .as_ref()
+        .expect("publication staging is task-local storage");
+    assert!(
+        disk.medium.as_deref().is_none_or(str::is_empty),
+        "large image blobs must use disk rather than the bounded memory volume"
+    );
+    assert_eq!(
+        worker
+            .security_context
+            .as_ref()
+            .unwrap()
+            .read_only_root_filesystem,
+        Some(true)
+    );
+    let source = worker
+        .volume_mounts
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|mount| mount.name == "workspace")
+        .unwrap();
+    assert_eq!(source.read_only, Some(true));
 }
