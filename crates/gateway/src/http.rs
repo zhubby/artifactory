@@ -1,8 +1,9 @@
-//! [INPUT]: 依赖固定 HTTP 后端、加密对象票据、请求预算与结构化日志。
-//! [OUTPUT]: 流式代理 HTTP，限制上游空闲复用并记录脱敏错误。
+//! [INPUT]: 依赖固定后端、对象票据、请求预算与监听就绪状态。
+//! [OUTPUT]: 流式代理 HTTP；健康检查汇总全部必要监听。
 //! [POS]: 不缓存认证结果，不缓冲镜像层，不重放写请求。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::config::Config;
+use crate::listener::Readiness;
 use async_trait::async_trait;
 use pingora::{
     Error, ErrorType, Result,
@@ -28,13 +29,14 @@ pub struct Context {
 }
 pub struct Gateway {
     config: Config,
+    readiness: Readiness,
     next: AtomicUsize,
     http: reqwest::Client,
     requests: Arc<tokio::sync::Semaphore>,
     ca: Option<Arc<pingora::protocols::tls::CaType>>,
 }
 impl Gateway {
-    pub fn new(config: Config) -> anyhow::Result<Self> {
+    pub fn new(config: Config, readiness: Readiness) -> anyhow::Result<Self> {
         let mut http = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(std::time::Duration::from_secs(10));
@@ -71,6 +73,7 @@ impl Gateway {
         Ok(Self {
             requests: Arc::new(tokio::sync::Semaphore::new(config.max_http)),
             config,
+            readiness,
             next: AtomicUsize::new(0),
             http: http.build()?,
             ca,
@@ -149,7 +152,9 @@ impl ProxyHttp for Gateway {
     async fn request_filter(&self, session: &mut Session, ctx: &mut Context) -> Result<bool> {
         let path = session.req_header().uri.path();
         if path == "/healthz" {
-            session.respond_error(200).await?;
+            session
+                .respond_error(if self.readiness.is_ready() { 200 } else { 503 })
+                .await?;
             return Ok(true);
         }
         let Ok(permit) = self.requests.clone().try_acquire_owned() else {

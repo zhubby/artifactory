@@ -20,7 +20,7 @@ control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。
 frontend-experience.md: 定义语言、主题与动效行为。
 helm.md: 定义 Helm 安装、统一网关升级与设备地址迁移。
-image-builds.md: 定义双架构镜像、私有仓库、网关端口与空闲连接策略。
+image-builds.md: 定义镜像交付、网关端口、监听就绪与空闲连接策略。
 image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像、独立 Operator、网关迁移与空闲连接验收。
 local-macmini-acceptance-2026-11-11.md: 记录本机和 Mac mini 的验收。
 module-layout.md: 定义模块命名和依赖边界。

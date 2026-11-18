@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 独立镜像 Operator、私有仓库与统一 Pingora 入口。
-[OUTPUT]: 定义镜像交付、四端口边界和部署参数。
+[OUTPUT]: 定义镜像交付、四端口边界与监听就绪策略。
 [POS]: 镜像构建与统一网关的部署入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -32,6 +32,8 @@ Image Operator 在 Kubernetes 中启动 BuildKit。平台固定源码快照后�
 Gateway NetworkPolicy 将 8445 限制为同命名空间 Pod。`gateway.networkPolicy.publicFrom` 和 `deviceFrom` 接受 Kubernetes 网络来源列表；空列表允许任意来源。设置这些列表时同步检查其他 NetworkPolicy，相加规则仍能放行相同流量。设备长连接在建立时选择后端，网关不重放设备消息。新增 Control 副本接纳新连接，已有连接通过排空和客户端重连迁移。
 
 Runtime/Source 使用独立 ClusterIP `https://<release>-gateway-internal:8445`。该入口只接受内部 API 和健康检查，强制 TLS，并由 Control 校验既有服务令牌。默认服务器身份来自设备 PKI；已有独立服务 CA 使用 `gateway.internalTlsSecret` 提供受 Runtime/Source 信任的证书。不要将内部 Service 添加到公开 Ingress。
+
+公开和内部 `/healthz` 汇总全部必要监听。网关向本机固定监听端口发起启动探测，等待自己的接受回调；其他进程占用端口不能使探测成功。四个监听全部完成端口绑定、TLS 构建并接受连接后，健康检查返回 200。在此之前返回 503。启动探测期限为三十五秒，包含 Pingora 的端口占用重试。监听任务崩溃、提前结束或探测超时会使进程非零退出。收到正常关闭信号后撤销就绪状态。
 
 HTTP 上游连接回池后最多空闲三十秒。该时限不终止活动中的流式上传或下载。网关不自动重放失败的写请求。错误日志只记录类型、来源、监听角色和连接复用状态，不记录请求头、查询串或对象地址。
 

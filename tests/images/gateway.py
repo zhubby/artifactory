@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 本机构建的 Pingora 网关和 Python HTTP/TLS 夹具。
-[OUTPUT]: 验证统一监听、HTTP 空闲连接回收与写请求禁止重放。
+[OUTPUT]: 验证监听失败退出、统一就绪和写请求禁止重放。
 [POS]: 使用真实 TCP/TLS 和流式对象；不连接已有集群。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -9,6 +9,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import signal
 import socket
 import ssl
 import subprocess
@@ -153,13 +154,14 @@ def port():
         sock.bind(('127.0.0.1', 0))
         return sock.getsockname()[1]
 
-def request(port_number, method, path, body=None, headers=None, context=None):
-    client = http.client.HTTPSConnection('127.0.0.1', port_number, timeout=10, context=context) if context else http.client.HTTPConnection('127.0.0.1', port_number, timeout=10)
-    client.request(method, path, body=body, headers=headers or {})
-    response = client.getresponse()
-    value = response.status, {key.lower(): value for key, value in response.getheaders()}, response.read()
-    client.close()
-    return value
+def request(port_number, method, path, body=None, headers=None, context=None, timeout=10):
+    client = http.client.HTTPSConnection('127.0.0.1', port_number, timeout=timeout, context=context) if context else http.client.HTTPConnection('127.0.0.1', port_number, timeout=timeout)
+    try:
+        client.request(method, path, body=body, headers=headers or {})
+        response = client.getresponse()
+        return response.status, {key.lower(): value for key, value in response.getheaders()}, response.read()
+    finally:
+        client.close()
 
 def wait(port_number, process):
     for _ in range(100):
@@ -172,9 +174,103 @@ def wait(port_number, process):
             time.sleep(.1)
     raise RuntimeError('gateway did not listen')
 
+
+def wait_ready(port_number, process, context=None):
+    for _ in range(100):
+        assert process.poll() is None, 'gateway exited before becoming ready'
+        try:
+            status = request(port_number, 'GET', '/healthz', context=context, timeout=.2)[0]
+            assert status in [200, 503], f'unexpected readiness status {status}'
+            if status == 200:
+                return
+        except (OSError, http.client.HTTPException):
+            pass
+        time.sleep(.05)
+    raise AssertionError('gateway did not become ready')
+
+
+def startup_failure_regression(binary, env, root):
+    invalid_pem = root / 'invalid.pem'
+    invalid_pem.write_text('invalid PEM fixture\n')
+    context = ssl.create_default_context(cafile=str(root / 'ca.pem'))
+    cases = [
+        ('internal certificate', {'ARTIFACTORY_GATEWAY_INTERNAL_TLS_CERT': str(invalid_pem)}),
+        ('internal private key', {'ARTIFACTORY_GATEWAY_INTERNAL_TLS_KEY': str(invalid_pem)}),
+        ('device bind', {'ARTIFACTORY_GATEWAY_TCP_BIND': f'192.0.2.123:{port()}'}),
+        ('telemetry bind', {'ARTIFACTORY_GATEWAY_TELEMETRY_BIND': f'192.0.2.123:{port()}'}),
+    ]
+    for name, changes in cases:
+        http_port, internal_port = port(), port()
+        invalid = dict(env, ARTIFACTORY_GATEWAY_HTTP_BIND=f'127.0.0.1:{http_port}',
+                       ARTIFACTORY_GATEWAY_INTERNAL_BIND=f'127.0.0.1:{internal_port}',
+                       ARTIFACTORY_GATEWAY_TCP_BIND=f'127.0.0.1:{port()}',
+                       ARTIFACTORY_GATEWAY_TELEMETRY_BIND=f'127.0.0.1:{port()}')
+        invalid.update(changes)
+        with tempfile.TemporaryFile() as log:
+            process = subprocess.Popen([binary], env=invalid, stdout=log, stderr=log)
+            try:
+                deadline = time.monotonic() + 10
+                while process.poll() is None and time.monotonic() < deadline:
+                    for number, tls in [(http_port, None), (internal_port, context)]:
+                        try:
+                            status = request(number, 'GET', '/healthz', context=tls, timeout=.1)[0]
+                            assert status == 503, f'{name}: failed listener advertised readiness {status}'
+                        except (OSError, http.client.HTTPException):
+                            pass
+                    time.sleep(.02)
+                assert process.poll() is not None, f'{name}: gateway survived a required listener failure'
+                assert process.returncode != 0, f'{name}: gateway exited successfully after listener failure'
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=5)
+        print(f'PASS: {name} failure never reports ready and exits nonzero', flush=True)
+
+
+def startup_readiness_regression(binary, env, root):
+    context = ssl.create_default_context(cafile=str(root / 'ca.pem'))
+    blocker = socket.socket()
+    blocker.bind(('127.0.0.1', 0))
+    blocker.listen()
+    telemetry_port = blocker.getsockname()[1]
+    http_port, internal_port = port(), port()
+    delayed = dict(env, ARTIFACTORY_GATEWAY_HTTP_BIND=f'127.0.0.1:{http_port}',
+                   ARTIFACTORY_GATEWAY_INTERNAL_BIND=f'127.0.0.1:{internal_port}',
+                   ARTIFACTORY_GATEWAY_TCP_BIND=f'127.0.0.1:{port()}',
+                   ARTIFACTORY_GATEWAY_TELEMETRY_BIND=f'127.0.0.1:{telemetry_port}')
+    with tempfile.TemporaryFile() as log:
+        process = subprocess.Popen([binary], env=delayed, stdout=log, stderr=log)
+        try:
+            observed = set()
+            deadline = time.monotonic() + 10
+            while len(observed) != 2 and time.monotonic() < deadline:
+                assert process.poll() is None, 'gateway exited while the telemetry bind was retrying'
+                for number, tls in [(http_port, None), (internal_port, context)]:
+                    try:
+                        status = request(number, 'GET', '/healthz', context=tls, timeout=.1)[0]
+                        assert status == 503, f'gateway advertised readiness {status} before owning every listener'
+                        observed.add(number)
+                    except (OSError, http.client.HTTPException):
+                        pass
+                time.sleep(.02)
+            assert len(observed) == 2, 'public and internal health endpoints did not report pending readiness'
+            blocker.close()
+            wait_ready(http_port, process)
+            wait_ready(internal_port, process, context)
+            process.send_signal(signal.SIGINT)
+            process.communicate(timeout=5)
+            assert process.returncode == 0, f'normal shutdown exited with {process.returncode}'
+        finally:
+            blocker.close()
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=5)
+    print('PASS: both health endpoints stay unready until the last listener starts; normal shutdown exits zero', flush=True)
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, default=Path('target/debug/artifactory-gateway'))
+    parser.add_argument('--startup-only', action='store_true', help='run listener startup failure regressions only')
     args = parser.parse_args()
     binary = str(args.binary.resolve())
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
@@ -241,10 +337,17 @@ def main():
             invalid = dict(env, ARTIFACTORY_GATEWAY_INTERNAL_BIND=env['ARTIFACTORY_GATEWAY_HTTP_BIND'])
             result = subprocess.run([binary], env=invalid, capture_output=True, timeout=5)
             assert result.returncode != 0 and b'require distinct ports' in result.stderr
+            startup_failure_regression(binary, env, root)
+            startup_readiness_regression(binary, env, root)
+            if args.startup_only:
+                return
             process = subprocess.Popen([binary], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             processes.append(process)
             for number in [http_port, tls_port, internal_port, telemetry_port]:
                 wait(number, process)
+            internal_client = ssl.create_default_context(cafile=str(root/'ca.pem'))
+            wait_ready(http_port, process)
+            wait_ready(internal_port, process, internal_client)
             status, headers, body = request(http_port,'GET','/artifacts/object?ticket=get',headers={'Range':'bytes=123-4096','Authorization':'Bearer must-not-forward','Cookie':'secret'})
             assert status == 206 and body == DATA[123:4097] and headers['content-range'] == f'bytes 123-4096/{len(DATA)}'
             status, headers, body = request(http_port,'HEAD','/artifacts/object?ticket=get')
@@ -259,7 +362,6 @@ def main():
             for chunk in [DATA[:4096], DATA[4096:]]:
                 assert request(http_port,'PATCH',headers['location'],chunk,{'Authorization':'Bearer registry-token'})[0] == 202
             assert request(http_port,'PUT',headers['location']+'?digest=sha256:fixture',b'')[0] == 201
-            internal_client = ssl.create_default_context(cafile=str(root/'ca.pem'))
             assert request(internal_port,'GET','/api/v1/images',context=internal_client)[0] == 404
             assert request(internal_port,'POST','/internal/artifact-resolve',json.dumps({'ticket':'get','method':'GET'}),{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},context=internal_client)[0] == 200
             client = ssl.create_default_context(cafile=str(root/'ca.pem'))
