@@ -10,6 +10,7 @@ use artifactory_source_checkout::{
 use process_wrap::tokio::{CommandWrap, KillOnDrop, ProcessGroup};
 use std::{
     fs,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Stdio,
     time::Duration,
@@ -100,6 +101,10 @@ async fn ssh_checkout_requires_bound_key_and_host_trust_for_fixed_commit() {
     let repository = root.path().join("repo.git");
     fs::create_dir(&repository).unwrap();
     git(&repository, &["init", "-b", "source"]);
+    git(
+        &repository,
+        &["config", "uploadpack.allowReachableSHA1InWant", "true"],
+    );
     fs::write(repository.join("main.c"), "pinned source\n").unwrap();
     git(&repository, &["add", "."]);
     git(&repository, &["commit", "-m", "pinned"]);
@@ -212,7 +217,20 @@ async fn ssh_checkout_requires_bound_key_and_host_trust_for_fixed_commit() {
     )
     .unwrap();
     let auth = root.path().join("auth");
+    let git_log = root.path().join("git.log");
+    let git_launcher = root.path().join("git-launcher");
+    fs::write(
+        &git_launcher,
+        format!(
+            "#!/bin/sh\nexec {} \"$@\" 2>>{}\n",
+            shell_quote(Path::new(&command("which", &["git"]))),
+            shell_quote(&git_log)
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&git_launcher, fs::Permissions::from_mode(0o700)).unwrap();
     let checkout = Checkout::new(Options {
+        git: git_launcher.to_str().unwrap().to_owned(),
         auth_root: auth.clone(),
         timeout: Duration::from_secs(10),
         ..Default::default()
@@ -233,14 +251,16 @@ async fn ssh_checkout_requires_bound_key_and_host_trust_for_fixed_commit() {
             },
         }];
         let workspace = root.path().join(name);
+        fs::write(&git_log, "").unwrap();
         let result = checkout
             .checkout(&manifest, &credentials, &workspace, &cancel)
             .await;
         if name == "trusted" {
             result.unwrap_or_else(|error| {
                 panic!(
-                    "SSH checkout failed: {error:#}; daemon: {}",
-                    fs::read_to_string(&diagnostics).unwrap()
+                    "SSH checkout failed: {error:#}; daemon: {}; Git: {}",
+                    fs::read_to_string(&diagnostics).unwrap(),
+                    fs::read_to_string(&git_log).unwrap()
                 )
             });
             assert_eq!(git(&workspace, &["rev-parse", "HEAD"]), fixed);

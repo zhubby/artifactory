@@ -80,7 +80,11 @@ jobs:
       - run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
       - run: python3 -m unittest discover -s tests/operator/acceptance -p 'test_*.py' -v
       - run: cargo fmt --all --check && cargo clippy --locked --all-targets -- -D warnings
+      - name: Build isolated SSH source fixture
+        run: docker build --platform linux/amd64 -f crates/source-checkout/tests/sshd.Dockerfile -t artifactory-source-sshd-test:ci .
       - name: Rust unit, Runtime/source checkout, business and Timescale telemetry regressions
+        env:
+          ARTIFACTORY_TEST_SSHD_IMAGE: artifactory-source-sshd-test:ci
         run: |
           set -a; source .local/env; set +a
           ARTIFACTORY_SERVICE_TOKEN="$(openssl rand -hex 32)"

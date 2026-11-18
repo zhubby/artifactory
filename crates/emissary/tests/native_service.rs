@@ -1,4 +1,7 @@
-//! Opt-in system service acceptance on disposable runners or dedicated test hosts.
+//! [INPUT]: 依赖显式启用的隔离宿主、原生服务和直拉源码夹具。
+//! [OUTPUT]: 验证专用账户安装、重启、停止和进程树回收。
+//! [POS]: 原生服务生命周期验收，拒绝覆盖现有服务和账户。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod support;
 use artifactory_emissary::{ota, platform, protocol as pb, service};
 use std::{
@@ -293,7 +296,9 @@ async fn native_service_lifecycle() {
         );
     }
     fixture.cfg.save(&machine.config).unwrap();
-    let repo = private.join("repository");
+    // === 上游边界 ===
+    // HTTP 源码服务器属于测试进程，仓库保留测试账户所有权。
+    let repo = machine.directory.join("upstream repository %n $HOME");
     fs::create_dir(&repo).unwrap();
     let git = |args: &[&str]| {
         let output = Command::new("git")
@@ -310,7 +315,11 @@ async fn native_service_lifecycle() {
             .args(args)
             .output()
             .unwrap();
-        assert!(output.status.success());
+        assert!(
+            output.status.success(),
+            "fixture Git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         String::from_utf8(output.stdout).unwrap().trim().to_owned()
     };
     git(&["init"]);
@@ -385,8 +394,8 @@ async fn native_service_lifecycle() {
                 machine.directory.to_str().unwrap(),
             ],
         );
-        machine.powershell("$ErrorActionPreference='Stop'; $sid=(Get-LocalUser artifactory-ci).SID; $repo=Join-Path $env:EMISSARY_SERVICE_DIRECTORY 'private data %n $HOME/repository'; foreach($p in @((Get-Item -LiteralPath $repo))+@(Get-ChildItem -LiteralPath $repo -Recurse -Force)){$acl=Get-Acl -LiteralPath $p.FullName;$acl.SetOwner($sid);Set-Acl -LiteralPath $p.FullName -AclObject $acl}");
     }
+    assert_eq!(git(&["rev-parse", "HEAD"]), commit);
     machine.installed = true;
     machine.act("install");
     machine.act("start");

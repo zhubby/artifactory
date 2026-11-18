@@ -9,8 +9,8 @@ use toasty::migration::{MigrationFile, MigrationSet};
 use uuid::Uuid;
 
 static BUSINESS: MigrationSet = MigrationSet::new(&[MigrationFile::new(
-    2026111301,
-    "0000_baseline.sql",
+    1,
+    "0000_test_schema.sql",
     "CREATE TABLE nodes(id uuid PRIMARY KEY,certificate_hash text,revoked boolean NOT NULL DEFAULT false,certificate_expires_at timestamptz NOT NULL DEFAULT now()+interval '1 day');
      CREATE TABLE attempts(id uuid PRIMARY KEY,node_id uuid NOT NULL);
      CREATE TABLE private_business_data(secret text);",
@@ -41,7 +41,8 @@ async fn business_authorization_starts_with_only_documented_read_grants() -> Res
         sql::execute(&mut owner, "CREATE EXTENSION timescaledb", params![]).await?;
         migrate(&owner, &BUSINESS).await?;
         // 只创建授权表。版本元数据跟随真实业务迁移集。
-        for migration in BUSINESS_MIGRATIONS.migrations().iter().skip(1) {
+        sql::execute(&mut owner, "DELETE FROM __toasty_migrations", params![]).await?;
+        for migration in BUSINESS_MIGRATIONS.migrations() {
             sql::execute(
                 &mut owner,
                 "INSERT INTO __toasty_migrations(id,name,applied_at) VALUES($1,$2,now())",
@@ -169,8 +170,8 @@ async fn business_authorization_starts_with_only_documented_read_grants() -> Res
         current.authorize_attempts(node, &[attempt]).await?;
         sql::execute(
             &mut owner,
-            "UPDATE __toasty_migrations SET id=0 WHERE id=2026111301",
-            params![],
+            "UPDATE __toasty_migrations SET id=0 WHERE id=$1",
+            params![latest.id() as i64],
         )
         .await?;
         ensure!(

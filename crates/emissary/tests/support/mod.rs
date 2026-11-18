@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖 loopback mTLS、测试任务和日志存储。
-//! [OUTPUT]: 提供认证平台夹具和首连超时的传输、进程诊断。
+//! [INPUT]: 依赖 loopback mTLS、HTTP Git、测试任务和日志存储。
+//! [OUTPUT]: 提供跨平台原生服务源码夹具和首连诊断。
 //! [POS]: Emissary 集成测试共享支持；诊断不输出配置和命令。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Loopback mTLS peer for runtime lifecycle tests; no business scheduler is simulated.
@@ -247,6 +247,13 @@ pub struct Fixture {
     pub cfg: Config,
     pub connections: mpsc::Receiver<Connection>,
     pub metrics: Arc<TransportMetrics>,
+    #[cfg_attr(
+        windows,
+        allow(
+            dead_code,
+            reason = "Windows runtime 的源码用例仅在 Unix 编译，native_service 跨平台使用此夹具"
+        )
+    )]
     materials: Arc<Mutex<HashMap<String, String>>>,
     #[cfg(unix)]
     logs: Arc<Mutex<HashMap<String, Vec<u8>>>>,
@@ -370,6 +377,13 @@ impl Fixture {
             server,
         }
     }
+    #[cfg_attr(
+        windows,
+        allow(
+            dead_code,
+            reason = "Windows runtime 的源码用例仅在 Unix 编译，native_service 跨平台使用此夹具"
+        )
+    )]
     pub async fn source_manifest(&self, repository: &Path, commit: &str) -> String {
         use artifactory_source_checkout::{PrepareResponse, SourceManifest, SourceRepository};
         let repository = repository.to_owned();
@@ -504,6 +518,13 @@ impl Drop for Fixture {
     }
 }
 
+#[cfg_attr(
+    windows,
+    allow(
+        dead_code,
+        reason = "Windows runtime 的源码用例仅在 Unix 编译，native_service 跨平台使用此夹具"
+    )
+)]
 async fn source_backend(
     axum::extract::State(repository): axum::extract::State<std::path::PathBuf>,
     method: axum::http::Method,
