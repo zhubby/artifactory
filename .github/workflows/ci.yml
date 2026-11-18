@@ -1,4 +1,4 @@
-# [INPUT]: 提交源码、固定 kind/Android 版本、protoc 与隔离租户服务。
+# [INPUT]: 提交源码、固定 kind/Android 版本、节点 CIDR 策略与隔离租户服务。
 # [OUTPUT]: 验证版本、原生签名与跨服务契约，保留脱敏失败证据。
 # [POS]: 合并交付的自动化验证入口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -140,6 +140,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 1.27.x
+      - name: Verify fixture Git LFS download origins
+        run: go test tests/operator/acceptance/fixture.go tests/operator/acceptance/live_provider.go tests/operator/acceptance/fixture_test.go
       - uses: helm/kind-action@v1
         with:
           version: v0.33.0
@@ -152,7 +154,7 @@ jobs:
         run: |
           helm upgrade --install cilium cilium --repo https://helm.cilium.io --version 1.20.4 -n kube-system \
             --set operator.replicas=1 --set envoy.enabled=false --set l7Proxy=false --set hubble.enabled=false \
-            --set kubeProxyReplacement=false --set ipam.mode=kubernetes \
+            --set kubeProxyReplacement=false --set ipam.mode=kubernetes --set policyCIDRMatchMode=nodes \
             --set cgroup.autoMount.enabled=false --set cgroup.hostRoot=/sys/fs/cgroup --wait --timeout 5m
           kubectl wait nodes --all --for=condition=Ready --timeout=180s
       - name: Native build dependencies and PostgreSQL 17 restore tools
@@ -161,6 +163,8 @@ jobs:
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y postgresql-client-17
           echo '/usr/lib/postgresql/17/bin' >> "$GITHUB_PATH"
+      - name: Verify fixture LFS download origins
+        run: go test tests/operator/acceptance/fixture.go tests/operator/acceptance/live_provider.go tests/operator/acceptance/fixture_test.go
       - name: Build Linux images for the disposable cluster
         run: python3 -u tests/operator/acceptance/prepare.py --platform linux/amd64 --kind operator
       - name: SourceTask, init checkout, AI conversations and native artifact delivery

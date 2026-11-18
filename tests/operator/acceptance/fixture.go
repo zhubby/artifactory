@@ -1,5 +1,5 @@
 // [INPUT]: 隔离服务身份、固定 Git/LFS 夹具与模型故障开关。
-// [OUTPUT]: 提供只读源码、确定性工具调用与验收回执代理。
+// [OUTPUT]: 提供同源 Git/LFS、确定性工具调用与验收回执代理。
 // [POS]: Kubernetes 新任务契约的上游与供应商夹具。
 // [PROTOCOL]: Update this header on change, then check AGENTS.md
 package main
@@ -28,6 +28,32 @@ func git(dir string, args ...string) {
 		log.Fatalf("git fixture failed: %s: %s", e, out)
 	}
 }
+
+func lfsBatch(lfsOID string, lfsPayload []byte, gitDown *atomic.Bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Objects []struct {
+				OID  string `json:"oid"`
+				Size int64  `json:"size"`
+			} `json:"objects"`
+		}
+		if gitDown.Load() || json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&request) != nil {
+			http.Error(w, "upstream LFS unavailable", 503)
+			return
+		}
+		objects := []any{}
+		for _, object := range request.Objects {
+			if object.OID == lfsOID && object.Size == int64(len(lfsPayload)) {
+				objects = append(objects, map[string]any{"oid": lfsOID, "size": len(lfsPayload), "actions": map[string]any{"download": map[string]any{"href": "https://" + r.Host + "/repo.git/lfs/objects/" + lfsOID}}})
+			} else {
+				objects = append(objects, map[string]any{"oid": object.OID, "error": map[string]any{"code": 404, "message": "unknown fixture object"}})
+			}
+		}
+		w.Header().Set("Content-Type", "application/vnd.git-lfs+json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"transfer": "basic", "objects": objects})
+	}
+}
+
 func main() {
 	root := "/tmp/upstream"
 	repo := filepath.Join(root, "repo.git")
@@ -142,28 +168,7 @@ func main() {
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	})
 	gitPath, _ := exec.LookPath("git")
-	mux.HandleFunc("/repo.git/info/lfs/objects/batch", func(w http.ResponseWriter, r *http.Request) {
-		var request struct {
-			Objects []struct {
-				OID  string `json:"oid"`
-				Size int64  `json:"size"`
-			} `json:"objects"`
-		}
-		if gitDown.Load() || json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&request) != nil {
-			http.Error(w, "upstream LFS unavailable", 503)
-			return
-		}
-		objects := []any{}
-		for _, object := range request.Objects {
-			if object.OID == lfsOID && object.Size == int64(len(lfsPayload)) {
-				objects = append(objects, map[string]any{"oid": lfsOID, "size": len(lfsPayload), "actions": map[string]any{"download": map[string]any{"href": "https://upstream:9443/repo.git/lfs/objects/" + lfsOID}}})
-			} else {
-				objects = append(objects, map[string]any{"oid": object.OID, "error": map[string]any{"code": 404, "message": "unknown fixture object"}})
-			}
-		}
-		w.Header().Set("Content-Type", "application/vnd.git-lfs+json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"transfer": "basic", "objects": objects})
-	})
+	mux.HandleFunc("/repo.git/info/lfs/objects/batch", lfsBatch(lfsOID, lfsPayload, &gitDown))
 	mux.HandleFunc("/repo.git/lfs/objects/"+lfsOID, func(w http.ResponseWriter, r *http.Request) {
 		if gitDown.Load() {
 			http.Error(w, "upstream LFS unavailable", 503)

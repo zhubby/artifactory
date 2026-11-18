@@ -1,25 +1,28 @@
 #!/usr/bin/env python3
-"""[INPUT]: 已保存的隔离命名空间、验收租户和主机原生 Rust 工具链。
-[OUTPUT]: 验证主机构建；清理完成后写入成功证据。
-[POS]: 直拉可共同访问的 NodePort 上游，恢复设备与公告地址。
+"""[INPUT]: 隔离命名空间、精确节点出口策略和主机原生 Rust 工具链。
+[OUTPUT]: 验证主机构建；恢复出口、设备与公告地址后写入成功证据。
+[POS]: 直拉共同可达的 Git NodePort；出口只覆盖本次节点和端口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
+import ipaddress
 import json
 import os
 from pathlib import Path
 import platform
 import re
 import shutil
+import ssl
 import subprocess
 import time
 import uuid
 from urllib.parse import urlsplit, urlunsplit
 import urllib.parse
+import urllib.request
 import base64
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -71,6 +74,96 @@ def drain_existing_devices(a):
             offset += len(nodes)
 
 
+@contextmanager
+def native_git_egress(a, node_ip, port):
+    address = ipaddress.ip_address(node_ip)
+    if not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ValueError('Git NodePort must be a TCP port')
+    name = 'native-git-egress-' + uuid.uuid4().hex[:8]
+    policy = {
+        'apiVersion': 'networking.k8s.io/v1', 'kind': 'NetworkPolicy',
+        'metadata': {'name': name, 'namespace': a.ns},
+        'spec': {
+            'podSelector': {'matchExpressions': [{
+                'key': 'app.kubernetes.io/name', 'operator': 'In',
+                'values': ['artifactory-pi', 'artifactory-source-task'],
+            }]},
+            'policyTypes': ['Egress'],
+            'egress': [{
+                'to': [{'ipBlock': {'cidr': f'{address}/{address.max_prefixlen}'}}],
+                'ports': [{'protocol': 'TCP', 'port': port}],
+            }],
+        },
+    }
+    try:
+        # apply 已写入但响应中断时，仍删除临时策略。
+        a.apply(policy)
+        yield name
+    finally:
+        a.kubectl('delete', 'networkpolicy', name, '--ignore-not-found')
+
+
+def native_git_ready(a, git_origin):
+    ca = (a.run / 'pki/ca.pem').read_text()
+    endpoint = git_origin + '/info/refs?service=git-upload-pack'
+    http = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        urllib.request.HTTPSHandler(context=ssl.create_default_context(cadata=ca)))
+
+    def host_refs():
+        with http.open(endpoint, timeout=3) as response:
+            return response.status == 200 and b'# service=git-upload-pack' in response.read(256)
+
+    a.wait(host_refs, 60)
+    pool = json.loads(a.kubectl('get', 'agentpool', 'default', '-o', 'json'))['spec']
+    name = 'native-git-ready-' + uuid.uuid4().hex[:8]
+    script = '''
+const https = require("node:https");
+const endpoint = __ENDPOINT__;
+const ca = __CA__;
+const deadline = Date.now() + 45000;
+let attempts = 0;
+function probe() {
+  attempts++;
+  let done = false;
+  function finish(connected) {
+    if (done) return;
+    done = true;
+    if (!connected && Date.now() < deadline) return setTimeout(probe, 1000);
+    console.log(JSON.stringify({connected, attempts}));
+    process.exit(connected ? 0 : 1);
+  }
+  const request = https.get(endpoint, {ca}, response => {
+    let body = "";
+    response.on("data", chunk => body += chunk);
+    response.on("end", () => finish(response.statusCode === 200 && body.includes("# service=git-upload-pack")));
+    response.on("error", () => finish(false));
+  });
+  request.setTimeout(3000, () => request.destroy());
+  request.on("error", () => finish(false));
+}
+probe();
+'''.replace('__ENDPOINT__', json.dumps(endpoint)).replace('__CA__', json.dumps(ca))
+    pod = {
+        'apiVersion': 'v1', 'kind': 'Pod',
+        'metadata': {'name': name, 'namespace': a.ns,
+                     'labels': {'app.kubernetes.io/name': 'artifactory-source-task'}},
+        'spec': {'restartPolicy': 'Never', 'automountServiceAccountToken': False,
+                 'containers': [{'name': 'probe', 'image': pool['image'],
+                                 'imagePullPolicy': pool.get('imagePullPolicy', 'IfNotPresent'),
+                                 'command': ['node', '-e', script]}]},
+    }
+    try:
+        a.apply(pod)
+        a.wait(lambda: json.loads(a.kubectl('get', 'pod', name, '-o', 'json'))['status']['phase']
+               in ['Succeeded', 'Failed'], 90)
+        result = json.loads(a.kubectl('logs', name).strip())
+        assert result['connected'], 'Restricted Pod must read Git refs before creating a build'
+        return {'host_refs': True, 'restricted_pod_refs': True, 'restricted_attempts': result['attempts']}
+    finally:
+        a.kubectl('delete', 'pod', name, '--ignore-not-found')
+
+
 def diagnostic_error(value):
     if not isinstance(value, str):
         return None
@@ -111,6 +204,7 @@ def run(args):
     build = None
     node = None
     restore_devices = ExitStack()
+    restore_network = ExitStack()
     agent_pool = json.loads(a.kubectl('get', 'agentpool', 'default', '-o', 'json'))['spec']
     original_control = environment(a, 'control-plane')
     original_upstream = environment(a, 'upstream')
@@ -150,7 +244,9 @@ def run(args):
         service['spec'].update(type='NodePort',selector={'app':'upstream'})
         a.apply(service)
         port = json.loads(a.kubectl('get','service','upstream-native','-o','json'))['spec']['ports'][0]['nodePort']
+        restore_network.enter_context(native_git_egress(a, a.node_ip, port))
         git_origin = f'https://{a.node_ip}:{port}/repo.git'
+        evidence['git_readiness'] = native_git_ready(a, git_origin)
         project = a.api('/api/v1/projects', {'name': name, 'repository_url': git_origin,})['id']
         build = a.api('/api/v1/projects/' + project + '/builds', {'ref': 'v-fixture', 'goal': 'Inspect source and build dist/result.txt on the host-native device', 'target_requirements': [{'os': host_os, 'arch': arch}]})['id']
         evidence['build_id'] = build
@@ -219,8 +315,12 @@ def run(args):
                 restore_devices.close()
                 evidence['existing_device_draining_restored'] = True
             finally:
-                (directory/'evidence.json').write_text(json.dumps(evidence, indent=2))
-                a.cleanup()
+                try:
+                    restore_network.close()
+                    evidence['temporary_git_egress_removed'] = True
+                finally:
+                    (directory/'evidence.json').write_text(json.dumps(evidence, indent=2))
+                    a.cleanup()
     evidence['passed'] = True
     (directory/'evidence.json').write_text(json.dumps(evidence, indent=2))
     print('HOST NATIVE ACCEPTANCE PASSED', directory/'evidence.json', flush=True)
