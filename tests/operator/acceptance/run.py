@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 独立服务镜像、临时命名空间和确定性模型夹具。
-[OUTPUT]: 验证 Agent 规划、源码、原生构建与网关制品交付。
+[OUTPUT]: 验证规划、持久会话、原生构建与网关制品交付。
 [POS]: 仅修改指定验收命名空间；私密证据保存在 .local/。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -285,6 +285,27 @@ class Acceptance:
                 return messages
             after = page['next_cursor']
 
+    def wait_conversation(self, build, run, generation, digest, seconds=60):
+        # === 跨库回执 ===
+        # 业务构建完成后，Runtime 仍须重试已丢失的接受回执。
+        def ready():
+            sessions = self.api('/api/v1/builds/'+build+'/planning/conversations')['conversations']
+            messages = self.conversation(build, run, generation)
+            self.evidence['conversation_snapshot'] = {
+                'sessions': [{key: session.get(key) for key in
+                    ('run_id', 'generation', 'status', 'source_digest')} for session in sessions],
+                'message_count': len(messages),
+                'message_kinds': sorted({message['kind'] for message in messages}),
+            }
+            (self.run / 'evidence.json').write_text(json.dumps(self.evidence, indent=2))
+            if (len(sessions) == 1 and sessions[0]['run_id'] == run
+                    and sessions[0]['generation'] == generation
+                    and sessions[0]['status'] == 'succeeded'
+                    and sessions[0]['source_digest'] == digest and messages):
+                return sessions, messages
+            return None
+        return self.wait(ready, seconds)
+
     def verify(self):
         self.kubectl('patch','agentpool','default','--type=merge','-p','{"spec":{"maxActive":2}}')
         self.service_request(39443,'/test/mode',{'reset_ack':True,'hold':True})
@@ -318,8 +339,7 @@ class Acceptance:
         self.check('lost acceptance ACK reuses result without another inference','fixture_dropped_accept_acks 1' in self.service_request(39443,'/metrics') and calls==4)
         self.check('native build verifies actual LFS bytes',detail['artifacts'] and detail['artifacts'][0]['sha256']==hashlib.sha256(b'operator-native-ok\n').hexdigest())
         self.verify_artifact_gateway(detail['artifacts'][0])
-        sessions = self.api('/api/v1/builds/'+build+'/planning/conversations')['conversations']
-        messages = self.conversation(build,run,1)
+        sessions, messages = self.wait_conversation(build,run,1,manifest['digest'])
         self.check('AI conversation is durable and independent of source cleanup',len(sessions)==1 and sessions[0]['status']=='succeeded' and sessions[0]['source_digest']==manifest['digest'] and bool(messages))
         self.check('conversation includes source tool and validated proposal results','README.md' in json.dumps(messages) and {'proposal_submitted','proposal_result'} <= {m['kind'] for m in messages})
         self.evidence.update(calls=calls,source_manifest_id=manifest_id,source_digest=manifest['digest'],conversation_messages=len(messages))

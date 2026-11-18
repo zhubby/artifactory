@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 验收清单渲染器、本机 HTTP 服务和工作区 Dockerfile。
-[OUTPUT]: 验证会话分页、设备隔离、同源切换与独立镜像。
+[OUTPUT]: 验证会话分页与回执收敛、设备隔离和独立镜像。
 [POS]: 只执行本机检查，不访问 Docker 或 Kubernetes。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -206,6 +206,58 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(acceptance.conversation('build','run',2),[{'sequence':1},{'sequence':2}])
         self.assertTrue(paths[0].endswith('after=0&limit=50'))
         self.assertTrue(paths[1].endswith('after=1&limit=50'))
+
+    def test_conversation_waits_for_runtime_acknowledgement(self):
+        acceptance = MODULE.Acceptance.__new__(MODULE.Acceptance)
+        acceptance.evidence = {}
+        polls = []
+        with tempfile.TemporaryDirectory() as temporary:
+            acceptance.run = Path(temporary)
+
+            def api(path):
+                if path.endswith('/conversations'):
+                    polls.append(path)
+                    return {'conversations': [{'run_id': 'run', 'generation': 1,
+                        'status': 'running' if len(polls) == 1 else 'succeeded',
+                        'source_digest': 'fixed'}]}
+                return {'messages': [{'sequence': 1, 'kind': 'proposal_result'}], 'next_cursor': None}
+
+            def wait(callback, seconds):
+                self.assertEqual(seconds, 60)
+                self.assertIsNone(callback(), 'business completion does not acknowledge the Runtime outbox')
+                return callback()
+
+            acceptance.api = api
+            acceptance.wait = wait
+            sessions, messages = acceptance.wait_conversation('build', 'run', 1, 'fixed')
+            self.assertEqual(sessions[0]['status'], 'succeeded')
+            self.assertEqual(messages[0]['kind'], 'proposal_result')
+            self.assertEqual(len(polls), 2)
+
+    def test_conversation_wait_retains_strict_checks_and_safe_timeout_evidence(self):
+        for changes in ({'source_digest': 'wrong'}, {'messages': []}, {'extra_session': True}):
+            with self.subTest(changes=changes), tempfile.TemporaryDirectory() as temporary:
+                acceptance = MODULE.Acceptance.__new__(MODULE.Acceptance)
+                acceptance.run = Path(temporary)
+                acceptance.evidence = {}
+                session = {'run_id': 'run', 'generation': 1, 'status': 'succeeded',
+                    'source_digest': changes.get('source_digest', 'fixed'), 'secret': 'raw-credential'}
+                messages = changes.get('messages', [{'sequence': 1, 'kind': 'message',
+                    'payload': {'secret': 'raw-credential'}}])
+                acceptance.api = lambda path: ({'conversations': [session] *
+                    (2 if changes.get('extra_session') else 1)} if path.endswith('/conversations')
+                    else {'messages': messages, 'next_cursor': None})
+
+                def timeout(callback, _seconds):
+                    self.assertIsNone(callback())
+                    raise TimeoutError('acknowledgement did not converge')
+
+                acceptance.wait = timeout
+                with self.assertRaises(TimeoutError):
+                    acceptance.wait_conversation('build', 'run', 1, 'fixed')
+                evidence = json.loads((acceptance.run / 'evidence.json').read_text())
+                self.assertEqual(evidence['conversation_snapshot']['message_count'], len(messages))
+                self.assertNotIn('raw-credential', json.dumps(evidence))
 
     def test_control_source_authority_has_no_secret_read_permission(self):
         acceptance = MODULE.Acceptance.__new__(MODULE.Acceptance)
