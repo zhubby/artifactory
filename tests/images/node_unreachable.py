@@ -1,6 +1,6 @@
 """[INPUT]: 专用单节点 kind、当前构建的 UID 链和已认证会话。
 [OUTPUT]: 验证 kubelet 失联后的台账、残留 Pod、并发阻塞与恢复清理。
-[POS]: 仅操作经 Docker label 与 Kubernetes 节点双证实的临时 kind。
+[POS]: 限定专属 kind；节点恢复后重建已退出的临时转发。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import json
@@ -153,6 +153,17 @@ class NodeUnreachable:
                     except subprocess.TimeoutExpired:
                         process.kill();process.wait(timeout=5)
                 a.processes=[]
-                a.forward('service/gateway','38081:8080')
-                a.forward('service/upstream','39443:9443')
-                a.wait(lambda:a.api('/api/v1/auth/config'),60)
+                def connected():
+                    if not a.processes or any(process.poll() is not None for process in a.processes):
+                        for process in a.processes:
+                            process.terminate()
+                        for process in a.processes:
+                            try:
+                                process.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                process.kill();process.wait(timeout=5)
+                        a.processes=[]
+                        a.forward('service/gateway','38081:8080')
+                        a.forward('service/upstream','39443:9443')
+                    return a.api('/api/v1/auth/config')
+                a.wait(connected,60)

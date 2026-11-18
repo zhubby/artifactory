@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """[INPUT]: 工作区源码、目标架构和隔离集群镜像地址。
-[OUTPUT]: 构建独立服务/构建镜像与双架构 RUN 夹具，归档导入 kind。
-[POS]: 仅构建并导入指定镜像，不创建集群工作负载。
+[OUTPUT]: 构建服务与双架构 RUN 夹具，只导入指定平台的运行镜像。
+[POS]: 核对 kind 节点归属，不解包证明 manifest 或创建工作负载。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
@@ -15,6 +15,23 @@ ROOT = Path(__file__).resolve().parents[3]
 
 def run(args, cwd=ROOT, env=None):
     subprocess.run(args, cwd=cwd, env=env, check=True)
+
+
+def load_kind_image(archive, cluster, platform):
+    nodes = subprocess.check_output(['kind', 'get', 'nodes', '--name', cluster], text=True).split()
+    if not nodes or len(nodes) != len(set(nodes)):
+        raise RuntimeError('Expected distinct nodes in the selected kind cluster')
+    for node in nodes:
+        owner = subprocess.check_output(['docker', 'inspect', '--format',
+            '{{ index .Config.Labels "io.x-k8s.kind.cluster" }}', node], text=True).strip()
+        if owner != cluster:
+            raise RuntimeError('Container does not belong to the selected kind cluster')
+    for node in nodes:
+        with archive.open('rb') as source:
+            # kind 0.24 的全平台和 digest 别名会把无标签证明清单当作镜像解包。
+            subprocess.run(['docker', 'exec', '--privileged', '-i', node, 'ctr', '--namespace=k8s.io',
+                'images', 'import', '--platform', platform, '--snapshotter=overlayfs', '-'],
+                stdin=source, cwd=ROOT, check=True)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -69,6 +86,6 @@ if __name__ == '__main__':
             with tempfile.TemporaryDirectory(prefix='kind-', dir=directory) as temporary:
                 archive = Path(temporary) / 'image.tar'
                 run(['docker', 'image', 'save', '--platform', args.platform, '--output', str(archive), image])
-                run(['kind', 'load', 'image-archive', '--name', args.kind, str(archive)])
+                load_kind_image(archive, args.kind, args.platform)
         else:
             run(['docker', 'push', image])

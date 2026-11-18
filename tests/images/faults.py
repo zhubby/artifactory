@@ -1,6 +1,6 @@
 """[INPUT]: 隔离验收客户端、专用 kind 与当前 Pod/Job/CR UID 链。
 [OUTPUT]: 注入实际容器/daemon 退出、取消与 Operator 重启。
-[POS]: kind 运行时操作先核对 sandbox UID，退出以实际 CRI 状态证明。
+[POS]: 核对完整 cgroup 路径，以 CRI 退出和内核同组 OOM 记录证明故障。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import json
@@ -31,6 +31,24 @@ def container_identity(node,a,pod,name,container_id):
     return status
 
 
+def container_cgroup(relative,pod_uid,container_id):
+    path=PurePosixPath(relative)
+    if not path.is_absolute() or '..' in path.parts:
+        raise FaultFailure('oom-cgroup-pod-container-identity-unproven')
+    allowed=set()
+    for qos in ['', 'burstable', 'besteffort']:
+        cgroupfs='/kubepods'+('/'+qos if qos else '')
+        allowed.add(cgroupfs+'/pod'+pod_uid+'/'+container_id)
+        for root,base in [('/kubepods.slice','kubepods'),
+                          ('/kubelet.slice/kubelet-kubepods.slice','kubelet-kubepods')]:
+            prefix=root+('/'+base+'-'+qos+'.slice' if qos else '')
+            pod_slice=base+('-'+qos if qos else '')+'-pod'+pod_uid.replace('-','_')+'.slice'
+            allowed.add(prefix+'/'+pod_slice+'/cri-containerd-'+container_id+'.scope')
+    if relative not in allowed:
+        raise FaultFailure('oom-cgroup-pod-container-identity-unproven')
+    return '/sys/fs/cgroup'+relative
+
+
 def force_oom(node,pod,container_id):
     if node.docker('stat','-fc','%T','/sys/fs/cgroup').stdout.strip()!=b'cgroup2fs':
         raise FaultFailure('oom-requires-cgroup-v2')
@@ -42,10 +60,7 @@ def force_oom(node,pod,container_id):
     if len(lines)!=1 or not lines[0].startswith('0::/'):
         raise FaultFailure('oom-requires-one-unified-cgroup')
     relative=lines[0].removeprefix('0::')
-    path=PurePosixPath(relative)
-    if '..' in path.parts or not relative.startswith('/kubepods') or container_id not in relative or pod['metadata']['uid'] not in relative.replace('_','-'):
-        raise FaultFailure('oom-cgroup-pod-container-identity-unproven')
-    target='/sys/fs/cgroup'+relative
+    target=container_cgroup(relative,pod['metadata']['uid'],container_id)
     try:
         original=node.docker('cat',target+'/memory.oom.group').stdout.strip()
         node.docker('tee',target+'/memory.oom.group',data=b'1\n')
@@ -57,6 +72,19 @@ def force_oom(node,pod,container_id):
     except Exception:
         node.docker('tee',target+'/memory.oom.group',data=original+b'\n',check=False)
         raise FaultFailure('oom-cgroup-limit-write-unavailable') from None
+    return relative
+
+
+def container_oom_observed(output,cgroup_relative):
+    constrained=False
+    group_killed=False
+    for line in output.decode(errors='replace').splitlines():
+        if 'oom-kill:constraint=CONSTRAINT_MEMCG,' in line:
+            match=re.search(r'(?:^|,)oom_memcg=([^,\s]+)',line)
+            constrained |= bool(match and match[1].endswith(cgroup_relative))
+        match=re.search(r'Tasks in (\S+) are going to be killed due to memory\.oom\.group set',line)
+        group_killed |= bool(match and match[1].endswith(cgroup_relative))
+    return constrained and group_killed
 
 
 def terminate(a,node_name,pod,container,daemon=False,oom=False):
@@ -74,19 +102,25 @@ def terminate(a,node_name,pod,container,daemon=False,oom=False):
     if before['state']!='CONTAINER_RUNNING':
         return None
     daemon_pid=None
-    if daemon:
+    if daemon or (oom and container=='buildkit'):
         try:
             a.kubectl('exec',pod['metadata']['name'],'-c','buildkit','--','buildctl','--addr','unix:///run/buildkit/buildkitd.sock','debug','workers')
         except RuntimeError:
             return None
+    if daemon:
         script='set -eu; for entry in /proc/[0-9]*; do IFS= read -r comm < "$entry/comm" || continue; if [ "$comm" = buildkitd ]; then pid=${entry##*/}; test "$pid" -gt 1; kill -KILL "$pid"; printf "%s\\n" "$pid"; exit 0; fi; done; exit 1'
         daemon_pid=int(a.kubectl('exec',pod['metadata']['name'],'-c','buildkit','--','sh','-c',script).strip())
         if daemon_pid<=1:
             raise AssertionError('BuildKit daemon PID must differ from namespace init')
     elif oom:
-        force_oom(node,pod,container_id)
+        relative=force_oom(node,pod,container_id)
+        return _confirmed_exit(node,a,pod,container,container_id,daemon_pid,relative)
     else:
         node.docker('crictl','stop','--timeout=0',container_id)
+    return _confirmed_exit(node,a,pod,container,container_id,daemon_pid,None)
+
+
+def _confirmed_exit(node,a,pod,container,container_id,daemon_pid,oom_path):
     deadline=time.monotonic()+20
     while time.monotonic()<deadline:
         status=container_identity(node,a,pod,container,container_id)
@@ -94,13 +128,17 @@ def terminate(a,node_name,pod,container,daemon=False,oom=False):
             code=status.get('exitCode')
             if not isinstance(code,int) or code==0:
                 raise AssertionError('Injected container did not actually exit nonzero')
-            if oom and (code!=137 or status.get('reason')!='OOMKilled'):
-                time.sleep(0.2)
-                continue
+            observed=False
+            if oom_path is not None:
+                # 容器被迅速清理时，CRI 会丢失 OOM 原因。内核同组记录才是注入证明。
+                observed=container_oom_observed(node.docker('dmesg','--raw').stdout,oom_path)
+                if code!=137 or not observed:
+                    raise FaultFailure('oom-runtime-exit-or-kernel-event-unproven')
             return {'container':container,'container_id':container_id,'exit_code':code,
                 'runtime_exit_observed':True,'sandbox_uid_verified':True,'daemon_pid':daemon_pid,
+                'kernel_cgroup_oom_observed':observed,
                 'reason':status.get('reason') if status.get('reason') in ['OOMKilled','Error','Completed'] else 'Other',
-                'method':'cgroup-v2-group-oom' if oom else ('daemon-sigkill' if daemon else 'runtime-stop-timeout-zero')}
+                'method':'cgroup-v2-group-oom' if oom_path is not None else ('daemon-sigkill' if daemon_pid is not None else 'runtime-stop-timeout-zero')}
         time.sleep(0.2)
     raise TimeoutError('Container runtime did not confirm an actual exit')
 
