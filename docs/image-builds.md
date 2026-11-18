@@ -136,7 +136,7 @@ Control 校验完整清单和固定提交后，在 `build.json` 的源码部分�
 
 BuildKit 的内容存储与快照仅存于本次 Pod 的 emptyDir。不导入或导出 Registry、S3、inline 或本地共享构建缓存，也不复用跨任务 daemon。`RUN --mount=type=cache` 只在本次 BuildKit 生命周期内有效。正式镜像是允许保留的制品，其 Dockerfile 明确复制的源码随镜像保存。
 
-`caSecret` 包含 `ca.crt`，挂载到源码 init、Runner、Publisher 和 BuildKit 的 `/run/ca`。源码 init 用它验证 Git；Runner 和 Publisher 用它验证 Control 与 Registry HTTPS。Buildctl 通过 `--registry-auth-tlscontext` 为内建仓库的独立令牌请求追加该 CA，保留系统根证书。BuildKit 读取的 `buildkitd.toml` 必须单独声明私有仓库 CA，例如：
+`caSecret` 必须包含 `ca.crt`。任务信任卷只投影该键，挂载到源码 init、Runner、Publisher 和 BuildKit 的 `/run/ca`；同一 Secret 的证书私钥不会进入任务。源码 init 用它验证 Git；Runner 和 Publisher 用它验证 Control 与 Registry HTTPS。Buildctl 通过 `--registry-auth-tlscontext` 为内建仓库的独立令牌请求追加该 CA，保留系统根证书。BuildKit 读取的 `buildkitd.toml` 必须单独声明私有仓库 CA，例如：
 
 ```toml
 [registry."build.example.com"]

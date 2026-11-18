@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖声明式资源生成器和模拟节点能力。
-//! [OUTPUT]: 验证 1.28 双容器、权限隔离、资源预算与归属 CRD。
+//! [OUTPUT]: 验证 1.28 双容器、公开 CA 投影、资源预算与归属 CRD。
 //! [POS]: 不连接集群的工作负载契约回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -209,6 +209,30 @@ fn source_init_has_exclusive_auth_and_no_persistent_cache() {
             .iter()
             .all(|v| v.get("persistentVolumeClaim").is_none())
     );
+}
+
+#[test]
+fn trust_volume_projects_only_public_ca_for_build_and_publish() {
+    for platform in [Some("linux/amd64"), None] {
+        let job = resources::job(&build(), &pool(), platform, Default::default()).unwrap();
+        let pod = job.spec.unwrap().template.spec.unwrap();
+        let secret = pod
+            .volumes
+            .unwrap()
+            .into_iter()
+            .find(|volume| volume.name == "ca")
+            .unwrap()
+            .secret
+            .unwrap();
+        assert_eq!(secret.secret_name.as_deref(), Some("ca"));
+        let items = secret
+            .items
+            .expect("shared TLS Secrets require a public CA allowlist");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].key, "ca.crt");
+        assert_eq!(items[0].path, "ca.crt");
+        assert_ne!(secret.optional, Some(true));
+    }
 }
 
 #[test]

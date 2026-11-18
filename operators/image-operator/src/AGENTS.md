@@ -2,7 +2,7 @@
 > L2 | Parent: ../AGENTS.md
 
 api.rs: 定义不可变执行身份、构建池和有界 Job UID 归属台账。
-resources.rs: 创建普通源码 init、Runner/BuildKit 普通容器和发布 Job，限定 1.28 权限。
+resources.rs: 创建源码 init、Runner/BuildKit 和发布 Job，信任卷只投影公开 CA。
 controller.rs: 先装 Finalizer，再建 Job；CR 删除前保留 UID 台账和残留容量。
 leadership.rs: 使用独立 Lease 保护 Image 控制器写入。
 buildkit.rs: 在容器 PID namespace 监督 rootless 进程树；只经有界协议交付失败诊断。
@@ -14,6 +14,6 @@ lib.rs: 隔离默认业务模块与最小本地协议构建。
 main.rs: 启动独立 Image Operator。
 bin/: 提供 CRD、Runner、Publisher 和 BuildKit 监督入口。
 
-resource_tests.rs: 验证 1.28 资源、凭据隔离、架构放置与资源预算。
+resource_tests.rs: 验证 1.28 资源、公开 CA 投影、凭据隔离与架构放置。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

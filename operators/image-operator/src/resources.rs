@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖固定 ImageBuild、管理员 BuilderPool 和可用节点。
 //! [OUTPUT]: 创建普通源码 init、独立 Runner 与 BuildKit 容器和 Publisher Job。
-//! [POS]: 声明 Kubernetes 1.28 的身份、凭据投影和进程隔离边界。
+//! [POS]: 声明 1.28 身份与进程隔离；信任卷只投影公开 CA。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::api::{BuilderPool, ImageBuild};
 use anyhow::{Result, ensure};
@@ -125,7 +125,7 @@ pub fn job(
         pod["volumes"]
             .as_array_mut()
             .unwrap()
-            .push(json!({"name":"ca","secret":{"secretName":pool.spec.ca_secret}}));
+            .push(json!({"name":"ca","secret":{"secretName":pool.spec.ca_secret,"items":[{"key":"ca.crt","path":"ca.crt"}]}}));
         if !publisher {
             pod["containers"][1]["volumeMounts"]
                 .as_array_mut()
