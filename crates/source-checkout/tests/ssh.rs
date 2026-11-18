@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖显式启用的独立 sshd、临时密钥和真实 Git。
+//! [INPUT]: 依赖独立 sshd、临时密钥与启用所有权检查的真实 Git。
 //! [OUTPUT]: 验证 SSH 固定提交、密钥认证及主机信任拒绝。
 //! [POS]: SSH 传输验收，不扫描宿主密钥或修改系统配置。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -143,7 +143,17 @@ async fn ssh_checkout_requires_bound_key_and_host_trust_for_fixed_commit() {
         command("which", &["git"])
     };
     let server_repository = server_path(&repository);
-    fs::write(&config, format!("HostKey {}\nPort {server_port}\nListenAddress {listen}\nPidFile /tmp/artifactory-test-sshd.pid\nUsePAM no\nUseDNS no\nStrictModes {}\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nAuthenticationMethods publickey\nPermitRootLogin prohibit-password\nAllowUsers {username}\nAllowAgentForwarding no\nAllowTcpForwarding no\nX11Forwarding no\nAuthorizedKeysFile {}\nForceCommand {} -c safe.directory={} upload-pack {}\n",server_path(&host).display(),if image.is_some(){"no"}else{"yes"},server_path(&authorized).display(),shell_quote(Path::new(&git_binary)),shell_quote(&server_repository),shell_quote(&server_repository))).unwrap();
+    // === 隔离上游所有权 ===
+    // upload-pack 进入 .git 后按 Git 目录校验所有权。
+    // 显式触发该检查，避免容器共享卷改写 UID 后掩盖 CI 问题。
+    let upload = format!(
+        "/usr/bin/env GIT_TEST_ASSUME_DIFFERENT_OWNER=1 {} -c safe.directory={} -c safe.directory={} upload-pack {}",
+        shell_quote(Path::new(&git_binary)),
+        shell_quote(&server_repository),
+        shell_quote(&server_repository.join(".git")),
+        shell_quote(&server_repository)
+    );
+    fs::write(&config, format!("HostKey {}\nPort {server_port}\nListenAddress {listen}\nPidFile /tmp/artifactory-test-sshd.pid\nUsePAM no\nUseDNS no\nStrictModes {}\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nAuthenticationMethods publickey\nPermitRootLogin prohibit-password\nAllowUsers {username}\nAllowAgentForwarding no\nAllowTcpForwarding no\nX11Forwarding no\nAuthorizedKeysFile {}\nForceCommand {upload}\n",server_path(&host).display(),if image.is_some(){"no"}else{"yes"},server_path(&authorized).display())).unwrap();
     let diagnostics = root.path().join("sshd.log");
     let container = image.as_ref().map(|_| {
         Container(format!(
