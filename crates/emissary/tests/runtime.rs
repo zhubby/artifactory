@@ -1,6 +1,6 @@
 //! [INPUT]: 本机执行程序、mTLS 平台夹具和 OTA 签名组件。
 //! [OUTPUT]: 验证 TLS 约束、运行时停机、OTA 升级和回滚。
-//! [POS]: 使用真实子进程；首连前暴露监督任务退出原因。
+//! [POS]: 使用真实子进程；源码和首连失败暴露退出原因。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod support;
 #[cfg(unix)]
@@ -584,7 +584,7 @@ async fn worker_kills_process_tree_on_parent_death_and_lease_expiry() {
             },
             attempt_id: id.clone(),
             lease_token: "test".into(),
-            lease_seconds: if cause == "lease-expiry" { 2 } else { 30 },
+            lease_seconds: 30,
             assignment: Some(Assignment {
                 source_manifest_json: fixture.source_manifest(&repo, &commit).await,
                 timeout_seconds: 60,
@@ -619,13 +619,52 @@ async fn worker_kills_process_tree_on_parent_death_and_lease_expiry() {
             events
         });
         let marker = root.join("work").join(&id).join("source/child.pid");
-        tokio::time::timeout(Duration::from_secs(10), async {
+        let started = tokio::time::timeout(Duration::from_secs(10), async {
             while !marker.exists() {
+                if let Some(status) = child.try_wait().expect("query worker preparation status") {
+                    return Some(status);
+                }
                 tokio::time::sleep(Duration::from_millis(25)).await;
             }
+            None
         })
-        .await
-        .unwrap();
+        .await;
+        if !matches!(started, Ok(None)) {
+            drop(stdin);
+            let status = match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
+                Ok(status) => status.expect("wait for failed worker preparation"),
+                Err(_) => {
+                    child
+                        .kill()
+                        .await
+                        .expect("stop unresponsive fixture worker");
+                    child.wait().await.expect("reap fixture worker")
+                }
+            };
+            let events = match tokio::time::timeout(Duration::from_secs(3), drain).await {
+                Ok(Ok(events)) => serde_json::to_string(
+                    &events
+                        .iter()
+                        .map(|event| {
+                            serde_json::json!({
+                                "kind": event.kind,
+                                "step": event.step,
+                                "status": event.payload["status"],
+                                "failure_kind": event.payload["failure_kind"],
+                                "lease_expired": event.payload["error"] == "execution lease expired",
+                                "data_bytes": event.data.len(),
+                            })
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .expect("serialize worker event summary"),
+                Ok(Err(error)) => format!("event reader failed: {error}"),
+                Err(_) => "event reader timed out".into(),
+            };
+            panic!(
+                "worker did not reach running step: cause={cause}, preparation={started:?}, status={status}, event_summary={events}"
+            );
+        }
         let pid = fs::read_to_string(marker)
             .unwrap()
             .trim()
@@ -633,6 +672,17 @@ async fn worker_kills_process_tree_on_parent_death_and_lease_expiry() {
             .unwrap();
         if cause == "parent-death" {
             drop(stdin);
+        } else if cause == "lease-expiry" {
+            // 源码准备不消耗短租约；步骤启动后才验证运行中租约过期。
+            let mut renewal = serde_json::to_vec(&Input {
+                kind: "renew".into(),
+                lease_seconds: 2,
+                ..Default::default()
+            })
+            .unwrap();
+            renewal.push(b'\n');
+            stdin.write_all(&renewal).await.unwrap();
+            stdin.flush().await.unwrap();
         } else if cause == "sigterm" {
             assert!(
                 std::process::Command::new("kill")
@@ -653,6 +703,13 @@ async fn worker_kills_process_tree_on_parent_death_and_lease_expiry() {
                 .any(|e| e.kind == "finished" && e.payload["status"] == "failed"),
             "{cause}"
         );
+        if cause == "lease-expiry" {
+            assert!(
+                events.iter().any(|event| event.kind == "finished"
+                    && event.payload["error"] == "execution lease expired"),
+                "running step must stop because its lease expired"
+            );
+        }
         assert!(
             !root.join("work").join(&id).exists(),
             "workspace remains: {cause}"

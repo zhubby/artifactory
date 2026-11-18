@@ -7,7 +7,7 @@ ota_download.rs: 验证更新下载失败不会替换当前二进制。
 live_protocol.rs: 复用隔离租户夹具，验证会话、租约、事件与存储协议。
 process_tree.rs: 验证取消与子进程回收，PID 标记原子发布。
 native_service.rs: 隔离测试账户的上游仓库与服务私有目录，验证原生服务生命周期。
-runtime.rs: 验证双向 TLS、在线源码材料与 EOF、租约、SIGTERM 回收。
+runtime.rs: 在线源码准备后验证 EOF、运行中租约和 SIGTERM 回收，并输出提前退出诊断。
 support/: 共享平台证书夹具、首连超时诊断与真实租户协议夹具。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md
