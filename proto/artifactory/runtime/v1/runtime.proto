@@ -1,8 +1,11 @@
+// [INPUT]: 依赖 runtime-protocol 的 JSON 消息契约。
+// [OUTPUT]: 定义规划执行、租约、工具和授权校验 RPC。
+// [POS]: 控制平面与 Runtime 的共享传输边界。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 syntax = "proto3";
 package artifactory.runtime.v1;
 
-// Versioned control/data boundary. JSON bodies use the Rust runtime-protocol
-// types; large source/checkpoint/plan data is stored outside Kubernetes objects.
+// 源码清单、完整对话和执行计划不写入 Kubernetes 对象。
 service Runtime {
   rpc PutIntent(JsonRequest) returns (JsonReply);
   rpc GetRun(JsonRequest) returns (JsonReply);

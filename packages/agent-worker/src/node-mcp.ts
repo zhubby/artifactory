@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 MCP SDK 与 Runtime 的任务授权 RPC。
+ * [OUTPUT]: 提供规划任务内的只读设备查询会话。
+ * [POS]: 以进程内传输连接模型和设备工具，不开放监听端口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
