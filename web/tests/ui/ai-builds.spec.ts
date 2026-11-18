@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证ai-builds页面行为。
+ * [OUTPUT]: 验证规划与会话交互，保存桌面和移动截图。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -190,7 +190,7 @@ for (const locale of ["zh-CN", "en"] as const) {
 }
 
 
-test("planning conversations load on demand and paginate completed messages",async({page})=>{
+test("planning conversations load on demand and paginate completed messages",async({page},info)=>{
  await fixtureAPI(page);
  await page.context().addCookies([{name:"artifactory-locale",value:"en",url:"http://127.0.0.1:3100"}]);
  const item={...build,goal:"Build source",status:"succeeded",source_manifest_id:"manifest-fixed"};
@@ -211,10 +211,11 @@ test("planning conversations load on demand and paginate completed messages",asy
  await page.locator("summary").filter({hasText:"2 · assistant"}).click();
  await expect(page.getByText(/Completed audit answer <script>/)).toBeVisible();
  await expect(page.locator("script").filter({hasText:"Completed audit answer"})).toHaveCount(0);
+ await page.screenshot({path:info.outputPath("planning-conversation.png"),fullPage:true});
 });
 
 
-test("planning conversation reads final messages after its status changes",async({page})=>{
+test("planning conversation reads final messages after its status changes",async({page},info)=>{
  await fixtureAPI(page);
  await page.context().addCookies([{name:"artifactory-locale",value:"en",url:"http://127.0.0.1:3100"}]);
  const item={...build,goal:"Build source",status:"planning",source_manifest_id:"manifest-fixed"};
@@ -229,4 +230,5 @@ test("planning conversation reads final messages after its status changes",async
  await expect.poll(()=>reads).toBe(1);status="succeeded";
  await expect(page.locator("summary").filter({hasText:"2 · proposal_result"})).toBeVisible({timeout:8000});
  await page.locator("summary").filter({hasText:"2 · proposal_result"}).click();await expect(page.getByText(/final durable receipt/)).toBeVisible();
+ await page.screenshot({path:info.outputPath("planning-conversation-final.png"),fullPage:true});
 });

@@ -1,7 +1,7 @@
 # web/tests/ui/
 > L2 | Parent: ../AGENTS.md
 
-ai-builds.spec.ts: 验证规划、澄清、按需对话分页与终态补读。
+ai-builds.spec.ts: 验证规划、澄清、对话分页与终态补读，保存响应式截图。
 accessibility.spec.ts: 验证共享页面的 WCAG 自动检查。
 browser-audit.spec.ts: 验证快捷导航、偏好面板和日志保持。
 build-source-edge.spec.ts: 验证源码选择边界。
