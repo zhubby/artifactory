@@ -1,4 +1,7 @@
-//! Private CRUD projections. Baseline SQL owns defaults, constraints and indexes.
+//! [INPUT]: 依赖 Toasty 模型宏和新初始化基线。
+//! [OUTPUT]: 提供业务记录的私有 CRUD 投影。
+//! [POS]: SQL 持有默认值、约束和索引，模型只描述读写列。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Server-generated columns omitted here retain their PostgreSQL defaults.
 use uuid::Uuid;
 
@@ -58,7 +61,6 @@ pub(super) struct Project {
     pub build_context: String,
     #[column(type = jsonb)]
     pub source_credentials: toasty::Json<serde_json::Value>,
-    pub planner_backend: String,
 }
 
 #[derive(Debug, toasty::Model)]
@@ -77,16 +79,6 @@ pub(super) struct EnrollmentToken {
     pub id: Uuid,
     pub token_hash: String,
     pub pool_id: Uuid,
-    pub expires_at: jiff::Timestamp,
-}
-
-#[derive(Debug, toasty::Model)]
-#[table = "ai_enrollment_tokens"]
-pub(super) struct AiEnrollmentToken {
-    pub tenant_id: Uuid,
-    #[key]
-    pub id: Uuid,
-    pub token_hash: String,
     pub expires_at: jiff::Timestamp,
 }
 
@@ -209,7 +201,7 @@ pub(super) struct PlanRevision {
     pub build_id: Uuid,
     pub run_id: Uuid,
     pub revision: i32,
-    pub source_snapshot_id: Uuid,
+    pub source_manifest_id: Uuid,
     #[column(type = jsonb)]
     pub contents: toasty::Json<serde_json::Value>,
     pub sha256: String,
@@ -308,22 +300,6 @@ pub(super) struct AuditEvent {
     #[column(type = jsonb)]
     #[default(toasty::Json(serde_json::json!({})))]
     pub details: toasty::Json<serde_json::Value>,
-}
-
-#[derive(Debug, toasty::Model)]
-#[table = "remote_source_requests"]
-#[key(build_id)]
-pub(super) struct RemoteSourceRequest {
-    pub build_id: Uuid,
-    pub origin: String,
-}
-
-#[derive(Debug, toasty::Model)]
-#[table = "source_project_routes"]
-#[key(project_id)]
-pub(super) struct SourceProjectRoute {
-    pub project_id: Uuid,
-    pub origin: String,
 }
 
 #[derive(Debug, toasty::Model)]

@@ -408,8 +408,7 @@ async fn native_service_lifecycle() {
                 lease_token: "native-fixture".into(),
                 lease_seconds: 90,
                 assignment: Some(pb::Assignment {
-                    repository_url: repo.to_string_lossy().into(),
-                    commit_sha: commit.clone(),
+                    source_manifest_json: fixture.source_manifest(&repo, &commit).await,
                     timeout_seconds: 120,
                     steps: vec![pb::Step {
                         name: "tree".into(),
@@ -513,8 +512,7 @@ async fn native_service_lifecycle() {
                 lease_token: "followup".into(),
                 lease_seconds: 90,
                 assignment: Some(pb::Assignment {
-                    repository_url: repo.to_string_lossy().into(),
-                    commit_sha: commit.clone(),
+                    source_manifest_json: fixture.source_manifest(&repo, &commit).await,
                     timeout_seconds: 60,
                     steps: vec![pb::Step {
                         name: "followup".into(),

@@ -30,6 +30,7 @@ async fn main() -> anyhow::Result<()> {
             service::required("ARTIFACTORY_SERVICE_TOKEN")?,
         )?,
         leader,
+        source_admission: tokio::sync::Mutex::new(()),
     });
     let election = ctx.clone();
     tokio::spawn(async move {
@@ -51,6 +52,9 @@ async fn main() -> anyhow::Result<()> {
             tokio::time::sleep(Duration::from_secs(3)).await;
         }
     });
-    controller::controller(ctx).await;
+    tokio::join!(
+        controller::controller(ctx.clone()),
+        artifactory_agent_operator::source_tasks::controller(ctx)
+    );
     Ok(())
 }

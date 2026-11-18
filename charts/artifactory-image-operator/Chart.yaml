@@ -1,6 +1,11 @@
+# [INPUT]: Kubernetes 1.33 和 Image Operator 应用版本。
+# [OUTPUT]: 声明独立 Image Helm 交付包。
+# [POS]: 要求平台构建使用原生 BuildKit sidecar。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 apiVersion: v2
 name: artifactory-image-operator
 description: Independent BuildKit image execution operator
 type: application
 version: 0.2.0
 appVersion: "0.2.0"
+kubeVersion: '>=1.33.0-0'

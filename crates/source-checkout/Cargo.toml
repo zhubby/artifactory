@@ -1,0 +1,21 @@
+[package]
+name = "artifactory-source-checkout"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow = "1"
+hex = "0.4"
+process-wrap = { version = "10", features = ["tokio1"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+url = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+zeroize = "1"
+
+[dev-dependencies]
+axum = "0.8"

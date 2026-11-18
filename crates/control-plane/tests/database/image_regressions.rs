@@ -58,7 +58,7 @@ async fn deletion_sweeps_orphan_image_logs_after_grace_and_resumes_storage_failu
         .claim_image(job, id, "build", "publish")
         .await
         .unwrap();
-    store.save_image_task(id, "sealed", None).await.unwrap();
+    store.save_image_task(id, "sealed").await.unwrap();
     let prefix = format!("{tenant}/{project}/image-logs/");
     let indexed = format!("{prefix}{id}/linux/amd64/1-first");
     let orphan = format!("{prefix}{id}/linux/amd64/1-conflict");
@@ -174,7 +174,7 @@ async fn external_history_keeps_public_registry_origin_after_revocation() {
         .claim_image(job, id, "build", "publish")
         .await
         .unwrap();
-    store.save_image_task(id, "sealed", None).await.unwrap();
+    store.save_image_task(id, "sealed").await.unwrap();
     let digest = platform_results(&store, id).await;
     store
         .image_report(id, true, &Report::Published { digest }, None)
@@ -234,7 +234,7 @@ async fn dispatch_deadline_keeps_complete_platforms_retryable() {
         .claim_image(job, id, "build", "publish")
         .await
         .unwrap();
-    store.save_image_task(id, "sealed", None).await.unwrap();
+    store.save_image_task(id, "sealed").await.unwrap();
     platform_results(&store, id).await;
     sql::execute(
         &mut db.pool.clone(),
@@ -261,7 +261,7 @@ async fn dispatch_deadline_keeps_complete_platforms_retryable() {
 async fn draining_preserves_accepted_images_and_rejects_new_work() {
     for tenant_drain in [false, true] {
         let db = Database::with_tenant().await;
-        let (project, build, job, snapshot) = image(&db).await;
+        let (project, build, job, _manifest) = image(&db).await;
         let store = &db.state.store;
         let queued = Uuid::new_v4();
         sql::execute(&mut db.pool.clone(), "INSERT INTO jobs(id,build_id,target,target_config) SELECT $1,build_id,'queued-image',target_config FROM jobs WHERE id=$2", params![queued,job]).await.unwrap();
@@ -270,10 +270,7 @@ async fn draining_preserves_accepted_images_and_rejects_new_work() {
             .claim_image(job, id, "build", "publish")
             .await
             .unwrap();
-        store
-            .save_image_task(id, "sealed", Some("source-hash"))
-            .await
-            .unwrap();
+        store.save_image_task(id, "sealed").await.unwrap();
         let tenant = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
         let owner: Uuid = sql::scalar(
             &mut db.pool.clone(),
@@ -305,12 +302,7 @@ async fn draining_preserves_accepted_images_and_rejects_new_work() {
             store.image_live(id).await.unwrap(),
             "draining must keep accepted workers authorized"
         );
-        assert!(
-            store
-                .image_source_authorized("source-hash", snapshot)
-                .await
-                .unwrap()
-        );
+        assert!(store.image_live(id).await.unwrap());
         store
             .image_report(
                 id,
@@ -332,7 +324,7 @@ async fn draining_preserves_accepted_images_and_rejects_new_work() {
                 .unwrap()
         );
         store
-            .save_image_task(queued_id, "queued-sealed", None)
+            .save_image_task(queued_id, "queued-sealed")
             .await
             .unwrap();
         for execution in [id, queued_id] {

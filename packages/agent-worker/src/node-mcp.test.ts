@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 MCP SDK、Runtime HTTP 和任务租约。
+ * [OUTPUT]: 验证节点工具范围与过期身份拒绝。
+ * [POS]: Worker 节点查询的真实协议回归。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -42,12 +48,12 @@ test("same MCP session works over HTTP Runtime lease transport and rejects fence
   const address = server.address();
   assert.ok(address && typeof address === "object");
   const post = httpPost(`http://127.0.0.1:${address.port}`, abort.signal);
-  const rpc = runtimeRpc(lease, "", post, abort.signal);
+  const rpc = runtimeRpc(lease, post, abort.signal);
   const session = await connectNodeMcp(rpc);
   try {
     const result = await session.client.callTool({ name: "get_node", arguments: { node_id: "00000000-0000-0000-0000-000000000001" } });
     assert.equal(result.isError, false);
-    const fenced = await connectNodeMcp(runtimeRpc({ ...lease, generation: 1 }, "", post, abort.signal));
+    const fenced = await connectNodeMcp(runtimeRpc({ ...lease, generation: 1 }, post, abort.signal));
     try {
       const rejected = await fenced.client.callTool({ name: "get_node", arguments: { node_id: "00000000-0000-0000-0000-000000000001" } });
       assert.equal(rejected.isError, true);

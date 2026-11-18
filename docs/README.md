@@ -2,7 +2,7 @@
 
 面向个人与内部可信团队的跨平台应用构建、签名与内部分发平台。
 
-**只读 Git 项目 → 固定源码快照 → AI 执行计划 → 原生节点构建 → 签名与校验 → 私有制品 → 不可变 Release。**
+**只读 Git 项目 → 固定 commit 与源码元数据 → AI 执行计划 → 原生节点构建 → 签名与校验 → 私有制品 → 不可变 Release。**
 
 [返回控制台](/) · [GitHub 仓库](https://github.com/zhubby/artifactory)
 
@@ -13,10 +13,10 @@
 | 接入项目并开始构建 | [零侵入 AI 构建](ai-builds.md) |
 | 部署独立实例、注册构建节点 | [部署与运维](operations.md) |
 | 使用 Kubernetes 或本机 kind | [Helm 部署](helm.md)、[Operator 运维](operator-operations.md) |
-| 配置多副本或迁移数据库 | [控制平面高可用](control-ha.md)、[Toasty 迁移](toasty-migration.md) |
+| 配置多副本与任务临时存储 | [控制平面高可用](control-ha.md)、[Operator 运维](operator-operations.md) |
 | 了解服务职责和目录布局 | [模块布局与命名](module-layout.md) |
 | 升级节点、查询时序指标 | [Emissary OTA](emissary-ota.md)、[时序观测](telemetry.md) |
-| 集成 HTTP API 或设备协议 | [HTTP API](api.md)、[Emissary 协议](protocol.md)、[Runtime / Source](runtime-protocol.md) |
+| 集成 HTTP API 或设备协议 | [HTTP API](api.md)、[Emissary 协议](protocol.md)、[Runtime / 源码准备](runtime-protocol.md) |
 | 确认可用范围与实际测试结果 | [实施与验收记录](acceptance.md) |
 
 ## 如何使用这份文档

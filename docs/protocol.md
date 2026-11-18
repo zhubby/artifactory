@@ -58,10 +58,12 @@ Emissary 在租约内断线保持 Worker，重连后补报；无续租则本地�
 
 协议主版本仍为 1。启动快照的 capabilities（旧节点为 hello 的 capabilities）包含 `emissary-ota-v1` 才调度升级。心跳的独立 `ota` 对象报告持久化阶段；`emissary_update` 命令使用 Command.payload_json（新增字段 10），没有 attempt_id / lease_token；`emissary_health` 引用当前心跳 command_id。所有状态及确认继续验证节点 mTLS 身份、当前 session、吊销和证书期限。升级确认没有收到时不提交候选版本。
 
-## AI 与平台源码扩展
+## AI 与临时源码
 
-新 Emissary 声明 `source-cache-v1` 和 `external-build-plan-v1` 能力后，才可获得 AI 构建。Assignment 增加源码快照/仓库对象、计划版本及外置脚本。源码临时 token 只绑定有效 attempt，凭据通过 Askpass 使用；上游 Git 凭据不离开控制平面。Emissary 的 `source_cache` 事件记录每个仓库命中状态和固定 commit，服务端与快照核对并按既有序号去重。
+AI 规划只使用 Kubernetes Pi Job。Runtime 提供模型代理，保存累计调用预算、用量、截止时间、proposal 和分代会话。Worker 丢失后创建新 generation，不回放旧 checkpoint，不重置预算。协议细节见 [运行协议](runtime-protocol.md)。
 
-独立 `PlannerEnrollment.Enroll` 签发 Agent worker 身份；`Planning.Poll/Heartbeat/Tool/Report` 使用 mTLS、规划 run ID 与 lease token。每个 worker 同时一个任务，90 秒租约、10 秒心跳；持久截止时间默认十分钟、调用预算二十次。重启恢复 checkpoint 和剩余预算。排空停止新任务，吊销立即使 RPC 失效。
+Assignment 使用 `source_manifest_json` 传递固定元数据，包含仓库路径、上游 URL、commit、标签与 LFS OID。凭据不进入 Assignment。原生 Emissary 经 mTLS 调用 `Control.AcquireSourceMaterial`，请求包含 attempt、租约令牌和 Manifest digest；服务端验证节点身份、任务当前授权、租约、计划版本和源码清单。
 
-计划提交、澄清、取消和过期回收在数据库事务内校验最新状态。被拒计划完整回滚；旧 token、旧 run 和重复完成不能排队。修订固定源码与权限，只替换失败目标；每个 attempt 持久引用自己的 source_snapshot_id 与 plan_revision_id。消息主版本和既有执行/日志/制品契约保持为 1。
+每个 attempt 直接从上游拉取到独立临时目录。Kubernetes 任务使用 init container、投影令牌和 `emptyDir`。控制平面不代理 Git/LFS 流量，不保存源码包或缓存。只有准备进程领取源码凭据，任务退出后清理源码和临时认证材料。
+
+计划提交、澄清、取消和过期回收通过事务排序。重发相同结果返回原回执；过期任务不能生成新的规划或执行。每个 attempt 固定 `source_manifest_id` 与 `plan_revision_id`，修订只替换失败目标。

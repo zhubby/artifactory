@@ -105,6 +105,31 @@ impl protocol::enrollment_server::Enrollment for EmissaryService {
 impl protocol::control_server::Control for EmissaryService {
     type ConnectStream = ReceiverStream<Result<Command, Status>>;
 
+    async fn acquire_source_material(
+        &self,
+        request: Request<protocol::SourceMaterialRequest>,
+    ) -> Result<Response<protocol::SourceMaterialReply>, Status> {
+        let node = identity(&self.0, &request).await?;
+        let input = request.into_inner();
+        let attempt = Uuid::parse_str(&input.attempt_id)
+            .map_err(|_| Status::invalid_argument("invalid attempt ID"))?;
+        let material = self
+            .0
+            .store
+            .native_source_material(
+                &self.0.settings.master_key,
+                node,
+                attempt,
+                &input.lease_token,
+                &input.source_digest,
+            )
+            .await
+            .map_err(|_| Status::permission_denied("source execution is stale or unauthorized"))?;
+        Ok(Response::new(protocol::SourceMaterialReply {
+            material_json: serde_json::to_string(&material).map_err(internal)?,
+        }))
+    }
+
     async fn acquire_signing_material(
         &self,
         request: Request<protocol::SigningMaterialRequest>,

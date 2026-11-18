@@ -232,6 +232,7 @@ impl State {
         Some(state)
     }
     fn command(&mut self, command: pb::Command, now: Instant) -> Result<Vec<Action>> {
+        self.stopping |= source::ready(&self.cfg).is_err();
         if command.kind == "metadata_ack" {
             self.metadata_acked = self
                 .startup
@@ -525,6 +526,7 @@ async fn worker_task(
     send: mpsc::Sender<Message>,
 ) -> Result<()> {
     crate::signing::ready(&cfg)?;
+    source::ready(&cfg)?;
     cfg.signing_profiles.retain(|name, _| {
         assignment.managed_signing_json.is_empty() && assignment.signing_profiles.contains(name)
     });
@@ -534,54 +536,69 @@ async fn worker_task(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
-    let mut child = process::spawn(command)?;
+    let mut child = process::spawn_worker(command)?;
+    source::register_session(&cfg, &id, child.id().context("worker PID missing")?)?;
     let attempt = uuid::Uuid::parse_str(&id)?;
     let _managed = if let Some(pid) = child.id() {
         registry.register(attempt, pid).await.ok()
     } else {
         None
     };
-    let mut stdin = child.stdin().take().context("worker stdin missing")?;
-    let stdout = child.stdout().take().context("worker stdout missing")?;
-    let initial = Input {
-        kind: "start".into(),
-        config: cfg,
-        attempt_id: id.clone(),
-        lease_token: token,
-        lease_seconds: seconds,
-        assignment: Some(assignment),
-        ..Default::default()
-    };
-    let mut bytes = serde_json::to_vec(&initial)?;
-    bytes.push(b'\n');
-    stdin.write_all(&bytes).await?;
-    let writer = tokio::spawn(async move {
-        while let Some(input) = controls.recv().await {
-            let mut bytes = serde_json::to_vec(&input)?;
-            bytes.push(b'\n');
-            stdin.write_all(&bytes).await?;
+    let result = async {
+        let mut stdin = child.stdin().take().context("worker stdin missing")?;
+        let stdout = child.stdout().take().context("worker stdout missing")?;
+        let initial = Input {
+            kind: "start".into(),
+            config: cfg.clone(),
+            attempt_id: id.clone(),
+            lease_token: token,
+            lease_seconds: seconds,
+            assignment: Some(assignment),
+            ..Default::default()
+        };
+        let mut bytes = serde_json::to_vec(&initial)?;
+        bytes.push(b'\n');
+        stdin.write_all(&bytes).await?;
+        let writer = tokio::spawn(async move {
+            while let Some(input) = controls.recv().await {
+                let mut bytes = serde_json::to_vec(&input)?;
+                bytes.push(b'\n');
+                stdin.write_all(&bytes).await?;
+            }
+            Ok::<_, anyhow::Error>(())
+        });
+        let read = async {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Some(line) = lines.next_line().await? {
+                let event: Event = serde_json::from_str(&line)?;
+                if event.kind == "step_started" {
+                    registry.step(
+                        attempt,
+                        event.payload["index"]
+                            .as_u64()
+                            .and_then(|n| u32::try_from(n).ok()),
+                    );
+                }
+                if event.kind == "step_finished" {
+                    registry.step(attempt, None);
+                }
+                send.send(Message::Event(id.clone(), event)).await?;
+            }
+            Ok::<_, anyhow::Error>(())
         }
-        Ok::<_, anyhow::Error>(())
-    });
-    let mut lines = BufReader::new(stdout).lines();
-    while let Some(line) = lines.next_line().await? {
-        let event: Event = serde_json::from_str(&line)?;
-        if event.kind == "step_started" {
-            registry.step(
-                attempt,
-                event.payload["index"]
-                    .as_u64()
-                    .and_then(|n| u32::try_from(n).ok()),
-            );
-        }
-        if event.kind == "step_finished" {
-            registry.step(attempt, None);
-        }
-        send.send(Message::Event(id.clone(), event)).await?;
+        .await;
+        writer.abort();
+        let _ = writer.await;
+        read
     }
-    writer.abort();
-    let _ = writer.await;
-    child.wait().await?;
+    .await;
+    if result.is_err() {
+        let _ = child.start_kill();
+    }
+    let waited = child.wait().await;
+    source::settle_attempt(&cfg, &id).await?;
+    result?;
+    waited?;
     Ok(())
 }
 pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
@@ -590,6 +607,13 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
         "Emissary must be registered first"
     );
     private_dir(&cfg.root)?;
+    let _runner_lock = source::lock(
+        &cfg.root.join("runner.lock"),
+        &cancel,
+        Duration::from_secs(1),
+    )
+    .await?;
+    source::sweep(&cfg).await?;
     crate::signing::sweep(&cfg).await?;
     let (diagnostics, mut capabilities) = doctor::doctor(&cfg).await;
     if std::env::var_os("ARTIFACTORY_OTA_DIRECTORY").is_some() {

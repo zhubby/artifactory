@@ -75,12 +75,6 @@ impl ControlStore {
         sql::execute(&mut tx,"UPDATE nodes SET revoked=true,active_session=NULL,connection_owner=NULL WHERE tenant_id=$1",params![lease.tenant_id]).await?;
         sql::execute(
             &mut tx,
-            "UPDATE ai_workers SET revoked=true WHERE tenant_id=$1",
-            params![lease.tenant_id],
-        )
-        .await?;
-        sql::execute(
-            &mut tx,
             "UPDATE api_tokens SET revoked=true WHERE tenant_id=$1",
             params![lease.tenant_id],
         )
@@ -146,9 +140,7 @@ impl ControlStore {
             "DELETE FROM runtime_receipts WHERE run_id IN(SELECT r.id FROM planning_runs r JOIN builds b ON b.id=r.build_id WHERE b.project_id=ANY($1))",
             "DELETE FROM runtime_intents WHERE run_id IN(SELECT r.id FROM planning_runs r JOIN builds b ON b.id=r.build_id WHERE b.project_id=ANY($1))",
             "DELETE FROM planning_events WHERE run_id IN(SELECT r.id FROM planning_runs r JOIN builds b ON b.id=r.build_id WHERE b.project_id=ANY($1))",
-            "DELETE FROM remote_source_requests WHERE build_id IN(SELECT id FROM builds WHERE project_id=ANY($1))",
             "DELETE FROM device_commands WHERE attempt_id IN(SELECT a.id FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.project_id=ANY($1))",
-            "DELETE FROM source_tokens WHERE snapshot_id IN(SELECT id FROM source_snapshots WHERE project_id=ANY($1)) OR attempt_id IN(SELECT a.id FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.project_id=ANY($1))",
             "DELETE FROM artifacts WHERE attempt_id IN(SELECT a.id FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.project_id=ANY($1))",
             "DELETE FROM uploads WHERE attempt_id IN(SELECT a.id FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.project_id=ANY($1))",
             "DELETE FROM log_chunks WHERE attempt_id IN(SELECT a.id FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.project_id=ANY($1))",
@@ -159,11 +151,9 @@ impl ControlStore {
             "UPDATE builds SET current_plan_id=NULL WHERE project_id=ANY($1)",
             "DELETE FROM plan_revisions WHERE build_id IN(SELECT id FROM builds WHERE project_id=ANY($1))",
             "DELETE FROM planning_runs WHERE build_id IN(SELECT id FROM builds WHERE project_id=ANY($1))",
+            "DELETE FROM source_tasks WHERE project_id=ANY($1)",
             "DELETE FROM builds WHERE project_id=ANY($1)",
-            "DELETE FROM source_snapshots WHERE project_id=ANY($1)",
-            "DELETE FROM source_resolutions WHERE repository_id IN(SELECT id FROM source_repositories WHERE project_id=ANY($1))",
-            "DELETE FROM source_repositories WHERE project_id=ANY($1)",
-            "DELETE FROM source_project_routes WHERE project_id=ANY($1)",
+            "DELETE FROM source_manifests WHERE project_id=ANY($1)",
             "DELETE FROM audit_events WHERE tenant_id=(SELECT tenant_id FROM projects WHERE id=ANY($1) LIMIT 1) AND resource_id IN(SELECT jsonb_array_elements_text($2::jsonb->'audit_ids'))",
             "DELETE FROM projects WHERE id=ANY($1)",
         ] {
@@ -182,9 +172,7 @@ impl ControlStore {
                 "signing_credentials",
                 "emissary_updates",
                 "enrollment_tokens",
-                "ai_enrollment_tokens",
                 "nodes",
-                "ai_workers",
                 "node_pools",
                 "emissary_releases",
                 "model_profiles",

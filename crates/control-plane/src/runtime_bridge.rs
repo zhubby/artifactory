@@ -1,11 +1,18 @@
-//! Business/runtime handoff. Only stage transitions cross this boundary.
-use crate::{crypto, execution_plan::ExecutionPlan, source_cache, state::AppState};
+//! [INPUT]: 依赖 Runtime 授权、源码清单和持久业务状态。
+//! [OUTPUT]: 传递规划意图、源码材料与幂等提交回执。
+//! [POS]: 控制平面和独立规划 Runtime 的业务边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
+use crate::{crypto, execution_plan::ExecutionPlan, state::AppState};
 use anyhow::{Context, Result, ensure};
 use artifactory_runtime_protocol::{
     ModelConfiguration, RunIntent,
     service::{self, Client},
 };
-use axum::{Json, Router, extract::State, routing::post};
+use axum::{
+    Json, Router,
+    extract::{DefaultBodyLimit, State},
+    routing::post,
+};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -14,41 +21,6 @@ pub fn runtime() -> Result<Client> {
         service::required("ARTIFACTORY_RUNTIME_URL")?,
         service::required("ARTIFACTORY_SERVICE_TOKEN")?,
     )
-}
-pub fn source(origin: String) -> Result<Client> {
-    Client::new(origin, service::required("ARTIFACTORY_SERVICE_TOKEN")?)
-}
-pub async fn remote_refs(
-    s: &AppState,
-    project: Uuid,
-    url: &str,
-    credential: Option<Uuid>,
-) -> Result<Value> {
-    let origin = s.store.source_project_origin(project).await?;
-    let origin = origin.unwrap_or(
-        service::required("ARTIFACTORY_SOURCE_URLS")?
-            .split(',')
-            .next()
-            .context("source pool empty")?
-            .into(),
-    );
-    let mut credentials = Vec::new();
-    let mut mapped = None;
-    if let Some(id) = credential {
-        let encrypted = s.store.credential_ciphertext(id).await?;
-        let revision = crypto::hash(&encrypted);
-        let hash = crypto::hash(format!("{project}:{id}:{revision}"));
-        let key = Uuid::parse_str(&hash[..32])?;
-        mapped = Some(key);
-        credentials.push(json!({"id":key,"revision":revision,"value":serde_json::from_slice::<Value>(&crypto::open(&s.settings.master_key,&encrypted)?)?}));
-    }
-    source(origin)?.post("/v1/refs",&json!({"operation_id":Uuid::new_v4(),"project_id":project,"repository_url":url,"reference":"HEAD","credential_id":mapped,"credentials":credentials})).await
-}
-pub async fn source_origin(state: &AppState, snapshot: Uuid) -> Result<Option<String>> {
-    state.store.source_origin(snapshot).await
-}
-pub async fn source_download_origin(state: &AppState, snapshot: Uuid) -> Result<Option<String>> {
-    state.store.source_download_origin(snapshot).await
 }
 pub fn routes(state: AppState) -> Router {
     let Some(token) = std::env::var("ARTIFACTORY_SERVICE_TOKEN")
@@ -61,23 +33,47 @@ pub fn routes(state: AppState) -> Router {
         Router::new()
             .route("/internal/runtime/event", post(event))
             .route("/internal/runtime/tool", post(tool))
-            .route("/internal/runtime/source-authorize", post(source_authorize))
+            .route("/internal/runtime/source-material", post(source_material))
+            .layer(DefaultBodyLimit::max(service::SERVICE_JSON_LIMIT))
             .with_state(state),
         token,
     )
 }
-async fn source_authorize(
+async fn source_material(
     State(s): State<AppState>,
     Json(v): Json<Value>,
 ) -> artifactory_runtime_protocol::error::Result<Json<Value>> {
-    let valid = s
+    Ok(Json(runtime_source_material(&s, v).await?))
+}
+async fn runtime_source_material(s: &AppState, v: Value) -> Result<Value> {
+    let run = id(&v, "run_id")?;
+    ensure!(
+        v["service_account"] == "artifactory-pi",
+        "wrong planning service account"
+    );
+    validate_source_execution(&v).await?;
+    let build = s.store.runtime_tool_build(run).await?;
+    let material = s
         .store
-        .authorize_source_download(
-            crypto::hash(v["token"].as_str().unwrap_or("")),
-            id(&v, "snapshot_id")?,
-        )
+        .build_source_material(&s.settings.master_key, build)
         .await?;
-    Ok(Json(json!({"valid":valid})))
+    validate_source_execution(&v).await?;
+    Ok(serde_json::to_value(material)?)
+}
+async fn validate_source_execution(v: &Value) -> Result<()> {
+    let current: Value = runtime()?
+        .post("/v1/get", &json!({"run_id":id(v,"run_id")?}))
+        .await?;
+    ensure!(
+        current["status"] == "provisioning"
+            && current["lifecycle"]["generation"] == v["generation"]
+            && current["execution"]["uid"] == v["pod_uid"]
+            && current["execution"]["namespace"] == v["namespace"]
+            && current["lifecycle"]["canceled"] != true
+            && current["lifecycle"]["pending"] != true,
+        "planning execution changed"
+    );
+    Ok(())
 }
 fn id(v: &Value, key: &str) -> Result<Uuid> {
     Ok(Uuid::parse_str(
@@ -115,30 +111,17 @@ pub async fn accept_event(s: &AppState, v: Value) -> Result<Value> {
             remote["lifecycle"]["generation"] == payload["generation"],
             "stale runtime generation"
         );
-        let digest = s
-            .store
-            .source_snapshot_digest(run_source.snapshot_id)
-            .await?;
-        ensure!(
-            payload["snapshot_digest"] == digest,
-            "snapshot digest changed"
-        );
         if payload["kind"] == "submit_plan" {
+            let digest = s
+                .store
+                .source_manifest_digest(run_source.source_manifest_id)
+                .await?;
+            ensure!(payload["source_digest"] == digest, "source digest changed");
             let plan = payload["payload"]
                 .get("plan")
                 .unwrap_or(&payload["payload"]);
-            match ExecutionPlan::parse(plan.clone()) {
-                Err(error) => validation = Some(error.to_string()),
-                Ok(plan) => {
-                    let snapshot: Uuid = run_source.snapshot_id;
-                    let origin = source_origin(s, snapshot)
-                        .await?
-                        .context("remote source origin missing")?;
-                    let evidence:Value=source(origin)?.post("/v1/evidence",&json!({"snapshot_id":snapshot,"paths":plan.evidence.iter().map(|e|&e.path).collect::<Vec<_>>()})).await?;
-                    if evidence["valid"] != true {
-                        validation = Some("evidence must reference existing snapshot files".into());
-                    }
-                }
+            if let Err(error) = ExecutionPlan::parse(plan.clone()) {
+                validation = Some(error.to_string());
             }
         }
     }
@@ -161,7 +144,6 @@ pub async fn accept_event(s: &AppState, v: Value) -> Result<Value> {
                         .get("plan")
                         .unwrap_or(&payload["payload"])
                         .clone(),
-                    true,
                 )
                 .await
             },
@@ -214,8 +196,8 @@ async fn make_intent(s: &AppState, run: Uuid) -> Result<RunIntent> {
         build_id: build,
         project_id: input.project_id,
         version: 1,
-        snapshot_id: input.snapshot_id,
-        snapshot_digest: input.digest,
+        source_manifest_id: input.source_manifest_id,
+        source_digest: input.digest,
         context,
         model: ModelConfiguration {
             id: Uuid::parse_str(model["id"].as_str().context("profile ID missing")?)?,
@@ -235,85 +217,4 @@ async fn make_intent(s: &AppState, run: Uuid) -> Result<RunIntent> {
         },
         pool: std::env::var("ARTIFACTORY_AGENT_POOL").unwrap_or("default".into()),
     })
-}
-pub async fn capture_remote(s: &AppState, build: Uuid) -> Result<()> {
-    let Some(input) = s.store.remote_capture_input(build).await? else {
-        return Ok(());
-    };
-    let project = input.project_id;
-    let origin = input.origin.clone();
-    let ciphertext = if let Some(value) = input.ciphertext {
-        value
-    } else {
-        let bindings: Vec<source_cache::CredentialBinding> = serde_json::from_value(
-            input
-                .planning_context
-                .get("source_credentials")
-                .cloned()
-                .unwrap_or(json!([])),
-        )?;
-        let primary: Option<Uuid> = input.credential_id;
-        let mut ids: Vec<Uuid> = bindings.iter().map(|b| b.credential_id).collect();
-        ids.extend(primary);
-        ids.sort();
-        ids.dedup();
-        let mut credentials = Vec::new();
-        let mut mapped = std::collections::HashMap::new();
-        for id in ids {
-            let encrypted = s.store.credential_ciphertext(id).await?;
-            let revision = crypto::hash(&encrypted);
-            let hash = crypto::hash(format!("{project}:{id}:{revision}"));
-            let mapped_id = Uuid::parse_str(&hash[..32])?;
-            mapped.insert(id, mapped_id);
-            credentials.push(json!({"id":mapped_id,"revision":revision,"value":serde_json::from_slice::<Value>(&crypto::open(&s.settings.master_key,&encrypted)?)?}));
-        }
-        let input = json!({"operation_id":build,"project_id":project,"repository_url":input.repository_url,"reference":input.requested_ref,"credential_id":primary.map(|id|mapped[&id]),"bindings":bindings.iter().map(|b|json!({"repository_url":b.repository_url,"credential_id":mapped[&b.credential_id]})).collect::<Vec<_>>(),"credentials":credentials});
-        let sealed = crypto::seal(&s.settings.master_key, &serde_json::to_vec(&input)?)?;
-        s.store.save_remote_source_payload(build, sealed).await?
-    };
-    let model = input.model_config_snapshot;
-    let input: Value = serde_json::from_slice(&crypto::open(&s.settings.master_key, &ciphertext)?)?;
-    let result: Value = source(origin.clone())?.post("/v1/capture", &input).await?;
-    let snapshot: source_cache::Snapshot = serde_json::from_value(result["snapshot"].clone())?;
-    ensure!(snapshot.project_id == project, "source project mismatch");
-    let public_origin = service::download_origin(result["origin"].as_str().unwrap_or(&origin))?;
-    let root_repository = snapshot
-        .repositories
-        .first()
-        .context("root repository missing")?
-        .repository_id;
-    s.store
-        .save_remote_snapshot(crate::store::RemoteSnapshot {
-            build,
-            project,
-            snapshot: &snapshot,
-            root_repository,
-            result: &result,
-            origin,
-            public_origin,
-            model,
-        })
-        .await
-}
-pub async fn resolve_remote_next(s: &AppState) -> Result<()> {
-    let candidates = s.store.remote_source_candidates().await?;
-    for (build, project) in candidates {
-        let origin: String = if let Some(origin) = s.store.source_project_origin(project).await? {
-            origin
-        } else {
-            let origins = service::required("ARTIFACTORY_SOURCE_URLS")?;
-            let origins: Vec<_> = origins.split(',').collect();
-            let index = (project.as_u128() % origins.len() as u128) as usize;
-            s.store
-                .route_source_project(project, origins[index])
-                .await?
-        };
-        if !s.store.claim_remote_source(build, origin).await? {
-            continue;
-        }
-        let result = capture_remote(s, build).await;
-        s.store.finish_remote_source(build, result.is_err()).await?;
-        return result;
-    }
-    Ok(())
 }

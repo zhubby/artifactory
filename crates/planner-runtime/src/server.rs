@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖 Kubernetes Pod 身份、业务授权与 Runtime 存储。
+//! [OUTPUT]: 提供准备、租约、模型代理与分页对话接口。
+//! [POS]: 只允许固定 Pod 准备源码；首次 acquire 才启动模型时限。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::store::{ModelReservation, RuntimeMetrics, RuntimeStore, ToolDisposition};
 use anyhow::{Context, Result, ensure};
 use artifactory_runtime_protocol::{
@@ -45,6 +49,8 @@ pub fn router(state: Runtime, token: String) -> Router {
         .route("/v1/intent", post(intent))
         .route("/v1/register", post(register))
         .route("/v1/get", post(get_run))
+        .route("/v1/conversations", post(conversations))
+        .route("/v1/conversation/messages", post(conversation_messages))
         .route("/v1/validate", post(validate))
         .route("/v1/queue", post(queue))
         .route("/v1/reconcile", post(reconcile))
@@ -52,6 +58,7 @@ pub fn router(state: Runtime, token: String) -> Router {
         .with_state(state.clone());
     let runner = Router::new()
         .route("/healthz", get(|| async { "ok" }))
+        .route("/v1/prepare", post(prepare))
         .route("/v1/acquire", post(acquire))
         .route("/v1/heartbeat", post(heartbeat))
         .route("/v1/report", post(report))
@@ -61,7 +68,7 @@ pub fn router(state: Runtime, token: String) -> Router {
         .with_state(state);
     runner
         .merge(service::protected(internal, token))
-        .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
+        .layer(DefaultBodyLimit::max(service::SERVICE_JSON_LIMIT))
 }
 async fn purge(State(s): State<Runtime>, Json(v): Json<Value>) -> ApiResult<Value> {
     s.store.purge_project(id(&v, "project_id")?).await?;
@@ -105,6 +112,21 @@ pub async fn put_intent(state: &Runtime, value: Value) -> Result<Value> {
         Some(serde_json::from_value::<RunIntent>(value.clone())?)
     };
     if let Some(intent) = &intent {
+        let placement = intent.context["purpose"] == "placement";
+        ensure!(
+            placement
+                || (intent.source_manifest_id.is_some()
+                    && intent
+                        .source_digest
+                        .as_deref()
+                        .is_some_and(|digest| digest.len() == 64
+                            && digest.bytes().all(|b| b.is_ascii_hexdigit()))),
+            "fixed source manifest required"
+        );
+        ensure!(
+            intent.source_manifest_id.is_some() == intent.source_digest.is_some(),
+            "incomplete source identity"
+        );
         ensure!(
             (1..=100).contains(&intent.model.max_calls)
                 && (30..=3600).contains(&intent.model.timeout_seconds),
@@ -139,7 +161,7 @@ async fn register(State(s): State<Runtime>, Json(v): Json<Execution>) -> ApiResu
     Ok(Json(register_execution(&s, v).await?))
 }
 
-async fn token_review(execution: &Execution, token: &str) -> Result<()> {
+async fn token_review(execution: &Execution, token: &str) -> Result<String> {
     // Bound service-account tokens are validated by Kubernetes, never by trusting decoded JWT claims.
     let host = service::required("KUBERNETES_SERVICE_HOST")?;
     let port = std::env::var("KUBERNETES_SERVICE_PORT").unwrap_or("443".into());
@@ -166,7 +188,79 @@ async fn token_review(execution: &Execution, token: &str) -> Result<()> {
                 == execution.name,
         "Pod identity mismatch"
     );
-    Ok(())
+    Ok("artifactory-pi".into())
+}
+fn authorization_error(error: anyhow::Error) -> artifactory_runtime_protocol::error::ApiError {
+    use artifactory_runtime_protocol::error::ApiError;
+    match error.downcast_ref::<reqwest::Error>() {
+        Some(error) => match error.status() {
+            Some(status)
+                if ![404, 409, 429].contains(&status.as_u16()) && !status.is_server_error() =>
+            {
+                ApiError::Forbidden
+            }
+            _ => ApiError::Unavailable,
+        },
+        None => ApiError::Forbidden,
+    }
+}
+fn preparation_identity(v: &Value) -> Result<Execution> {
+    let identity = &v["identity"];
+    let pod = &v["pod"];
+    Ok(Execution {
+        run_id: id(identity, "run_id")?,
+        generation: identity["generation"]
+            .as_i64()
+            .context("generation required")?,
+        uid: pod["uid"].as_str().context("Pod UID required")?.into(),
+        name: pod["name"].as_str().context("Pod name required")?.into(),
+        namespace: pod["namespace"]
+            .as_str()
+            .context("Pod namespace required")?
+            .into(),
+    })
+}
+pub async fn prepare_material(
+    s: &Runtime,
+    execution: &Execution,
+    account: &str,
+) -> artifactory_runtime_protocol::error::Result<Value> {
+    use artifactory_runtime_protocol::error::ApiError;
+    if account != "artifactory-pi" {
+        return Err(ApiError::Forbidden);
+    }
+    s.store
+        .prepare_execution(execution)
+        .await
+        .map_err(|_| ApiError::Forbidden)?;
+    let material = s.control.post("/internal/runtime/source-material",&json!({"run_id":execution.run_id,"generation":execution.generation,"pod_uid":execution.uid,"namespace":execution.namespace,"service_account":account})).await.map_err(|_|ApiError::Unavailable)?;
+    s.store
+        .prepare_execution(execution)
+        .await
+        .map_err(|_| ApiError::Forbidden)?;
+    Ok(material)
+}
+async fn prepare(State(s): State<Runtime>, Json(v): Json<Value>) -> ApiResult<Value> {
+    use artifactory_runtime_protocol::error::ApiError;
+    let execution = preparation_identity(&v)
+        .map_err(|_| ApiError::BadRequest("invalid source identity".into()))?;
+    let token = v["bootstrap_token"]
+        .as_str()
+        .ok_or(ApiError::Unauthorized)?;
+    let account = token_review(&execution, token)
+        .await
+        .map_err(authorization_error)?;
+    let current = s.store.read_run(execution.run_id).await?;
+    if current["execution"].is_null() {
+        return Err(ApiError::Conflict("execution registration pending".into()));
+    }
+    Ok(Json(prepare_material(&s, &execution, &account).await?))
+}
+async fn conversations(State(s): State<Runtime>, Json(v): Json<Value>) -> ApiResult<Value> {
+    Ok(Json(s.store.conversations(v).await?))
+}
+async fn conversation_messages(State(s): State<Runtime>, Json(v): Json<Value>) -> ApiResult<Value> {
+    Ok(Json(s.store.conversation_messages(v).await?))
 }
 pub async fn acquire_execution(s: &Runtime, v: Value) -> Result<Value> {
     let execution: Execution = serde_json::from_value(v["execution"].clone())?;
@@ -434,4 +528,73 @@ pub async fn model_request(
         Box<dyn futures::Stream<Item = std::io::Result<axum::body::Bytes>> + Send>,
     > = Box::pin(stream);
     Ok(result.body(Body::from_stream(stream))?)
+}
+
+#[cfg(test)]
+mod authorization_tests {
+    use super::*;
+    use axum::response::IntoResponse;
+
+    #[tokio::test]
+    async fn transient_token_review_failures_remain_retryable() {
+        let app = Router::new().route(
+            "/{status}",
+            get(|Path(status): Path<u16>| async move { StatusCode::from_u16(status).unwrap() }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(axum::serve(listener, app).into_future());
+        let client = reqwest::Client::new();
+        for status in [404, 409, 429, 500, 502, 503, 504] {
+            let error = client
+                .get(format!("{origin}/{status}"))
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap_err();
+            assert_eq!(
+                authorization_error(error.into()).into_response().status(),
+                StatusCode::SERVICE_UNAVAILABLE
+            );
+        }
+        for status in [400, 401, 403, 422] {
+            let error = client
+                .get(format!("{origin}/{status}"))
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap_err();
+            assert_eq!(
+                authorization_error(error.into()).into_response().status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+        for message in [
+            "Pod token rejected",
+            "wrong runner service account",
+            "Pod identity mismatch",
+        ] {
+            assert_eq!(
+                authorization_error(anyhow::anyhow!(message))
+                    .into_response()
+                    .status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+        server.abort();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let error = client
+            .get(format!("http://{address}"))
+            .send()
+            .await
+            .unwrap_err();
+        assert_eq!(
+            authorization_error(error.into()).into_response().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
 }

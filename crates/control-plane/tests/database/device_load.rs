@@ -1,4 +1,7 @@
-//! Opt-in load harness: three actual Control processes, real mTLS device streams.
+//! [INPUT]: 依赖隔离数据库、三个控制平面和真实 mTLS。
+//! [OUTPUT]: 测量设备群连接、续租和 API 响应。
+//! [POS]: 传输验收的显式负载入口。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use base64::Engine;
 use futures::{StreamExt, stream};
@@ -13,11 +16,6 @@ pub(super) struct ProcessReplica {
     log: std::path::PathBuf,
 }
 
-enum Role {
-    Control,
-    Source,
-}
-
 impl ProcessReplica {
     async fn start(
         database: &Database,
@@ -25,27 +23,6 @@ impl ProcessReplica {
         root: &Path,
         storage: &str,
         index: usize,
-    ) -> Self {
-        Self::start_role(database, certificates, root, storage, index, Role::Control).await
-    }
-
-    pub(super) async fn source(
-        database: &Database,
-        certificates: &Certificates,
-        root: &Path,
-        storage: &str,
-        index: usize,
-    ) -> Self {
-        Self::start_role(database, certificates, root, storage, index, Role::Source).await
-    }
-
-    async fn start_role(
-        database: &Database,
-        certificates: &Certificates,
-        root: &Path,
-        storage: &str,
-        index: usize,
-        role: Role,
     ) -> Self {
         let directory = root.join(index.to_string());
         std::fs::create_dir_all(&directory).unwrap();
@@ -88,8 +65,6 @@ impl ProcessReplica {
             )
             .env("ARTIFACTORY_CONTROL_DRAIN_SECONDS", "1")
             .env_remove("ARTIFACTORY_RUNTIME_URL")
-            .env_remove("ARTIFACTORY_SOURCE_URLS")
-            .env_remove("ARTIFACTORY_LOCAL_SOURCE_URL")
             .env_remove("ARTIFACTORY_TELEMETRY_ENDPOINT")
             .env(
                 "RUST_LOG",
@@ -99,24 +74,12 @@ impl ProcessReplica {
             .stdout(log.try_clone().unwrap())
             .stderr(log)
             .kill_on_drop(true);
-        let scheme = match role {
-            Role::Control => {
-                command.arg("serve");
-                "http"
-            }
-            Role::Source => {
-                command
-                    .arg("serve-source")
-                    .env("ARTIFACTORY_SERVICE_TLS_CERT", directory.join("server.pem"))
-                    .env("ARTIFACTORY_SERVICE_TLS_KEY", directory.join("server.key"));
-                "https"
-            }
-        };
+        command.arg("serve");
         let child = command.spawn().unwrap();
         let replica = Self {
             child,
             grpc: format!("https://{grpc_address}"),
-            http: format!("{scheme}://{http_address}"),
+            http: format!("http://{http_address}"),
             log: directory.join("control.log"),
         };
         let http = reqwest::Client::builder()

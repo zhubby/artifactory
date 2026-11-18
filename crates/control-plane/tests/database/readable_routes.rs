@@ -1,33 +1,13 @@
-//! Readable page identities must preserve the UUID authorization boundary.
+//! [INPUT]: 依赖租户夹具、稳定路由和 UUID 鉴权。
+//! [OUTPUT]: 验证 slug、构建序号与项目权限。
+//! [POS]: 可读地址的数据库与 HTTP 回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
-async fn existing_resources_receive_stable_routes_without_identity_changes() {
-    use toasty::migration::{MigrationFile, MigrationSet};
-    static PREVIOUS: MigrationSet = MigrationSet::new(&[
-        MigrationFile::new(
-            2026111301,
-            "0000_baseline.sql",
-            include_str!("../../migrations/migrations/0000_baseline.sql"),
-        ),
-        MigrationFile::new(
-            2026111401,
-            "0001_control_replication.sql",
-            include_str!("../../migrations/migrations/0001_control_replication.sql"),
-        ),
-        MigrationFile::new(
-            2026111402,
-            "0002_node_placements.sql",
-            include_str!("../../migrations/migrations/0002_node_placements.sql"),
-        ),
-        MigrationFile::new(
-            2026111501,
-            "0003_multitenancy.sql",
-            include_str!("../../migrations/migrations/0003_multitenancy.sql"),
-        ),
-    ]);
-    let db = Database::with_migrations(&PREVIOUS).await;
+async fn fresh_resources_receive_stable_routes_without_identity_changes() {
+    let db = Database::with_tenant().await;
     let (project, build, _) = db.fixture().await;
     let second = Uuid::new_v4();
     sql::execute(

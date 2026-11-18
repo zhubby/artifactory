@@ -1,65 +1,10 @@
+//! [INPUT]: 依赖独立副本协调器、设备 outbox 和租约。
+//! [OUTPUT]: 验证抢锁、重发、排空和并发调度。
+//! [POS]: 控制平面多副本的持久行为回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use artifactory_control_plane::{coordination, dispatch};
 use serde_json::{Value, json};
-
-#[tokio::test]
-#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
-async fn baseline_upgrade_backfills_inflight_commands_and_is_idempotent() {
-    use toasty::migration::{MigrationFile, MigrationSet};
-    static BASELINE: MigrationSet = MigrationSet::new(&[MigrationFile::new(
-        2026111301,
-        "0000_baseline.sql",
-        include_str!("../../migrations/migrations/0000_baseline.sql"),
-    )]);
-    let database = Database::with_migrations(&BASELINE).await;
-    let (_, build, job) = database.fixture().await;
-    let node = Uuid::new_v4();
-    let attempt = Uuid::new_v4();
-    let command = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO nodes(id,name,os,arch,pool_id,certificate_hash,certificate_expires_at) VALUES($1,'upgrade','linux','amd64','00000000-0000-0000-0000-000000000001','upgrade',now()+interval '1 day')", params![node]).await.unwrap();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO attempts(id,job_id,node_id,lease_token,lease_expires_at,status,command_id) VALUES($1,$2,$3,'upgrade',now()+interval '90 seconds','leased',$4)", params![attempt,job,node,command]).await.unwrap();
-    sql::execute(
-        &mut database.pool.clone(),
-        "UPDATE builds SET cancel_requested=true WHERE id=$1",
-        params![build],
-    )
-    .await
-    .unwrap();
-    for _ in 0..2 {
-        artifactory_database::migrate(
-            &database.pool,
-            &artifactory_control_plane::store::MIGRATIONS,
-        )
-        .await
-        .unwrap();
-        let assigned: Uuid = sql::scalar(
-            &mut database.pool.clone(),
-            "SELECT id FROM device_commands WHERE attempt_id=$1 AND kind='assign'",
-            params![attempt],
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            assigned, command,
-            "upgrade must retain the original command identity"
-        );
-        let counts: (i64,i64) = sql::tuple(&mut database.pool.clone(), "SELECT count(*),count(*) FILTER(WHERE kind='cancel') FROM device_commands WHERE attempt_id=$1", params![attempt]).await.unwrap();
-        assert_eq!(
-            counts,
-            (2, 1),
-            "both assignment and cancellation must survive repeated startup"
-        );
-        let lease: (String, String) = sql::tuple(
-            &mut database.pool.clone(),
-            "SELECT status,lease_token FROM attempts WHERE id=$1",
-            params![attempt],
-        )
-        .await
-        .unwrap();
-        assert_eq!(lease, ("leased".into(), "upgrade".into()));
-    }
-    database.close().await;
-}
 
 fn replica(state: &AppState) -> AppState {
     AppState {

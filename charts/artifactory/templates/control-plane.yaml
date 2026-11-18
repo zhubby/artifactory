@@ -1,13 +1,9 @@
 # [INPUT]: 依赖控制平面预算、既有 Secret 和可选签名密钥环。
-# [OUTPUT]: 渲染 Control、Source 与控制平面中断预算。
+# [OUTPUT]: 渲染无状态 Control 与控制平面中断预算。
 # [POS]: 仅向 Control 复制私有密钥环，初始化沿用控制平面资源预算。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
-{{- if and (gt (int .Values.controlPlane.replicas) 1) (not .Values.localSource.enabled) }}
-{{- fail "controlPlane.replicas > 1 requires localSource.enabled=true to retain legacy source data on its own volume" }}
-{{- end }}
 {{- $root := . }}
 {{- $components := list "control-plane" }}
-{{- if .Values.localSource.enabled }}{{- $components = append $components "local-source" }}{{- end }}
 {{- range $component := $components }}
 {{- with $root }}
 ---
@@ -18,14 +14,10 @@ metadata:
   labels:
     {{- include "artifactory.labels" . | nindent 4 }}
 spec:
-  replicas: {{ ternary .Values.controlPlane.replicas 1 (eq $component "control-plane") }}
+  replicas: {{ .Values.controlPlane.replicas }}
   strategy:
-    {{- if and (eq $component "control-plane") .Values.localSource.enabled }}
     type: RollingUpdate
     rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
-    {{- else }}
-    type: Recreate
-    {{- end }}
   selector:
     matchLabels:
       {{- include "artifactory.selector" . | nindent 6 }}
@@ -54,12 +46,8 @@ spec:
                     app.kubernetes.io/instance: {{ .Release.Name }}
                     app.kubernetes.io/component: control-plane
       {{- end }}
-      {{- if and (eq $component "control-plane") .Values.imageBuilds.enabled }}
-      serviceAccountName: {{ include "artifactory.fullname" . }}-image-dispatch
+      serviceAccountName: {{ include "artifactory.fullname" . }}-control
       automountServiceAccountToken: true
-      {{- else }}
-      automountServiceAccountToken: false
-      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -89,9 +77,6 @@ spec:
           imagePullPolicy: {{ (index .Values.images "control-plane").pullPolicy }}
           securityContext:
             {{- include "artifactory.containerSecurity" . | nindent 12 }}
-          {{- if eq $component "local-source" }}
-          command: [artifactory-control-plane, serve-source]
-          {{- end }}
           ports:
             - {name: http, containerPort: 8080}
             - {name: grpc, containerPort: 8443}
@@ -103,6 +88,7 @@ spec:
                 name: {{ required "planning.serviceSecretName is required with Runtime" .Values.planning.serviceSecretName }}
             {{- end }}
           env:
+            - {name: ARTIFACTORY_KUBERNETES_NAMESPACE, value: {{ .Values.planning.namespace | default .Release.Namespace | quote }}}
             - name: ARTIFACTORY_GATEWAY_TOKEN
               valueFrom: {secretKeyRef: {name: {{ include "artifactory.gatewaySecret" . }}, key: token}}
             {{- if and (eq $component "control-plane") .Values.imageBuilds.enabled }}
@@ -116,10 +102,6 @@ spec:
             {{- end }}
             {{- if and (eq $component "control-plane") .Values.controlPlane.signingKeysSecret }}
             - {name: ARTIFACTORY_SIGNING_KEYS_FILE, value: /run/artifactory-signing/keys.json}
-            {{- end }}
-            {{- if eq $component "local-source" }}
-            - {name: ARTIFACTORY_SERVICE_TLS_CERT, value: /run/artifactory-pki/server.pem}
-            - {name: ARTIFACTORY_SERVICE_TLS_KEY, value: /run/artifactory-pki/server.key}
             {{- end }}
             {{- if .Values.controlPlane.releaseSourceConfigMap }}
             - {name: ARTIFACTORY_EMISSARY_RELEASE_SOURCE, value: /etc/artifactory/emissary-releases.json}
@@ -138,13 +120,13 @@ spec:
                   key: {{ $key }}
             {{- end }}
           startupProbe:
-            httpGet: {path: /healthz, port: http, scheme: {{ ternary "HTTPS" "HTTP" (eq $component "local-source") }}}
+            httpGet: {path: /healthz, port: http, scheme: HTTP}
             periodSeconds: 5
             failureThreshold: 60
           readinessProbe:
-            httpGet: {path: /readyz, port: http, scheme: {{ ternary "HTTPS" "HTTP" (eq $component "local-source") }}}
+            httpGet: {path: /readyz, port: http, scheme: HTTP}
           livenessProbe:
-            httpGet: {path: /healthz, port: http, scheme: {{ ternary "HTTPS" "HTTP" (eq $component "local-source") }}}
+            httpGet: {path: /healthz, port: http, scheme: HTTP}
             periodSeconds: 15
           resources:
             {{- toYaml (index .Values.resources "control-plane") | nindent 12 }}
@@ -191,12 +173,7 @@ spec:
             items: [{key: emissary-releases.json, path: emissary-releases.json}]
         {{- end }}
         - name: data
-          {{- if and (eq $component "control-plane") .Values.localSource.enabled }}
           emptyDir: {sizeLimit: {{ .Values.controlPlane.temporaryStorage }}}
-          {{- else }}
-          persistentVolumeClaim:
-            claimName: {{ include "artifactory.fullname" . }}-control-plane
-          {{- end }}
         - name: pki
           secret:
             secretName: {{ include "artifactory.pki" . }}

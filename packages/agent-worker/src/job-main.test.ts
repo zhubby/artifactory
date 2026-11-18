@@ -1,7 +1,15 @@
+/**
+ * [INPUT]: 依赖 Runtime 租约传输和失败报告。
+ * [OUTPUT]: 验证提案、审计幂等和响应字节上限。
+ * [POS]: Kubernetes Worker 传输回归。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runtimeRpc, reportTerminalFailure } from "./transport/runtime.js";
-import { checkpoint, restoreTaskCheckpoint, type Task } from "./runtime.js";
+import { httpPost, runtimeRpc, reportTerminalFailure } from "./transport/runtime.js";
+import { type Task } from "./runtime.js";
+import { createServer } from "node:http";
+import { once } from "node:events";
 
 test("a lost submission acknowledgement queries the same proposal without new inference", async () => {
   const requests: string[] = [];
@@ -12,18 +20,10 @@ test("a lost submission acknowledgement queries the same proposal without new in
     assert.equal(body.proposal_id, proposal);
     return { accepted: true, plan_revision_id: "original" };
   };
-  const rpc = runtimeRpc({ run_id: "run", generation: 1, uid: "pod", token: "grant" }, "https://source.invalid", post, new AbortController().signal);
+  const rpc = runtimeRpc({ run_id: "run", generation: 1, uid: "pod", token: "grant" }, post, new AbortController().signal);
   const result = await rpc("tool", { name: "submit_plan", arguments_json: '{"plan":{}}' });
   assert.equal(result.plan_revision_id, "original");
   assert.deepEqual(requests, ["/v1/tool", "/v1/proposal"]);
-});
-
-test("a rejected durable proposal restores its tool result after a Pod restart", () => {
-  const context = { checkpoint: { messages: checkpoint([]), pending_tool: { id: "original-tool", name: "submit_plan" } }, recovered_proposal: { result: { error: "unsupported platform" } } };
-  const messages = restoreTaskCheckpoint(context);
-  assert.equal(messages?.length, 1);
-  assert.equal(messages?.[0]?.role, "toolResult");
-  assert.deepEqual(restoreTaskCheckpoint({ ...context, checkpoint: { ...context.checkpoint, messages: checkpoint(messages!) } }), messages);
 });
 
 test("a disconnected Job leaves recovery to Runtime but explicit budget failure is terminal", async () => {
@@ -44,4 +44,28 @@ test("a disconnected Job leaves recovery to Runtime but explicit budget failure 
   assert.deepEqual(events[1]?.payload, { error: "planning deadline reached" });
   await reportTerminalFailure(new Error("401 private-grant"), task, lease, post, signal);
   assert.deepEqual(events[2]?.payload, { error: "model authentication rejected; check the platform model profile" });
+});
+
+test("audit reports retry the same durable event identity",async()=>{
+ const events:Record<string,unknown>[]=[];
+ const rpc=runtimeRpc({run_id:"run",generation:2,uid:"pod",token:"grant"},async(_path,body)=>{events.push(body);if(events.length===1)throw new Error("ack lost");return {ok:true};},new AbortController().signal);
+ await rpc("report",{kind:"conversation",payload_json:JSON.stringify({kind:"message",content:{role:"user",content:"source excerpt"}})});
+ assert.equal(events.length,2);assert.deepEqual(events[0],events[1]);
+});
+
+test("Runtime replies accept large manifests and enforce the UTF-8 byte limit",async()=>{
+  let content="源".repeat(1_000_000);
+  const server=createServer((_request,response)=>{
+    response.writeHead(200,{"content-type":"application/json"});
+    response.end(JSON.stringify({source_manifest:{content}}));
+  });
+  server.listen(0,"127.0.0.1");
+  await once(server,"listening");
+  const address=server.address();assert.ok(address&&typeof address==="object");
+  const post=httpPost(`http://127.0.0.1:${address.port}`,new AbortController().signal);
+  try {
+    assert.deepEqual(await post("/v1/acquire",{}),{source_manifest:{content}});
+    content="源".repeat(3_000_000);
+    await assert.rejects(post("/v1/acquire",{}),/runtime reply exceeds limit/);
+  }finally{await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}
 });

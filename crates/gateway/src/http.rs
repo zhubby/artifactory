@@ -197,8 +197,6 @@ impl ProxyHttp for Gateway {
             return Ok(true);
         } else if path == "/v2" || path.starts_with("/v2/") {
             ctx.upstream = Some(self.select(&self.config.registry));
-        } else if path.starts_with("/api/v1/source/") && self.config.source.is_some() {
-            ctx.upstream = self.config.source.clone();
         } else if internal
             || path.starts_with("/api/")
             || path == "/health"

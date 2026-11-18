@@ -1,14 +1,16 @@
 <!--
 [INPUT]: 主 Chart、独立 Operator Chart 与持久身份。
-[OUTPUT]: 定义安装、统一网关升级与设备地址迁移。
+[OUTPUT]: 定义新实例安装、任务临时存储与统一网关。
 [POS]: Kubernetes 部署操作入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
 # Helm / Kubernetes 部署
 
-从旧组件名称升级时，先按[模块布局与命名](module-layout.md#从旧布局升级)迁移 PVC、身份及自定义 values，再启动新组件。
+主 Chart 位于 `charts/artifactory`。它部署 Control、Next.js、双副本 Pingora、TimescaleDB / PostgreSQL 17、私有 SeaweedFS S3 和遥测服务。独立 Chart 交付 Agent Operator、Image Operator 和 Distribution 仓库。完整源码、AI 规划与镜像构建链运行在 Kubernetes 1.33 及以上版本。
 
-Chart 位于 `charts/artifactory`，包含可配置副本数的 Control、Next.js、独立 Pingora 网关、TimescaleDB 2.32 / PostgreSQL 17、私有 SeaweedFS S3、Pi Agent worker 和 Rust Telemetry。独立 Chart 提供 Agent Operator、Image Operator 和 Distribution 仓库。完整安装步骤见 [镜像构建与网关](image-builds.md)。Control 多副本使用独立临时目录，由独立 Source 持有原数据卷；迁移步骤和连接预算见 [Control 多副本](control-ha.md)。
+Control 使用 `emptyDir`。源码解析任务和每个执行 Pod 直接向上游仓库拉取源码。源码目录、Git 对象、LFS 和 BuildKit 状态只存在于任务临时卷。平台只持久化固定 commit、manifest、AI 对话、计划、日志、制品与最终镜像。详见 [Operator 运维](operator-operations.md) 和 [镜像构建](image-builds.md)。
+
+当前 schema 是原型的新实例基线，不提供旧数据库、CRD 或 values 的兼容和迁移入口。部署当前版本使用全新业务数据库。
 
 `auth.registrationEnabled` 默认 `true`，访客可自助注册为全实例只读用户，查看和下载全部项目的构建与产物。仅允许管理员分配账号的部署应在安装或升级时设置 `--set auth.registrationEnabled=false`；该开关映射到 control-plane 的 `ARTIFACTORY_REGISTRATION_ENABLED`，不会停用已有账号或会话。
 
@@ -21,7 +23,7 @@ GitHub `release-images` 工作流仅在 **Release published** 时执行，正式
 - `ghcr.io/zhubby/artifactory-agent-worker:<release-tag>`
 - `ghcr.io/zhubby/artifactory-agent-operator:<release-tag>`
 - `ghcr.io/zhubby/artifactory-planner-runtime:<release-tag>`
-- `ghcr.io/zhubby/artifactory-source-service:<release-tag>`
+- `ghcr.io/zhubby/artifactory-source-preparer:<release-tag>`
 - `ghcr.io/zhubby/artifactory-image-operator:<release-tag>`
 - `ghcr.io/zhubby/artifactory-image-worker:<release-tag>`
 - `ghcr.io/zhubby/artifactory-gateway:<release-tag>`
@@ -30,7 +32,7 @@ GitHub `release-images` 工作流仅在 **Release published** 时执行，正式
 
 ## 首次准备凭据与 PKI
 
-需要 Helm 3、kubectl、Python 3、OpenSSL、支持 ReadWriteOnce 的默认 StorageClass。先确认 kube context 与目标命名空间。以下命令中的域名、镜像版本、Ingress 类和 TLS Secret 均需替换为实际配置。
+需要 Kubernetes 1.33+、Helm 3、kubectl、Python 3、OpenSSL，以及供数据库和制品存储使用的默认 StorageClass。先确认 kube context 与目标命名空间。以下命令中的域名、镜像版本、Ingress 类和 TLS Secret 均需替换为实际配置。
 
 ```sh
 python3 scripts/init-helm.py \
@@ -62,9 +64,9 @@ CA 有效期十年，gRPC 服务器证书一年；到期前使用原 CA 为正�
 ```yaml
 images:
   control-plane:
-    tag: v0.1.0
+    tag: v0.2.0
   web:
-    tag: v0.1.0
+    tag: v0.2.0
 console:
   publicUrl: https://build.example.com
 s3:
@@ -87,7 +89,7 @@ helm upgrade --install artifactory charts/artifactory \
   -f production-values.yaml --wait --timeout 10m
 ```
 
-示例版本必须已发布；Chart 不会自动创建域名、Ingress Controller 或 TLS Secret。公开控制台要求 HTTPS。内建 S3 默认使用固定私有 ClusterIP HTTP，Chart 为该地址显式启用 `ARTIFACTORY_S3_ALLOW_HTTP`。外部 `s3.endpoint` 默认要求 HTTPS；私有 HTTP 端点须显式设置 `s3.allowHttp=true`，不会放宽公开入口。`s3.publicEndpoint` 已废弃且被忽略，不再生成客户端 S3 链接。Chart 不创建 S3 Ingress，S3 Service 固定为 ClusterIP。组织内部 S3 CA 需加入 Control 镜像内的系统信任库，不能只在宿主安装。
+示例版本必须已发布；Chart 不会自动创建域名、Ingress Controller 或 TLS Secret。公开控制台要求 HTTPS。内建 S3 默认使用固定私有 ClusterIP HTTP，Chart 为该地址显式启用 `ARTIFACTORY_S3_ALLOW_HTTP`。外部 `s3.endpoint` 默认要求 HTTPS；私有 HTTP 端点须显式设置 `s3.allowHttp=true`，不会放宽公开入口。客户端通过 Gateway 下载制品。Chart 不创建 S3 Ingress，S3 Service 固定为 ClusterIP。组织内部 S3 CA 需加入 Control 镜像内的系统信任库，不能只在宿主安装。
 
 Web Service 指向统一 Pingora 的 8080 端口；它将 `/api/*` 转发给 Control、`/v2/*` 转发给内建仓库、`/artifacts/object` 转发给私有对象，并将页面转发给 Next.js。Gateway Deployment 默认两个副本。设备 Service 使用同一组 Pod 的 8443/8444 端口，内部 ClusterIP 使用 8445 端口。各端口保持独立协议和路由边界。Ingress 必须关闭响应缓冲并允许实际制品和镜像层大小。
 
@@ -148,42 +150,27 @@ helm --kube-context YOUR_CONTEXT -n artifactory history artifactory
 
 健康检查成功后，仍需验证真实登录、CSRF、Agent mTLS 注册/心跳、SSE 和一次制品构建/下载。HTTP kind 联测不代表公网 TLS、真实业务应用、实体机启动恢复、发行签名或生产备份恢复已验收。
 
-升级使用同一命名空间、release 名、Secret 和 PVC，显式指定新镜像 tag。未分离 Source 时保持 control-plane 单副本；设置多个副本前按[控制平面多副本](control-ha.md)启用 `localSource.enabled` 并核算数据库连接预算。升级前排空 Agent，协调备份数据库、对象存储、control-plane 数据、主密钥与 CA。Secret 更新后容器环境变量不会自动刷新，需要安排相关 Deployment 重启；数据库用户密码也不会因更改初始化环境变量而自动更新。首次隔离试验可使用[受限三副本 profile](versioning.md#隔离的-kubernetes-试部署)，不要将内网 HTTP profile 当作生产 TLS 部署。
+Control 多副本直接使用独立临时卷。连接预算和排空配置见 [Control 多副本](control-ha.md)。Secret 更新后容器环境变量不会自动刷新，需要重启对应 Deployment。数据库用户密码须通过数据库修改，初始化环境变量只作用于新卷。
 
-应用 PVC 带有 `helm.sh/resource-policy: keep`，`helm uninstall` 会保留它们；外部 Secret 同样保留。**删除命名空间仍会删除这些资源**。不要将卸载、删除命名空间或重建 kind 集群用作升级流程。
+应用 PVC 带有 `helm.sh/resource-policy: keep`。卸载 Helm release 会保留数据库与制品存储卷；删除命名空间仍会删除 PVC。密钥、设备 CA、数据库和制品对象应纳入备份。
 
-## 从原网关升级
+## 独立 Operator 与仓库
 
-升级前排空构建并备份数据库、私有对象、主密钥与设备 CA。已有实例不得重新运行初始化脚本并覆盖原 Secret。只补充新的网关令牌和独立仓库签名身份。
+主 Chart 的 `planning.runtimeUrl` 指向独立 Runtime，`planning.namespace` 指向 Agent Operator 所在命名空间，`planning.agentPool` 选择 AgentPool。完整 Secret、TLS 与安装命令见 [Operator 运维](operator-operations.md)。
+
+Agent Operator 协调 `AgentRun` 与 `SourceTask`。`SourceTask` 解析 ref 或查询 refs；AI 规划 Job 的 init container 准备固定源码。Image Operator 为每个平台创建源码 init container、原生 BuildKit sidecar 和 Runner，并单独创建 Publisher。它们不创建源码 StatefulSet、Service、PVC 或共享缓存。
+
+公开入口经 `https://build.example.com` 进入 Pingora。内部服务使用 `https://<release>-gateway-internal:8445`。内部 TLS Secret 提供 `ca.pem/server.pem/server.key`，证书 SAN 覆盖内部 Service 名称。Runtime 和源码准备容器信任同一服务 CA。Control 通过 Kubernetes TokenReview 与 Pod→Job→CR 的 UID 链确认任务身份；普通 Worker 不挂载源码凭据和源码专用 token。
+
+内建 Registry 使用独立私有 S3 Bucket。Control 的 RSA 签名身份与设备 CA 分离。配置与推送/拉取验证见 [镜像构建](image-builds.md)。
+
+## 临时源码验收
+
+在一次 AI、原生构建和双架构镜像任务运行期间，验证卷类型、只读源码挂载和身份隔离。任务结束后验证清理：
 
 ```sh
-umask 077
-mkdir .deploy/gateway-upgrade
-python3 -c 'import secrets; from pathlib import Path; Path(".deploy/gateway-upgrade/token").write_text(secrets.token_hex(32))'
-kubectl --context YOUR_CONTEXT -n artifactory create secret generic artifactory-gateway \
-  --from-file=token=.deploy/gateway-upgrade/token
-openssl req -x509 -newkey rsa:3072 -nodes -sha256 -days 365 \
-  -subj '/CN=artifactory Registry Token Issuer' \
-  -keyout .deploy/gateway-upgrade/registry.key -out .deploy/gateway-upgrade/registry.crt
-kubectl --context YOUR_CONTEXT -n artifactory create secret generic artifactory-registry-signing \
-  --from-file=tls.key=.deploy/gateway-upgrade/registry.key \
-  --from-file=tls.crt=.deploy/gateway-upgrade/registry.crt
-kubectl --context YOUR_CONTEXT -n artifactory create secret generic artifactory-registry-signing-public \
-  --from-file=tls.crt=.deploy/gateway-upgrade/registry.crt
+python3 scripts/check_ephemeral_source.py --context YOUR_CONTEXT --namespace artifactory
+python3 scripts/check_ephemeral_source.py --context YOUR_CONTEXT --namespace artifactory --idle
 ```
 
-示例使用默认 release 前缀。已有 Secret 时停止执行并核对原值，禁止直接替换。新签名身份不使用设备 CA。将新增文件纳入离线加密备份。
-
-内部 Gateway 默认使用既有设备 PKI 的服务器证书。旧证书须用原 CA 续签，保留全部既有 SAN，并加入 `<release>-gateway-internal` 和 `<release>-gateway-internal.<namespace>.svc`。不更换 CA 或业务主密钥。若 Runtime/Source 已使用独立服务 CA，配置 `gateway.internalTlsSecret`，引用包含 `ca.pem/server.pem/server.key` 的 Secret；服务器证书由该服务 CA 签发，并覆盖相同内部 SAN。服务器私钥与 CA 私钥独立，Gateway 不挂载 CA 私钥。Runtime/Source 只读信任该服务 CA，地址为 `https://<release>-gateway-internal:8445`。内部 Service 不对公网暴露，公开入口继续拒绝 `/internal/*`。
-
-从分离网关升级时，移除 `gateway.dedicatedData`、`dataReplicas`、`deviceReplicas` 和 `internalReplicas`，统一设置 `gateway.replicas`。先部署新统一网关并验证四个监听，再把 Web、设备、内部 Service 切换到统一选择器。滚动升级保留原 Service 名称。内部 TLS 使用独立挂载，公开端口不接受内部路由。NetworkPolicy 对内部 8445 只允许同命名空间 Pod；公开与设备来源通过 `gateway.networkPolicy.publicFrom/deviceFrom` 配置。
-
-设备控制地址指向 `<release>-grpc:8443`，遥测地址指向 `https://<release>-grpc:8444`。集群外设备使用对应的可达域名、NodePort 或持久隧道，并验证后端服务器证书 SAN。已有注册设备须更新本机配置的 `endpoint`、`telemetry_endpoint`；仅修改注册回复不会更新已有设备。临时隧道直接选择正式 Service，不再选择旧 Pod。先验证设备重连与最新遥测，再移除旧 `emissary-gateway` StatefulSet、Service 和转发任务。
-
-`<release>-telemetry-grpc` 固定为私有 ClusterIP。旧 `telemetry.service.type=NodePort/LoadBalancer` 和非空 `telemetry.service.nodePort` 会拒绝渲染。先将旧后端 Service 改为 ClusterIP，释放旧 NodePort，再用 `grpc.service.telemetryNodePort` 将端口分配给统一网关。
-
-将 `s3.endpoint` 改为 Control/Gateway 可访问的私有地址。设备制品字节通过公开网关的 `/artifacts/object`，不保留旧设备 S3 转发。升级后验证网关下载、上传、Range/HEAD 和设备 mTLS，再移除旧 S3 Ingress、NodePort、LoadBalancer 及公网 DNS。关闭公开 Bucket 策略。旧预签名链接按原到期时间失效；不要将它们重新写入新页面。
-
-## Agent worker
-
-默认启用 `agentWorker.enabled`，使用独立身份 PVC、只读 CA 和单副本 Recreate。`images.agent-worker` 需与 control-plane/web 使用同一候选版本；配置 `agentWorker.serverName` 时必须匹配服务器证书 SAN。初始 Pod 等待注册，按 [AI 构建指南](ai-builds.md) 从标准输入注册，并在管理界面配置真实模型。`sourceCache.maxBytes` 控制平台缓存配额，kind 默认 512 MiB。已有 PVC/Secret 不得重新初始化覆盖。
+脚本只读 Kubernetes 元数据，不读取 Secret 内容。`--idle` 要求该命名空间没有任务 Pod、Job 和镜像任务 Secret。数据库、制品 PVC、最终镜像与设备 PKI 不属于临时任务清理范围。

@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 init 源码清单、Pod 身份和 Runtime。
+ * [OUTPUT]: 执行单个规划 generation 并维持租约。
+ * [POS]: 唯一 Worker 入口；源码准备完成后获取模型时限。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { runTask, type Task } from "./runtime.js";
@@ -22,7 +28,7 @@ try {
   lease = acquired.lease as Lease;
   task = acquired.task as unknown as Task;
   heartbeat = setInterval(() => { void post("/v1/heartbeat", lease as unknown as Record<string, unknown>).catch(() => controller.abort()); }, 10000);
-  await runTask(task, runtimeRpc(lease, String(acquired.source_url), post, controller.signal), controller.signal);
+  await runTask(task, runtimeRpc(lease, post, controller.signal), controller.signal);
 } catch (error) {
   if (!controller.signal.aborted && task && lease) {
     await reportTerminalFailure(error, task, lease, post, controller.signal);

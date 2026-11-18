@@ -3,9 +3,9 @@ Rust 2024 + Toasty 0.11.0 + PostgreSQL 17 + Next.js 16.4.5 + React 19.3.1
 
 <directory>
 .github/ - 平台验证与不可变镜像交付。
-crates/ - 控制平面、源码、执行节点、镜像协议与 Pingora 网关。
+crates/ - 控制平面、临时源码检出、执行节点与 Pingora 网关。
 operators/ - 独立 Agent 与镜像构建 Operator。
-packages/ - 独立 Node.js AI 规划 Worker。
+packages/ - Kubernetes Job 使用的 Node.js AI 规划 Worker。
 web/ - 多租户构建控制台。
 proto/ - 设备与运行时通信协议。
 schemas/ - 持久化数据与执行计划契约。

@@ -15,10 +15,6 @@ images:
     repository: ghcr.io/zhubby/artifactory-web
     tag: ""
     pullPolicy: IfNotPresent
-  agent-worker:
-    repository: ghcr.io/zhubby/artifactory-agent-worker
-    tag: ""
-    pullPolicy: IfNotPresent
   gateway:
     repository: ghcr.io/zhubby/artifactory-gateway
     tag: ""
@@ -43,7 +39,7 @@ controlPlane:
   databaseConnections: 20
   artifactVerifications: 4
   schedulerBatch: 64
-  # Enable only after Control, Telemetry, Runtime, Worker and Emissary are upgraded.
+  # Use a separate source-free planning run for node placement.
   aiPlacement: false
   # Optional pre-created Secret containing keys.json; copied privately into tmpfs.
   signingKeysSecret: ""
@@ -51,9 +47,6 @@ controlPlane:
   temporaryStorage: 10Gi
   # Optional ConfigMap containing emissary-releases.json; mounted on every replica.
   releaseSourceConfigMap: ""
-localSource:
-  # Required before setting controlPlane.replicas > 1. Retains the existing control PVC.
-  enabled: false
 postgres:
   enabled: true
   maxConnections: 100
@@ -96,8 +89,6 @@ s3:
   endpoint: ""
   # Explicit opt-in for an external private HTTP endpoint.
   allowHttp: false
-  # Deprecated and ignored; clients use gateway tickets.
-  publicEndpoint: https://artifacts.example.com
   bucket: artifactory
   region: us-east-1
   service:
@@ -107,30 +98,18 @@ s3:
 development:
   insecureHttp: false
 
-agentWorker:
-  enabled: true
-  serverName: "" # Defaults to the internal gRPC service certificate SAN.
-
-sourceCache:
-  maxBytes: "4294967296"
-
 ingress:
   enabled: false
   className: ""
   annotations: {}
   consoleHost: build.example.com
-  s3Host: artifacts.example.com
   consoleTlsSecret: artifactory-console-tls
-  s3TlsSecret: artifactory-s3-tls
 
 # PVCs survive helm uninstall; removing a namespace still deletes its PVCs.
 persistence:
   storageClass: "" # Use the cluster default; "-" disables dynamic provisioning.
-  control-plane: 5Gi
   postgres: 5Gi
   s3: 20Gi
-  agent-worker: 1Gi
-
 resources:
   control-plane:
     requests: {cpu: 100m, memory: 128Mi}
@@ -138,9 +117,6 @@ resources:
   web:
     requests: {cpu: 100m, memory: 128Mi}
     limits: {cpu: "1", memory: 512Mi}
-  agent-worker:
-    requests: {cpu: 100m, memory: 256Mi}
-    limits: {cpu: "2", memory: 1Gi}
   gateway:
     requests: {cpu: 10m, memory: 32Mi}
     limits: {cpu: 500m, memory: 128Mi}
@@ -151,11 +127,11 @@ resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: "1", memory: 768Mi}
 
-# Runtime/Source are installed by the separate artifactory-agent-operator release.
-# Opt in per project using planner_backend=kubernetes after verification.
+# Runtime are installed by the separate artifactory-agent-operator release.
+# Kubernetes Job is the only planning backend.
 planning:
   runtimeUrl: ""
-  sourceUrls: ""
+  namespace: ""
   agentPool: default
   serviceSecretName: ""
   serviceCaSecretName: ""
@@ -163,7 +139,7 @@ planning:
 gateway:
   replicas: 2
   # Optional ca.pem/server.pem/server.key for an existing service CA.
-  # Empty selects the device PKI; Runtime/Source must trust its CA.
+  # Empty selects the device PKI; Runtime must trust its CA.
   internalTlsSecret: ''
   # Secret key token; empty selects <release>-gateway.
   secretName: ''

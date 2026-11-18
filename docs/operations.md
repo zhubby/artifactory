@@ -2,7 +2,7 @@
 
 ## 部署边界
 
-Control 为 Linux 模块化服务，支持多副本。后端统一使用 TimescaleDB 2.32+ / PostgreSQL 17，关系表保存队列和业务状态，独立 Rust Telemetry 服务保存时序数据。多副本设备调度使用 PostgreSQL Outbox 与节点行锁，部署、容量与回退见 [Control 多副本](control-ha.md)；Kubernetes Pi 的 Runtime / Source / Operator 部署见 [Operator 运维](operator-operations.md)。宿主执行只接受内部可信项目；签名节点应与一般构建节点分池、最小授权、限制网络和服务账户权限。
+Control 为 Linux 模块化服务，支持多副本。后端统一使用 TimescaleDB 2.32+ / PostgreSQL 17，关系表保存队列和业务状态，独立 Rust Telemetry 服务保存时序数据。多副本设备调度使用 PostgreSQL Outbox 与节点行锁，部署、容量与回退见 [Control 多副本](control-ha.md)；Kubernetes Pi 的 Runtime、SourceTask 和 Operator 部署见 [Operator 运维](operator-operations.md)。宿主执行只接受内部可信项目；签名节点应与一般构建节点分池、最小授权、限制网络和服务账户权限。
 
 生产需可解析的控制台和 Emissary gRPC 域名。Compose 的 Caddy 只负责 80/443 与 ACME，全部应用请求转至 Pingora。Pingora 反向代理控制台、API、内建仓库与制品，S3 没有公开入口。构建 gRPC 使用钉住私有 CA 的 TLS 8443，独立遥测 mTLS 使用同一设备域名的 8444。仅向受信网络开放设备端口；不公开数据库、遥测内部查询、SeaweedFS 管理端口及 filer/master。代理不得缓冲 SSE。
 
@@ -38,7 +38,7 @@ S3 启动脚本把只读挂载、0600 权限的宿主认证配置复制为容器
 
 ### 数据与外部存储
 
-控制平面数据目录同时承载 Git 临时目录与制品校验临时文件；至少留出最大并发校验文件的磁盘空间。单文件上限 20 GiB 不意味着小内存机器应使用相同大小的 tmpfs。S3 与 PostgreSQL 使用独立持久卷，默认不自动删除历史日志或制品。
+控制平面数据目录承载制品校验临时文件；至少留出最大并发校验文件的磁盘空间。源码只存在于任务的临时工作目录。单文件上限 20 GiB 不意味着小内存机器应使用相同大小的 tmpfs。S3 与 PostgreSQL 使用独立持久卷，默认不自动删除历史日志或制品。
 
 使用外部 TimescaleDB / S3 时可直接部署镜像并设置与 `Settings::from_env` 对应的环境变量。每个数据库由管理员预先安装 TimescaleDB 2.32+ 扩展；遥测使用独立数据库与应用角色。S3 endpoint 只供 Control 和 Gateway 访问，二者使用相同固定地址。外部对象桶必须私有，不启用公开读取策略。新安装的 Compose / Helm 自动初始化遥测数据库；遥测 token、证书 SAN、数据保留和独立连接池见 [时序观测](telemetry.md)。
 
@@ -52,9 +52,9 @@ S3 启动脚本把只读挂载、0600 权限的宿主认证配置复制为容器
 python3 -u scripts/compose_acceptance.py
 ```
 
-脚本从当前 Git HEAD 创建私有源码快照（未提交候选需先复制到隔离临时 Git 仓库并提交），构建实际 Control、Gateway 与控制台镜像；以独立项目名、卷、网络和随机 loopback 端口运行生产清单的八个服务。测试经 Caddy TLS 入口连接 Pingora，覆盖 Secure Cookie / CSRF、运行中 SSE、mTLS Emissary、HTTPS Git 原生 C 构建、网关上传下载与 Control 重启。CA 只注入测试客户端与独立进程，不修改宿主信任库。默认不加载已有 `.local/env` 或 `.deploy/env`，运行后仅清理本次 run 的容器、网络与卷。
+脚本从当前 Git HEAD 创建私有源码快照（未提交候选需先复制到隔离临时 Git 仓库并提交），构建实际 Control、Gateway 与控制台镜像；以独立项目名、卷、网络和随机 loopback 端口运行开发服务。测试经 Caddy TLS 入口连接 Pingora，覆盖文档、Secure Cookie、CSRF、租户鉴权和 Control 重启后的元数据持久化。CA 只注入测试客户端与独立进程，不修改宿主信任库。默认不加载已有 `.local/env` 或 `.deploy/env`，运行后仅清理本次 run 的容器、网络与卷。
 
-日志故障测试把验收 Emissary 缓冲设为 1 MiB，仅暂停本次归属标签匹配的 S3，再让真实 Worker 输出超过缓冲上限。脚本核对子进程终止、磁盘缓冲边界及独立心跳，恢复 S3 后检查明确失败原因、无制品 / Release、日志按序确认和清理，并使用同一 Emissary 再构建原生 C 程序。缓存块的大小 / SHA-256 同时与真实 PostgreSQL 索引及 HTTPS SSE 内容比较。测试容器使用 Docker init 回收孤儿子进程；失败清理也会先恢复本次暂停的 S3。执行的 controller 副本及 controller / probe 摘要随本地证据保留。
+完整构建链使用隔离 Kubernetes 验收：临时 SourceTask 固定提交，规划 Job 的 init container 准备源码，原生 Emissary 拉取同一清单，再通过网关下载制品。入口和故障场景见 [Operator 运维](operator-operations.md)。Compose 验收不创建规划 Worker，也不执行构建。
 
 `--image-prefix` 可指定拉取镜像所用的 registry 镜像源；输入变更、各镜像的实际平台与 ID 随证据记录，不修改默认部署镜像或全局 Docker 配置。可选 `--control-plane-image` / `--web-image` 仅复用 `org.opencontainers.image.revision` 与当前 HEAD、`artifactory.dockerfile.sha256` 与对应 Dockerfile 均匹配的镜像。`--probe-image` 可复用包含 python3、Git、cc、OpenSSL 的 Linux 测试工具镜像；Emissary 二进制仍从本次源码快照重新编译，验收脚本也由本次 run 单独挂载。
 
@@ -187,19 +187,21 @@ doctor 报告路径、版本命令是否成功、实际 OS/CPU、可发现工具
 
 必须协调备份各 TimescaleDB 数据库、S3 对象、`.deploy/env` 中主密钥及 PKI；只有数据库备份无法解密凭据，也无法恢复制品。备份应离线加密，并独立限制访问。
 
-1. 排空节点、停止新触发、等待在途任务结束，停止 control-plane / web / agent-worker 及独立 Runtime / Source / Telemetry 写入。
-2. `pg_dump` 分别保存实际部署的业务、Runtime、Source、遥测数据库，记录 schema 与 TimescaleDB 扩展版本；同时保存 S3 内容与对象校验清单。分别导出的数据库不自动构成跨库事务快照，必须先停写。
+1. 排空节点、停止新触发、等待在途任务结束，停止 control-plane / web 及独立 Runtime / Telemetry 写入。
+2. `pg_dump` 分别保存实际部署的业务、Runtime、遥测数据库，记录 schema 与 TimescaleDB 扩展版本；同时保存 S3 内容与对象校验清单。分别导出的数据库不自动构成跨库事务快照，必须先停写。
 3. 保存主密钥、S3 密钥、签发 CA、节点授权与镜像版本；不要在普通工单里复制这些秘密。
 4. 在相同 TimescaleDB 版本的隔离环境恢复：各库预装扩展，执行 `timescaledb_pre_restore()`，串行 `pg_restore` 后执行 `timescaledb_post_restore()`。使用相同 master key，检查凭据解密、Release 下载 SHA-256、遥测列存 / 聚合 / 后台策略及最新摘要，再开放流量。
 5. 升级前保留备份，执行迁移后回滚必须连同 schema 和对象状态一起评估，不能仅回退二进制。
 
 构建日志与制品没有自动 GC / retention API；遥测按 [保留策略](telemetry.md#数据与保留策略) 自动清理。禁止直接批量删除平台数据目录或 Release 对象。暂存对象和孤立失败日志的清理必须停写、基于数据库引用清单、先备份再删除；已发布制品不能按文件时间猜测是否无用。生产备份恢复演练仍是独立验收项。
 
-开发环境可用 `scripts/recovery_acceptance.py` 重放隔离冷恢复，执行顺序见 README。它使用 process-only rclone remote 和空配置文件，不修改已有全局 remotes；备份位于私有 `.local/acceptance/<run_id>/backup`。脚本不会自动加密或异地传输该目录，生产环境需另行提供密钥托管、加密备份与恢复流程。
+本次原型重置保留 S3/Registry 物理对象、PKI 和主密钥。新业务与 Runtime 库使用唯一初始化基线，不回填旧列表或授权，原生设备需重新注册。重置前阻断写入口，停止旧任务，确认在途写入和最长 15 分钟的上传票据失效。
 
-## Agent worker 与源码缓存
+## 临时规划与源码
 
-模型配置、worker 注册、任务预算、源码下载、缓存指标与升级顺序见 [AI 构建运维](ai-builds.md)。首次部署必须配置真实模型并完成 worker 注册；七服务 Compose 的 worker 默认等待注册，不持有模型密钥环境变量。备份必须包含 worker 身份和平台源码快照元数据。
+模型配置、任务预算、临时源码和审计会话见 [AI 构建运维](ai-builds.md)。AI 规划只使用 Kubernetes Job，不注册常驻 Worker。源码由临时 SourceTask、任务 init container 和原生 attempt 直接访问上游，平台只持久化源码清单与凭据引用。
+
+任务终态先持久化结果和日志，再删除 Job，确认 Pod 消失。终态 Job 的 TTL 为 300 秒。原生节点确认进程树退出后清理；清理失败闭锁接单。Registry 不保存构建缓存，最终镜像作为制品保留。
 
 托管方案支持加密上传与按任务临时下发。
 配置和安全边界参见[应用签名](signing.md)。

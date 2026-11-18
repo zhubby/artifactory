@@ -1,11 +1,11 @@
 # image-operator/src/
 > L2 | Parent: ../AGENTS.md
 
-api.rs: 定义 sidecar 模式、平台集合与 ImageBuild 不可变契约。
-resources.rs: 创建原生或普通 sidecar 构建 Job 与独立发布 Job。
-controller.rs: 协调任务准入、子资源归属、终态与取消。
+api.rs: 定义构建池、平台集合与 ImageBuild 不可变契约。
+resources.rs: 创建源码 init、原生 BuildKit sidecar 与发布 Job。
+controller.rs: 协调任务准入，先写终态再清理 Job 与 Pod。
 leadership.rs: 使用独立 Lease 保护 Image 控制器写入。
-worker.rs: 检出源码，配置认证 CA 并提交限长脱敏日志。
+worker.rs: 校验 init 准备的源码，配置仓库认证并提交脱敏日志。
 transport.rs: 提供任务令牌认证的控制平面回执。
 publisher.rs: 汇总平台结果并发布不可变 Index。
 lib.rs: 导出镜像执行模块。

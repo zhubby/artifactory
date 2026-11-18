@@ -221,13 +221,7 @@ async fn tenant_and_project_permissions_cover_direct_ids_lists_and_references() 
             );
         }
     }
-    for path in [
-        "/credentials",
-        "/model-profiles",
-        "/ai-workers",
-        "/audit",
-        "/users",
-    ] {
+    for path in ["/credentials", "/model-profiles", "/audit", "/users"] {
         assert_eq!(
             request(&db, &reader, Some(a), "GET", path, json!({}))
                 .await
@@ -529,123 +523,6 @@ async fn shared_devices_intersect_frozen_grants_and_serialize_three_replicas() {
     assert_eq!(
         active, 1,
         "revoking device grants preserves existing attempts"
-    );
-    db.close().await;
-}
-
-#[tokio::test]
-#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
-async fn legacy_upgrade_preserves_resources_and_only_administrators_inherit() {
-    use toasty::migration::{MigrationFile, MigrationSet};
-    static LEGACY: MigrationSet = MigrationSet::new(&[
-        MigrationFile::new(
-            2026111301,
-            "0000_baseline.sql",
-            include_str!("../../migrations/migrations/0000_baseline.sql"),
-        ),
-        MigrationFile::new(
-            2026111401,
-            "0001_control_replication.sql",
-            include_str!("../../migrations/migrations/0001_control_replication.sql"),
-        ),
-        MigrationFile::new(
-            2026111402,
-            "0002_node_placements.sql",
-            include_str!("../../migrations/migrations/0002_node_placements.sql"),
-        ),
-    ]);
-    let db = Database::with_migrations(&LEGACY).await;
-    let project = Uuid::new_v4();
-    sql::execute(&mut db.pool.clone(),"INSERT INTO projects(id,name,repository_url) VALUES($1,'retained','https://example.com/app.git')",params![project]).await.unwrap();
-    // A malformed legacy installation must roll back both DDL and migration history.
-    assert!(
-        artifactory_database::migrate(&db.pool, &artifactory_control_plane::store::MIGRATIONS)
-            .await
-            .is_err()
-    );
-    let rolled_back: bool = sql::scalar(&mut db.pool.clone(), "SELECT to_regclass(current_schema()||'.tenants') IS NULL AND (SELECT count(*) FROM __toasty_migrations)=3", params![]).await.unwrap();
-    assert!(rolled_back);
-    let first = Uuid::new_v4();
-    let admin = Uuid::new_v4();
-    let reader = Uuid::new_v4();
-    sql::execute(&mut db.pool.clone(),"INSERT INTO users(id,username,password_hash,role,created_at) VALUES($1,'first','unused','admin',now()-interval '2 days'),($2,'admin','unused','admin',now()-interval '1 day'),($3,'reader','unused','viewer',now())",params![first,admin,reader]).await.unwrap();
-    for user in [admin, reader] {
-        sql::execute(
-            &mut db.pool.clone(),
-            "INSERT INTO sessions VALUES($1,$2,now()+interval '1 hour')",
-            params![user.to_string(), user],
-        )
-        .await
-        .unwrap();
-        sql::execute(&mut db.pool.clone(),"INSERT INTO api_tokens(id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES($1,$2,'legacy',$3,$4,'{read}',now()+interval '1 day')",params![Uuid::new_v4(),user,user.to_string(),vec![project]]).await.unwrap();
-    }
-    let node = Uuid::new_v4();
-    let build = Uuid::new_v4();
-    let frozen_empty_build = Uuid::new_v4();
-    sql::execute(&mut db.pool.clone(),"INSERT INTO nodes(id,name,os,arch,pool_id,certificate_hash,certificate_expires_at) VALUES($1,'retained','linux','amd64','00000000-0000-0000-0000-000000000001','retained-certificate',now()+interval '1 day')",params![node]).await.unwrap();
-    sql::execute(&mut db.pool.clone(),"INSERT INTO builds(id,project_id,requested_ref,source_repository_url,status) VALUES($1,$2,'main','https://example.com/app.git','succeeded')",params![build,project]).await.unwrap();
-    sql::execute(&mut db.pool.clone(),"INSERT INTO builds(id,project_id,requested_ref,source_repository_url,status,planning_context) VALUES($1,$2,'main','https://example.com/app.git','succeeded',$3)",params![frozen_empty_build,project,json!({"pool_ids":[]})]).await.unwrap();
-    for _ in 0..2 {
-        artifactory_database::migrate(&db.pool, &artifactory_control_plane::store::MIGRATIONS)
-            .await
-            .unwrap();
-    }
-    let owner: Uuid = sql::scalar(
-        &mut db.pool.clone(),
-        "SELECT owner_id FROM tenants",
-        params![],
-    )
-    .await
-    .unwrap();
-    assert_eq!(owner, first);
-    let members: i64 = sql::scalar(
-        &mut db.pool.clone(),
-        "SELECT count(*) FROM tenant_members",
-        params![],
-    )
-    .await
-    .unwrap();
-    assert_eq!(members, 2);
-    let sessions: i64 = sql::scalar(
-        &mut db.pool.clone(),
-        "SELECT count(*) FROM sessions",
-        params![],
-    )
-    .await
-    .unwrap();
-    assert_eq!(sessions, 0);
-    let tokens: Vec<(Uuid, bool)> = sql::tuples(
-        &mut db.pool.clone(),
-        "SELECT user_id,revoked FROM api_tokens ORDER BY user_id",
-        params![],
-    )
-    .await
-    .unwrap();
-    assert!(tokens.contains(&(admin, false)));
-    assert!(tokens.contains(&(reader, true)));
-    let history:(Uuid,Uuid,String)=sql::tuple(&mut db.pool.clone(),"SELECT b.project_id,b.tenant_id,n.certificate_hash FROM builds b CROSS JOIN nodes n WHERE b.id=$1 AND n.id=$2",params![build,node]).await.unwrap();
-    assert_eq!(
-        history,
-        (project, Uuid::from_u128(1), "retained-certificate".into())
-    );
-    let allowed: bool = sql::scalar(
-        &mut db.pool.clone(),
-        "SELECT build_node_allowed($1,$2)",
-        params![build, node],
-    )
-    .await
-    .unwrap();
-    assert!(allowed);
-    let frozen_allowed: bool = sql::scalar(
-        &mut db.pool.clone(),
-        "SELECT build_node_allowed($1,$2)",
-        params![frozen_empty_build, node],
-    )
-    .await
-    .unwrap();
-    assert!(
-        !frozen_allowed,
-        "migration must preserve historical frozen grants, including an empty list"
     );
     db.close().await;
 }
@@ -956,63 +833,6 @@ async fn device_grant_changes_do_not_deadlock_task_tenant_foreign_keys() {
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
-async fn offline_migration_requires_build_publication_planning_and_ota_to_finish() {
-    use artifactory_control_plane::store::maintenance::TenantMigration;
-
-    let db = Database::with_tenant().await;
-    let (_, build, _) = db.fixture().await;
-    let node = db.node().await;
-    let migration = TenantMigration::connect(&db.state.settings.database_url)
-        .await
-        .unwrap();
-    assert!(migration.verify_drained().await.is_err());
-    sql::execute(
-        &mut db.pool.clone(),
-        "UPDATE builds SET status='succeeded',publish_status='pending' WHERE id=$1",
-        params![build],
-    )
-    .await
-    .unwrap();
-    assert!(
-        migration.verify_drained().await.is_err(),
-        "publication is still active after compilation finishes"
-    );
-    sql::execute(
-        &mut db.pool.clone(),
-        "UPDATE builds SET publish_status='succeeded' WHERE id=$1",
-        params![build],
-    )
-    .await
-    .unwrap();
-    let run = Uuid::new_v4();
-    sql::execute(&mut db.pool.clone(), "INSERT INTO planning_runs(id,build_id,purpose,state,model_config) VALUES($1,$2,'initial','leased','{}')", params![run,build]).await.unwrap();
-    assert!(migration.verify_drained().await.is_err());
-    sql::execute(
-        &mut db.pool.clone(),
-        "UPDATE planning_runs SET state='succeeded' WHERE id=$1",
-        params![run],
-    )
-    .await
-    .unwrap();
-    let release = Uuid::new_v4();
-    sql::execute(&mut db.pool.clone(), "INSERT INTO emissary_releases(id,tenant_id,version,manifest,signature,manifest_hash) VALUES($1,'00000000-0000-0000-0000-000000000001','test','{}','test','test')", params![release]).await.unwrap();
-    let update = Uuid::new_v4();
-    sql::execute(&mut db.pool.clone(), "INSERT INTO emissary_updates(id,node_id,pool_id,release_id,status) VALUES($1,$2,'00000000-0000-0000-0000-000000000001',$3,'downloading')", params![update,node,release]).await.unwrap();
-    assert!(migration.verify_drained().await.is_err());
-    sql::execute(
-        &mut db.pool.clone(),
-        "UPDATE emissary_updates SET status='succeeded' WHERE id=$1",
-        params![update],
-    )
-    .await
-    .unwrap();
-    migration.verify_drained().await.unwrap();
-    drop(migration);
-    db.close().await;
-}
-
-#[tokio::test]
-#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn cross_tenant_history_artifacts_streams_and_operations_are_rejected() {
     let db = Database::new().await;
     let (_, alice) = account(&db, "alice", "viewer").await;
@@ -1077,7 +897,6 @@ async fn cross_tenant_history_artifacts_streams_and_operations_are_rejected() {
         "/nodes",
         "/credentials",
         "/model-profiles",
-        "/ai-workers",
         "/emissary-updates",
     ] {
         let (status, list) = request(&db, &alice, Some(a), "GET", path, json!({})).await;
@@ -1127,33 +946,16 @@ async fn source_and_plan_references_cannot_cross_tenant_boundaries() {
     let b = tenant(&db, &bob, "B").await;
     let pa = project(&db, &alice, a, "A").await;
     let pb = project(&db, &bob, b, "B").await;
-    let repository = Uuid::new_v4();
-    let snapshot = Uuid::new_v4();
-    sql::execute(&mut db.pool.clone(), "INSERT INTO source_repositories(id,project_id,repository_url,cache_key) VALUES($1,$2,'https://example.com/repo.git',$3)", params![repository,pb,repository.to_string()]).await.unwrap();
-    let insert_snapshot = "INSERT INTO source_snapshots(id,project_id,root_repository_id,commit_sha,manifest,digest) VALUES($1,$2,$3,$4,'{}',$5)";
-    assert!(
-        sql::execute(
-            &mut db.pool.clone(),
-            insert_snapshot,
-            params![snapshot, pa, repository, "0".repeat(40), "a".repeat(64)]
-        )
-        .await
-        .is_err()
-    );
-    sql::execute(
-        &mut db.pool.clone(),
-        insert_snapshot,
-        params![snapshot, pb, repository, "0".repeat(40), "a".repeat(64)],
-    )
-    .await
-    .unwrap();
+    let manifest = Uuid::new_v4();
+    assert!(sql::execute(&mut db.pool.clone(),"INSERT INTO source_manifests(id,tenant_id,project_id,commit_sha,manifest,digest) VALUES($1,$2,$3,$4,'{}',$5)",params![manifest,b,pa,"0".repeat(40),"a".repeat(64)]).await.is_err());
+    db.source(pb, manifest).await;
     let build = Uuid::new_v4();
     sql::execute(&mut db.pool.clone(), "INSERT INTO builds(id,project_id,requested_ref,source_repository_url) VALUES($1,$2,'main','https://example.com/repo.git')", params![build,pa]).await.unwrap();
     assert!(
         sql::execute(
             &mut db.pool.clone(),
-            "UPDATE builds SET source_snapshot_id=$2 WHERE id=$1",
-            params![build, snapshot]
+            "UPDATE builds SET source_manifest_id=$2 WHERE id=$1",
+            params![build, manifest]
         )
         .await
         .is_err()

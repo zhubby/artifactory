@@ -1,7 +1,10 @@
-{{- $components := list "control-plane" }}
+# [INPUT]: 内建 PostgreSQL、S3 开关与持久卷参数。
+# [OUTPUT]: 只创建数据库和对象存储的 PVC。
+# [POS]: 任务源码与 Control 临时目录不使用持久卷。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+{{- $components := list }}
 {{- if .Values.postgres.enabled }}{{- $components = append $components "postgres" }}{{- end }}
 {{- if .Values.s3.enabled }}{{- $components = append $components "s3" }}{{- end }}
-{{- if .Values.agentWorker.enabled }}{{- $components = append $components "agent-worker" }}{{- end }}
 {{- range $component := $components }}
 ---
 apiVersion: v1

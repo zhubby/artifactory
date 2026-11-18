@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Check book coverage and every local link in the generated documentation."""
+"""[INPUT]: 依赖文档目录、导航和 mdBook 生成结果。
+[OUTPUT]: 校验导航覆盖与本地页面、锚点和资源链接。
+[POS]: 文档发布前的只读完整性检查入口。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 
 from html.parser import HTMLParser
 from pathlib import Path

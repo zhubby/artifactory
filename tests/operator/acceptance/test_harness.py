@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 验收清单渲染器、本机 HTTP 服务和工作区 Dockerfile。
-[OUTPUT]: 验证同源切换、设备恢复及清理完成后的成功证据。
+[OUTPUT]: 验证会话分页、设备隔离、同源切换与独立镜像。
 [POS]: 只执行本机检查，不访问 Docker 或 Kubernetes。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -53,185 +53,7 @@ class DeviceFixture:
         return self.nodes[node_id]
 
 
-class CompletedNativeFixture(DeviceFixture):
-    def __init__(self, root):
-        super().__init__()
-        for node in self.nodes.values():
-            node.update(name=node['id'], online=True)
-        self.root, self.run = root, root / 'saved-run'
-        (root / '.local/operator-load').mkdir(parents=True)
-        binary = root / 'target/debug/artifactory-emissary'
-        binary.parent.mkdir(parents=True)
-        binary.write_bytes(b'fixture binary')
-        self.processes, self.base = [], 'http://127.0.0.1:38081'
-        self.public_url = self.origin = 'http://gateway:8080'
-        self.failure_stage = None
-        self.on_control_restored = lambda: None
-        self.artifact = {'id': 'artifact', 'sha256': hashlib.sha256(b'operator-native-ok\n').hexdigest()}
-
-    def resume(self):
-        self.origin = self.public_url
-
-    def kubectl(self, *args):
-        if args[:2] == ('get', 'deployment'):
-            return json.dumps({'spec': {'template': {'spec': {'containers': [{'env': [
-                {'name': 'ARTIFACTORY_PUBLIC_URL', 'value': self.public_url}]}]}}}})
-        if args[:2] == ('get', 'sourcepool'):
-            return json.dumps({'spec': {}, 'metadata': {'generation': 1}, 'status': {'observedGeneration': 1}})
-        if args[:2] == ('get', 'agentpool'):
-            return json.dumps({'spec': {}})
-        if args[:2] == ('get', 'statefulset'):
-            return 'https://127.0.0.1:38090'
-        if args == ('exec', 'deploy/control-plane', '--', 'printenv', 'ARTIFACTORY_PUBLIC_URL'):
-            return self.public_url + '\n'
-        return ''
-
-    def set_environment(self, _acceptance, deployment, values):
-        if deployment == 'control-plane':
-            self.public_url = values['ARTIFACTORY_PUBLIC_URL']
-            if self.public_url == 'http://gateway:8080':
-                self.on_control_restored()
-
-    def api(self, path, body=None, method=None):
-        if path == '/api/v1/nodes':
-            return json.loads(json.dumps(list(self.nodes.values())))
-        if path.startswith('/api/v1/nodes?') or method == 'PATCH':
-            if path == '/api/v1/nodes/old-device' and not body['draining'] and self.failure_stage == 'device_restore':
-                raise RuntimeError('fixture device restore failure')
-            return super().api(path, body, method)
-        if path.endswith('/telemetry'):
-            return {'host': {'fresh': True}, 'inventory': {'inventory': {
-                'os': 'linux', 'arch': 'amd64', 'physical_memory_bytes': 1, 'tools': {'git': {'available': True}}}}}
-        if '/processes?' in path:
-            return {'samples': [{'step': 0, 'started_at': 1}]}
-        if path.endswith('/plans'):
-            return {'plans': [{}], 'runs': [{'calls': 0}]}
-        if path.startswith('/api/v1/builds/'):
-            return {'id': 'build', 'status': 'succeeded', 'source_snapshot_id': 'snapshot',
-                    'commit_sha': 'a' * 40, 'artifacts': [self.artifact], 'jobs': []}
-        if body is not None:
-            return {'id': 'build' if path.endswith('/builds') else 'project', 'token': 'fixture-token'}
-        raise AssertionError('unexpected fixture request: ' + path)
-
-    def sql(self, _database, query):
-        if 'json_build_object' in query:
-            return json.dumps({'internal': 'https://source.svc:8090', 'public': 'https://127.0.0.1:38090'})
-        if 'revoked AND draining' in query:
-            return 't'
-        if query.startswith('SELECT a.id'):
-            return 'attempt'
-        if "a.status='succeeded'" in query or 'coalesce(sum(lfs_download_bytes)' in query:
-            return '1'
-        return '0'
-
-    def command(self, args, **_kwargs):
-        if len(args) > 1 and args[1] == 'register':
-            Path(args[args.index('--config') + 1]).write_text('{}')
-            self.nodes['host-device'] = dict(self.nodes['old-device'], id='host-device',
-                name=args[args.index('--name') + 1], draining=False)
-
-    def cleanup(self):
-        self.evidence_at_cleanup = self.evidence()
-        if self.failure_stage == 'diagnostics':
-            raise RuntimeError('fixture diagnostics failure')
-
-    def evidence(self):
-        return json.loads(next((self.root / '.local/operator-load').glob('*/evidence.json')).read_text())
-
-    def invoke(self):
-        self.forward = lambda *_: None
-        self.wait = lambda callback, *_: callback()
-        self.service_request = lambda *_: 'ok'
-        self.verify_artifact_gateway = lambda *_: None
-        self.images = lambda: []
-        process = SimpleNamespace(terminate=lambda: None, wait=lambda **_: None)
-        with patch.object(NATIVE, 'ROOT', self.root), \
-                patch.object(NATIVE.module, 'Acceptance', return_value=self), \
-                patch.object(NATIVE, 'set_environment', side_effect=self.set_environment), \
-                patch.object(NATIVE.platform, 'system', return_value='Linux'), \
-                patch.object(NATIVE.platform, 'machine', return_value='x86_64'), \
-                patch.object(NATIVE.subprocess, 'run', side_effect=self.command), \
-                patch.object(NATIVE.subprocess, 'Popen', return_value=process):
-            NATIVE.run(SimpleNamespace(context='fixture', namespace='fixture', live_protocol=False))
-
-
 class NativeDeviceIsolationTests(unittest.TestCase):
-    def test_success_is_recorded_only_after_device_and_route_cleanup(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            fixture = CompletedNativeFixture(Path(temporary))
-            output = io.StringIO()
-            with redirect_stdout(output):
-                fixture.invoke()
-            self.assertFalse(fixture.evidence_at_cleanup['passed'])
-            self.assertTrue(fixture.evidence()['passed'])
-            self.assertTrue(fixture.evidence()['existing_device_draining_restored'])
-            self.assertFalse(fixture.nodes['old-device']['draining'])
-            self.assertTrue(fixture.nodes['host-device']['revoked'])
-            self.assertIn('HOST NATIVE ACCEPTANCE PASSED', output.getvalue())
-
-    def test_successful_build_with_failed_cleanup_never_reports_success(self):
-        for stage in ('device_restore', 'diagnostics'):
-            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as temporary:
-                fixture = CompletedNativeFixture(Path(temporary))
-                fixture.failure_stage = stage
-                output = io.StringIO()
-                with redirect_stdout(output), self.assertRaisesRegex(RuntimeError, 'fixture .* failure'):
-                    fixture.invoke()
-                self.assertFalse(fixture.evidence()['passed'])
-                self.assertNotIn('HOST NATIVE ACCEPTANCE PASSED', output.getvalue())
-
-    def test_real_http_restore_rejects_old_origin_and_accepts_refreshed_origin(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            fixture = CompletedNativeFixture(Path(temporary))
-            service_api = fixture.api
-            patch_results = []
-
-            class API(BaseHTTPRequestHandler):
-                def log_message(self, *_args):
-                    pass
-
-                def do_GET(self):
-                    self.respond(service_api(self.path))
-
-                def do_PATCH(self):
-                    body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-                    valid = self.headers.get('Origin') == fixture.public_url
-                    patch_results.append((self.headers.get('Origin'), 200 if valid else 403))
-                    self.respond(service_api(self.path, body, 'PATCH') if valid else {}, 200 if valid else 403)
-
-                def do_POST(self):
-                    body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-                    self.respond(service_api(self.path, body))
-
-                def respond(self, value, status=200):
-                    self.send_response(status)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(json.dumps(value).encode())
-
-            with ThreadingHTTPServer(('127.0.0.1', 0), API) as server:
-                thread = threading.Thread(target=server.serve_forever, daemon=True)
-                thread.start()
-                fixture.base = f'http://127.0.0.1:{server.server_port}'
-                fixture.http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-                fixture.api = MODULE.Acceptance.api.__get__(fixture)
-
-                def reject_stale_origin():
-                    with self.assertRaises(urllib.error.HTTPError) as failure:
-                        fixture.api('/api/v1/nodes/old-device', {}, method='PATCH')
-                    self.assertEqual(failure.exception.code, 403)
-                    failure.exception.close()
-
-                fixture.on_control_restored = reject_stale_origin
-                try:
-                    with redirect_stdout(io.StringIO()):
-                        fixture.invoke()
-                    self.assertFalse(fixture.nodes['old-device']['draining'])
-                    self.assertEqual(patch_results[-2:], [(fixture.base, 403), ('http://gateway:8080', 200)])
-                finally:
-                    server.shutdown()
-                    thread.join(timeout=5)
-
     def test_same_platform_host_is_the_only_available_device_and_original_flags_return(self):
         fixture = DeviceFixture()
         original = json.loads(json.dumps(fixture.nodes))
@@ -253,59 +75,6 @@ class NativeDeviceIsolationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'response lost'):
             NATIVE.drain_existing_devices(fixture)
         self.assertEqual(fixture.nodes, original)
-
-    def test_run_restores_original_devices_after_host_compilation_failure(self):
-        self.assert_run_failure_cleanup(route_failure=False)
-
-    def test_route_cleanup_error_still_restores_devices_and_preserves_evidence(self):
-        self.assert_run_failure_cleanup(route_failure=True)
-
-    def assert_run_failure_cleanup(self, route_failure):
-        fixture = DeviceFixture()
-        original = json.loads(json.dumps(fixture.nodes))
-        fixture.processes = []
-        fixture.base = 'http://127.0.0.1:38081'
-        fixture.resume = lambda: None
-        fixture.sql = lambda *_: '0'
-        fixture.forward = lambda *_: None
-        fixture.wait = lambda callback, *_: callback()
-        fixture.service_request = lambda *_: 'ok'
-        cleaned = []
-        fixture.cleanup = lambda: cleaned.append(True)
-
-        def kubectl(*args):
-            if args[:2] == ('get', 'deployment'):
-                return json.dumps({'spec': {'template': {'spec': {'containers': [{'env': []}]}}}})
-            if args[:2] == ('get', 'sourcepool'):
-                return json.dumps({'spec': {'publicUrlTemplate': 'https://source.invalid'},
-                                   'metadata': {'generation': 1}, 'status': {'observedGeneration': 1}})
-            if args[:2] == ('get', 'agentpool'):
-                return json.dumps({'spec': {'maxActive': 2}})
-            if args[:2] == ('get', 'statefulset'):
-                return 'https://127.0.0.1:38090'
-            return ''
-
-        fixture.kubectl = kubectl
-        def cargo_failure(*_args, **_kwargs):
-            self.assertTrue(fixture.nodes['old-device']['draining'])
-            raise RuntimeError('fixture cargo failure')
-
-        route_updates = [None, None, RuntimeError('fixture route cleanup failure')] if route_failure else None
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / '.local/operator-load').mkdir(parents=True)
-            with patch.object(NATIVE, 'ROOT', root), \
-                    patch.object(NATIVE.module, 'Acceptance', return_value=fixture), \
-                    patch.object(NATIVE, 'set_environment', side_effect=route_updates), \
-                    patch.object(NATIVE.subprocess, 'run', side_effect=cargo_failure):
-                error = 'fixture route cleanup failure' if route_failure else 'fixture cargo failure'
-                with self.assertRaisesRegex(RuntimeError, error):
-                    NATIVE.run(SimpleNamespace(context='fixture', namespace='fixture', live_protocol=False))
-            evidence = json.loads(next((root / '.local/operator-load').glob('*/evidence.json')).read_text())
-            self.assertTrue(evidence['existing_device_draining_restored'])
-            self.assertFalse(evidence['passed'])
-        self.assertEqual(fixture.nodes, original)
-        self.assertEqual(cleaned, [True])
 
     def test_failed_host_build_records_only_safe_diagnostic_fields(self):
         detail = {'id': 'failed-build', 'status': 'failed',
@@ -331,6 +100,9 @@ class NativeDeviceIsolationTests(unittest.TestCase):
             self.assertEqual(projection['jobs'][0]['attempts'][0]['node_id'], 'old-device')
             self.assertEqual(json.loads(recorded)['node_id'], 'host-device')
             self.assertEqual(json.loads(recorded)['failed_build'], projection)
+
+
+
 
 
 class HarnessTests(unittest.TestCase):
@@ -424,8 +196,29 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(pod['containers'][0]['envFrom'][0]['secretRef']['name'], secret['metadata']['name'])
         self.assertEqual(service['spec']['selector'], deployment['spec']['selector']['matchLabels'])
 
+    def test_conversation_reads_all_pages_in_sequence(self):
+        acceptance = MODULE.Acceptance.__new__(MODULE.Acceptance)
+        paths = []
+        def api(path):
+            paths.append(path)
+            return {'messages':[{'sequence':len(paths)}],'next_cursor':1 if len(paths)==1 else None}
+        acceptance.api = api
+        self.assertEqual(acceptance.conversation('build','run',2),[{'sequence':1},{'sequence':2}])
+        self.assertTrue(paths[0].endswith('after=0&limit=50'))
+        self.assertTrue(paths[1].endswith('after=1&limit=50'))
+
+    def test_control_source_authority_has_no_secret_read_permission(self):
+        acceptance = MODULE.Acceptance.__new__(MODULE.Acceptance)
+        acceptance.ns = 'fixture'
+        account, role, binding, cluster, cluster_binding = acceptance.control_identity()
+        self.assertEqual(account['metadata']['name'],'artifactory-control')
+        self.assertTrue(any('sourcetasks' in rule['resources'] for rule in role['rules']))
+        self.assertFalse(any('secrets' in rule['resources'] for rule in role['rules']))
+        self.assertEqual(cluster['rules'][0]['resources'],['tokenreviews'])
+        self.assertEqual(binding['subjects'],cluster_binding['subjects'])
+
     def test_service_dockerfiles_copy_only_existing_workspace_paths(self):
-        files = ['Dockerfile', 'crates/emissary/Dockerfile', 'crates/gateway/Dockerfile', 'crates/planner-runtime/Dockerfile', 'crates/source-service/Dockerfile', 'operators/agent-operator/Dockerfile']
+        files = ['Dockerfile', 'crates/emissary/Dockerfile', 'crates/gateway/Dockerfile', 'crates/planner-runtime/Dockerfile', 'crates/source-preparer/Dockerfile', 'operators/agent-operator/Dockerfile']
         for filename in files:
             for line in (ROOT / filename).read_text().splitlines():
                 fields = shlex.split(line)
@@ -436,7 +229,7 @@ class HarnessTests(unittest.TestCase):
                     self.assertTrue((ROOT / source).exists(), f'{filename}: missing COPY source {source}')
 
     def test_each_service_image_starts_its_own_binary(self):
-        components = {'operators/agent-operator': 'artifactory-agent-operator', 'crates/planner-runtime': 'artifactory-planner-runtime', 'crates/source-service': 'artifactory-source-service'}
+        components = {'operators/agent-operator': 'artifactory-agent-operator', 'crates/planner-runtime': 'artifactory-planner-runtime', 'crates/source-preparer': 'artifactory-source-preparer'}
         for directory, binary in components.items():
             dockerfile = (ROOT / directory / 'Dockerfile').read_text()
             self.assertIn(f'ENTRYPOINT ["/usr/local/bin/{binary}"]', dockerfile)

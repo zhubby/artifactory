@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖执行目标、构建固定的签名绑定与安全路径规则。
 //! [OUTPUT]: 校验默认签名不可省略，输出覆盖及应用平台匹配。
-//! [POS]: Poll 和 Kubernetes 提交计划共用的签名授权约束。
+//! [POS]: Kubernetes 提交计划使用的签名授权约束。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     recipe::{Target, safe_relative_path},

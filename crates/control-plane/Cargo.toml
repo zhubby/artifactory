@@ -13,7 +13,7 @@ artifactory-telemetry-model = { path = "../telemetry-model" }
 artifactory-emissary-protocol = { path = "../emissary-protocol" }
 artifactory-database = { path = "../database" }
 artifactory-runtime-protocol = { path = "../runtime-protocol" }
-artifactory-source-core = { path = "../source-core" }
+artifactory-source-checkout = { path = "../source-checkout" }
 aes-gcm = "0.10"
 anyhow = "1"
 argon2 = "0.5"

@@ -118,10 +118,9 @@ pub async fn list(
 pub async fn build_detail(state: &AppState, id: Uuid) -> Result<Value> {
     let mut build =
         serde_json::to_value(state.store.build_detail(id).await?).map_err(anyhow::Error::from)?;
-    build["source_snapshot"] = if let Some(snapshot) = build["source_snapshot_id"].as_str() {
+    build["source_manifest"] = if let Some(snapshot) = build["source_manifest_id"].as_str() {
         let id = Uuid::parse_str(snapshot).map_err(anyhow::Error::from)?;
-        serde_json::to_value(crate::source_cache::load(state, id).await?)
-            .map_err(anyhow::Error::from)?
+        serde_json::to_value(state.store.source_manifest(id).await?).map_err(anyhow::Error::from)?
     } else {
         Value::Null
     };

@@ -20,7 +20,7 @@ pub struct ImageExecution {
     pub tenant_id: Uuid,
     pub project_id: Uuid,
     pub job_id: Uuid,
-    pub snapshot_id: Uuid,
+    pub source_manifest_id: Uuid,
     pub plan_revision_id: Option<Uuid>,
     pub parent_id: Option<Uuid>,
     pub operation: String,
@@ -41,7 +41,7 @@ pub struct ImageExecution {
 }
 const ROW: &str = "SELECT to_jsonb(e)||jsonb_build_object('timeout_seconds',greatest(1,extract(epoch FROM e.deadline_at-now())::int),'task_timeout_seconds',greatest(1,extract(epoch FROM e.deadline_at-e.created_at)::int)) FROM image_executions e";
 // 构建锁先于执行锁，顺序与取消、重试一致。
-const LIVE: &str = "SELECT e.id FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=e.project_id JOIN tenants t ON t.id=e.tenant_id WHERE e.id=$1 AND e.status IN ('preparing','running') AND NOT e.cancel_requested AND NOT b.cancel_requested AND e.deadline_at>clock_timestamp() AND b.source_snapshot_id=e.snapshot_id AND j.plan_revision_id IS NOT DISTINCT FROM e.plan_revision_id AND p.status IN ('active','draining') AND t.status IN ('active','draining') AND (e.operation='publish' OR j.status IN ('leased','running'))";
+const LIVE: &str = "SELECT e.id FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=e.project_id JOIN tenants t ON t.id=e.tenant_id WHERE e.id=$1 AND e.status IN ('preparing','running') AND NOT e.cancel_requested AND NOT b.cancel_requested AND e.deadline_at>clock_timestamp() AND b.source_manifest_id=e.source_manifest_id AND j.plan_revision_id IS NOT DISTINCT FROM e.plan_revision_id AND p.status IN ('active','draining') AND t.status IN ('active','draining') AND (e.operation='publish' OR j.status IN ('leased','running'))";
 impl ControlStore {
     pub async fn image_execution(&self, id: Uuid) -> anyhow::Result<ImageExecution> {
         Ok(serde_json::from_value(
@@ -61,7 +61,7 @@ impl ControlStore {
         )
     }
     pub async fn image_stop_status(&self, id: Uuid) -> anyhow::Result<Option<&'static str>> {
-        let canceled: Option<bool> = sql::optional_scalar(&mut self.pool.clone(), &format!("SELECT e.cancel_requested OR b.cancel_requested OR b.source_snapshot_id IS DISTINCT FROM e.snapshot_id OR j.plan_revision_id IS DISTINCT FROM e.plan_revision_id OR p.status NOT IN ('active','draining') OR t.status NOT IN ('active','draining') FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=e.project_id JOIN tenants t ON t.id=e.tenant_id WHERE e.id=$1 AND NOT EXISTS({LIVE})"), params![id]).await?;
+        let canceled: Option<bool> = sql::optional_scalar(&mut self.pool.clone(), &format!("SELECT e.cancel_requested OR b.cancel_requested OR b.source_manifest_id IS DISTINCT FROM e.source_manifest_id OR j.plan_revision_id IS DISTINCT FROM e.plan_revision_id OR p.status NOT IN ('active','draining') OR t.status NOT IN ('active','draining') FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=e.project_id JOIN tenants t ON t.id=e.tenant_id WHERE e.id=$1 AND NOT EXISTS({LIVE})"), params![id]).await?;
         Ok(canceled.map(|canceled| if canceled { "canceled" } else { "failed" }))
     }
     pub async fn image_pending(&self) -> anyhow::Result<Vec<Uuid>> {
@@ -72,7 +72,7 @@ impl ControlStore {
         Ok(())
     }
     pub async fn image_candidates(&self) -> anyhow::Result<Vec<Uuid>> {
-        Ok(sql::scalars(&mut self.pool.clone(),"SELECT j.id FROM jobs j JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=b.project_id JOIN tenants t ON t.id=b.tenant_id WHERE j.status='queued' AND j.target_config->>'executor'='buildkit' AND NOT b.cancel_requested AND b.source_snapshot_id IS NOT NULL AND p.status IN ('active','draining') AND t.status IN ('active','draining') ORDER BY b.created_at LIMIT 16",params![]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(),"SELECT j.id FROM jobs j JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=b.project_id JOIN tenants t ON t.id=b.tenant_id WHERE j.status='queued' AND j.target_config->>'executor'='buildkit' AND NOT b.cancel_requested AND b.source_manifest_id IS NOT NULL AND p.status IN ('active','draining') AND t.status IN ('active','draining') ORDER BY b.created_at LIMIT 16",params![]).await?)
     }
     pub async fn claim_image(
         &self,
@@ -105,7 +105,7 @@ impl ControlStore {
                 return Ok(false);
             }
         }
-        let row:Option<Value>=sql::optional_scalar(&mut tx,"SELECT jsonb_build_object('tenant',b.tenant_id,'project',b.project_id,'snapshot',b.source_snapshot_id,'plan',j.plan_revision_id,'config',j.target_config) FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1 AND j.status='queued' AND j.target_config->>'executor'='buildkit' AND b.source_snapshot_id IS NOT NULL AND NOT b.cancel_requested FOR UPDATE OF b,j SKIP LOCKED",params![job]).await?;
+        let row:Option<Value>=sql::optional_scalar(&mut tx,"SELECT jsonb_build_object('tenant',b.tenant_id,'project',b.project_id,'snapshot',b.source_manifest_id,'plan',j.plan_revision_id,'config',j.target_config) FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1 AND j.status='queued' AND j.target_config->>'executor'='buildkit' AND b.source_manifest_id IS NOT NULL AND NOT b.cancel_requested FOR UPDATE OF b,j SKIP LOCKED",params![job]).await?;
         let Some(row) = row else { return Ok(false) };
         let tenant: Uuid = serde_json::from_value(row["tenant"].clone())?;
         let project: Uuid = serde_json::from_value(row["project"].clone())?;
@@ -116,7 +116,7 @@ impl ControlStore {
         spec.validate()?;
         let candidate = format!("{tenant}/{project}/builds/{}", id.simple());
         let destination = format!("{tenant}/{project}/images/{}", spec.name);
-        sql::execute(&mut tx,"INSERT INTO image_executions(id,tenant_id,project_id,job_id,snapshot_id,plan_revision_id,build_token_hash,publish_token_hash,spec,candidate_repository,destination_repository,tags,deadline_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now()+($13::int+600)*interval '1 second')",params![id,tenant,project,job,row["snapshot"].as_str().unwrap().parse::<Uuid>()?,row["plan"].as_str().map(Uuid::parse_str).transpose()?,build_hash,publish_hash,serde_json::to_value(&spec)?,candidate,destination,&spec.tags,target.timeout_seconds as i32]).await?;
+        sql::execute(&mut tx,"INSERT INTO image_executions(id,tenant_id,project_id,job_id,source_manifest_id,plan_revision_id,build_token_hash,publish_token_hash,spec,candidate_repository,destination_repository,tags,deadline_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now()+($13::int+600)*interval '1 second')",params![id,tenant,project,job,row["snapshot"].as_str().unwrap().parse::<Uuid>()?,row["plan"].as_str().map(Uuid::parse_str).transpose()?,build_hash,publish_hash,serde_json::to_value(&spec)?,candidate,destination,&spec.tags,target.timeout_seconds as i32]).await?;
         sql::execute(
             &mut tx,
             "UPDATE jobs SET status='running' WHERE id=$1",
@@ -126,12 +126,7 @@ impl ControlStore {
         tx.commit().await?;
         Ok(true)
     }
-    pub async fn save_image_task(
-        &self,
-        id: Uuid,
-        envelope: &str,
-        source_hash: Option<&str>,
-    ) -> anyhow::Result<()> {
+    pub async fn save_image_task(&self, id: Uuid, envelope: &str) -> anyhow::Result<()> {
         let mut db = self.pool.clone();
         let mut tx = db.transaction().await?;
         sql::execute(&mut tx,"SELECT b.id FROM builds b JOIN jobs j ON j.build_id=b.id JOIN image_executions e ON e.job_id=j.id WHERE e.id=$1 FOR UPDATE OF b,j",params![id]).await?;
@@ -140,9 +135,6 @@ impl ControlStore {
                 .await?;
         ensure!(live.is_some(), "image execution is stale");
         sql::execute(&mut tx,"UPDATE image_executions SET task_envelope=$2,status='running' WHERE id=$1 AND task_envelope IS NULL",params![id,envelope]).await?;
-        if let Some(hash) = source_hash {
-            sql::execute(&mut tx,"INSERT INTO image_source_tokens(token_hash,execution_id) VALUES($1,$2) ON CONFLICT(execution_id) DO NOTHING",params![hash,id]).await?;
-        }
         tx.commit().await?;
         Ok(())
     }
@@ -304,17 +296,6 @@ impl ControlStore {
         tx.commit().await?;
         Ok(())
     }
-    pub async fn image_source_authorized(
-        &self,
-        hash: &str,
-        snapshot: Uuid,
-    ) -> anyhow::Result<bool> {
-        let id:Option<Uuid>=sql::optional_scalar(&mut self.pool.clone(),"SELECT e.id FROM image_source_tokens t JOIN image_executions e ON e.id=t.execution_id WHERE t.token_hash=$1 AND e.snapshot_id=$2 AND e.operation='build'",params![hash,snapshot]).await?;
-        match id {
-            Some(id) => self.image_live(id).await,
-            None => Ok(false),
-        }
-    }
     pub async fn image_credentials(&self, project: Uuid) -> Result<Vec<Value>> {
         Ok(sql::scalars(&mut self.pool.clone(),"SELECT to_jsonb(c)-'envelope' FROM image_credentials c WHERE project_id=$1 AND tenant_id=$2 ORDER BY created_at",params![project,self.tenant()?]).await?)
     }
@@ -428,7 +409,7 @@ impl ControlStore {
                 "only a failed publication can be retried".into(),
             ));
         }
-        let n=sql::execute(&mut tx,"INSERT INTO image_executions(id,tenant_id,project_id,job_id,snapshot_id,plan_revision_id,parent_id,operation,build_token_hash,publish_token_hash,spec,results,candidate_repository,destination_repository,destination_credential,destination_registry,tags,root_digest,deadline_at) SELECT $2,tenant_id,project_id,job_id,snapshot_id,plan_revision_id,id,'publish','',$3,spec,results,CASE WHEN $4::uuid IS NULL THEN candidate_repository ELSE destination_repository END,CASE WHEN $4::uuid IS NULL THEN destination_repository ELSE $5 END,$4,(SELECT registry_origin FROM image_credentials WHERE id=$4),CASE WHEN $4::uuid IS NULL THEN tags ELSE $6 END,CASE WHEN $4::uuid IS NULL THEN NULL ELSE root_digest END,now()+interval '1 hour' FROM image_executions WHERE id=$1",params![parent,id,hash,destination,repository,tags]).await?;
+        let n=sql::execute(&mut tx,"INSERT INTO image_executions(id,tenant_id,project_id,job_id,source_manifest_id,plan_revision_id,parent_id,operation,build_token_hash,publish_token_hash,spec,results,candidate_repository,destination_repository,destination_credential,destination_registry,tags,root_digest,deadline_at) SELECT $2,tenant_id,project_id,job_id,source_manifest_id,plan_revision_id,id,'publish','',$3,spec,results,CASE WHEN $4::uuid IS NULL THEN candidate_repository ELSE destination_repository END,CASE WHEN $4::uuid IS NULL THEN destination_repository ELSE $5 END,$4,(SELECT registry_origin FROM image_credentials WHERE id=$4),CASE WHEN $4::uuid IS NULL THEN tags ELSE $6 END,CASE WHEN $4::uuid IS NULL THEN NULL ELSE root_digest END,now()+interval '1 hour' FROM image_executions WHERE id=$1",params![parent,id,hash,destination,repository,tags]).await?;
         if n != 1 {
             return Err(ApiError::NotFound);
         }

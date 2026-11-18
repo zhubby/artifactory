@@ -1,5 +1,11 @@
-//! Runtime persistence. Lifecycle rules execute with the locked persistent state.
-pub mod maintenance;
+//! [INPUT]: 依赖固定运行意图、数据库事务和执行身份。
+//! [OUTPUT]: 持久化预算、提案和 generation 生命周期。
+//! [POS]: Runtime 操作状态边界；审计记录不用于恢复会话。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
+mod conversations;
+mod model_requests;
+mod rows;
+use rows::{locked, run_fields};
 mod models;
 use crate::{lifecycle::Lifecycle, server::id};
 use anyhow::{Context, Result, ensure};
@@ -52,46 +58,12 @@ pub enum ModelReservation {
     },
 }
 
-async fn locked(tx: &mut toasty::db::Transaction<'_>, run: Uuid) -> Result<sql::Record> {
-    Ok(sql::record(
-        tx,
-        "SELECT * FROM runtime_runs WHERE id=$1 FOR UPDATE",
-        params![run],
-        &[
-            ("id", Type::Uuid),
-            ("version", Type::I64),
-            ("intent_hash", Type::String),
-            ("intent_ciphertext", Type::String),
-            ("project_id", Type::Uuid),
-            ("pool", Type::String),
-            ("snapshot_id", Type::Uuid),
-            ("snapshot_digest", Type::String),
-            ("lifecycle", Type::String),
-            ("status", Type::String),
-            ("execution", Type::String),
-            ("grant_hash", Type::String),
-            ("grant_ciphertext", Type::String),
-            ("checkpoint", Type::String),
-            ("usage", Type::String),
-            ("report_sequence", Type::I64),
-            ("created_at", Type::Timestamp),
-            ("dispatched_at", Type::Timestamp),
-            ("updated_at", Type::Timestamp),
-            ("tenant_id", Type::Uuid),
-        ],
-    )
-    .await?)
-}
 fn config(s: &RuntimeStore, row: &sql::Record) -> Result<RunIntent> {
-    let mut value: Value = serde_json::from_slice(&crypto::open(
+    let value: Value = serde_json::from_slice(&crypto::open(
         &s.key,
         &row.decode::<String>("intent_ciphertext")?,
     )?)?;
     let tenant: Uuid = row.decode("tenant_id")?;
-    // Historical encrypted intents are upgraded only after the trusted project-map backfill.
-    if value.get("tenant_id").is_none() {
-        value["tenant_id"] = json!(tenant);
-    }
     let intent: RunIntent = serde_json::from_value(value)?;
     ensure!(
         intent.tenant_id == tenant && Some(intent.project_id) == row.decode("project_id")?,
@@ -157,6 +129,8 @@ impl RuntimeStore {
         )
         .await?;
         for table in [
+            "runtime_messages",
+            "runtime_conversations",
             "runtime_model_requests",
             "runtime_reports",
             "runtime_proposals",
@@ -249,6 +223,7 @@ impl RuntimeStore {
                 return Ok(json!({"ok":true}));
             }
             ensure!(cancel, "running intent is immutable");
+            sql::execute(&mut tx,"UPDATE runtime_conversations SET status='canceled',ended_at=coalesce(ended_at,now()) WHERE run_id=$1 AND status='running'",params![run]).await?;
             sql::execute(&mut tx, "UPDATE runtime_runs SET version=$2,intent_hash=$3,status='canceled',lifecycle=jsonb_set(lifecycle,'{canceled}','true'),updated_at=now() WHERE id=$1", params![run, version, hash]).await?;
         } else {
             let mut life = Lifecycle::new(intent.as_ref().map_or(20, |i| i.model.max_calls));
@@ -272,8 +247,8 @@ impl RuntimeStore {
                 .intent_ciphertext(ciphertext)
                 .project_id(intent.as_ref().map(|i| i.project_id))
                 .pool(intent.as_ref().map(|i| i.pool.clone()))
-                .snapshot_id(intent.as_ref().map(|i| i.snapshot_id))
-                .snapshot_digest(intent.as_ref().map(|i| i.snapshot_digest.clone()))
+                .source_manifest_id(intent.as_ref().and_then(|i| i.source_manifest_id))
+                .source_digest(intent.as_ref().and_then(|i| i.source_digest.clone()))
                 .lifecycle(toasty::Json(serde_json::to_value(life)?))
                 .status(if cancel { "canceled" } else { "queued" })
                 .exec(&mut tx)
@@ -310,6 +285,35 @@ impl RuntimeStore {
         Ok(json!({"ok":true}))
     }
 
+    pub async fn prepare_execution(&self, execution: &Execution) -> Result<()> {
+        let row = sql::record(
+            &mut self.pool.clone(),
+            "SELECT * FROM runtime_runs WHERE id=$1",
+            params![execution.run_id],
+            &run_fields(),
+        )
+        .await?;
+        let life: Lifecycle = serde_json::from_value(row.decode("lifecycle")?)?;
+        ensure!(
+            !life.canceled && !life.pending && life.generation == execution.generation,
+            "execution fenced"
+        );
+        ensure!(
+            row.decode::<String>("status")? == "provisioning",
+            "run is not preparing"
+        );
+        ensure!(
+            row.decode::<Option<Value>>("execution")? == Some(serde_json::to_value(execution)?),
+            "unregistered Pod UID"
+        );
+        ensure!(
+            life.deadline_ms
+                .is_none_or(|deadline| deadline > Utc::now().timestamp_millis()),
+            "planning deadline reached"
+        );
+        Ok(())
+    }
+
     pub async fn heartbeat_run(&self, lease: Lease) -> Result<Value> {
         let mut tx_db = self.pool.clone();
         let mut tx = tx_db.transaction().await?;
@@ -327,34 +331,13 @@ impl RuntimeStore {
             &mut self.pool.clone(),
             "SELECT * FROM runtime_runs WHERE id=$1",
             params![lease.run_id],
-            &[
-                ("id", Type::Uuid),
-                ("version", Type::I64),
-                ("intent_hash", Type::String),
-                ("intent_ciphertext", Type::String),
-                ("project_id", Type::Uuid),
-                ("pool", Type::String),
-                ("snapshot_id", Type::Uuid),
-                ("snapshot_digest", Type::String),
-                ("lifecycle", Type::String),
-                ("status", Type::String),
-                ("execution", Type::String),
-                ("grant_hash", Type::String),
-                ("grant_ciphertext", Type::String),
-                ("checkpoint", Type::String),
-                ("usage", Type::String),
-                ("report_sequence", Type::I64),
-                ("created_at", Type::Timestamp),
-                ("dispatched_at", Type::Timestamp),
-                ("updated_at", Type::Timestamp),
-                ("tenant_id", Type::Uuid),
-            ],
+            &run_fields(),
         )
         .await?;
         let life = authorized(&row, &lease)?;
         ensure!(!life.pending, "proposal awaiting acceptance");
         Ok(
-            json!({"snapshot_id":row.decode::<Uuid>("snapshot_id")?,"project_id":row.decode::<Uuid>("project_id")?}),
+            json!({"source_manifest_id":row.decode::<Option<Uuid>>("source_manifest_id")?,"project_id":row.decode::<Uuid>("project_id")?}),
         )
     }
 
@@ -363,28 +346,7 @@ impl RuntimeStore {
             &mut self.pool.clone(),
             "SELECT * FROM runtime_runs WHERE id=$1",
             params![run],
-            &[
-                ("id", Type::Uuid),
-                ("version", Type::I64),
-                ("intent_hash", Type::String),
-                ("intent_ciphertext", Type::String),
-                ("project_id", Type::Uuid),
-                ("pool", Type::String),
-                ("snapshot_id", Type::Uuid),
-                ("snapshot_digest", Type::String),
-                ("lifecycle", Type::String),
-                ("status", Type::String),
-                ("execution", Type::String),
-                ("grant_hash", Type::String),
-                ("grant_ciphertext", Type::String),
-                ("checkpoint", Type::String),
-                ("usage", Type::String),
-                ("report_sequence", Type::I64),
-                ("created_at", Type::Timestamp),
-                ("dispatched_at", Type::Timestamp),
-                ("updated_at", Type::Timestamp),
-                ("tenant_id", Type::Uuid),
-            ],
+            &run_fields(),
         )
         .await?;
         Ok(
@@ -412,19 +374,14 @@ impl RuntimeStore {
         }
         let kind = v["kind"].as_str().context("event kind required")?;
         ensure!(
-            matches!(kind, "checkpoint" | "usage" | "failed"),
+            matches!(kind, "usage" | "failed" | "conversation"),
             "unsupported event kind"
         );
         let sequence = v["sequence"].as_i64().context("event sequence required")?;
+        if kind == "conversation" {
+            conversations::append(&mut tx, &lease, event, &v["payload"]).await?;
+        }
         if sequence > row.decode::<i64>("report_sequence")? {
-            if kind == "checkpoint" {
-                sql::execute(
-                    &mut tx,
-                    "UPDATE runtime_runs SET checkpoint=$2,report_sequence=$3 WHERE id=$1",
-                    params![lease.run_id, &v["payload"], sequence],
-                )
-                .await?;
-            }
             if kind == "usage" {
                 sql::execute(
                     &mut tx,
@@ -434,6 +391,7 @@ impl RuntimeStore {
                 .await?;
             }
             if kind == "failed" {
+                conversations::finish(&mut tx, lease.run_id, lease.generation, "failed").await?;
                 sql::execute(
                     &mut tx,
                     "UPDATE runtime_runs SET status='failed' WHERE id=$1",
@@ -482,15 +440,18 @@ impl RuntimeStore {
             crypto::token()
         };
         sql::execute(&mut tx, "UPDATE runtime_runs SET status='running',lifecycle=$2,grant_hash=$3,grant_ciphertext=$4 WHERE id=$1", params![execution.run_id, serde_json::to_value(&life)?, crypto::hash(&token), crypto::seal(&self.key,token.as_bytes())?]).await?;
-        let source_url = intent.context.get("source_url").cloned();
         let tenant = intent.tenant_id;
         let mut context = intent.context;
         context["tenant_id"] = json!(tenant);
-        context["checkpoint"] = row
-            .decode::<Option<Value>>("checkpoint")?
-            .unwrap_or(Value::Null);
         context["usage"] = row.decode::<Value>("usage")?;
-        let rejected:Option<Value>=sql::optional_scalar(&mut tx, "SELECT jsonb_build_object('kind',kind,'payload',payload,'result',result) FROM runtime_proposals WHERE run_id=$1 AND result IS NOT NULL ORDER BY created_at DESC LIMIT 1", params![execution.run_id]).await?;
+        conversations::open(
+            &mut tx,
+            &execution,
+            &intent.model,
+            row.decode::<Option<String>>("source_digest")?.as_deref(),
+        )
+        .await?;
+        let rejected:Option<Value>=sql::optional_scalar(&mut tx, "SELECT jsonb_build_object('kind',kind,'result',result) FROM runtime_proposals WHERE run_id=$1 AND result IS NOT NULL ORDER BY created_at DESC LIMIT 1", params![execution.run_id]).await?;
         if let Some(value) = rejected {
             context["recovered_proposal"] = value;
         }
@@ -506,7 +467,7 @@ impl RuntimeStore {
             uid: execution.uid,
             token,
         };
-        let result = json!({"lease":lease,"task":{"context":context,"model":model,"max_calls":life.max_calls.saturating_sub(life.calls),"timeout_seconds":((life.deadline_ms.unwrap()-Utc::now().timestamp_millis()).max(1)+999)/1000,"proxied":true},"source_url":source_url});
+        let result = json!({"lease":lease,"task":{"context":context,"model":model,"max_calls":life.max_calls.saturating_sub(life.calls),"timeout_seconds":((life.deadline_ms.unwrap()-Utc::now().timestamp_millis()).max(1)+999)/1000}});
         tx.commit().await?;
         Ok(result)
     }
@@ -546,6 +507,7 @@ impl RuntimeStore {
         ensure!(!life.pending, "proposal awaiting acceptance");
         if matches!(name, "submit_plan" | "submit_placements" | "request_input") {
             life.pending = true;
+            conversations::record(&mut tx,lease.run_id,lease.generation,Uuid::new_v4(),"proposal_submitted",&json!({"proposal_id":proposal,"name":name,"tool_call_id":v["tool_call_id"],"arguments":v["arguments"]})).await?;
             models::Proposal::create()
                 .id(proposal)
                 .run_id(lease.run_id)
@@ -557,7 +519,7 @@ impl RuntimeStore {
                 .exec(&mut tx)
                 .await?;
             save(&mut tx, lease.run_id, &life).await?;
-            enqueue(&mut tx,lease.run_id,"proposal",json!({"proposal_id":proposal,"generation":lease.generation,"kind":name,"payload":v["arguments"],"deadline_ms":life.deadline_ms,"snapshot_digest":row.decode::<String>("snapshot_digest")?})).await?;
+            enqueue(&mut tx,lease.run_id,"proposal",json!({"proposal_id":proposal,"generation":lease.generation,"kind":name,"payload":v["arguments"],"deadline_ms":life.deadline_ms,"source_digest":row.decode::<Option<String>>("source_digest")?})).await?;
             tx.commit().await?;
             Ok(ToolDisposition::Immediate(
                 json!({"pending":true,"proposal_id":proposal}),
@@ -572,7 +534,7 @@ impl RuntimeStore {
                         | "get_node"
                         | "read_logs"
                 ),
-                "source tools must use Source Service"
+                "source tools execute inside the Worker"
             );
             tx.commit().await?;
             Ok(ToolDisposition::Forward(
@@ -599,7 +561,7 @@ impl RuntimeStore {
         .await?;
         let active: i64 = sql::scalar(&mut tx, "SELECT count(*) FROM runtime_runs WHERE pool=$1 AND status IN ('provisioning','running')", params![pool])
     .await?;
-        let rows=sql::records(&mut tx, "SELECT * FROM runtime_runs r WHERE pool=$1 AND status='queued' AND (SELECT count(*) FROM runtime_runs a WHERE a.project_id=r.project_id AND a.pool=r.pool AND a.status IN ('provisioning','running'))<$3 ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT $2", params![pool, (limit-active).max(0), per_project], &[("id", Type::Uuid),("version", Type::I64),("intent_hash", Type::String),("intent_ciphertext", Type::String),("project_id", Type::Uuid),("pool", Type::String),("snapshot_id", Type::Uuid),("snapshot_digest", Type::String),("lifecycle", Type::String),("status", Type::String),("execution", Type::String),("grant_hash", Type::String),("grant_ciphertext", Type::String),("checkpoint", Type::String),("usage", Type::String),("report_sequence", Type::I64),("created_at", Type::Timestamp),("dispatched_at", Type::Timestamp),("updated_at", Type::Timestamp),("tenant_id",Type::Uuid)]).await?;
+        let rows=sql::records(&mut tx, "SELECT * FROM runtime_runs r WHERE pool=$1 AND status='queued' AND (SELECT count(*) FROM runtime_runs a WHERE a.project_id=r.project_id AND a.pool=r.pool AND a.status IN ('provisioning','running'))<$3 ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT $2", params![pool, (limit-active).max(0), per_project], &run_fields()).await?;
         let mut admitted = Vec::new();
         for row in rows {
             let project: Uuid = row.decode("project_id")?;
@@ -615,42 +577,21 @@ impl RuntimeStore {
                 params![run],
             )
             .await?;
-            admitted.push(json!({"run_id":run,"generation":life.generation,"pool":pool,"snapshot_id":row.decode::<Uuid>("snapshot_id")?,"snapshot_digest":row.decode::<String>("snapshot_digest")?}));
+            admitted.push(json!({"run_id":run,"generation":life.generation,"pool":pool,"source_manifest_id":row.decode::<Option<Uuid>>("source_manifest_id")?,"source_digest":row.decode::<Option<String>>("source_digest")?}));
         }
         // Lost create acknowledgements are recovered by returning all admitted descriptors.
         let active = sql::records(
             &mut tx,
             "SELECT * FROM runtime_runs WHERE pool=$1 AND status IN ('provisioning','running')",
             params![pool],
-            &[
-                ("id", Type::Uuid),
-                ("version", Type::I64),
-                ("intent_hash", Type::String),
-                ("intent_ciphertext", Type::String),
-                ("project_id", Type::Uuid),
-                ("pool", Type::String),
-                ("snapshot_id", Type::Uuid),
-                ("snapshot_digest", Type::String),
-                ("lifecycle", Type::String),
-                ("status", Type::String),
-                ("execution", Type::String),
-                ("grant_hash", Type::String),
-                ("grant_ciphertext", Type::String),
-                ("checkpoint", Type::String),
-                ("usage", Type::String),
-                ("report_sequence", Type::I64),
-                ("created_at", Type::Timestamp),
-                ("dispatched_at", Type::Timestamp),
-                ("updated_at", Type::Timestamp),
-                ("tenant_id", Type::Uuid),
-            ],
+            &run_fields(),
         )
         .await?;
         let mut rows = Vec::new();
         for row in active {
             let intent = config(self, &row)?;
             let lifecycle: Lifecycle = serde_json::from_value(row.decode("lifecycle")?)?;
-            rows.push(json!({"run_id":intent.run_id,"generation":lifecycle.generation,"pool":intent.pool,"snapshot_id":intent.snapshot_id,"snapshot_digest":intent.snapshot_digest,"source_url":intent.context["source_url"]}));
+            rows.push(json!({"run_id":intent.run_id,"generation":lifecycle.generation,"pool":intent.pool,"source_manifest_id":intent.source_manifest_id,"source_digest":intent.source_digest}));
         }
         tx.commit().await?;
         let queued: i64 = sql::scalar(
@@ -688,8 +629,9 @@ impl RuntimeStore {
             let stalled = row.decode::<String>("status")? == "provisioning"
                 && row
                     .decode::<Option<chrono::DateTime<Utc>>>("dispatched_at")?
-                    .is_some_and(|t| t < Utc::now() - chrono::Duration::seconds(180));
+                    .is_some_and(|t| t < Utc::now() - chrono::Duration::seconds(900));
             if expired || (stalled && life.generation >= 3) {
+                conversations::finish(&mut tx, id, life.generation, "failed").await?;
                 sql::execute(
                     &mut tx,
                     "UPDATE runtime_runs SET status='failed' WHERE id=$1",
@@ -698,6 +640,7 @@ impl RuntimeStore {
                 .await?;
                 enqueue(&mut tx,id,"failed",json!({"error":"planning deadline or provisioning retry limit reached","calls":life.calls})).await?;
             } else if stalled || life.lease_until_ms.is_some_and(|until| until <= now) {
+                conversations::finish(&mut tx, id, life.generation, "interrupted").await?;
                 life.retry(now)?;
                 save(&mut tx, id, &life).await?;
                 sql::execute(&mut tx, "UPDATE runtime_runs SET status='queued',execution=NULL,grant_hash=NULL,grant_ciphertext=NULL WHERE id=$1", params![id]).await?;
@@ -758,6 +701,7 @@ impl RuntimeStore {
         if kind == "proposal" {
             let mut life: Lifecycle = serde_json::from_value(run_row.decode("lifecycle")?)?;
             life.pending = false;
+            conversations::record(&mut tx,run,life.generation,Uuid::new_v4(),"proposal_result",&json!({"proposal_id":payload["proposal_id"],"name":payload["kind"],"result":result})).await?;
             save(&mut tx, run, &life).await?;
             sql::execute(
                 &mut tx,
@@ -766,6 +710,17 @@ impl RuntimeStore {
             )
             .await?;
             if result["accepted"] == true {
+                conversations::finish(
+                    &mut tx,
+                    run,
+                    life.generation,
+                    if payload["kind"] == "request_input" {
+                        "needs_input"
+                    } else {
+                        "succeeded"
+                    },
+                )
+                .await?;
                 sql::execute(
                     &mut tx,
                     "UPDATE runtime_runs SET status=$2 WHERE id=$1 AND status<>'canceled'",
@@ -789,94 +744,8 @@ impl RuntimeStore {
         tx.commit().await?;
         Ok(())
     }
-
-    pub async fn reserve_model(&self, request: ModelRequest<'_>) -> Result<ModelReservation> {
-        let ModelRequest {
-            run,
-            generation,
-            lease,
-            request_id,
-            path,
-            value,
-            hash,
-        } = request;
-        let mut tx_db = self.pool.clone();
-        let mut tx = tx_db.transaction().await?;
-        let row = locked(&mut tx, run).await?;
-        let mut life = authorized(&row, lease)?;
-        let cfg = config(self, &row)?.model;
-        let expected = match cfg.api.as_str() {
-            "openai-completions" => "v1/chat/completions",
-            "openai-responses" => "v1/responses",
-            "anthropic-messages" => "v1/messages",
-            _ => "",
-        };
-        ensure!(
-            path == expected && value["model"] == cfg.model,
-            "model endpoint or identity mismatch"
-        );
-        ensure!(
-            !value
-                .as_object()
-                .is_some_and(|o| o.contains_key("base_url") || o.contains_key("api_key")),
-            "invalid model request"
-        );
-        if let Some(prior) = sql::optional_record(
-            &mut tx,
-            "SELECT input_hash FROM runtime_model_requests WHERE run_id=$1 AND request_id=$2",
-            params![run, request_id],
-            &[("input_hash", Type::String)],
-        )
-        .await?
-        {
-            ensure!(
-                prior.decode::<String>("input_hash")? == hash,
-                "model request ID reused"
-            );
-            return Ok(ModelReservation::Duplicate);
-        }
-        life.reserve(generation, &lease.uid, Utc::now().timestamp_millis())?;
-        models::Profile::upsert_by_id(cfg.id)
-            .or_ignore()
-            .exec(&mut tx)
-            .await?;
-        let rpm = cfg.parameters["requests_per_minute"].as_u64().unwrap_or(0);
-        let wait: i64 = if rpm > 0 {
-            sql::scalar(&mut tx, "UPDATE runtime_profiles SET next_call_at=greatest(next_call_at,clock_timestamp())+make_interval(secs=>$2) WHERE id=$1 RETURNING greatest(0,ceil(extract(epoch FROM next_call_at-clock_timestamp())*1000-$2*1000)::bigint)", params![cfg.id, 60.0/rpm as f64+1.0]).await?
-        } else {
-            0
-        };
-        ensure!(
-            Utc::now().timestamp_millis() + wait < life.deadline_ms.unwrap(),
-            "profile queue exceeds deadline"
-        );
-        models::ModelRequest::create()
-            .run_id(run)
-            .request_id(request_id)
-            .input_hash(hash)
-            .generation(generation)
-            .exec(&mut tx)
-            .await?;
-        save(&mut tx, run, &life).await?;
-        tx.commit().await?;
-        Ok(ModelReservation::Reserved {
-            config: cfg,
-            deadline_ms: life.deadline_ms.unwrap(),
-            wait_ms: wait,
-            endpoint: expected.into(),
-        })
-    }
-
-    pub async fn model_response_received(&self, run: Uuid, request_id: Uuid) -> Result<()> {
-        sql::execute(
-            &mut self.pool.clone(),
-            "UPDATE runtime_model_requests SET state='response' WHERE run_id=$1 AND request_id=$2",
-            params![run, request_id],
-        )
-        .await?;
-        Ok(())
-    }
 }
+
 pub fn database_failure_category(error: &anyhow::Error) -> Option<&'static str> {
     let backend = error
         .downcast_ref::<artifactory_database::Error>()

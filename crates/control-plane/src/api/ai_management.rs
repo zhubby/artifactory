@@ -1,17 +1,19 @@
 //! [INPUT]: 依赖租户鉴权、模型配置存储与规划状态。
-//! [OUTPUT]: 提供模型、Worker、注册令牌、澄清和计划查询接口。
+//! [OUTPUT]: 提供模型配置、澄清、计划和分页对话接口。
 //! [POS]: AI 规划的管理入口；构建执行由独立节点负责。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::auth::TenantState;
+pub use crate::store::ProfileInput;
 use crate::store::dto;
-pub use crate::store::{ProfileInput, WorkerUpdate};
 use crate::{
     auth::Auth,
-    crypto,
     error::{ApiError, Result},
     state::AppState,
 };
-use axum::{Json, extract::Path};
+use axum::{
+    Json,
+    extract::{Path, Query},
+};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -147,53 +149,6 @@ pub async fn delete_profile(
     Ok(Json(json!({"ok":true})))
 }
 
-pub async fn workers(
-    TenantState(state): TenantState,
-    auth: Auth,
-) -> Result<Json<Vec<dto::WorkerSummary>>> {
-    auth.session_role("admin")?;
-    Ok(Json(state.store.workers().await?))
-}
-
-pub async fn update_worker(
-    TenantState(state): TenantState,
-    auth: Auth,
-    Path(id): Path<Uuid>,
-    Json(input): Json<WorkerUpdate>,
-) -> Result<Json<Value>> {
-    auth.session_role("admin")?;
-    let revoked = state.store.update_worker(id, &input).await?;
-    state
-        .audit(
-            auth.user_id,
-            "ai_worker_updated",
-            id,
-            json!({"draining":input.draining,"revoked":revoked}),
-        )
-        .await?;
-    Ok(Json(json!({"ok":true})))
-}
-pub async fn enrollment(TenantState(state): TenantState, auth: Auth) -> Result<Json<Value>> {
-    auth.session_role("admin")?;
-    let id = Uuid::new_v4();
-    let token = crypto::token();
-    state
-        .store
-        .planner_enrollment(id, crypto::hash(&token))
-        .await?;
-    state
-        .audit(auth.user_id, "ai_enrollment_created", id, json!({}))
-        .await?;
-    Ok(Json(json!({"id":id,"token":token,"expires_in":900})))
-}
-pub async fn source_metrics(
-    TenantState(state): TenantState,
-    auth: Auth,
-) -> Result<Json<Vec<dto::SourceRepositorySummary>>> {
-    auth.session_role("admin")?;
-    Ok(Json(state.store.source_metrics().await?))
-}
-
 pub async fn clarify(
     TenantState(state): TenantState,
     auth: Auth,
@@ -217,4 +172,63 @@ pub async fn plans(
     Path(id): Path<Uuid>,
 ) -> Result<Json<dto::BuildPlans>> {
     Ok(Json(state.store.plans(id, &auth).await?))
+}
+
+pub async fn conversations(
+    TenantState(state): TenantState,
+    auth: Auth,
+    Path(build): Path<Uuid>,
+) -> Result<Json<Value>> {
+    let context = state.store.conversation_context(build).await?;
+    let project: Uuid = context["project_id"]
+        .as_str()
+        .ok_or(ApiError::NotFound)?
+        .parse()
+        .map_err(anyhow::Error::from)?;
+    auth.project(project, "read")?;
+    let mut conversations = Vec::new();
+    for run in context["runs"].as_array().ok_or(ApiError::NotFound)? {
+        let result: Value = crate::runtime_bridge::runtime()?
+            .post(
+                "/v1/conversations",
+                &json!({"run_id":run["run_id"],"tenant_id":auth.tenant_id,"project_id":project}),
+            )
+            .await?;
+        if let Some(items) = result["conversations"].as_array() {
+            for item in items {
+                let mut item = item.clone();
+                item["purpose"] = run["purpose"].clone();
+                conversations.push(item);
+            }
+        }
+    }
+    Ok(Json(json!({"conversations":conversations})))
+}
+
+#[derive(serde::Deserialize)]
+pub struct MessagePage {
+    after: Option<i64>,
+    limit: Option<usize>,
+}
+pub async fn messages(
+    TenantState(state): TenantState,
+    auth: Auth,
+    Path((build, run, generation)): Path<(Uuid, Uuid, i64)>,
+    Query(page): Query<MessagePage>,
+) -> Result<Json<Value>> {
+    let context = state.store.conversation_context(build).await?;
+    let project: Uuid = context["project_id"]
+        .as_str()
+        .ok_or(ApiError::NotFound)?
+        .parse()
+        .map_err(anyhow::Error::from)?;
+    auth.project(project, "read")?;
+    if generation < 1
+        || !context["runs"]
+            .as_array()
+            .is_some_and(|runs| runs.iter().any(|item| item["run_id"] == run.to_string()))
+    {
+        return Err(ApiError::NotFound);
+    }
+    Ok(Json(crate::runtime_bridge::runtime()?.post("/v1/conversation/messages",&json!({"run_id":run,"tenant_id":auth.tenant_id,"project_id":project,"generation":generation,"after":page.after.unwrap_or(0),"limit":page.limit.unwrap_or(50).min(100)})).await?))
 }

@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖租户鉴权、节点配置与凭据加密。
+//! [OUTPUT]: 提供设备、访问令牌和凭据的管理接口。
+//! [POS]: 管理写入先验证权限，再进入业务存储。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::auth::TenantState;
 use crate::store::dto;
 pub use crate::store::{NewToken, NodeUpdate};
@@ -253,7 +257,7 @@ pub async fn create_credential(
     )?;
     state
         .store
-        .create_credential(id, input_name, input.kind, encrypted)
+        .create_credential(id, input_name, input.kind.clone(), encrypted)
         .await?;
     state
         .audit(actor.user_id, "credential_created", id, json!({}))

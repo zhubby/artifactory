@@ -1,5 +1,5 @@
 # [INPUT]: 控制平面预算、公开网关和私有存储地址。
-# [OUTPUT]: Control 与 Source 的非敏感环境配置。
+# [OUTPUT]: Control 的非敏感环境配置。
 # [POS]: 对象地址仅供服务端使用，客户端使用网关票据。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 {{- $scheme := ternary "^https?://" "^https://" .Values.development.insecureHttp -}}
@@ -22,16 +22,12 @@ data:
   ARTIFACTORY_AI_PLACEMENT: {{ .Values.controlPlane.aiPlacement | quote }}
   ARTIFACTORY_SCHEDULER_BATCH_SIZE: {{ .Values.controlPlane.schedulerBatch | quote }}
   ARTIFACTORY_CONTROL_DRAIN_SECONDS: {{ .Values.controlPlane.drainSeconds | quote }}
-  {{- if .Values.localSource.enabled }}
-  ARTIFACTORY_LOCAL_SOURCE_URL: {{ printf "https://%s-local-source:8080" (include "artifactory.fullname" .) | quote }}
-  {{- end }}
   ARTIFACTORY_HTTP_BIND: 0.0.0.0:8080
   ARTIFACTORY_GRPC_BIND: 0.0.0.0:8443
   ARTIFACTORY_PUBLIC_URL: {{ .Values.console.publicUrl | trimSuffix "/" | quote }}
   ARTIFACTORY_INSECURE_DEV: {{ .Values.development.insecureHttp | toString | quote }}
   ARTIFACTORY_REGISTRATION_ENABLED: {{ .Values.auth.registrationEnabled | toString | quote }}
   ARTIFACTORY_DATA_DIR: /var/lib/artifactory
-  ARTIFACTORY_SOURCE_CACHE_BYTES: {{ .Values.sourceCache.maxBytes | quote }}
   ARTIFACTORY_PKI_DIR: /run/artifactory-pki
   ARTIFACTORY_S3_ENDPOINT: {{ include "artifactory.s3Endpoint" . | quote }}
   ARTIFACTORY_S3_ALLOW_HTTP: {{ $s3Http | toString | quote }}
@@ -41,10 +37,9 @@ data:
   ARTIFACTORY_TELEMETRY_ENDPOINT: {{ .Values.telemetry.endpoint | quote }}
   ARTIFACTORY_TELEMETRY_URL: {{ printf "https://%s-telemetry:8093" (include "artifactory.fullname" .) | quote }}
   {{- end }}
+  ARTIFACTORY_AGENT_POOL: {{ .Values.planning.agentPool | quote }}
   {{- if .Values.planning.runtimeUrl }}
   ARTIFACTORY_RUNTIME_URL: {{ .Values.planning.runtimeUrl | quote }}
-  ARTIFACTORY_SOURCE_URLS: {{ required "planning.sourceUrls is required with Runtime" .Values.planning.sourceUrls | quote }}
-  ARTIFACTORY_AGENT_POOL: {{ .Values.planning.agentPool | quote }}
   {{- if .Values.planning.serviceCaSecretName }}
   ARTIFACTORY_SERVICE_CA: /run/service-ca/ca.crt
   {{- end }}

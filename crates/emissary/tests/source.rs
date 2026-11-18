@@ -1,201 +1,30 @@
-// [INPUT]: 依赖源码边界、真实 Git 与本机 HTTP 夹具。
-// [OUTPUT]: 验证缓存隔离、文件系统权限与内容校验。
-// [POS]: 源码生命周期在原生宿主上的行为回归。
-// [PROTOCOL]: Update this header on change, then check AGENTS.md
-use artifactory_emissary::{
-    config::Config,
-    protocol::{Assignment, SourceDescriptor, SourceRepository},
-    source,
-    worker::Emitter,
-};
-use axum::{
-    Router,
-    body::Bytes,
-    extract::State,
-    http::{HeaderMap, Method, StatusCode, Uri},
-    routing::any,
-};
-use std::{
-    fs,
-    path::Path,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
-use tokio_util::sync::CancellationToken;
-
-fn git(path: &Path, args: &[&str]) -> String {
-    let output = std::process::Command::new("git")
-        .args([
-            "-C",
-            path.to_str().unwrap(),
-            "-c",
-            "user.name=Source test",
-            "-c",
-            "user.email=test@localhost",
-            "-c",
-            "commit.gpgsign=false",
-        ])
-        .args(args)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", source::NULL)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).unwrap().trim().into()
-}
-#[derive(Clone)]
-struct Fixture {
-    root: std::path::PathBuf,
-    requests: Arc<AtomicUsize>,
-}
-async fn backend(
-    State(fixture): State<Fixture>,
-    method: Method,
-    uri: Uri,
-    headers: HeaderMap,
-    body: Bytes,
-) -> (StatusCode, HeaderMap, Vec<u8>) {
-    use std::io::Write;
-    fixture.requests.fetch_add(1, Ordering::SeqCst);
-    let output = tokio::task::spawn_blocking(move || {
-        let mut command = std::process::Command::new("git");
-        command
-            .arg("http-backend")
-            .env("GIT_PROJECT_ROOT", fixture.root)
-            .env("GIT_HTTP_EXPORT_ALL", "1")
-            .env(
-                "PATH_INFO",
-                format!("/repo.git/{}", uri.path().trim_start_matches("/git/")),
-            )
-            .env("REQUEST_METHOD", method.as_str())
-            .env("QUERY_STRING", uri.query().unwrap_or(""))
-            .env(
-                "CONTENT_TYPE",
-                headers
-                    .get("content-type")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or(""),
-            )
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped());
-        let mut child = command.spawn().unwrap();
-        child.stdin.take().unwrap().write_all(&body).unwrap();
-        child.wait_with_output().unwrap()
-    })
-    .await
-    .unwrap();
-    assert!(output.status.success());
-    let split = output
-        .stdout
-        .windows(4)
-        .position(|w| w == b"\r\n\r\n")
-        .unwrap();
-    let mut headers = HeaderMap::new();
-    for line in String::from_utf8_lossy(&output.stdout[..split]).lines() {
-        if let Some((name, value)) = line.split_once(':')
-            && name.eq_ignore_ascii_case("content-type")
-        {
-            headers.insert("content-type", value.trim().parse().unwrap());
-        }
-    }
-    (StatusCode::OK, headers, output.stdout[split + 4..].to_vec())
-}
-#[tokio::test]
-async fn checkout_reuses_objects_and_isolates_attempts() {
-    let root = tempfile::tempdir().unwrap();
-    let upstream = root.path().join("repo.git");
-    fs::create_dir(&upstream).unwrap();
-    git(&upstream, &["init", "-b", "source"]);
-    fs::write(upstream.join("main.c"), "int main(void) { return 0; }\n").unwrap();
-    git(&upstream, &["add", "."]);
-    git(&upstream, &["commit", "-m", "immutable fixture"]);
-    let commit = git(&upstream, &["rev-parse", "HEAD"]);
-    git(&upstream, &["tag", "-a", "v1", "-m", "frozen tag"]);
-    let tag = git(&upstream, &["rev-parse", "refs/tags/v1"]);
-    let requests = Arc::new(AtomicUsize::new(0));
-    let app = Router::new().fallback(any(backend)).with_state(Fixture {
-        root: root.path().into(),
-        requests: requests.clone(),
-    });
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let cfg = Config {
-        root: root.path().join("managed"),
-        allow_http_uploads: true,
-        ..Default::default()
-    };
-    let assignment = Assignment {
-        commit_sha: commit.clone(),
-        source: Some(SourceDescriptor {
-            snapshot_id: uuid::Uuid::new_v4().to_string(),
-            access_token: "a".repeat(64),
-            repositories: vec![SourceRepository {
-                repository_id: uuid::Uuid::new_v4().to_string(),
-                cache_id: uuid::Uuid::new_v4().to_string(),
-                commit_sha: commit,
-                git_url: format!("http://{address}/git"),
-                tags: std::collections::HashMap::from([("v1".into(), tag)]),
-                ..Default::default()
-            }],
-        }),
-        ..Default::default()
-    };
-    let (emit, mut receive) = Emitter::channel();
-    tokio::spawn(async move { while receive.recv().await.is_some() {} });
-    let cancel = CancellationToken::new();
-    let first = root.path().join("first");
-    let second = root.path().join("second");
-    source::checkout(&cfg, &assignment, root.path(), &first, &cancel, &emit)
-        .await
-        .unwrap();
-    let initial = requests.load(Ordering::SeqCst);
-    assert!(initial > 0);
-    source::checkout(&cfg, &assignment, root.path(), &second, &cancel, &emit)
-        .await
-        .unwrap();
-    assert_eq!(requests.load(Ordering::SeqCst), initial);
-    assert_eq!(git(&second, &["describe", "--tags"]), "v1");
-    fs::write(first.join("main.c"), "changed\n").unwrap();
-    assert!(
-        source::verify(&cfg, &assignment, &first, &cancel)
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("source_modified")
-    );
-    source::verify(&cfg, &assignment, &second, &cancel)
-        .await
-        .unwrap();
-    git(&first, &["reset", "--hard", "HEAD"]);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(first.join("main.c"), fs::Permissions::from_mode(0o755)).unwrap();
+//! [INPUT]: 依赖原生任务目录隔离和遗留目录清理。
+//! [OUTPUT]: 验证任务缓存、真实 JVM 路径和活动目录保护。
+//! [POS]: 原生源码生命周期回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
+use artifactory_emissary::{config::Config, source};
+#[test]
+fn task_environment_contains_all_writable_caches() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut env = source::build_environment();
+    source::isolate_environment(temp.path(), &mut env).unwrap();
+    for key in [
+        "HOME",
+        "TMPDIR",
+        "CARGO_HOME",
+        "GOCACHE",
+        "GOMODCACHE",
+        "XDG_CACHE_HOME",
+        "npm_config_cache",
+        "GRADLE_USER_HOME",
+        "NUGET_PACKAGES",
+    ] {
+        let path = std::path::Path::new(env.get(std::ffi::OsStr::new(key)).unwrap());
         assert!(
-            source::verify(&cfg, &assignment, &first, &cancel)
-                .await
-                .is_err()
+            path.starts_with(temp.path()),
+            "{key} escapes attempt directory"
         );
     }
-    fs::write(second.join("generated.tmp"), "build output").unwrap();
-    source::verify(&cfg, &assignment, &second, &cancel)
-        .await
-        .unwrap();
-    for relative in ["../x", "a/../x", ".git/x", "/x", "C:/x", "a\\x"] {
-        assert!(source::managed_path(&second, relative).is_err());
-    }
-    server.abort();
-}
-#[test]
-fn build_environment_and_lfs_files_are_independent() {
-    let env = source::build_environment();
     for key in [
         "ANTHROPIC_API_KEY",
         "ARTIFACTORY_MASTER_KEY",
@@ -203,49 +32,186 @@ fn build_environment_and_lfs_files_are_independent() {
     ] {
         assert!(!env.contains_key(std::ffi::OsStr::new(key)));
     }
-    let root = tempfile::tempdir().unwrap();
-    let cache = root.path().join("cache");
-    let attempt = root.path().join("attempt");
-    fs::create_dir(&cache).unwrap();
-    fs::write(cache.join("object"), "original").unwrap();
-    source::copy_lfs(&cache, &attempt).unwrap();
-    fs::write(attempt.join("object"), "changed").unwrap();
-    assert_eq!(fs::read(cache.join("object")).unwrap(), b"original");
 }
 
-#[tokio::test]
-async fn executable_snapshot_preserves_native_permissions_and_content_checks() {
-    let root = tempfile::tempdir().unwrap();
-    git(root.path(), &["init", "-b", "source"]);
-    let script = root.path().join("build.sh");
-    fs::write(&script, "#!/bin/sh\nprintf 'source\\n'\n").unwrap();
-    #[cfg(unix)]
+#[test]
+fn java_and_maven_keep_jvm_state_in_attempt() {
+    use std::{ffi::OsStr, process::Command};
+    if !Command::new("java")
+        .arg("-version")
+        .output()
+        .is_ok_and(|o| o.status.success())
     {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        eprintln!("JVM source isolation test requires an installed JDK");
+        return;
     }
-    git(root.path(), &["add", "build.sh"]);
-    git(root.path(), &["update-index", "--chmod=+x", "build.sh"]);
-    git(root.path(), &["commit", "-m", "executable source"]);
-    let commit = git(root.path(), &["rev-parse", "HEAD"]);
-    let assignment = Assignment {
-        commit_sha: commit.clone(),
-        source: Some(SourceDescriptor {
-            repositories: vec![SourceRepository {
-                commit_sha: commit,
-                ..Default::default()
-            }],
-            ..Default::default()
-        }),
+    let root = tempfile::Builder::new()
+        .prefix("source isolation ")
+        .tempdir()
+        .unwrap();
+    let mut environment = source::build_environment();
+    for name in [
+        "JAVA_TOOL_OPTIONS",
+        "JDK_JAVA_OPTIONS",
+        "_JAVA_OPTIONS",
+        "MAVEN_OPTS",
+    ] {
+        environment.insert(
+            name.into(),
+            "-Duser.home=/outside-task -Dmaven.repo.local=/outside-task".into(),
+        );
+    }
+    let original_java_home = environment.get(OsStr::new("JAVA_HOME")).cloned();
+    source::isolate_environment(root.path(), &mut environment).unwrap();
+    assert_eq!(
+        environment.get(OsStr::new("JAVA_HOME")),
+        original_java_home.as_ref()
+    );
+    let java = Command::new("java")
+        .args(["-XshowSettings:properties", "-version"])
+        .env_clear()
+        .envs(&environment)
+        .output()
+        .unwrap();
+    let settings = String::from_utf8_lossy(&java.stderr);
+    assert!(java.status.success(), "{settings}");
+    for (name, expected) in [
+        ("user.home", "home"),
+        ("java.io.tmpdir", "tmp"),
+        ("maven.repo.local", "cache/maven/repository"),
+    ] {
+        let actual = settings
+            .lines()
+            .find_map(|line| line.trim().strip_prefix(&format!("{name} = ")))
+            .unwrap_or_else(|| panic!("missing JVM property {name}: {settings}"));
+        assert_eq!(
+            std::path::Path::new(actual).canonicalize().unwrap(),
+            root.path().join(expected).canonicalize().unwrap()
+        );
+    }
+    let maven = if cfg!(windows) { "mvn.cmd" } else { "mvn" };
+    if Command::new(maven).arg("-version").output().is_err() {
+        eprintln!("Maven source isolation test requires an installed Maven");
+        return;
+    }
+    let pom = root.path().join("pom.xml");
+    std::fs::write(&pom,"<project><modelVersion>4.0.0</modelVersion><groupId>test</groupId><artifactId>ephemeral-source</artifactId><version>1</version><packaging>pom</packaging></project>").unwrap();
+    let output = Command::new(maven)
+        .args(["-o", "-X", "-Dstyle.color=never", "-f"])
+        .arg(&pom)
+        .arg("validate")
+        .env_clear()
+        .envs(&environment)
+        .output()
+        .unwrap();
+    let logs = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success(), "{logs}");
+    let repository = logs
+        .lines()
+        .find_map(|line| {
+            line.split_once("Using local repository at ")
+                .map(|(_, path)| path.trim())
+        })
+        .unwrap_or_else(|| panic!("Maven did not report its local repository: {logs}"));
+    assert_eq!(
+        std::path::Path::new(repository).canonicalize().unwrap(),
+        root.path()
+            .join("cache/maven/repository")
+            .canonicalize()
+            .unwrap()
+    );
+}
+#[tokio::test]
+async fn startup_sweep_refuses_active_attempt_and_deletes_abandoned_source() {
+    let temp = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        root: temp.path().to_owned(),
         ..Default::default()
     };
-    let cancel = CancellationToken::new();
-    source::verify(&Config::default(), &assignment, root.path(), &cancel)
-        .await
-        .expect("a clean executable snapshot must verify on its native filesystem");
-    fs::write(&script, "changed source\n").unwrap();
-    let error = source::verify(&Config::default(), &assignment, root.path(), &cancel)
-        .await
-        .unwrap_err();
-    assert!(error.to_string().contains("source_modified"));
+    let id = uuid::Uuid::new_v4().to_string();
+    let work = temp.path().join("work").join(&id);
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::write(work.join("source.txt"), "private source").unwrap();
+    let lock = source::attempt_lock(&cfg, &id).unwrap();
+    assert!(source::sweep(&cfg).await.is_err());
+    assert!(work.exists());
+    fs2::FileExt::unlock(&lock).unwrap();
+    drop(lock);
+    source::sweep(&cfg).await.unwrap();
+    assert!(!work.exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn startup_sweep_kills_orphaned_worker_sessions_before_deleting_source() {
+    use artifactory_emissary::process;
+    use std::{process::Stdio, time::Duration};
+    use tokio::process::Command;
+    if let Some(marker) = std::env::var_os("ARTIFACTORY_SESSION_TEST_MARKER") {
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "sleep 120"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut child = process::spawn(command).unwrap();
+        std::fs::write(marker, child.id().unwrap().to_string()).unwrap();
+        let _ = child.wait().await;
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        root: root.path().to_owned(),
+        ..Default::default()
+    };
+    let id = uuid::Uuid::new_v4().to_string();
+    let workspace = root.path().join("work").join(&id);
+    std::fs::create_dir_all(&workspace).unwrap();
+    std::fs::write(workspace.join("source.txt"), "task source").unwrap();
+    let marker = root.path().join("descendant.pid");
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "--exact",
+            "startup_sweep_kills_orphaned_worker_sessions_before_deleting_source",
+            "--nocapture",
+        ])
+        .env("ARTIFACTORY_SESSION_TEST_MARKER", &marker)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let mut worker = process::spawn_worker(command).unwrap();
+    let pid = worker.id().unwrap();
+    source::register_session(&cfg, &id, pid).unwrap();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !marker.exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let descendant = std::fs::read_to_string(&marker)
+        .unwrap()
+        .parse::<u32>()
+        .unwrap();
+    assert!(
+        std::process::Command::new("kill")
+            .args(["-KILL", &pid.to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
+    worker.wait().await.unwrap();
+    source::sweep(&cfg).await.unwrap();
+    assert!(!workspace.exists());
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    assert!(
+        system
+            .process(sysinfo::Pid::from_u32(descendant))
+            .is_none_or(|p| p.status() == sysinfo::ProcessStatus::Zombie),
+        "orphaned build process survives source cleanup"
+    );
 }

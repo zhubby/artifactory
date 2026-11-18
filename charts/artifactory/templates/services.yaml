@@ -10,7 +10,6 @@
 {{- $components := list "control-plane" "web" "grpc" }}
 {{- if .Values.postgres.enabled }}{{- $components = append $components "postgres" }}{{- end }}
 {{- if .Values.s3.enabled }}{{- $components = append $components "s3" }}{{- end }}
-{{- if .Values.localSource.enabled }}{{- $components = append $components "local-source" }}{{- end }}
 {{- range $component := $components }}
 {{- $settings := dict "type" "ClusterIP" }}
 {{- $port := 5432 }}
@@ -20,7 +19,7 @@
 {{- $settings = dict "type" "ClusterIP" }}
 {{- $port = 8333 }}
 {{- $target = "s3" }}
-{{- else if or (eq $component "control-plane") (eq $component "local-source") }}
+{{- else if eq $component "control-plane" }}
 {{- $port = 8080 }}
 {{- $target = "http" }}
 {{- else if eq $component "web" }}

@@ -12,7 +12,6 @@ mod lifecycle;
 mod management;
 mod projects;
 mod signing;
-mod source_http;
 mod telemetry;
 mod tenants;
 
@@ -92,21 +91,19 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/model-profiles/{id}",
             patch(ai_management::update_profile).delete(ai_management::delete_profile),
         )
-        .route("/api/v1/ai-workers", get(ai_management::workers))
-        .route(
-            "/api/v1/ai-workers/{id}",
-            patch(ai_management::update_worker),
-        )
-        .route(
-            "/api/v1/ai-enrollment-tokens",
-            post(ai_management::enrollment),
-        )
-        .route("/api/v1/source-metrics", get(ai_management::source_metrics))
         .route(
             "/api/v1/builds/{id}/clarifications",
             post(ai_management::clarify),
         )
         .route("/api/v1/builds/{id}/plans", get(ai_management::plans))
+        .route(
+            "/api/v1/builds/{id}/planning/conversations",
+            get(ai_management::conversations),
+        )
+        .route(
+            "/api/v1/builds/{id}/planning/conversations/{run}/{generation}/messages",
+            get(ai_management::messages),
+        )
         .route(
             "/internal/artifact-resolve",
             post(artifact_gateway::resolve),
@@ -134,7 +131,6 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/projects/{id}/image-credentials/{credential}",
             delete(images::disable_credential),
         )
-        .merge(source_routes())
         .route("/api/v1/auth/login", post(auth::login))
         .route("/api/v1/auth/config", get(auth::registration_config))
         .route("/api/v1/auth/register", post(auth::register))
@@ -227,7 +223,8 @@ pub fn router(state: AppState) -> Router {
         .layer(DefaultBodyLimit::max(512 * 1024))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state.clone())
-        .merge(crate::runtime_bridge::routes(state))
+        .merge(crate::runtime_bridge::routes(state.clone()))
+        .merge(crate::source_tasks::routes(state))
 }
 
 fn signing_routes() -> Router<AppState> {
@@ -263,28 +260,6 @@ pub(crate) fn health_routes() -> Router<AppState> {
             axum::Json(serde_json::json!({"status":"ok","version":env!("CARGO_PKG_VERSION")}))
         }),
     )
-}
-
-pub(crate) fn source_routes() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/api/v1/source/{snapshot}/{entry}/git/info/refs",
-            get(source_http::git),
-        )
-        .route(
-            "/api/v1/source/{snapshot}/{entry}/git/git-upload-pack",
-            post(source_http::git),
-        )
-        .route(
-            "/api/v1/source/{snapshot}/{entry}/lfs/objects/batch",
-            post(source_http::lfs_batch),
-        )
-        .route(
-            "/api/v1/source/{snapshot}/{entry}/lfs/objects/{oid}",
-            get(source_http::lfs_object),
-        )
-        .layer(DefaultBodyLimit::disable())
-        .layer(axum::middleware::map_response(source_http::challenge))
 }
 
 async fn readiness(

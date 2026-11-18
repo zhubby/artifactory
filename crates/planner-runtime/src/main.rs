@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖 Runtime 配置与服务传输。
+//! [OUTPUT]: 启动 HTTP、gRPC 与后台协调。
+//! [POS]: 独立 Kubernetes 规划运行时入口。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_planner_runtime::server;
 use artifactory_runtime_protocol::service;
 #[tokio::main]

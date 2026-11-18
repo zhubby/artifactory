@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Run isolated 10,000-queued admission without shadowing Python's queue module."""
+"""[INPUT]: 依赖独立 PostgreSQL 和 Runtime 准入测试。
+[OUTPUT]: 写入一万个排队运行的准入结果与日志。
+[POS]: 验证数据库准入，不推断活动 Pod 容量。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+"""
 import json
 import os
 from pathlib import Path

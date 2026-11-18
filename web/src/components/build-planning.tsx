@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖构建状态、规划历史和澄清接口。
- * [OUTPUT]: 提供 BuildPlanning 计划与澄清视图。
+ * [OUTPUT]: 展示源码清单、计划、澄清与对话入口。
  * [POS]: 活跃构建轮询规划；终态保留静态计划。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -13,6 +13,7 @@ import { SubmitForm } from "@/components/forms";
 import { Textarea } from "@/components/ui/input";
 import { mutation, useRemote } from "@/lib/api";
 import { isBuildTerminal } from "@/lib/build-state";
+import { PlanningConversations } from "@/components/planning-conversations";
 import type { Build, PlanningHistory, User } from "@/lib/types";
 
 export function BuildPlanning({build, user, refresh}: {build: Build; user: User; refresh: () => Promise<void>}) {
@@ -29,10 +30,11 @@ export function BuildPlanning({build, user, refresh}: {build: Build; user: User;
   return <section className="panel mb-6 min-w-0">
     <SectionTitle title={t("ai.plan")} detail={t("ai.revisionCount", {count: build.revision_count || 0})}>{run && <span className="tag">{t("ai.callCount", {count: run.calls})}</span>}</SectionTitle>
     <div className="space-y-4 p-5">
+      <PlanningConversations buildId={build.id} terminal={terminal} />
       <p className="whitespace-pre-wrap text-sm leading-6">{build.goal}</p>
       <ErrorBox message={history.error} />
       <p className="text-xs leading-5 text-muted-foreground">{t("ai.zeroIntrusion")}</p>
-      {build.source_snapshot_id && <p className="break-all font-mono text-xs text-muted-foreground">{t("ai.snapshot")} {build.source_snapshot_id}</p>}
+      {build.source_manifest_id && <p className="break-all font-mono text-xs text-muted-foreground">{t("ai.sourceManifest")} {build.source_manifest_id}</p>}
       {build.status === "needs_input" && build.clarification && <div className="notice space-y-4">
         <p className="whitespace-pre-wrap text-sm">{build.clarification.question}</p>
         {user.role !== "viewer" && <SubmitForm label={t("ai.continue")} onSubmit={async (form) => {await mutation(`/builds/${build.id}/clarifications`, {answer: String(form.get("answer") || "")}); await refresh(); await history.reload();}}><Field label={t("ai.answer")}><Textarea name="answer" required maxLength={8000} /></Field></SubmitForm>}

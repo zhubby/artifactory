@@ -183,7 +183,7 @@ export interface Build {
   number: number;
   project_slug: string;
   goal?: string | null;
-  source_snapshot_id?: string | null;
+  source_manifest_id?: string | null;
   current_plan_id?: string | null;
   revision_count?: number;
   clarification?: { question: string } | null;
@@ -448,16 +448,6 @@ export interface ModelProfile {
     requests_per_minute?: number;
   };
 }
-export interface AIWorker {
-  id: string;
-  name: string;
-  online: boolean;
-  draining: boolean;
-  revoked: boolean;
-  active_run: string | null;
-  last_seen: string | null;
-  certificate_expires_at: string;
-}
 export interface PlanRevision {
   id: string;
   revision: number;
@@ -525,3 +515,10 @@ export interface SigningEvidence {
   fingerprint_sha256: string;
   notarized: boolean;
 }
+
+export interface PlanningConversation {
+ run_id:string; generation:number; pod_uid:string; status:string; model:string;
+ source_digest:string|null; started_at:string; ended_at:string|null;
+}
+export interface ConversationMessage {sequence:number;kind:string;payload:Record<string,unknown>;created_at:string}
+export interface ConversationPage {messages:ConversationMessage[];next_cursor:number|null}

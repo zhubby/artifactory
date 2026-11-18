@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 kube CRD、Serde 和固定执行身份。
-//! [OUTPUT]: 提供 sidecar 模式、平台集合与不可变执行契约。
+//! [OUTPUT]: 提供临时源码与平台集合与不可变执行契约。
 //! [POS]: Image Operator 的 Kubernetes 公开契约。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use kube::{CustomResource, CustomResourceExt};
@@ -27,8 +27,8 @@ pub struct Status {
 pub struct BuilderPoolSpec {
     pub worker_image: String,
     pub buildkit_image: String,
-    #[serde(default = "native_sidecar")]
-    pub native_sidecar: bool,
+    pub source_preparer_image: String,
+    pub control_url: String,
     #[serde(default = "pull_policy")]
     pub image_pull_policy: String,
     #[schemars(range(min = 1, max = 1000))]
@@ -51,9 +51,6 @@ pub struct BuilderPoolSpec {
     pub ca_secret: String,
     #[serde(default)]
     pub buildkit_config_map: String,
-}
-fn native_sidecar() -> bool {
-    true
 }
 fn pull_policy() -> String {
     "IfNotPresent".into()
@@ -82,8 +79,8 @@ pub struct ImageBuildSpec {
     pub tenant_id: String,
     pub project_id: String,
     pub pool: String,
-    pub snapshot_id: String,
-    pub snapshot_digest: String,
+    pub source_manifest_id: String,
+    pub source_digest: String,
     pub task_secret: String,
     pub platforms: Vec<String>,
     pub allow_emulation: bool,
@@ -109,7 +106,7 @@ pub fn crds()
     spec["properties"]["platforms"]["x-kubernetes-list-type"] = serde_json::json!("set");
     spec["properties"]["platforms"]["items"]["enum"] =
         serde_json::json!(["linux/amd64", "linux/arm64"]);
-    let mut validations: Vec<_> = ["executionId", "tenantId", "projectId", "pool", "snapshotId", "snapshotDigest", "taskSecret", "platforms", "allowEmulation", "publishOnly", "timeoutSeconds"].iter().map(|f| serde_json::json!({"rule":format!("self.{f} == oldSelf.{f}"),"message":"execution context is immutable"})).collect();
+    let mut validations: Vec<_> = ["executionId", "tenantId", "projectId", "pool", "sourceManifestId", "sourceDigest", "taskSecret", "platforms", "allowEmulation", "publishOnly", "timeoutSeconds"].iter().map(|f| serde_json::json!({"rule":format!("self.{f} == oldSelf.{f}"),"message":"execution context is immutable"})).collect();
     validations.push(serde_json::json!({"rule":"!oldSelf.cancelRequested || self.cancelRequested","message":"cancellation is irreversible"}));
     spec["x-kubernetes-validations"] = serde_json::Value::Array(validations);
     vec![pool, serde_json::from_value(image).unwrap()]

@@ -296,149 +296,29 @@ async fn metadata_detail_requires_a_viewer_session_and_stays_out_of_lists() {
     database.close().await;
 }
 
-async fn planner(
-    database: &Database,
-    replica: &Replica,
-    certificates: &Certificates,
-    build: Uuid,
-) -> (pb::planning_client::PlanningClient<Channel>, Uuid, Value) {
-    let (certificate, key) = certificates.device();
-    let worker = Uuid::new_v4();
-    let run = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(),"INSERT INTO ai_workers(tenant_id,id,name,certificate_hash,certificate_expires_at) VALUES('00000000-0000-0000-0000-000000000001',$1,'test',$2,now()+interval '1 day')",params![worker,pki::certificate_hash(&certificate).unwrap()]).await.unwrap();
-    sql::execute(&mut database.pool.clone(),"UPDATE builds SET status='planning',goal='test',planning_context=jsonb_build_object('pool_ids',jsonb_build_array('00000000-0000-0000-0000-000000000001'),'signing_profiles','[]'::jsonb) WHERE id=$1",params![build]).await.unwrap();
-    sql::execute(&mut database.pool.clone(),"INSERT INTO planning_runs(id,build_id,worker_id,purpose,state,model_config,lease_hash,lease_expires_at,deadline_at) VALUES($1,$2,$3,'initial','leased','{}',$4,now()+interval '1 minute',now()+interval '5 minutes')",params![run,build,worker,crypto::hash("lease")]).await.unwrap();
-    let identity = json!({"endpoint":replica.url,"ca":certificates.ca,"certificate":certificate,"key":key,"run_id":run,"lease_token":"lease"});
-    let channel = Channel::from_shared(replica.url.clone())
-        .unwrap()
-        .tls_config(
-            ClientTlsConfig::new()
-                .domain_name("localhost")
-                .ca_certificate(Certificate::from_pem(&certificates.ca))
-                .identity(Identity::from_pem(certificate, key)),
+async fn node_tool(state: &mut AppState, run: Uuid, name: &str, args: Value) -> Value {
+    let token = std::env::var("ARTIFACTORY_SERVICE_TOKEN").expect("service token required");
+    let response = api::router(state.clone())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/internal/runtime/tool")
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"run_id":run,"name":name,"arguments":args}).to_string(),
+                ))
+                .unwrap(),
         )
-        .unwrap()
-        .connect()
         .await
         .unwrap();
-    (
-        pb::planning_client::PlanningClient::new(channel),
-        run,
-        identity,
-    )
-}
-async fn node_tool(
-    client: &mut pb::planning_client::PlanningClient<Channel>,
-    run: Uuid,
-    name: &str,
-    args: Value,
-) -> Value {
-    let reply = client
-        .tool(pb::PlannerToolRequest {
-            run_id: run.to_string(),
-            lease_token: "lease".into(),
-            name: name.into(),
-            arguments_json: args.to_string(),
-        })
-        .await
-        .unwrap()
-        .into_inner();
-    serde_json::from_str(&reply.result_json).unwrap()
-}
-
-#[tokio::test]
-#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
-async fn mtls_workers_cannot_claim_other_tenant_tasks_or_use_their_leases() {
-    let database = Database::with_tenant().await;
-    let (project, build, _) = database.fixture().await;
-    let certificates = Certificates::new();
-    let replica = Replica::start(database.state.clone(), &certificates).await;
-    let (mut first, run, _) = planner(&database, &replica, &certificates, build).await;
-    let owner: Uuid = sql::scalar(
-        &mut database.pool.clone(),
-        "SELECT owner_id FROM tenants WHERE id='00000000-0000-0000-0000-000000000001'",
-        params![],
-    )
-    .await
-    .unwrap();
-    let other_tenant = database
-        .state
-        .store
-        .create_tenant(owner, "Other", Uuid::new_v4())
-        .await
-        .unwrap();
-    let (certificate, key) = certificates.device();
-    let worker = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO ai_workers(id,name,tenant_id,certificate_hash,certificate_expires_at) VALUES($1,'other',$2,$3,now()+interval '1 day')", params![worker,other_tenant,pki::certificate_hash(&certificate).unwrap()]).await.unwrap();
-    let channel = Channel::from_shared(replica.url.clone())
-        .unwrap()
-        .tls_config(
-            ClientTlsConfig::new()
-                .domain_name("localhost")
-                .ca_certificate(Certificate::from_pem(&certificates.ca))
-                .identity(Identity::from_pem(certificate, key)),
-        )
-        .unwrap()
-        .connect()
-        .await
-        .unwrap();
-    let mut other = pb::planning_client::PlanningClient::new(channel);
-    let repository = Uuid::new_v4();
-    let snapshot = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO source_repositories(id,project_id,repository_url,cache_key) VALUES($1,$2,'https://example.com/repo.git',$3)", params![repository,project,repository.to_string()]).await.unwrap();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO source_snapshots(id,project_id,root_repository_id,commit_sha,manifest,digest) VALUES($1,$2,$3,$4,'{}',$5)", params![snapshot,project,repository,"0".repeat(40),"a".repeat(64)]).await.unwrap();
-    sql::execute(
-        &mut database.pool.clone(),
-        "UPDATE builds SET source_snapshot_id=$2 WHERE id=$1",
-        params![build, snapshot],
-    )
-    .await
-    .unwrap();
-    let secret = "tenant-a-model-secret";
-    let config = json!({"key_ciphertext":crypto::seal(&database.state.settings.master_key,secret.as_bytes()).unwrap(),"max_calls":2,"timeout_seconds":60});
-    sql::execute(&mut database.pool.clone(), "UPDATE planning_runs SET state='queued',worker_id=NULL,lease_hash=NULL,model_config=$2 WHERE id=$1", params![run,config]).await.unwrap();
-    assert!(
-        other
-            .poll(pb::PlannerPollRequest::default())
+    serde_json::from_slice(
+        &axum::body::to_bytes(response.into_body(), 131072)
             .await
-            .unwrap()
-            .into_inner()
-            .run_id
-            .is_empty()
-    );
-    let task = first
-        .poll(pb::PlannerPollRequest::default())
-        .await
-        .unwrap()
-        .into_inner();
-    assert_eq!(task.run_id, run.to_string());
-    assert_eq!(
-        serde_json::from_str::<Value>(&task.model_config_json).unwrap()["api_key"],
-        secret
-    );
-    let denied = other
-        .tool(pb::PlannerToolRequest {
-            run_id: task.run_id.clone(),
-            lease_token: task.lease_token.clone(),
-            name: "summarize_nodes".into(),
-            arguments_json: "{}".into(),
-        })
-        .await
-        .unwrap_err();
-    assert_eq!(denied.code(), tonic::Code::FailedPrecondition);
-    first
-        .tool(pb::PlannerToolRequest {
-            run_id: task.run_id,
-            lease_token: task.lease_token,
-            name: "summarize_nodes".into(),
-            arguments_json: "{}".into(),
-        })
-        .await
-        .unwrap();
-    replica.stop().await;
-    database.close().await;
+            .unwrap(),
+    )
+    .unwrap()
 }
-
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn scoped_node_queries_page_and_keep_missing_telemetry_unknown() {
@@ -446,7 +326,22 @@ async fn scoped_node_queries_page_and_keep_missing_telemetry_unknown() {
     let (_, build, _) = database.fixture().await;
     let certificates = Certificates::new();
     let replica = Replica::start(database.state.clone(), &certificates).await;
-    let (mut client, run, _) = planner(&database, &replica, &certificates, build).await;
+    let run = Uuid::new_v4();
+    sql::execute(
+        &mut database.pool.clone(),
+        "UPDATE builds SET status='planning' WHERE id=$1",
+        params![build],
+    )
+    .await
+    .unwrap();
+    sql::execute(
+        &mut database.pool.clone(),
+        "INSERT INTO planning_runs(id,build_id,purpose,model_config) VALUES($1,$2,'initial','{}')",
+        params![run, build],
+    )
+    .await
+    .unwrap();
+    let mut client = database.state.clone();
     sql::execute(&mut database.pool.clone(),"INSERT INTO nodes(id,name,os,arch,pool_id,certificate_hash,certificate_expires_at,metadata) SELECT gen_random_uuid(),'node-'||s,'linux','amd64','00000000-0000-0000-0000-000000000001',s::text,now()+interval '1 day','{\"custom.site\":\"lab\"}' FROM generate_series(1,120) s",params![]).await.unwrap();
     let page = node_tool(
         &mut client,
@@ -598,7 +493,7 @@ async fn resource_server_notifying(
 async fn placement_node(database: &Database) -> (Uuid, Uuid, Value) {
     let node = database.node().await;
     let startup = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(),"UPDATE nodes SET startup_id=$2,metadata_digest=$3,capabilities='[\"git\",\"bash\",\"source-cache-v1\",\"external-build-plan-v1\"]' WHERE id=$1",params![node,startup,"a".repeat(64)]).await.unwrap();
+    sql::execute(&mut database.pool.clone(),"UPDATE nodes SET startup_id=$2,metadata_digest=$3,capabilities='[\"git\",\"bash\",\"external-build-plan-v1\"]' WHERE id=$1",params![node,startup,"a".repeat(64)]).await.unwrap();
     (
         node,
         startup,

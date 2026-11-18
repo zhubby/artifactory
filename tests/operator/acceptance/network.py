@@ -25,8 +25,6 @@ def targets(a):
                                ('database', 'postgres', 5432), ('objects', 's3', 8333)]:
         address = json.loads(a.kubectl('get', 'service', service, '-o', 'json'))['spec']['clusterIP']
         values[key] = {'host': service, 'address': address, 'port': port}
-    source = json.loads(a.kubectl('get', 'pod', 'sources-0', '-o', 'json'))['status']['podIP']
-    values['source'] = {'host': 'sources-0.sources.' + a.ns + '.svc', 'address': source, 'port': 8090}
     values['provider_ip'] = dict(values['provider'], host=values['provider']['address'])
     return values
 
@@ -107,7 +105,7 @@ def network_components(a):
 
 def assert_isolation(unrestricted, restricted):
     assert all(unrestricted.values()), 'Positive control must reach all addresses before asserting isolation'
-    assert restricted and all(value == {key: key in ['runtime', 'source'] for key in unrestricted} for value in restricted), 'Pi must reach Runtime/Source addresses while direct data/provider paths are blocked'
+    assert restricted and all(value == {key: key in ['runtime', 'provider', 'provider_ip'] for key in unrestricted} for value in restricted), 'Pi reaches Runtime and configured Git port; direct Control, database and object paths stay blocked'
 
 
 if __name__ == '__main__':

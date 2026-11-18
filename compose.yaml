@@ -64,14 +64,13 @@ services:
       ARTIFACTORY_TELEMETRY_TOKEN: ${ARTIFACTORY_TELEMETRY_TOKEN}
     volumes:
       - ./.deploy/pki:/run/artifactory-pki:ro
-      - ./.deploy/control-plane:/var/lib/artifactory
       - ./.deploy/signing:/run/artifactory-signing:ro
     ports:
       - ${ARTIFACTORY_GRPC_LISTEN:-0.0.0.0}:8443:8443
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     read_only: true
-    tmpfs: ["/tmp:size=1g,mode=1777"]
+    tmpfs: ["/tmp:size=1g,mode=1777", "/var/lib/artifactory:size=1g,mode=1777"]
   telemetry:
     build: .
     restart: unless-stopped
@@ -108,24 +107,6 @@ services:
     depends_on: [control-plane]
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
-  agent-worker:
-    build:
-      context: .
-      dockerfile: packages/agent-worker/Dockerfile
-    restart: unless-stopped
-    user: ${ARTIFACTORY_UID:-10001}:${ARTIFACTORY_GID:-10001}
-    depends_on: [control-plane]
-    environment:
-      ARTIFACTORY_AI_ENDPOINT: control-plane:8443
-      ARTIFACTORY_AI_SERVER_NAME: ${ARTIFACTORY_GRPC_HOST}
-      ARTIFACTORY_AI_CA_FILE: /run/artifactory-pki/ca.pem
-    volumes:
-      - ./.deploy/pki/ca.pem:/run/artifactory-pki/ca.pem:ro
-      - ./.deploy/agent-worker:/var/lib/artifactory-agent-worker
-    security_opt: [no-new-privileges:true]
-    cap_drop: [ALL]
-    read_only: true
-    tmpfs: ["/tmp:size=256m,mode=1777"]
   gateway:
     build:
       context: .

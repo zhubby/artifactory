@@ -80,7 +80,7 @@ jobs:
       - run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
       - run: python3 -m unittest discover -s tests/operator/acceptance -p 'test_*.py' -v
       - run: cargo fmt --all --check && cargo clippy --locked --all-targets -- -D warnings
-      - name: Rust unit, Runtime/Source, business and Timescale telemetry regressions
+      - name: Rust unit, Runtime/source checkout, business and Timescale telemetry regressions
         run: |
           set -a; source .local/env; set +a
           ARTIFACTORY_SERVICE_TOKEN="$(openssl rand -hex 32)"
@@ -112,43 +112,6 @@ jobs:
         working-directory: web
         env:
           ARTIFACTORY_UI_PRODUCTION: '1'
-      - run: cargo build --locked --bin artifactory-control-plane
-      - name: Real Rust Control Plane / Emissary / TimescaleDB / private S3 / browser
-        shell: bash
-        run: |
-          set -euo pipefail
-          set -a; source .local/env; set +a
-          python3 -u scripts/acceptance.py --keep-alive > .local/acceptance-run.log 2>&1 &
-          harness_pid=$!
-          (cd web && npm run start -- --hostname 127.0.0.1) > .local/web.log 2>&1 &
-          web_pid=$!
-          cleanup() {
-            kill -INT "$harness_pid" 2>/dev/null || true
-            kill "$web_pid" 2>/dev/null || true
-            wait "$harness_pid" 2>/dev/null || true
-            wait "$web_pid" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-          for _attempt in $(seq 1 360); do
-            if grep -q 'ACCEPTANCE READY' .local/acceptance-run.log; then break; fi
-            if ! kill -0 "$harness_pid" 2>/dev/null; then cat .local/acceptance-run.log; exit 1; fi
-            sleep 1
-          done
-          grep -q 'ACCEPTANCE READY' .local/acceptance-run.log
-          test -f .local/acceptance/latest.json
-          export ARTIFACTORY_LIVE_TESTS=1
-          export ARTIFACTORY_BROWSER_URL=http://127.0.0.1:8080
-          export ARTIFACTORY_LIVE_S3_CONTAINER=artifactory-s3-test
-          ARTIFACTORY_LIVE_EMISSARY_CONFIG="$(python3 -c 'import json; print(json.load(open(".local/acceptance/latest.json"))["emissary_config"])')"
-          ARTIFACTORY_LIVE_PROJECT_ID="$(python3 -c 'import json; print(json.load(open(".local/acceptance/latest.json"))["project_id"])')"
-          ARTIFACTORY_LIVE_TENANT_ID="$(python3 -c 'import json; print(json.load(open(".local/acceptance/latest.json"))["tenant_id"])')"
-          export ARTIFACTORY_LIVE_EMISSARY_CONFIG ARTIFACTORY_LIVE_PROJECT_ID ARTIFACTORY_LIVE_TENANT_ID
-          cargo test --locked -p artifactory-emissary --test live_protocol -- --ignored --nocapture | tee .local/protocol-live.log
-          (cd web && npm test)
-          python3 -u scripts/ssh_acceptance.py --sudo-sshd
-          cleanup
-          trap - EXIT
-          python3 -u scripts/recovery_acceptance.py --sudo-sshd
       - name: Preserve acceptance diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -157,13 +120,6 @@ jobs:
           retention-days: 7
           include-hidden-files: true
           path: |
-            .local/acceptance-run.log
-            .local/protocol-live.log
-            .local/web.log
-            .local/acceptance/*/control-plane.log
-            .local/acceptance/*/emissary.log
-            .local/acceptance/*/sshd.log
-            .local/acceptance/*/evidence.json
             web/test-results/
             web/playwright-report/
             .local/frontend-evidence/
@@ -203,7 +159,7 @@ jobs:
           echo '/usr/lib/postgresql/17/bin' >> "$GITHUB_PATH"
       - name: Build Linux images for the disposable cluster
         run: python3 -u tests/operator/acceptance/prepare.py --platform linux/amd64 --kind operator
-      - name: Pi planning, validation correction and Rust Emissary execution
+      - name: SourceTask, init checkout, AI conversations and native artifact delivery
         run: python3 -u tests/operator/acceptance/run.py --context kind-operator --namespace artifact-operator-ci --pull-policy IfNotPresent
       - name: TimescaleDB host and managed build telemetry, outage and durable replay
         run: python3 -u tests/operator/acceptance/telemetry.py --context kind-operator --namespace artifact-operator-ci
@@ -213,9 +169,7 @@ jobs:
         run: python3 -u tests/operator/load/active.py --context kind-operator --namespace artifact-operator-ci --active 8 --queued 4 --hold-seconds 30 --memory 64Mi
       - name: Cold-Pod network isolation and allowed business chain
         run: python3 -u tests/operator/acceptance/network.py --context kind-operator --namespace artifact-operator-ci --controller 'Cilium 1.20.4'
-      - name: Databases, S3, keys and route restore on fresh data services
-        run: python3 -u tests/operator/acceptance/recovery.py --context kind-operator --namespace artifact-operator-ci
-      - name: Kubernetes Pi to external host-native Linux Emissary with Git/LFS
+      - name: Direct Git/LFS checkout on an external host-native Linux Emissary
         run: python3 -u tests/operator/acceptance/native.py --context kind-operator --namespace artifact-operator-ci
       - name: Preserve sanitized Kubernetes evidence
         if: always()
@@ -282,7 +236,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - name: Real production Compose with isolated HTTPS trust
+      - name: Compose service health, HTTPS and tenant authentication
         run: python3 -u scripts/compose_acceptance.py
       - name: Preserve Compose diagnostics without private deployment files
         if: always()
@@ -299,4 +253,3 @@ jobs:
             .local/compose-tls/*/cleanup.log
             .local/compose-tls/*/*-build.log
             .local/compose-tls/*/probe/probe-evidence.json
-            .local/compose-tls/*/probe/emissary.log

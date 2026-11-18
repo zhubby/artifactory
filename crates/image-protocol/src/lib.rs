@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖固定源码 Assignment、Serde 和 SHA-256。
+//! [INPUT]: 依赖固定源码元数据、Serde 和 SHA-256。
 //! [OUTPUT]: 提供镜像目标、执行材料、结果与 OCI Index 契约。
 //! [POS]: 控制平面与 Image Operator 共用的执行边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -180,9 +180,9 @@ pub struct BuildTask {
     pub control_url: String,
     pub registry: RegistryLogin,
     pub repository: String,
-    pub cache_repository: String,
     pub image: ImageSpec,
-    pub assignment: artifactory_emissary_protocol::Assignment,
+    pub source: artifactory_source_checkout::SourceManifest,
+    pub timeout_seconds: u32,
     #[serde(default)]
     pub docker_auth: serde_json::Value,
     #[serde(default)]

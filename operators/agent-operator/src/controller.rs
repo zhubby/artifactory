@@ -1,16 +1,12 @@
 //! [INPUT]: 依赖Agent CRD、Kubernetes API 与选主租约。
-//! [OUTPUT]: 协调规划 Job、有界 Source 分片和快照回收。
+//! [OUTPUT]: 协调临时规划 Job 与已清理运行元数据。
 //! [POS]: Agent 工作负载的资源生命周期。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{api::*, leadership::Leadership};
 use anyhow::{Result, ensure};
 use artifactory_runtime_protocol::{Execution, service::Client as ServiceClient};
 use futures::StreamExt;
-use k8s_openapi::api::{
-    apps::v1::StatefulSet,
-    batch::v1::Job,
-    core::v1::{Pod, Service},
-};
+use k8s_openapi::api::{batch::v1::Job, core::v1::Pod};
 use kube::{
     Api, Client, Resource, ResourceExt,
     api::{
@@ -19,22 +15,67 @@ use kube::{
     runtime::{Controller, controller::Action, watcher},
 };
 use serde_json::{Value, json};
-use std::{collections::HashSet, sync::Arc, time::Duration};
-const MANAGED_SNAPSHOT: &str = "artifactory.dev/managed-snapshot";
+use std::{sync::Arc, time::Duration};
 const HISTORY_SECONDS: i64 = 86400;
-#[derive(Clone)]
 pub struct Context {
     pub client: Client,
     pub namespace: String,
     pub runtime: ServiceClient,
     pub leader: Leadership,
+    pub source_admission: tokio::sync::Mutex<()>,
 }
 pub fn job(run: &AgentRun, pool: &AgentPool) -> Result<Job> {
     let owner = run
         .controller_owner_ref(&())
         .ok_or_else(|| anyhow::anyhow!("run UID required"))?;
     let name = format!("pi-{}-g{}", run.spec.run_id, run.spec.generation);
-    let mut value = json!({"apiVersion":"batch/v1","kind":"Job","metadata":{"name":name,"namespace":run.namespace(),"ownerReferences":[owner],"labels":{"artifactory.dev/run":run.spec.run_id}},"spec":{"parallelism":1,"completions":1,"backoffLimit":0,"activeDeadlineSeconds":3900,"template":{"metadata":{"labels":{"app.kubernetes.io/name":"artifactory-pi","artifactory.dev/run":run.spec.run_id}},"spec":{"serviceAccountName":"artifactory-pi","automountServiceAccountToken":false,"restartPolicy":"Never","securityContext":{"runAsNonRoot":true,"runAsUser":10001,"runAsGroup":10001,"fsGroup":10001,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"pi","image":pool.spec.image,"imagePullPolicy":pool.spec.image_pull_policy,"command":["node","dist/job-main.js"],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},"env":[{"name":"ARTIFACTORY_RUN_ID","value":run.spec.run_id},{"name":"ARTIFACTORY_RUN_GENERATION","value":run.spec.generation.to_string()},{"name":"ARTIFACTORY_RUNTIME_URL","value":pool.spec.runtime_url},{"name":"POD_NAME","valueFrom":{"fieldRef":{"fieldPath":"metadata.name"}}},{"name":"POD_UID","valueFrom":{"fieldRef":{"fieldPath":"metadata.uid"}}},{"name":"POD_NAMESPACE","valueFrom":{"fieldRef":{"fieldPath":"metadata.namespace"}}},{"name":"ARTIFACTORY_POD_TOKEN","value":"/var/run/artifactory/token"}],"resources":{"requests":{"cpu":pool.spec.cpu,"memory":pool.spec.memory},"limits":{"cpu":"2","memory":"2Gi"}},"volumeMounts":[{"name":"identity","mountPath":"/var/run/artifactory","readOnly":true},{"name":"tmp","mountPath":"/tmp"}]}],"volumes":[{"name":"identity","projected":{"sources":[{"serviceAccountToken":{"audience":"artifactory-runtime","expirationSeconds":600,"path":"token"}}]}},{"name":"tmp","emptyDir":{}}]}}}});
+    let mut value = json!({"apiVersion":"batch/v1","kind":"Job","metadata":{"name":name,"namespace":run.namespace(),"ownerReferences":[owner],"labels":{"artifactory.dev/run":run.spec.run_id}},"spec":{"parallelism":1,"completions":1,"backoffLimit":0,"activeDeadlineSeconds":4500,"ttlSecondsAfterFinished":300,"template":{"metadata":{"labels":{"app.kubernetes.io/name":"artifactory-pi","artifactory.dev/run":run.spec.run_id}},"spec":{"serviceAccountName":"artifactory-pi","automountServiceAccountToken":false,"restartPolicy":"Never","securityContext":{"runAsNonRoot":true,"runAsUser":10001,"runAsGroup":10001,"fsGroup":10001,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"pi","image":pool.spec.image,"imagePullPolicy":pool.spec.image_pull_policy,"command":["node","dist/job-main.js"],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},"env":[{"name":"ARTIFACTORY_RUN_ID","value":run.spec.run_id},{"name":"ARTIFACTORY_RUN_GENERATION","value":run.spec.generation.to_string()},{"name":"ARTIFACTORY_RUNTIME_URL","value":pool.spec.runtime_url},{"name":"POD_NAME","valueFrom":{"fieldRef":{"fieldPath":"metadata.name"}}},{"name":"POD_UID","valueFrom":{"fieldRef":{"fieldPath":"metadata.uid"}}},{"name":"POD_NAMESPACE","valueFrom":{"fieldRef":{"fieldPath":"metadata.namespace"}}},{"name":"ARTIFACTORY_POD_TOKEN","value":"/var/run/artifactory/token"}],"resources":{"requests":{"cpu":pool.spec.cpu,"memory":pool.spec.memory},"limits":{"cpu":"2","memory":"2Gi"}},"volumeMounts":[{"name":"identity","mountPath":"/var/run/artifactory","readOnly":true},{"name":"tmp","mountPath":"/tmp"}]}],"volumes":[{"name":"identity","projected":{"sources":[{"serviceAccountToken":{"audience":"artifactory-runtime","expirationSeconds":600,"path":"token"}}]}},{"name":"tmp","emptyDir":{}}]}}}});
+    if run.spec.source_manifest_id.is_some() {
+        let pod = &mut value["spec"]["template"]["spec"];
+        let mut init = json!({
+            "name":"source", "image":pool.spec.source_preparer_image,
+            "imagePullPolicy":pool.spec.image_pull_policy,
+            "command":["artifactory-source-preparer", "checkout"],
+            "env":[
+                {"name":"ARTIFACTORY_SOURCE_PREPARE_URL","value":format!("{}/v1/prepare",pool.spec.runtime_url.trim_end_matches('/'))},
+                {"name":"ARTIFACTORY_SOURCE_IDENTITY","value":json!({"run_id":run.spec.run_id,"generation":run.spec.generation}).to_string()},
+                {"name":"ARTIFACTORY_SOURCE_ROOT","value":"/workspace/source"},
+                {"name":"ARTIFACTORY_SOURCE_METADATA","value":"/workspace/source-manifest.json"},
+                {"name":"ARTIFACTORY_SOURCE_AUTH_ROOT","value":"/run/source-auth"},
+                {"name":"ARTIFACTORY_POD_TOKEN","value":"/var/run/source-identity/token"},
+                {"name":"POD_NAME","valueFrom":{"fieldRef":{"fieldPath":"metadata.name"}}},
+                {"name":"POD_UID","valueFrom":{"fieldRef":{"fieldPath":"metadata.uid"}}},
+                {"name":"POD_NAMESPACE","valueFrom":{"fieldRef":{"fieldPath":"metadata.namespace"}}}
+            ],
+            "securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},
+            "resources":{"requests":{"cpu":pool.spec.cpu,"memory":pool.spec.memory,"ephemeral-storage":pool.spec.ephemeral_storage},"limits":{"cpu":"2","memory":"2Gi","ephemeral-storage":pool.spec.ephemeral_storage}},
+            "volumeMounts":[{"name":"source","mountPath":"/workspace"},{"name":"source-auth","mountPath":"/run/source-auth"},{"name":"source-identity","mountPath":"/var/run/source-identity","readOnly":true},{"name":"tmp","mountPath":"/tmp"}]
+        });
+        if !pool.spec.tls_secret_name.is_empty() {
+            init["env"]
+                .as_array_mut()
+                .expect("environment array")
+                .push(json!({"name":"ARTIFACTORY_SERVICE_CA","value":"/run/service-ca/ca.crt"}));
+            init["volumeMounts"]
+                .as_array_mut()
+                .expect("mount array")
+                .push(json!({"name":"ca","mountPath":"/run/service-ca","readOnly":true}));
+        }
+        pod["initContainers"] = json!([init]);
+        pod["volumes"].as_array_mut().expect("volume array").extend([
+            json!({"name":"source","emptyDir":{"sizeLimit":pool.spec.ephemeral_storage}}),
+            json!({"name":"source-auth","emptyDir":{"medium":"Memory","sizeLimit":"16Mi"}}),
+            json!({"name":"source-identity","projected":{"sources":[{"serviceAccountToken":{"audience":"artifactory-runtime","expirationSeconds":600,"path":"token"}}]}})
+        ]);
+        pod["containers"][0]["volumeMounts"]
+            .as_array_mut()
+            .expect("mount array")
+            .push(json!({"name":"source","mountPath":"/workspace","readOnly":true}));
+        pod["containers"][0]["env"].as_array_mut().expect("environment array").extend([
+            json!({"name":"ARTIFACTORY_SOURCE_ROOT","value":"/workspace/source"}),
+            json!({"name":"ARTIFACTORY_SOURCE_METADATA","value":"/workspace/source-manifest.json"})
+        ]);
+    }
     if !pool.spec.tls_secret_name.is_empty() {
         let pod = &mut value["spec"]["template"]["spec"];
         pod["containers"][0]["env"]
@@ -326,36 +367,6 @@ pub async fn dispatch(ctx: &Context) -> Result<()> {
             pools.patch_status(&pool.name_any(),&PatchParams::default(),&Patch::Merge(json!({"metadata":{"resourceVersion":pool.resource_version()},"status":status}))).await?;
         }
         for descriptor in value["runs"].as_array().into_iter().flatten() {
-            let snapshots: Api<SourceSnapshot> =
-                Api::namespaced(ctx.client.clone(), &ctx.namespace);
-            let snapshot_id = descriptor["snapshot_id"]
-                .as_str()
-                .ok_or_else(|| anyhow::anyhow!("snapshot ID missing"))?;
-            let snapshot_name = format!("snapshot-{snapshot_id}");
-            if snapshots.get_opt(&snapshot_name).await?.is_none() {
-                let mut snapshot = SourceSnapshot::new(
-                    &snapshot_name,
-                    SourceSnapshotSpec {
-                        snapshot_id: snapshot_id.into(),
-                        digest: descriptor["snapshot_digest"]
-                            .as_str()
-                            .unwrap_or_default()
-                            .into(),
-                        source_pool: pool.spec.source_pool.clone(),
-                        source_url: descriptor["source_url"]
-                            .as_str()
-                            .ok_or_else(|| anyhow::anyhow!("source URL missing"))?
-                            .into(),
-                    },
-                );
-                snapshot.metadata.labels = Some([(MANAGED_SNAPSHOT.into(), "true".into())].into());
-                ctx.leader.ensure().await?;
-                match snapshots.create(&PostParams::default(), &snapshot).await {
-                    Ok(_) => {}
-                    Err(kube::Error::Api(e)) if e.code == 409 => {}
-                    Err(error) => return Err(error.into()),
-                }
-            }
             let run = descriptor["run_id"].as_str().unwrap_or_default();
             let generation = descriptor["generation"].as_i64().unwrap_or(1);
             let name = format!("run-{run}-g{generation}");
@@ -368,14 +379,10 @@ pub async fn dispatch(ctx: &Context) -> Result<()> {
                     run_id: run.into(),
                     generation,
                     pool: pool.name_any(),
-                    snapshot_id: descriptor["snapshot_id"]
+                    source_manifest_id: descriptor["source_manifest_id"]
                         .as_str()
-                        .unwrap_or_default()
-                        .into(),
-                    snapshot_digest: descriptor["snapshot_digest"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .into(),
+                        .map(str::to_owned),
+                    source_digest: descriptor["source_digest"].as_str().map(str::to_owned),
                 },
             );
             ctx.leader.ensure().await?;
@@ -387,10 +394,6 @@ pub async fn dispatch(ctx: &Context) -> Result<()> {
         }
     }
     let known_runs = runs.list(&ListParams::default()).await?;
-    let protected_snapshots: HashSet<String> = known_runs
-        .iter()
-        .map(|r| r.spec.snapshot_id.clone())
-        .collect();
     for run in known_runs {
         if run_reclaimable(&run, chrono::Utc::now().timestamp()) {
             ctx.leader.ensure().await?;
@@ -398,7 +401,7 @@ pub async fn dispatch(ctx: &Context) -> Result<()> {
                 .await?;
         }
     }
-    source_pools(ctx, &protected_snapshots).await
+    Ok(())
 }
 fn run_reclaimable(run: &AgentRun, now: i64) -> bool {
     run.status.as_ref().is_some_and(|s| {
@@ -414,162 +417,6 @@ fn run_reclaimable(run: &AgentRun, now: i64) -> bool {
         .as_ref()
         .is_some_and(|t| t.0.as_second() < now - HISTORY_SECONDS)
 }
-fn snapshot_reclaimable(snapshot: &SourceSnapshot, protected: &HashSet<String>, now: i64) -> bool {
-    snapshot
-        .labels()
-        .get(MANAGED_SNAPSHOT)
-        .is_some_and(|value| value == "true")
-        && !protected.contains(&snapshot.spec.snapshot_id)
-        && snapshot
-            .metadata
-            .creation_timestamp
-            .as_ref()
-            .is_some_and(|t| t.0.as_second() < now - HISTORY_SECONDS)
-}
-fn source_stateful_set(pool: &SourcePool, namespace: &str) -> Result<StatefulSet> {
-    let name = pool.name_any();
-    let spec = &pool.spec;
-    let public_url = spec.download_url(&name, namespace)?;
-    let mut sts_value = json!({"apiVersion":"apps/v1","kind":"StatefulSet","metadata":{"name":name},"spec":{"serviceName":name,"replicas":spec.shards,"persistentVolumeClaimRetentionPolicy":{"whenDeleted":"Retain","whenScaled":"Retain"},"selector":{"matchLabels":{"artifactory.dev/source-pool":name}},"template":{"metadata":{"labels":{"artifactory.dev/source-pool":name,"app.kubernetes.io/name":"artifactory-source"}},"spec":{"securityContext":{"fsGroup":10001,"runAsUser":10001,"runAsNonRoot":true},"containers":[{"name":"source","image":spec.image,"imagePullPolicy":spec.image_pull_policy,"args":["source"],"ports":[{"containerPort":8090}],"envFrom":[{"secretRef":{"name":spec.secret_name}}],"env":[{"name":"POD_NAME","valueFrom":{"fieldRef":{"fieldPath":"metadata.name"}}},{"name":"ARTIFACTORY_SOURCE_PUBLIC_URL","value":format!("http://$(POD_NAME).{name}.{}.svc:8090",namespace)},{"name":"ARTIFACTORY_RUNTIME_URL","value":spec.runtime_url},{"name":"ARTIFACTORY_CONTROL_URL","value":spec.control_url},{"name":"ARTIFACTORY_SOURCE_DATA_DIR","value":"/var/lib/artifactory-source"}],"resources":{"requests":{"cpu":spec.cpu,"memory":spec.memory}},"readinessProbe":{"httpGet":{"path":"/healthz","port":8090},"initialDelaySeconds":3},"volumeMounts":[{"name":"cache","mountPath":"/var/lib/artifactory-source"}]}] }},"volumeClaimTemplates":[{"metadata":{"name":"cache"},"spec":{"accessModes":["ReadWriteOnce"],"storageClassName":spec.storage_class,"resources":{"requests":{"storage":spec.storage_size}}}}]}});
-    let pod = &mut sts_value["spec"]["template"]["spec"];
-    pod["containers"][0]["resources"]["limits"] = json!({"cpu": spec.cpu, "memory": spec.memory});
-    pod["containers"][0]["env"][1]["value"] = json!(public_url);
-    if !spec.tls_secret_name.is_empty() {
-        pod["containers"][0]["env"].as_array_mut().unwrap().extend([
-            json!({"name":"ARTIFACTORY_SERVICE_CA","value":"/run/service-tls/ca.crt"}),
-            json!({"name":"ARTIFACTORY_SERVICE_TLS_CERT","value":"/run/service-tls/tls.crt"}),
-            json!({"name":"ARTIFACTORY_SERVICE_TLS_KEY","value":"/run/service-tls/tls.key"}),
-        ]);
-        pod["containers"][0]["volumeMounts"]
-            .as_array_mut()
-            .unwrap()
-            .push(json!({"name":"tls","mountPath":"/run/service-tls","readOnly":true}));
-        pod["volumes"] = json!([{"name":"tls","secret":{"secretName":spec.tls_secret_name}}]);
-        pod["containers"][0]["readinessProbe"]["httpGet"]["scheme"] = json!("HTTPS");
-    }
-    Ok(serde_json::from_value(sts_value)?)
-}
-async fn source_pools(ctx: &Context, protected_snapshots: &HashSet<String>) -> Result<()> {
-    let api: Api<SourcePool> = Api::namespaced(ctx.client.clone(), &ctx.namespace);
-    for pool in api.list(&ListParams::default()).await? {
-        let name = pool.name_any();
-        let spec = &pool.spec;
-        let service: Service = serde_json::from_value(
-            json!({"apiVersion":"v1","kind":"Service","metadata":{"name":name},"spec":{"clusterIP":"None","selector":{"artifactory.dev/source-pool":name},"ports":[{"port":8090,"targetPort":8090}]}}),
-        )?;
-        let services: Api<Service> = Api::namespaced(ctx.client.clone(), &ctx.namespace);
-        ctx.leader.ensure().await?;
-        let current = services.get_opt(&name).await?;
-        if !current.as_ref().is_some_and(|c| {
-            contains(
-                &serde_json::to_value(c).unwrap(),
-                &serde_json::to_value(&service).unwrap(),
-            )
-        }) {
-            services
-                .patch(
-                    &name,
-                    &PatchParams::apply("artifactory-operator"),
-                    &Patch::Apply(&service),
-                )
-                .await?;
-        }
-        let sts = source_stateful_set(&pool, &ctx.namespace)?;
-        let sets: Api<StatefulSet> = Api::namespaced(ctx.client.clone(), &ctx.namespace);
-        ctx.leader.ensure().await?;
-        let current = sets.get_opt(&name).await?;
-        if !current.as_ref().is_some_and(|c| {
-            contains(
-                &serde_json::to_value(c).unwrap(),
-                &serde_json::to_value(&sts).unwrap(),
-            )
-        }) {
-            sets.patch(
-                &name,
-                &PatchParams::apply("artifactory-operator"),
-                &Patch::Apply(&sts),
-            )
-            .await?;
-        }
-        let phase = if current
-            .as_ref()
-            .and_then(|s| s.status.as_ref())
-            .and_then(|s| s.ready_replicas)
-            .unwrap_or(0)
-            >= spec.shards
-        {
-            "Ready"
-        } else {
-            "Provisioning"
-        };
-        if pool.status.as_ref().is_none_or(|s| {
-            s.phase != phase || s.observed_generation != pool.metadata.generation.unwrap_or(1)
-        }) {
-            ctx.leader.ensure().await?;
-            api.patch_status(&name,&PatchParams::default(),&Patch::Merge(json!({"status":{"phase":phase,"observedGeneration":pool.metadata.generation.unwrap_or(1)}}))).await?;
-        }
-    }
-    let snapshots: Api<SourceSnapshot> = Api::namespaced(ctx.client.clone(), &ctx.namespace);
-    for snapshot in snapshots.list(&ListParams::default()).await? {
-        if snapshot_reclaimable(
-            &snapshot,
-            protected_snapshots,
-            chrono::Utc::now().timestamp(),
-        ) {
-            let uid = snapshot
-                .uid()
-                .ok_or_else(|| anyhow::anyhow!("snapshot CRD UID required"))?;
-            ctx.leader.ensure().await?;
-            snapshots
-                .delete(
-                    &snapshot.name_any(),
-                    &DeleteParams {
-                        propagation_policy: Some(PropagationPolicy::Background),
-                        preconditions: Some(Preconditions {
-                            uid: Some(uid),
-                            resource_version: None,
-                        }),
-                        ..Default::default()
-                    },
-                )
-                .await?;
-            continue;
-        }
-        if snapshot.status.as_ref().is_some_and(|s| s.phase == "Ready") {
-            continue;
-        }
-        let source = ServiceClient::new(
-            snapshot.spec.source_url.clone(),
-            artifactory_runtime_protocol::service::required("ARTIFACTORY_SERVICE_TOKEN")?,
-        )?;
-        let metadata: Value = source
-            .post(
-                "/v1/metadata",
-                &json!({"snapshot_id":snapshot.spec.snapshot_id}),
-            )
-            .await?;
-        ensure!(
-            metadata["digest"] == snapshot.spec.digest,
-            "snapshot digest mismatch"
-        );
-        ctx.leader.ensure().await?;
-        snapshots.patch_status(&snapshot.name_any(),&PatchParams::default(),&Patch::Merge(json!({"status":{"phase":"Ready","observedGeneration":snapshot.metadata.generation.unwrap_or(1)}}))).await?;
-    }
-    Ok(())
-}
-
-fn contains(actual: &Value, desired: &Value) -> bool {
-    match desired {
-        Value::Object(map) => map.iter().all(|(key, value)| {
-            value.is_null() || actual.get(key).is_some_and(|a| contains(a, value))
-        }),
-        Value::Array(items) => actual.as_array().is_some_and(|a| {
-            a.len() == items.len() && a.iter().zip(items).all(|(a, d)| contains(a, d))
-        }),
-        _ => actual == desired,
-    }
-}
-
 #[cfg(test)]
 #[path = "controller_tests.rs"]
 mod tests;

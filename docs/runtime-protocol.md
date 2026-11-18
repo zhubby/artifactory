@@ -1,63 +1,87 @@
-# Runtime 与 Source 协议 v1
+# Runtime 与临时源码协议 v1
 
-链路为控制平面固定业务意图 → Rust Source 固定源码 → Rust Runtime 准入 → Rust Operator 创建 Kubernetes Job → Pi Agent 提案 → 控制平面接纳 → Rust Artifactory Emissary 构建。设备协议为 `artifactory.emissary.v1`，源码和设备协议不提供 Go 版本兼容层。Substrate 适配属于后续阶段。
+控制平面只保存固定源码清单。每个源码任务、规划 Pod、镜像 Pod 和原生执行任务直接访问 Git 上游。任务目录不作为后续任务的输入。平台持久化完成的 AI 对话、模型预算、计划、构建日志和制品。
 
 ## 状态归属
 
-| 数据 | 唯一写入方 | 存储 |
+| 数据 | 写入方 | 存储 |
 | --- | --- | --- |
-| 项目权限、Build、计划接纳、设备 Job/Attempt、制品、Release | control-plane | 业务 PostgreSQL |
-| 运行队列、有效 Pod、租约、累计模型预算、deadline、checkpoint、提案投递状态 | planner-runtime | 独立 PostgreSQL |
-| 固定 manifest、Git/submodule/tag/LFS 对象、凭据版本、保留引用 | source-service | 独立 PostgreSQL、分片 PVC、S3 |
-| AgentPool/SourcePool 配置 | 管理员 / Helm | Kubernetes API |
-| AgentRun/SourceSnapshot 意图 | Operator dispatcher | Kubernetes API，只有已准入运行 |
-| CRD status、临时 Job、Source StatefulSet/Service | Operator leader | Kubernetes API |
+| Build、源码任务、固定源码清单、计划接纳、设备执行、制品 | control-plane | 业务 PostgreSQL |
+| 运行队列、有效 Pod、累计调用、原 deadline、持久提案 | planner-runtime | Runtime PostgreSQL |
+| 按 run/generation 排序的完成对话、系统提示、工具调用与结果 | planner-runtime | Runtime PostgreSQL |
+| Git checkout、Git/LFS 下载目录、认证 HOME | source-preparer / 原生执行进程 | 单任务临时目录 |
+| AgentPool、AgentRun、SourceTask、ImageBuild | Operator | Kubernetes API |
 
-数据库、加密密钥分别配置；服务不能跨库查询。Source 的长下载锁使用 Source 连接池；不占用业务事务。Pi 不获得服务令牌、模型供应商密钥或 Kubernetes 通用 API 身份。
+业务数据库和 Runtime 数据库分别初始化。服务不能跨库查询。数据库只保存仓库地址、commit、冻结 tag 对象、LFS OID 与大小。凭据通过凭据引用传入；密钥不进入 URL、CRD 和审计消息。制品和内建 OCI 仓库继续使用独立对象存储。
 
-## 服务接口
+## 源码任务
 
-`proto/artifactory/runtime/v1/runtime.proto` 定义 Tonic/Prost 0.14 的 `RuntimeGateway` RPC。首期消息使用版本化 JSON envelope，内部 DTO 在 `crates/runtime-protocol`，未知 DTO 字段拒绝。新增不兼容语义需要新协议版本。Operator 使用 TLS gRPC 的 GetRun/RegisterExecution；其他服务使用同一语义的 HTTPS JSON。
+构建先进入 `resolving`。控制平面在 `source_tasks` 创建 `resolve` 任务。Operator 创建使用 `emptyDir` 的临时 Job。source-preparer 通过投射令牌和实际 Pod 身份领取仓库地址及短期凭据。
 
-| Runtime 路径 | 调用方 / 身份 | 作用 |
+首次解析引用后，任务向控制平面提交 `pinned_ref_oid`。后续重试只能得到第一个已提交 OID。每个仓库的 tag 对象也按任务固定。preparer 直接拉取该对象，解析 submodule 和 LFS，然后提交排序后的 `SourceManifest`。清单摘要为 `sha256(serde_json::to_vec(repositories))`。
+
+控制平面在同一事务中保存清单、切换 Build 为 `planning`、创建唯一 `planning_run`，并由触发器写入 Runtime outbox。重复提交相同任务结果返回已有结果。不同结果拒绝。成功任务再次领取时返回已提交结果，不再返回凭据。
+
+引用选择使用独立 `refs` 任务。接口只等待引用元数据，不创建 Build，也不保留 Git checkout。任务结束后删除 Job 和临时卷。
+
+## Kubernetes 规划
+
+1. Runtime 根据 pool/project 容量准入运行，返回 `run_id`、`generation` 与可选源码身份。
+2. Agent Operator 创建 Job，登记实际 Pod UID、Pod 名和 namespace。
+3. source-preparer init container 调用 Runtime `/v1/prepare`，直接拉取固定源码到 `emptyDir`。认证材料仅位于 init 可见的内存卷。
+4. 主 Worker 只读挂载源码和清单元数据。Worker acquire 成功后启动模型 deadline。
+5. Pi 通过本地只读工具读取源码。节点能力和失败日志经 Runtime 访问控制平面。所有模型请求经过 Runtime 预算代理。
+6. 任务终态后 Operator 删除 Job。Pod 丢失时，Runtime 用同一 commit 创建新 generation 和新对话。
+
+placement 运行只读节点元数据，不准备源码。源码准备不 acquire 模型租约，不启动模型 deadline。执行登记尚未完成时 `/v1/prepare` 返回 409，preparer 有界重试。Kubernetes API 的 404、409、429、5xx 和网络故障返回 503。无效投射令牌和错误执行身份返回 403。
+
+preparer 配置：
+
+```text
+ARTIFACTORY_SOURCE_PREPARE_URL=<runtime>/v1/prepare
+ARTIFACTORY_SOURCE_IDENTITY={"run_id":"...","generation":1}
+ARTIFACTORY_SOURCE_ROOT=/workspace/source
+ARTIFACTORY_SOURCE_AUTH_ROOT=/run/source-auth
+ARTIFACTORY_SOURCE_METADATA=/workspace/source-manifest.json
+ARTIFACTORY_POD_TOKEN=<projected token path>
+POD_UID / POD_NAME / POD_NAMESPACE
+ARTIFACTORY_SERVICE_CA=<optional CA path>
+```
+
+`POST /v1/prepare` 输入为 `identity`、`pod` 和 `bootstrap_token`。Runtime 对 audience `artifactory-runtime` 执行 TokenReview，核对 SA `artifactory-pi` 以及完整 Pod 身份，再向控制平面 `/internal/runtime/source-material` 请求材料。控制平面和 Runtime 在材料读取后再次核验 generation、Pod 和准备状态。等待期间发生取消或执行替换时，旧 Pod 无法领取材料。材料返回 `PrepareResponse`；主 Worker 不接触上游凭据。
+
+## Runtime 接口
+
+| 路径 | 身份 | 作用 |
 | --- | --- | --- |
-| `/v1/intent` | control-plane / 服务令牌 | 不可变运行意图，或高版本 cancel tombstone |
-| `/v1/queue` | Operator / 服务令牌 | pool/project 原子准入，重返所有有效 descriptor 以恢复未知创建结果 |
-| `/v1/get`、`/v1/register` | Operator / 服务令牌 | 读取生命周期、登记真实 Pod UID |
-| `/v1/acquire` | Pi / Kubernetes 投射令牌 | TokenReview audience `artifactory-runtime`，核验命名空间、SA、Pod 名及 UID |
-| `/v1/heartbeat`、`/v1/report` | Pi / run grant | 约 10 秒心跳、事件 UUID/sequence 检查点和 usage |
-| `/model/{run}/{generation}/{uid}/v1/...` | Pi / run grant | 唯一预算预留、固定模型与上游、透明 SSE 转发 |
-| `/v1/tool`、`/v1/proposal` | Pi / run grant | 保存提案、查询同一提案结果；节点能力/失败日志按需请求业务服务 |
-| `/v1/validate` | Source / 服务令牌 | 核验 run grant 并返回项目及固定 snapshot |
-| `/metrics` | 运维 / 服务令牌 | Prometheus 文本；无运行 ID 标签 |
+| `/v1/intent` | 控制平面服务身份 | 不可变意图或高版本取消 tombstone |
+| `/v1/queue` | Operator 服务身份 | 原子准入并返回有效运行 descriptor |
+| `/v1/get`、`/v1/register` | Operator 服务身份 | 读取运行和登记 Pod |
+| `/v1/prepare` | Kubernetes 投射令牌 | 给 init 提供固定源码材料 |
+| `/v1/acquire` | Kubernetes 投射令牌 | 获取 run grant 并启动首次模型 deadline |
+| `/v1/heartbeat`、`/v1/report` | run grant | 续租、累计 usage 与完成消息审计 |
+| `/model/{run}/{generation}/{uid}/v1/...` | run grant | 原子预留预算并代理模型 SSE |
+| `/v1/tool`、`/v1/proposal` | run grant | 转发只读工具、保存提案与读取原回执 |
+| `/v1/conversations` | 服务身份及 run/tenant/project | 列出 generation 会话摘要 |
+| `/v1/conversation/messages` | 服务身份及 run/tenant/project/generation | 按 sequence 增量分页读取消息 |
 
-Source 的 `/v1/capture` 以 operation UUID 和输入摘要幂等冻结源码，`/v1/metadata` 只返回固定 manifest/digest；`/v1/inspect`、`/v1/evidence` 校验同一快照，`/v1/refs` 提供只读引用查询，`/v1/retain` 添加保留引用。以上端点使用服务令牌。Pi 的 `/v1/tool` 使用 run grant，直接读取 Source。设备通过 `/api/v1/source/{snapshot}/{entry}/git/...` 与 `/lfs/...` 下载，兼容现有 Basic/askpass 及 Bearer 临时凭证。
+Operator 的 GetRun/RegisterExecution 同时提供版本化 Tonic gRPC 接口。服务使用 TLS，HTTP 仅允许显式开发配置。共享客户端禁止重定向。源码清单上限为 4 MiB；服务 JSON 请求和响应上限为 8 MiB。完成消息超过单事件大小时按 Unicode 安全分片，并使用稳定事件 UUID 顺序持久化。
 
-Source capture 返回的 `origin` 是设备下载基址；control-plane 在 `source_snapshots.public_origin` 固定它，另存 `service_origin` 用于 Pi、证据核验和元数据 RPC。设备 Git/LFS descriptor 使用公开地址，LFS batch 中的下载 href 使用同一公开地址。地址不允许用户密码、query 或 fragment，生产要求 HTTPS。`0011_source_public_origin.sql` 是追加迁移；旧快照没有公开地址时沿用原 service origin，本地快照继续使用 control-plane public URL。修改下载网关后必须保留历史地址或显式迁移对应元数据，不能改变源码 digest/manifest。
+## 对话与故障恢复
 
-control-plane 的 `/internal/runtime/event` 幂等接纳阶段结果，`/internal/runtime/tool` 提供设备能力/失败日志，`/internal/runtime/source-authorize` 仅短事务核验设备 attempt 权限。内部端点同样要求服务令牌，禁止从公网直接暴露。
+完成的 system、user、assistant、tool 调用和 tool result 消息按 generation 保存。凭据精确值脱敏，代码片段保留。消息不写入可恢复执行状态。浏览器经项目读取权限校验后访问：
 
-服务默认 HTTPS，证书由 `ARTIFACTORY_SERVICE_TLS_CERT/KEY` 指定，客户端可用 `ARTIFACTORY_SERVICE_CA` 添加私有 CA。只有显式 `ARTIFACTORY_INSECURE_DEV=true` 可使用 HTTP。服务客户端禁重定向，JSON 请求/响应默认上限 2 MiB；源码 Git/LFS 数据流不受 JSON 限制。错误响应不返回内部凭据或上游认证信息。
+```text
+GET /api/v1/builds/{build}/planning/conversations
+GET /api/v1/builds/{build}/planning/conversations/{run}/{generation}/messages?after=0&limit=50
+```
 
-## 幂等、fencing 与预算
+会话摘要包含 Pod、模型、源码摘要、开始和结束时间及状态。消息分页按条数和 1 MiB 响应预算截断。界面按需加载，提供继续读取和活跃会话增量轮询。
 
-- Build 创建时固定 `planner_backend`；planning_run 在同一数据库事务的 trigger 中固定 authority 并写 runtime_intents outbox。投递前先持久化加密 payload，再重投相同内容。取消为 version 2；先收到取消后收到创建不能复活，重复取消幂等。
-- Execution 身份为 `(run UUID, generation, Pod UID, namespace, Pod name)`。Kubernetes 决定 Pod 放在哪个节点；Runtime 决定哪个身份持有有效授权。确定性 Job 名与 Owner UID 处理创建结果未知；即使短暂出现两个 Pod，也只能登记一个有效 UID。
-- 默认预算 20 次调用、600 秒逻辑期限、90 秒租约。首次有效 acquire 才启动 deadline。排队不消耗预算；镜像 provisioning 最长 180 秒/次，有界 generation 重试。重试延续原 deadline/calls/checkpoint，不迁移到新的源码或模型配置。
-- 模型请求必须有 `x-artifactory-request-id` UUID。Runtime 在发送前原子保存次数预留与 profile RPM 时隙。重放同 ID 返回 409，不再次发送；响应未知仍消耗次数。Pi SDK 禁应用层重试，HTTP 客户端显式禁用协议级自动重试，强制 SSE。支持 OpenAI Completions、Responses、Anthropic Messages；供应商密钥只在 Runtime 解密使用。
-- 流式响应期间周期复查授权，取消/租约丢失终止转发。物理 Pod 停止与授权撤销是不同时间，不能把取消 API 成功解释为进程已停止。CNI 必须落实 Pi NetworkPolicy，阻止绕过代理直连供应商。
-- report 使用事件 UUID 与递增 sequence；同 ID 不同内容拒绝，乱序事件不覆盖新状态。Pod 重启后沿用已持久化 checkpoint。
+Pod 丢失后旧会话标记 `interrupted`。新 generation 重新读取同一固定源码并开启新会话，不重放历史对话。累计调用预算和原 deadline 保留。旧 Pod grant 因 generation fencing 失效。未知模型响应仍消费已预留次数。持久提案和回执独立恢复，防止确认丢失引起重复推理或重复接纳。
 
-## 提案与接纳
+审计仅承诺已被 Worker 完成并成功提交的消息。进程在消息完成前被杀时，未完成流式片段不作为完成消息补造。提案提交与最终结果由 Runtime 事务写入审计，终态后无需 Worker 补写才能还原结果。
 
-Pi 在提交工具前保存含 pending_tool 的检查点。Runtime 原子登记 proposal、原 generation/deadline、固定 snapshot digest 和 outbox；pending 阻止新推理及物理重试。接纳确认丢失只查询或投递原 proposal，不重新调用模型。
+## 初始化与清理
 
-control-plane 在持业务行锁之前完成远程证据校验，再以 Build → run 的锁顺序检查取消、期限、修订、平台和签名约束，并使用原计划验证/创建 Job 逻辑。接纳结果与 receipt 同一事务提交；重投返回原 revision，即使之后取消或 deadline 到期。非法计划返回工具错误，Pi 可在原预算内修正。真正超期且未接纳的提案不能新建任务。
-
-源码持久包 Ready 前写入 Git bundle、LFS 对象及 manifest；源码操作保存首次解析的 commit/tag。PVC 丢失从 S3 恢复，再核验 Git 对象和 LFS SHA-256。SourceSnapshot CRD 删除不删除持久对象；首期没有破坏性 GC，保留引用不可用时保守保留。
-
-## 兼容与迁移
-
-默认 `poll`，Poll Worker 与 Kubernetes Pi 两种规划后端均支持 Rust Emissary。新 `kubernetes` run 不由 Poll/reaper 领取；高频心跳、预留和 checkpoint 不写业务 planning hot tables。相同模型 profile 在有活动 run 时禁止跨 authority 交接，防止 Poll Report 与 Runtime 代理形成双重预留。先排空该 profile，或使用独立 profile 做灰度。不能直接修改在途 Build/run 的 backend、authority 或计数实现回退。
-
-运维及验收方式见 [Operator 运维](operator-operations.md)。
+业务数据库和 Runtime 数据库各保留一份全新初始化基线。原型重置不执行数据迁移，不保留 Poll Worker、Source 服务、源码 PVC 或旧下载路由。制品、Registry 对象和独立密钥按部署重置方案保留，设备重新注册。

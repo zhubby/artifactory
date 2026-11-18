@@ -1,46 +1,6 @@
 version = 1
 
 [[migrations]]
-id = 2026111301
+id = 2026111803
 name = "0000_baseline.sql"
 snapshot_name = "0000_snapshot.toml"
-
-[[migrations]]
-id = 2026111401
-name = "0001_control_replication.sql"
-snapshot_name = "0001_snapshot.toml"
-
-[[migrations]]
-id = 2026111402
-name = "0002_node_placements.sql"
-snapshot_name = "0002_snapshot.toml"
-
-[[migrations]]
-id = 2026111501
-name = "0003_multitenancy.sql"
-snapshot_name = "0003_snapshot.toml"
-
-[[migrations]]
-id = 2026111503
-name = "0004_readable_routes.sql"
-snapshot_name = "0004_snapshot.toml"
-
-[[migrations]]
-id = 2026111504
-name = "0005_account_settings.sql"
-snapshot_name = "0005_snapshot.toml"
-
-[[migrations]]
-id = 2026111505
-name = "0006_workspace_lifecycle.sql"
-snapshot_name = "0006_snapshot.toml"
-
-[[migrations]]
-id = 2026111601
-name = "0007_managed_signing.sql"
-snapshot_name = "0007_snapshot.toml"
-
-[[migrations]]
-id = 2026111701
-name = "0008_image_builds.sql"
-snapshot_name = "0008_snapshot.toml"

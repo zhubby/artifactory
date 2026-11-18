@@ -26,6 +26,8 @@ spec:
               caSecret:
                 default: ''
                 type: string
+              controlUrl:
+                type: string
               cpu:
                 default: '1'
                 type: string
@@ -58,20 +60,21 @@ spec:
               memory:
                 default: 2Gi
                 type: string
-              nativeSidecar:
-                default: true
-                type: boolean
               nodeSelector:
                 additionalProperties:
                   type: string
                 default: {}
                 type: object
+              sourcePreparerImage:
+                type: string
               workerImage:
                 type: string
             required:
             - buildkitImage
+            - controlUrl
             - maxActive
             - maxPerProject
+            - sourcePreparerImage
             - workerImage
             type: object
           status:
@@ -143,10 +146,11 @@ spec:
               publishOnly:
                 default: false
                 type: boolean
-              snapshotDigest:
-                type: string
               snapshotId:
                 format: uuid
+              sourceDigest:
+                type: string
+              sourceManifestId:
                 type: string
               taskSecret:
                 type: string
@@ -164,8 +168,8 @@ spec:
             - platforms
             - pool
             - projectId
-            - snapshotDigest
-            - snapshotId
+            - sourceDigest
+            - sourceManifestId
             - taskSecret
             - tenantId
             - timeoutSeconds
@@ -180,9 +184,9 @@ spec:
             - message: execution context is immutable
               rule: self.pool == oldSelf.pool
             - message: execution context is immutable
-              rule: self.snapshotId == oldSelf.snapshotId
+              rule: self.sourceManifestId == oldSelf.sourceManifestId
             - message: execution context is immutable
-              rule: self.snapshotDigest == oldSelf.snapshotDigest
+              rule: self.sourceDigest == oldSelf.sourceDigest
             - message: execution context is immutable
               rule: self.taskSecret == oldSelf.taskSecret
             - message: execution context is immutable

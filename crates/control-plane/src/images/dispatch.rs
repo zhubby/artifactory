@@ -32,7 +32,9 @@ async fn deliver(
     let name = format!("image-{}", e.id.simple());
     let secret_name = format!("{name}-task");
     if let Some(status) = state.store.image_stop_status(e.id).await? {
-        if let Some(existing) = api.get_opt(&name).await? {
+        if let Some(existing) = api.get_opt(&name).await?
+            && status != "succeeded"
+        {
             ensure!(
                 existing.labels().get("artifactory.dev/execution") == Some(&e.id.to_string()),
                 "ImageBuild identity conflict"
@@ -73,9 +75,12 @@ async fn deliver(
     };
     let bytes = crypto::open_context(&state.settings.master_key, envelope, e.id.as_bytes())?;
     let materials: std::collections::BTreeMap<String, String> = serde_json::from_slice(&bytes)?;
-    let digest = state.store.source_snapshot_digest(e.snapshot_id).await?;
+    let digest = state
+        .store
+        .source_manifest_digest(e.source_manifest_id)
+        .await?;
     let desired: DynamicObject = serde_json::from_value(
-        json!({"apiVersion":"images.artifactory.dev/v1alpha1","kind":"ImageBuild","metadata":{"name":name,"namespace":config.namespace,"labels":{"artifactory.dev/execution":e.id.to_string()}},"spec":{"executionId":e.id,"tenantId":e.tenant_id,"projectId":e.project_id,"pool":e.spec.pool,"snapshotId":e.snapshot_id,"snapshotDigest":digest,"taskSecret":secret_name,"platforms":e.spec.platforms,"allowEmulation":e.spec.allow_emulation,"publishOnly":e.operation=="publish","timeoutSeconds":e.task_timeout_seconds,"cancelRequested":false}}),
+        json!({"apiVersion":"images.artifactory.dev/v1alpha1","kind":"ImageBuild","metadata":{"name":name,"namespace":config.namespace,"labels":{"artifactory.dev/execution":e.id.to_string()}},"spec":{"executionId":e.id,"tenantId":e.tenant_id,"projectId":e.project_id,"pool":e.spec.pool,"sourceManifestId":e.source_manifest_id,"sourceDigest":digest,"taskSecret":secret_name,"platforms":e.spec.platforms,"allowEmulation":e.spec.allow_emulation,"publishOnly":e.operation=="publish","timeoutSeconds":e.task_timeout_seconds,"cancelRequested":false}}),
     )?;
     let build = match api.get_opt(&name).await? {
         Some(v) => v,
@@ -153,12 +158,12 @@ pub async fn tick(state: &AppState, config: &Config, client: &Client) -> Result<
         }
         let result=async{
    let e=state.store.image_execution(id).await?;
-   let (build,source_hash)=tasks::build(state,config,&e,&build_token).await?;
+   let build=tasks::build(state,config,&e,&build_token).await?;
    let publish=tasks::publication(state,config,&e,&publish_token).await?;
    let bytes=serde_json::to_vec(&json!({"build.json":serde_json::to_string(&build)?,"publish.json":serde_json::to_string(&publish)?}))?;
    ensure!(bytes.len()<=900*1024,"task Secret exceeds Kubernetes limit");
    let envelope=crypto::seal_context(&state.settings.master_key,&bytes,id.as_bytes())?;
-   state.store.save_image_task(id,&envelope,Some(&source_hash)).await?;
+   state.store.save_image_task(id,&envelope).await?;
    let execution=state.store.image_execution(id).await?;
    if let Err(error)=deliver(state,config,client,&execution).await {
     tracing::warn!(%id,%error,"image delivery deferred");

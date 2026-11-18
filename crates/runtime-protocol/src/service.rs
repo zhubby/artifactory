@@ -1,4 +1,7 @@
-//! Shared authenticated transport. Service credentials never enter CRDs or runner Pods.
+//! [INPUT]: 依赖服务端点、共享身份和 TLS 配置。
+//! [OUTPUT]: 提供 8 MiB 封套、受权 HTTP 客户端与服务监听。
+//! [POS]: Runtime 与控制平面共用的服务通信边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
 use axum::{
     Router,
@@ -17,6 +20,9 @@ use hyper_util::{
 use serde::{Serialize, de::DeserializeOwned};
 use std::{env, sync::Arc, time::Duration};
 use tokio_rustls::TlsAcceptor;
+
+/// 为固定源码清单和凭据封套预留的 JSON 上限。
+pub const SERVICE_JSON_LIMIT: usize = 8 * 1024 * 1024;
 
 pub fn required(name: &str) -> Result<String> {
     env::var(name).with_context(|| format!("{name} is required"))
@@ -41,18 +47,6 @@ pub fn endpoint(value: &str) -> Result<()> {
         "service HTTPS required"
     );
     Ok(())
-}
-/// Validate an advertised download base URL before attaching snapshot paths.
-pub fn download_origin(value: &str) -> Result<String> {
-    endpoint(value)?;
-    let url = reqwest::Url::parse(value)?;
-    ensure!(
-        !value.chars().any(char::is_whitespace)
-            && url.query().is_none()
-            && url.fragment().is_none(),
-        "download URL cannot contain whitespace, a query or a fragment"
-    );
-    Ok(value.trim_end_matches('/').to_owned())
 }
 pub fn client() -> Result<reqwest::Client> {
     let mut builder = reqwest::Client::builder()
@@ -103,7 +97,7 @@ impl Client {
             "service rejected request ({})",
             response.status()
         );
-        decode(response, 2 * 1024 * 1024).await
+        decode(response, SERVICE_JSON_LIMIT).await
     }
 }
 pub async fn decode<T: DeserializeOwned>(response: reqwest::Response, limit: usize) -> Result<T> {

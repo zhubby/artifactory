@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖调用预算、Pod UID 与固定时限。
+//! [OUTPUT]: 提供 acquire、fencing、reserve 和 retry。
+//! [POS]: 持久化逻辑任务状态；重试不恢复对话。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 

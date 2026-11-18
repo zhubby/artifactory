@@ -56,9 +56,6 @@ spec:
             - {name: ARTIFACTORY_GATEWAY_DEVICE_CONNECTIONS, value: {{ .Values.gateway.deviceConnections | quote }}}
             - {name: ARTIFACTORY_GATEWAY_TELEMETRY_CONNECTIONS, value: {{ .Values.gateway.telemetryConnections | quote }}}
             - {name: ARTIFACTORY_GATEWAY_INTERNAL_CONNECTIONS, value: {{ .Values.gateway.internalConnections | quote }}}
-            {{- if .Values.localSource.enabled }}
-            - {name: ARTIFACTORY_GATEWAY_SOURCE, value: "https://{{ include "artifactory.fullname" . }}-local-source:8080"}
-            {{- end }}
             - {name: ARTIFACTORY_SERVICE_CA, value: /run/ca/ca.crt}
             - name: ARTIFACTORY_GATEWAY_TOKEN
               valueFrom: {secretKeyRef: {name: {{ include "artifactory.gatewaySecret" . }}, key: token}}
@@ -121,5 +118,10 @@ spec:
       from: {{ toYaml . | nindent 8 }}
       {{- end }}
     - ports: [{port: 8445, protocol: TCP}]
-      from: [{podSelector: {}}]
+      from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: {{ list .Release.Namespace (.Values.planning.namespace | default .Release.Namespace) (.Values.imageBuilds.namespace | default .Release.Namespace) | uniq | toJson }}
 {{- end }}

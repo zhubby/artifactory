@@ -1,35 +1,16 @@
-// Isolated acceptance probe. Credentials arrive over stdin and are never printed.
-import * as grpc from "@grpc/grpc-js";
-import * as loader from "@grpc/proto-loader";
-import { fileURLToPath } from "node:url";
+// [INPUT]: 依赖 Runtime 租约和 MCP SDK。
+// [OUTPUT]: 输出节点工具查询与过期租约验收结果。
+// [POS]: 真实 Runtime 传输的隔离验收脚本。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 import { connectNodeMcp } from "../src/node-mcp.ts";
 
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
 const task = JSON.parse(input);
-let client;
-let rpc;
-let runtimeRpc, post;
 const signal = AbortSignal.timeout(20000);
-if (task.transport === "runtime") {
-  ({ runtimeRpc } = await import("../dist/transport/runtime.js"));
-  const { httpPost } = await import("../dist/transport/runtime.js");
-  post = httpPost(task.endpoint, signal);
-  rpc = runtimeRpc(task.lease, "", post, signal);
-} else {
-  const schema = loader.loadSync(fileURLToPath(new URL("../../../proto/artifactory/emissary/v1/emissary.proto", import.meta.url)), { keepCase: true, defaults: true });
-  const { Planning } = grpc.loadPackageDefinition(schema).artifactory.emissary.v1;
-  client = new Planning(task.endpoint.replace(/^https?:\/\//, ""), grpc.credentials.createSsl(Buffer.from(task.ca), Buffer.from(task.key), Buffer.from(task.certificate)), { "grpc.ssl_target_name_override": "localhost" });
-  rpc = (method, payload) => new Promise((resolve, reject) => {
-    if (method !== "tool") return reject(new Error("only node queries are permitted"));
-    client.Tool({ ...payload, run_id: task.run_id, lease_token: task.lease_token }, { deadline: Date.now() + 10000 }, (error, reply) => {
-      if (error) {
-        process.stderr.write(`node query RPC failed (${error.code}): ${error.details}\n`);
-        reject(error);
-      } else resolve(JSON.parse(reply.result_json));
-    });
-  });
-}
+const { runtimeRpc, httpPost } = await import("../dist/transport/runtime.js");
+const post = httpPost(task.endpoint, signal);
+const rpc = runtimeRpc(task.lease, post, signal);
 let session;
 try {
   session = await connectNodeMcp(rpc);
@@ -41,7 +22,7 @@ try {
   }
   let staleLeaseRejected;
   if (task.stale_lease) {
-    const stale = await connectNodeMcp(runtimeRpc(task.stale_lease, "", post, signal));
+    const stale = await connectNodeMcp(runtimeRpc(task.stale_lease, post, signal));
     try {
       const result = await stale.client.callTool(task.queries[0]);
       staleLeaseRejected = result.isError === true;
@@ -51,5 +32,4 @@ try {
   process.stdout.write(JSON.stringify({ initialized: session.client.getServerVersion()?.name, tools: session.tools.map(tool => tool.name), results, staleLeaseRejected }));
 } finally {
   await session?.close();
-  client?.close();
 }

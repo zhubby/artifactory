@@ -18,8 +18,13 @@ spec:
         properties:
           spec:
             properties:
+              controlUrl:
+                type: string
               cpu:
                 default: 250m
+                type: string
+              ephemeralStorage:
+                default: 10Gi
                 type: string
               image:
                 type: string
@@ -41,17 +46,18 @@ spec:
                 type: string
               runtimeUrl:
                 type: string
-              sourcePool:
+              sourcePreparerImage:
                 type: string
               tlsSecretName:
                 default: ''
                 type: string
             required:
+            - controlUrl
             - image
             - maxActive
             - maxPerProject
             - runtimeUrl
-            - sourcePool
+            - sourcePreparerImage
             type: object
           status:
             nullable: true
@@ -83,69 +89,56 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: sourcepools.agents.artifactory.dev
+  name: sourcetasks.agents.artifactory.dev
 spec:
   group: agents.artifactory.dev
   names:
-    kind: SourcePool
-    plural: sourcepools
-    singular: sourcepool
+    kind: SourceTask
+    plural: sourcetasks
+    singular: sourcetask
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Auto-generated derived type for SourcePoolSpec via `CustomResource`
+        description: Auto-generated derived type for SourceTaskSpec via `CustomResource`
         properties:
           spec:
             properties:
-              controlUrl:
+              cancelRequested:
+                default: false
+                type: boolean
+              pool:
                 type: string
-              cpu:
-                default: 250m
+              projectId:
                 type: string
-              image:
+              purpose:
+                enum:
+                - resolve
+                - refs
                 type: string
-              imagePullPolicy:
-                default: IfNotPresent
+              taskId:
                 type: string
-              memory:
-                default: 1Gi
+              tenantId:
                 type: string
-              publicUrlTemplate:
-                description: |-
-                  Device-reachable download base. Supports {pod}, {pool} and {namespace}.
-                  Internal RPCs continue to use the shard's Kubernetes service address.
-                nullable: true
-                type: string
-              runtimeUrl:
-                type: string
-              secretName:
-                type: string
-              shards:
-                format: int32
-                maximum: 32.0
+              timeoutSeconds:
+                default: 900
+                format: uint32
+                maximum: 900.0
                 minimum: 1.0
                 type: integer
-              storageClass:
-                type: string
-              storageSize:
-                type: string
-              tlsSecretName:
-                default: ''
-                type: string
             required:
-            - controlUrl
-            - image
-            - runtimeUrl
-            - secretName
-            - shards
-            - storageClass
-            - storageSize
+            - pool
+            - projectId
+            - purpose
+            - taskId
+            - tenantId
             type: object
             x-kubernetes-validations:
-            - message: source shard removal and PVC changes require an explicit data migration
-              rule: self.shards >= oldSelf.shards && self.storageClass == oldSelf.storageClass && self.storageSize == oldSelf.storageSize
+            - message: source task context is immutable
+              rule: self.taskId == oldSelf.taskId && self.tenantId == oldSelf.tenantId && self.projectId == oldSelf.projectId && self.purpose == oldSelf.purpose && self.pool == oldSelf.pool && self.timeoutSeconds == oldSelf.timeoutSeconds
+            - message: cancellation is irreversible
+              rule: '!oldSelf.cancelRequested || self.cancelRequested'
           status:
             nullable: true
             properties:
@@ -166,70 +159,7 @@ spec:
             type: object
         required:
         - spec
-        title: SourcePool
-        type: object
-    served: true
-    storage: true
-    subresources:
-      status: {}
----
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: sourcesnapshots.agents.artifactory.dev
-spec:
-  group: agents.artifactory.dev
-  names:
-    kind: SourceSnapshot
-    plural: sourcesnapshots
-    singular: sourcesnapshot
-  scope: Namespaced
-  versions:
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: Auto-generated derived type for SourceSnapshotSpec via `CustomResource`
-        properties:
-          spec:
-            properties:
-              digest:
-                type: string
-              snapshotId:
-                type: string
-              sourcePool:
-                type: string
-              sourceUrl:
-                type: string
-            required:
-            - digest
-            - snapshotId
-            - sourcePool
-            - sourceUrl
-            type: object
-            x-kubernetes-validations:
-            - message: execution and snapshot context are immutable
-              rule: self == oldSelf
-          status:
-            nullable: true
-            properties:
-              message:
-                nullable: true
-                type: string
-              observedGeneration:
-                format: int64
-                type: integer
-              phase:
-                type: string
-              podUid:
-                nullable: true
-                type: string
-            required:
-            - observedGeneration
-            - phase
-            type: object
-        required:
-        - spec
-        title: SourceSnapshot
+        title: SourceTask
         type: object
     served: true
     storage: true
@@ -263,19 +193,19 @@ spec:
                 type: string
               runId:
                 type: string
-              snapshotDigest:
+              sourceDigest:
+                nullable: true
                 type: string
-              snapshotId:
+              sourceManifestId:
+                nullable: true
                 type: string
             required:
             - generation
             - pool
             - runId
-            - snapshotDigest
-            - snapshotId
             type: object
             x-kubernetes-validations:
-            - message: execution and snapshot context are immutable
+            - message: execution context is immutable
               rule: self == oldSelf
           status:
             nullable: true

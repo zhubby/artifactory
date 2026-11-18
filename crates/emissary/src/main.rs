@@ -87,21 +87,7 @@ fn default_root() -> PathBuf {
 }
 #[tokio::main]
 async fn main() {
-    if std::env::var("ARTIFACTORY_GIT_ASKPASS").as_deref() == Ok("1") {
-        let prompt = std::env::args()
-            .skip(1)
-            .collect::<Vec<_>>()
-            .join(" ")
-            .to_lowercase();
-        println!(
-            "{}",
-            std::env::var(if prompt.contains("username") {
-                "ARTIFACTORY_GIT_USERNAME"
-            } else {
-                "ARTIFACTORY_GIT_PASSWORD"
-            })
-            .unwrap_or_default()
-        );
+    if artifactory_source_checkout::askpass() {
         return;
     }
     if let Err(error) = run(Cli::parse()).await {

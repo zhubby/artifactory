@@ -59,14 +59,12 @@ pub async fn token(
         let e = state.store.image_execution(id).await?;
         ttl = ttl.min(e.timeout_seconds);
         subject = id.to_string();
-        let cache = format!("{}/{}/cache/{}-", e.tenant_id, e.project_id, e.spec.name);
         for item in scope.split_whitespace() {
             let (repo, actions) = repository_scope(item)?;
             let candidate = repo == e.candidate_repository;
-            let cache = repo == format!("{cache}amd64") || repo == format!("{cache}arm64");
             let final_repo =
                 publisher && e.destination_credential.is_none() && repo == e.destination_repository;
-            if !(candidate || (!publisher && cache) || final_repo) {
+            if !(candidate || final_repo) {
                 return Err(ApiError::Forbidden);
             }
             if e.destination_credential.is_some() && actions.iter().any(|s| *s != "pull") {

@@ -28,7 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('--kind', help='Load platform archives into this kind cluster (Docker CLI 28+, Engine API 1.48+)')
     args = parser.parse_args()
     directory = ROOT / '.local/operator-test'; directory.mkdir(parents=True, exist_ok=True)
-    components = {'agent-operator':'operators/agent-operator/Dockerfile','planner-runtime':'crates/planner-runtime/Dockerfile','source-service':'crates/source-service/Dockerfile','control-plane':'Dockerfile','emissary':'crates/emissary/Dockerfile','gateway':'crates/gateway/Dockerfile'}
+    components = {'agent-operator':'operators/agent-operator/Dockerfile','planner-runtime':'crates/planner-runtime/Dockerfile','source-preparer':'crates/source-preparer/Dockerfile','control-plane':'Dockerfile','emissary':'crates/emissary/Dockerfile','gateway':'crates/gateway/Dockerfile'}
     fixture = f'{args.registry}/operator-fixture:{args.tag}'
     pi = f'{args.registry}/operator-pi:{args.tag}'
     if not args.skip_runtime_build:

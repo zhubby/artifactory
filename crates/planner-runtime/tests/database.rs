@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖隔离 PostgreSQL、Runtime HTTP 和模型桩。
+//! [OUTPUT]: 验证预算、审计、提案幂等和租户边界。
+//! [POS]: 新初始化基线的持久状态回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_database::{PoolSettings, connect, with_options};
 use artifactory_database::{params, sql};
 use artifactory_planner_runtime::{
@@ -9,8 +13,9 @@ use artifactory_runtime_protocol::{
 };
 use serde_json::{Value, json};
 use std::sync::Arc;
-use toasty::stmt::Type;
 use uuid::Uuid;
+#[path = "database/source_payload.rs"]
+mod source_payload;
 struct TestRuntime {
     runtime: Runtime,
     pool: toasty::Db,
@@ -70,8 +75,8 @@ fn intent(run: Uuid) -> RunIntent {
         build_id: Uuid::new_v4(),
         project_id: Uuid::new_v4(),
         version: 1,
-        snapshot_id: Uuid::new_v4(),
-        snapshot_digest: "a".repeat(64),
+        source_manifest_id: Some(Uuid::new_v4()),
+        source_digest: Some("a".repeat(64)),
         pool: "default".into(),
         context: json!({}),
         model: ModelConfiguration {
@@ -133,28 +138,22 @@ async fn owner(s: &TestRuntime, run: Uuid) -> Lease {
         name: "pod-a".into(),
         namespace: "test".into(),
     };
-    server::register_execution(s, execution).await.unwrap();
-    let mut life = Lifecycle::new(2);
-    life.acquire(1, "pod-a", chrono::Utc::now().timestamp_millis(), 600000)
+    server::register_execution(s, execution.clone())
+        .await
         .unwrap();
-    let token = crypto::token();
     sql::execute(
         &mut s.pool.clone(),
-        "UPDATE runtime_runs SET status='running',lifecycle=$2,grant_hash=$3 WHERE id=$1",
-        params![
-            run,
-            serde_json::to_value(life).unwrap(),
-            crypto::hash(&token)
-        ],
+        "UPDATE runtime_runs SET status='provisioning' WHERE id=$1",
+        params![run],
     )
     .await
     .unwrap();
-    Lease {
-        run_id: run,
-        generation: 1,
-        uid: "pod-a".into(),
-        token,
-    }
+    let acquired = s
+        .store
+        .acquire_execution(execution, "https://runtime.invalid")
+        .await
+        .unwrap();
+    serde_json::from_value(acquired["lease"].clone()).unwrap()
 }
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL"]
@@ -191,8 +190,7 @@ async fn intents_are_idempotent_conflicting_payloads_fail_and_cancel_before_crea
 
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL"]
-async fn tenants_cannot_rebind_projects_and_legacy_backfill_rolls_back_unknown_projects() {
-    use artifactory_planner_runtime::store::maintenance::TenantMigration;
+async fn tenants_cannot_rebind_projects() {
     let s = state().await;
     let first = intent(Uuid::new_v4());
     server::put_intent(&s, serde_json::to_value(&first).unwrap())
@@ -203,71 +201,6 @@ async fn tenants_cannot_rebind_projects_and_legacy_backfill_rolls_back_unknown_p
     other.tenant_id = Uuid::new_v4();
     assert!(
         server::put_intent(&s, serde_json::to_value(&other).unwrap())
-            .await
-            .is_err()
-    );
-    let historical = intent(Uuid::new_v4());
-    server::put_intent(&s, serde_json::to_value(&historical).unwrap())
-        .await
-        .unwrap();
-    sql::execute(
-        &mut s.pool.clone(),
-        "UPDATE runtime_runs SET tenant_id=NULL,status='failed'",
-        params![],
-    )
-    .await
-    .unwrap();
-    sql::execute(
-        &mut s.pool.clone(),
-        "DELETE FROM runtime_project_tenants",
-        params![],
-    )
-    .await
-    .unwrap();
-    let schema: String = sql::scalar(
-        &mut s.pool.clone(),
-        "SELECT current_schema()::text",
-        params![],
-    )
-    .await
-    .unwrap();
-    let url = with_options(
-        &std::env::var("ARTIFACTORY_TEST_DATABASE_URL").unwrap(),
-        &[("search_path", &schema)],
-    )
-    .unwrap();
-    let migration = TenantMigration::connect(&url).await.unwrap();
-    assert!(
-        migration
-            .backfill(&[(first.project_id, first.tenant_id)])
-            .await
-            .is_err()
-    );
-    let count: i64 = sql::scalar(
-        &mut s.pool.clone(),
-        "SELECT count(*) FROM runtime_project_tenants",
-        params![],
-    )
-    .await
-    .unwrap();
-    assert_eq!(count, 0, "failed historical map must roll back as a unit");
-    let mapping = [
-        (first.project_id, first.tenant_id),
-        (historical.project_id, historical.tenant_id),
-    ];
-    migration.backfill(&mapping).await.unwrap();
-    migration.backfill(&mapping).await.unwrap();
-    let count: i64 = sql::scalar(
-        &mut s.pool.clone(),
-        "SELECT count(*) FROM runtime_runs WHERE tenant_id IS NOT NULL",
-        params![],
-    )
-    .await
-    .unwrap();
-    assert_eq!(count, 2);
-    assert!(
-        migration
-            .backfill(&[(first.project_id, Uuid::new_v4())])
             .await
             .is_err()
     );
@@ -336,30 +269,94 @@ async fn duplicate_pod_and_old_generation_cannot_report_or_submit_and_proposal_s
 }
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL"]
-async fn replayed_and_out_of_order_checkpoints_do_not_overwrite_newer_state() {
+async fn conversations_preserve_generation_messages_without_replaying_them() {
+    let s = state().await;
+    let run = Uuid::new_v4();
+    let input = intent(run);
+    server::put_intent(&s, serde_json::to_value(&input).unwrap())
+        .await
+        .unwrap();
+    let lease = owner(&s, run).await;
+    let event = json!({"lease":lease,"event_id":Uuid::new_v4(),"sequence":1,"kind":"conversation","payload":{"kind":"message","content":{"role":"toolResult","content":"repository-source-excerpt"}}});
+    server::report_event(&s, event.clone()).await.unwrap();
+    server::report_event(&s, event).await.unwrap();
+    let scope = json!({"run_id":run,"tenant_id":input.tenant_id,"project_id":input.project_id,"generation":1,"limit":1});
+    let messages = s.store.conversation_messages(scope.clone()).await.unwrap();
+    assert_eq!(messages["messages"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        messages["messages"][0]["payload"]["content"],
+        "repository-source-excerpt"
+    );
+    let second = json!({"lease":lease,"event_id":Uuid::new_v4(),"sequence":2,"kind":"conversation","payload":{"kind":"message","content":{"role":"assistant","content":"completed answer"}}});
+    server::report_event(&s, second).await.unwrap();
+    let page = s.store.conversation_messages(scope.clone()).await.unwrap();
+    assert_eq!(page["next_cursor"], 1);
+    let mut after = scope.clone();
+    after["after"] = json!(1);
+    let page = s.store.conversation_messages(after).await.unwrap();
+    assert_eq!(page["messages"][0]["sequence"], 2);
+    assert!(page["next_cursor"].is_null());
+    let mut denied = scope.clone();
+    denied["tenant_id"] = json!(Uuid::new_v4());
+    assert!(s.store.conversation_messages(denied).await.is_err());
+    sql::execute(&mut s.pool.clone(),"UPDATE runtime_runs SET lifecycle=jsonb_set(lifecycle,'{lease_until_ms}','0'::jsonb) WHERE id=$1",params![run]).await.unwrap();
+    s.store.maintain().await.unwrap();
+    let execution = Execution {
+        run_id: run,
+        generation: 2,
+        uid: "new-pod".into(),
+        name: "new-pod".into(),
+        namespace: "test".into(),
+    };
+    server::register_execution(&s, execution.clone())
+        .await
+        .unwrap();
+    sql::execute(
+        &mut s.pool.clone(),
+        "UPDATE runtime_runs SET status='provisioning' WHERE id=$1",
+        params![run],
+    )
+    .await
+    .unwrap();
+    let acquired = s
+        .store
+        .acquire_execution(execution, "https://runtime.invalid")
+        .await
+        .unwrap();
+    assert!(acquired["task"]["context"].get("checkpoint").is_none());
+    let sessions = s.store.conversations(scope).await.unwrap();
+    assert_eq!(sessions["conversations"][0]["status"], "interrupted");
+    assert_eq!(sessions["conversations"].as_array().unwrap().len(), 2);
+}
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn source_preparation_does_not_start_the_model_deadline() {
     let s = state().await;
     let run = Uuid::new_v4();
     server::put_intent(&s, serde_json::to_value(intent(run)).unwrap())
         .await
         .unwrap();
-    let lease = owner(&s, run).await;
-    let event = json!({"lease":lease,"event_id":Uuid::new_v4(),"sequence":2,"kind":"checkpoint","payload":{"messages":"newer"}});
-    server::report_event(&s, event.clone()).await.unwrap();
-    server::report_event(&s, event).await.unwrap();
-    server::report_event(&s,json!({"lease":lease,"event_id":Uuid::new_v4(),"sequence":1,"kind":"checkpoint","payload":{"messages":"old"}})).await.unwrap();
-    let row = sql::record(
+    let execution = Execution {
+        run_id: run,
+        generation: 1,
+        uid: "init".into(),
+        name: "init".into(),
+        namespace: "test".into(),
+    };
+    server::register_execution(&s, execution.clone())
+        .await
+        .unwrap();
+    sql::execute(
         &mut s.pool.clone(),
-        "SELECT checkpoint FROM runtime_runs WHERE id=$1",
+        "UPDATE runtime_runs SET status='provisioning' WHERE id=$1",
         params![run],
-        &[("checkpoint", Type::String)],
     )
     .await
     .unwrap();
-    assert_eq!(
-        row.decode::<Value>("checkpoint")
-            .expect("database projection")["messages"],
-        "newer"
-    );
+    s.store.prepare_execution(&execution).await.unwrap();
+    let state = server::read_run(&s, run).await.unwrap();
+    assert!(state["lifecycle"]["deadline_ms"].is_null());
+    assert_eq!(state["lifecycle"]["calls"], 0);
 }
 
 type Requests = Arc<std::sync::Mutex<Vec<(String, String, Value)>>>;
@@ -559,14 +556,14 @@ async fn ten_thousand_queued_runs_admit_only_pool_capacity_even_with_concurrent_
         let run = Uuid::new_v4();
         let mut input = intent(run);
         input.project_id = projects[i % 4];
-        model = Some(input.snapshot_id);
+        model = Some(input.source_manifest_id);
         ids.push(run);
         project_ids.push(input.project_id);
         encrypted.push(crypto::seal(&s.key, &serde_json::to_vec(&input).unwrap()).unwrap());
     }
     let tenant = Uuid::from_u128(1);
     sql::execute(&mut s.pool.clone(), "INSERT INTO runtime_project_tenants(project_id,tenant_id) SELECT project,$2 FROM unnest($1::uuid[]) project", params![&projects, tenant]).await.unwrap();
-    sql::execute(&mut s.pool.clone(), "INSERT INTO runtime_runs(id,version,intent_hash,intent_ciphertext,project_id,pool,snapshot_id,snapshot_digest,lifecycle,status,tenant_id) SELECT id,1,'fixture',ciphertext,project,'default',$4,$5,$6,'queued',$7 FROM unnest($1::uuid[],$2::text[],$3::uuid[]) AS t(id,ciphertext,project)", params![&ids, &encrypted, &project_ids, model.unwrap(), "a".repeat(64), serde_json::to_value(Lifecycle::new(2)).unwrap(),tenant]).await.unwrap();
+    sql::execute(&mut s.pool.clone(), "INSERT INTO runtime_runs(id,version,intent_hash,intent_ciphertext,project_id,pool,source_manifest_id,source_digest,lifecycle,status,tenant_id) SELECT id,1,'fixture',ciphertext,project,'default',$4,$5,$6,'queued',$7 FROM unnest($1::uuid[],$2::text[],$3::uuid[]) AS t(id,ciphertext,project)", params![&ids, &encrypted, &project_ids, model.unwrap(), "a".repeat(64), serde_json::to_value(Lifecycle::new(2)).unwrap(),tenant]).await.unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/v1/queue", listener.local_addr().unwrap());
     let app = server::router(s.clone(), "x".repeat(64));

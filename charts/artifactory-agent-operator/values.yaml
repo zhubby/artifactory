@@ -1,4 +1,4 @@
-# [INPUT]: 独立 Agent、Runtime、Source 镜像和持久身份引用。
+# [INPUT]: 独立 Agent、Runtime、源码初始化镜像和持久身份引用。
 # [OUTPUT]: 规划服务、池预算和网络隔离参数。
 # [POS]: 镜像构建使用另一个独立 Operator Chart。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -30,7 +30,7 @@ runtime:
   grpcUrl: https://artifactory-runtime:8092
 controlUrl: https://artifactory-gateway-internal:8445
 tls:
-  # tls.crt, tls.key, ca.crt. SANs cover Runtime and all Source shard endpoints.
+  # tls.crt, tls.key, ca.crt. SANs cover Runtime endpoints.
   secretName: artifactory-services-tls
 development:
   insecureHttp: false
@@ -41,20 +41,8 @@ agentPool:
   image: ghcr.io/zhubby/artifactory-agent-worker:0.2.0
   cpu: 250m
   memory: 512Mi
-sourcePool:
-  image:
-    repository: ghcr.io/zhubby/artifactory-source-service
-    tag: ""
-  name: sources
-  shards: 1
-  # Independent database/role; also S3 settings and the shared service token.
-  secretName: artifactory-source
-  storageClass: standard
-  storageSize: 20Gi
-  # Device-reachable shard endpoint; supports {pod}, {pool}, {namespace}.
-  # Empty uses the internal shard URL (suitable only for in-cluster devices).
-  publicUrlTemplate: ''
-  cpu: 250m
-  memory: 1Gi
+  sourcePreparerImage: ghcr.io/zhubby/artifactory-source-preparer:0.2.0
+  ephemeralStorage: 10Gi
 networkPolicy:
   enabled: true
+  gitPorts: [443, 80, 22]

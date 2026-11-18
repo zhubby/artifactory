@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖业务存储、启动配置和设备连接。
+//! [OUTPUT]: 提供共享应用状态与审计入口。
+//! [POS]: HTTP、gRPC 和后台调度共享的进程状态。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{protocol::Command, settings::Settings, storage::Storage};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{RwLock, mpsc};
@@ -12,7 +16,6 @@ pub struct Connection {
 #[derive(Clone)]
 pub struct AppState {
     pub coordination: Arc<crate::coordination::Coordination>,
-    pub source_client: Arc<tokio::sync::OnceCell<artifactory_runtime_protocol::service::Client>>,
     pub store: crate::store::ControlStore,
     pub settings: Arc<Settings>,
     pub storage: Arc<Storage>,

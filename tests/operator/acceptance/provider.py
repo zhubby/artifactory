@@ -86,7 +86,7 @@ class ProviderAcceptance:
 
     def build(self, profile, label, goal=None):
         project = self.a.api('/api/v1/projects', {'name':'Live supplier '+label+' '+self.stem,
-                            'repository_url':'https://upstream:9443/repo.git', 'planner_backend':'kubernetes',
+                            'repository_url':'https://upstream:9443/repo.git',
                             'model_profile_id':profile})['id']
         goal = goal or ('First inspect README.md and build.sh using read_file and inspect node_capabilities. '
                         'Use the actual tool results before submitting your plan. Build with sh build.sh and '
@@ -103,7 +103,7 @@ class ProviderAcceptance:
         if not history['runs']:
             return None
         run = history['runs'][0]['id']
-        value = json.loads(self.a.sql('planner', f"SELECT jsonb_build_object('id',id,'status',status,'lifecycle',lifecycle,'usage',usage,'snapshot_id',snapshot_id,'snapshot_digest',snapshot_digest,'requests',(SELECT jsonb_agg(jsonb_build_object('id',request_id,'generation',generation,'state',state,'created_at',created_at) ORDER BY created_at) FROM runtime_model_requests WHERE run_id=r.id)) FROM runtime_runs r WHERE id='{run}'"))
+        value = json.loads(self.a.sql('planner', f"SELECT jsonb_build_object('id',id,'status',status,'lifecycle',lifecycle,'usage',usage,'source_manifest_id',source_manifest_id,'source_digest',source_digest,'requests',(SELECT jsonb_agg(jsonb_build_object('id',request_id,'generation',generation,'state',state,'created_at',created_at) ORDER BY created_at) FROM runtime_model_requests WHERE run_id=r.id)) FROM runtime_runs r WHERE id='{run}'"))
         value['accepted_plans'] = len(history['plans'])
         return value
 
@@ -145,7 +145,7 @@ class ProviderAcceptance:
         self.check('one plan and one device attempt'+(' after 429' if limited else ''), value['runtime']['accepted_plans']==1 and sum(len(j['attempts']) for j in detail['jobs'])==1)
         self.check('all physical requests retain Runtime call reservations'+(' after 429' if limited else ''), value['runtime']['lifecycle']['calls']==len(value['relay'])==len(value['runtime']['requests']))
         if limited:
-            self.check('one injected 429 recovers through real supplier without resetting budget',value['relay'][0]['status']==429 and value['relay'][0]['injected'] and sum(r['injected'] for r in value['relay'])==1 and value['runtime']['lifecycle']['generation']>before['lifecycle']['generation'] and value['runtime']['lifecycle']['deadline_ms']==before['lifecycle']['deadline_ms'] and value['runtime']['snapshot_id']==before['snapshot_id'])
+            self.check('one injected 429 recovers through real supplier without resetting budget',value['relay'][0]['status']==429 and value['relay'][0]['injected'] and sum(r['injected'] for r in value['relay'])==1 and value['runtime']['lifecycle']['generation']>before['lifecycle']['generation'] and value['runtime']['lifecycle']['deadline_ms']==before['lifecycle']['deadline_ms'] and value['runtime']['source_manifest_id']==before['source_manifest_id'])
             value['before_retry']=before
         value['checkpoint'] = self.checkpoint_summary(value['runtime']['id'])
         self.save()

@@ -16,7 +16,6 @@ pub struct Config {
     pub device: Vec<String>,
     pub telemetry: Vec<String>,
     pub object_origin: url::Url,
-    pub source: Option<url::Url>,
     pub token: String,
     pub max_http: usize,
     pub max_tcp: usize,
@@ -103,11 +102,6 @@ impl Config {
                 .split(',')
                 .map(str::to_owned)
                 .collect(),
-            source: std::env::var("ARTIFACTORY_GATEWAY_SOURCE")
-                .ok()
-                .filter(|s| !s.is_empty())
-                .map(|s| origin(&s, upstream_http))
-                .transpose()?,
             object_origin: origin(&std::env::var("ARTIFACTORY_S3_ENDPOINT")?, upstream_http)?,
             token,
             max_http: count("ARTIFACTORY_GATEWAY_HTTP_CONNECTIONS", "1024")?,

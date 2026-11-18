@@ -49,7 +49,7 @@ let tcpCompleted = 0;
 let dnsBeforeTcp = false;
 const dns = require("node:dns");
 dns.lookup = (host, options, callback) => {
-  if (tcpCompleted < 8) dnsBeforeTcp = true;
+  if (tcpCompleted < 7) dnsBeforeTcp = true;
   if (typeof options === "function") callback = options;
   process.nextTick(() => callback(Object.assign(new Error("temporary lookup failure"), {code:"EAI_AGAIN"})));
 };
@@ -81,16 +81,16 @@ console.log = value => log(JSON.stringify({...JSON.parse(value), test_attempts:a
             connections = result.get('connections', {})
             self.assertTrue(connections.get('runtime', {}).get('connected'),
                             'Cold TCP must not inherit the hostname lookup failure')
-            self.assertEqual(set(connections), {'runtime', 'source', 'business', 'gateway',
+            self.assertEqual(set(connections), {'runtime', 'business', 'gateway',
                                                'provider', 'provider_ip', 'database', 'objects'})
             self.assertTrue(all(value['connected'] for value in connections.values()))
             self.assertEqual(result['dns']['runtime']['code'], 'EAI_AGAIN')
             self.assertIn('elapsed_ms', result['dns']['runtime'])
             self.assertEqual(result['pod']['uid'], 'cold-probe')
-            self.assertEqual(result['test_attempts'], 8)
+            self.assertEqual(result['test_attempts'], 7)
             self.assertFalse(result['test_dns_before_tcp'])
             reachable = {key: value['connected'] for key, value in connections.items()}
-            with self.assertRaisesRegex(AssertionError, 'direct data/provider'):
+            with self.assertRaisesRegex(AssertionError, 'direct Control'):
                 NETWORK.assert_isolation(reachable, [reachable])
         finally:
             server.shutdown()

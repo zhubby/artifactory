@@ -21,7 +21,6 @@
 - [控制平面多副本与设备容量](control-ha.md)
 - [Kubernetes Pi Operator 运维](operator-operations.md)
 - [集群镜像构建、内建仓库与网关](image-builds.md)
-- [Toasty 数据访问与整体切换](toasty-migration.md)
 - [Emissary OTA 自动升级](emissary-ota.md)
 - [Emissary 时序观测](telemetry.md)
 
@@ -30,11 +29,12 @@
 - [模块布局与命名](module-layout.md)
 - [HTTP API v1](api.md)
 - [Emissary 协议与状态机](protocol.md)
-- [Runtime 与 Source 协议](runtime-protocol.md)
+- [Runtime 与源码准备协议](runtime-protocol.md)
 
 # 验收记录
 
 - [实施与验收总览](acceptance.md)
+- [临时源码执行 · 2026-11-18](ephemeral-source-acceptance-2026-11-18.md)
 - [集群镜像构建与独立 Operator · 2026-11-17](image-builds-kubernetes-acceptance-2026-11-17.md)
 - [新版 UI 恢复与旧代码清理 · 2026-11-17](acceptance/ui/2026-11-17-restore-and-remove-legacy.md)
 - [AI-Workspace macOS 托管证书签名 · 2026-11-17](ai-workspace-signing-acceptance-2026-11-17.md)
@@ -60,6 +60,7 @@
 
 # 设计与计划归档
 
+- [临时源码与任务独立拉取 · 2026-11-18](plans/2026-11-18-ephemeral-source-execution.md)
 - [设计基线 · 2026-11-09](superpowers/specs/2026-11-09-artifactory-design.md)
 - [设计契约审阅 · 2026-11-09](superpowers/specs/2026-11-09-artifactory-design-review.md)
 - [AI 构建实现计划 · 2026-11-11](superpowers/plans/2026-11-11-ai-builds.md)
@@ -95,3 +96,4 @@
 - [文档主题模块地图](theme/AGENTS.md)
 - [设计与计划模块地图](superpowers/AGENTS.md)
 - [实施计划模块地图](superpowers/plans/AGENTS.md)
+- [原型实施计划地图](plans/AGENTS.md)

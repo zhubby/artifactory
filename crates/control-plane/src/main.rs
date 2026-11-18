@@ -6,11 +6,7 @@ use anyhow::{Context, Result, ensure};
 use artifactory_control_plane::{
     api, auth,
     grpc::EmissaryService,
-    planning::PlanningService,
-    protocol::{
-        control_server::ControlServer, enrollment_server::EnrollmentServer,
-        planner_enrollment_server::PlannerEnrollmentServer, planning_server::PlanningServer,
-    },
+    protocol::{control_server::ControlServer, enrollment_server::EnrollmentServer},
     scheduler,
     settings::Settings,
     state::AppState,
@@ -30,7 +26,6 @@ struct Arguments {
 #[derive(Subcommand)]
 enum Command {
     Serve,
-    ServeSource,
     Migrate,
 }
 
@@ -43,22 +38,18 @@ async fn main() -> Result<()> {
         )
         .init();
     let arguments = Arguments::parse();
-    let mut settings = Settings::from_env()?;
-    let source_only = matches!(arguments.command, Some(Command::ServeSource));
-    if source_only {
-        settings.local_source_url = None;
-    }
+    let settings = Settings::from_env()?;
     tokio::fs::create_dir_all(&settings.data_dir).await?;
     let store = artifactory_control_plane::store::ControlStore::connect_with_capacity(
         &settings.database_url,
         // The notification listener owns one dedicated PostgreSQL session.
-        settings.control.database_connections - u32::from(!source_only),
+        settings.control.database_connections - 1,
     )
     .await?;
     if matches!(arguments.command, Some(Command::Migrate)) {
         return Ok(());
     }
-    if !source_only && store.users_empty().await? {
+    if store.users_empty().await? {
         let username =
             std::env::var("ARTIFACTORY_BOOTSTRAP_USERNAME").unwrap_or_else(|_| "admin".into());
         let password = std::env::var("ARTIFACTORY_BOOTSTRAP_PASSWORD")
@@ -71,27 +62,16 @@ async fn main() -> Result<()> {
         store.bootstrap_admin(username, hash).await?;
     }
     let storage = Storage::new(&settings)?;
-    if !source_only {
-        storage.initialize().await?;
-    }
+    storage.initialize().await?;
     let state = AppState {
         coordination: Arc::new(artifactory_control_plane::coordination::Coordination::new(
             settings.control.database_connections,
         )),
-        source_client: Default::default(),
         store,
         settings: Arc::new(settings.clone()),
         storage: Arc::new(storage),
         connections: Arc::new(RwLock::new(HashMap::new())),
     };
-    if source_only {
-        scheduler::start_source(state.clone());
-        let http = artifactory_runtime_protocol::service::serve(
-            &settings.http_bind,
-            artifactory_control_plane::local_source::router(state),
-        );
-        return tokio::select! { result=http=>result, _=shutdown()=>Ok(()) };
-    }
     scheduler::start(state.clone());
     artifactory_control_plane::images::start(state.clone())?;
     let lifecycle = state.clone();
@@ -119,15 +99,10 @@ async fn main() -> Result<()> {
     let grpc = Server::builder()
         .tls_config(tls)?
         .add_service(EnrollmentServer::new(emissary.clone()).max_decoding_message_size(64 * 1024))
-        .add_service(ControlServer::new(emissary).max_decoding_message_size(128 * 1024))
         .add_service(
-            PlannerEnrollmentServer::new(PlanningService(state.clone()))
-                .max_decoding_message_size(32 * 1024),
-        )
-        .add_service(
-            PlanningServer::new(PlanningService(state.clone()))
-                .max_decoding_message_size(768 * 1024)
-                .max_encoding_message_size(2 * 1024 * 1024),
+            ControlServer::new(emissary)
+                .max_decoding_message_size(128 * 1024)
+                .max_encoding_message_size(8 * 1024 * 1024),
         )
         .serve_with_shutdown(settings.grpc_bind.parse()?, async move {
             grpc_stop.stopped().await

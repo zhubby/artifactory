@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Real Pi -> Rust Emissary build while telemetry is offline, followed by durable replay.
-
-Only resumes an owned isolated acceptance namespace. Never changes host services.
+"""[INPUT]: 已保存的隔离命名空间与遥测服务。
+[OUTPUT]: 验证遥测离线期间构建与恢复重放。
+[POS]: 仅修改本次命名空间内的遥测副本。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
 from datetime import datetime, timedelta, timezone
@@ -23,13 +24,13 @@ def run(args):
     stopped = False
     try:
         a.resume()
-        for database in ('business', 'planner', 'sources', 'telemetry'):
+        for database in ('business', 'planner', 'telemetry'):
             a.check(database+' uses TimescaleDB', a.sql(database, "SELECT extversion FROM pg_extension WHERE extname='timescaledb'") == '2.32.0')
         node = next(n for n in a.api('/api/v1/nodes') if n['name'] == 'operator-native-device' and n['online'])
         latest = a.wait(lambda: (v if (v := a.api('/api/v1/nodes/'+node['id']+'/telemetry'))['host'] and v['host']['fresh'] and v['inventory'] else None))
         inventory = latest['inventory']['inventory']
         a.check('versioned OS, hardware, quota and tool inventory is available', inventory['logical_cpus'] > 0 and inventory['physical_memory_bytes'] > 0 and inventory['tools']['git']['available'] and 'collectors' in inventory)
-        a.check('business tables remain ordinary relational tables', all(a.sql(db,"SELECT count(*) FROM timescaledb_information.hypertables WHERE hypertable_schema='public'") == '0' for db in ('business','planner','sources')))
+        a.check('business tables remain ordinary relational tables', all(a.sql(db,"SELECT count(*) FROM timescaledb_information.hypertables WHERE hypertable_schema='public'") == '0' for db in ('business','planner')))
         a.kubectl('scale','deploy/native-telemetry','--replicas=0');stopped=True
         a.wait(lambda: not json.loads(a.kubectl('get','pods','-l','app.kubernetes.io/name=artifactory-telemetry','-o','json'))['items'])
         a.service_request(39443,'/test/mode',{'build_seconds':25})

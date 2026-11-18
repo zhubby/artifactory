@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖服务令牌、Pod授权与JSON协议。
+//! [OUTPUT]: 提供 8 MiB 封套的 Runtime RPC。
+//! [POS]: 共享状态规则；对话读取使用内部HTTP。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::server::{self, Runtime};
 use artifactory_runtime_protocol::{
     crypto, service,
@@ -30,7 +34,7 @@ impl Gateway {
             }
         }
         let text = request.into_inner().json;
-        if text.len() > 2 * 1024 * 1024 {
+        if text.len() > service::SERVICE_JSON_LIMIT {
             return Err(Status::resource_exhausted("request exceeds limit"));
         }
         serde_json::from_str(&text).map_err(|_| Status::invalid_argument("invalid request"))
@@ -124,7 +128,8 @@ pub async fn serve(state: Runtime) -> anyhow::Result<()> {
                 state,
                 token: service::required("ARTIFACTORY_SERVICE_TOKEN")?,
             })
-            .max_decoding_message_size(2 * 1024 * 1024),
+            .max_decoding_message_size(service::SERVICE_JSON_LIMIT)
+            .max_encoding_message_size(service::SERVICE_JSON_LIMIT),
         )
         .serve(
             std::env::var("ARTIFACTORY_RUNTIME_GRPC_BIND")

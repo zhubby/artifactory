@@ -104,7 +104,6 @@ impl ControlStore {
             "nodes" => "nodes",
             "pools" => "node_pools",
             "model-profiles" => "model_profiles",
-            "ai-workers" => "ai_workers",
             "emissary-updates" => "emissary_updates",
             "emissary-releases" => "emissary_releases",
             "credentials" => "credentials",

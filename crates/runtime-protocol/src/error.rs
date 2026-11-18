@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖领域拒绝和 HTTP 响应。
+//! [OUTPUT]: 输出身份拒绝和瞬态故障的 HTTP 状态。
+//! [POS]: 服务接口的错误边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use axum::{
     Json,
     http::StatusCode,
@@ -8,6 +12,7 @@ pub enum ApiError {
     Unauthorized,
     Forbidden,
     NotFound,
+    Unavailable,
     Internal(anyhow::Error),
     Conflict(String),
     BadRequest(String),
@@ -24,6 +29,10 @@ impl IntoResponse for ApiError {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "authorization expired".into()),
             Self::Forbidden => (StatusCode::FORBIDDEN, "permission denied".into()),
             Self::NotFound => (StatusCode::NOT_FOUND, "resource not found".into()),
+            Self::Unavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "service temporarily unavailable".into(),
+            ),
             Self::Conflict(message) => (StatusCode::CONFLICT, message),
             Self::BadRequest(message) => (StatusCode::BAD_REQUEST, message),
             Self::Internal(_) => (

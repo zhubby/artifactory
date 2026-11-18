@@ -465,7 +465,6 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
       ],
       "/model-options": [],
       "/model-profiles": [],
-      "/ai-workers": [],
       [`/builds/${build.id}/plans`]: { plans: [], runs: [], events: [] },
       "/users": [{ id: "user-main", username: "alex", role }],
       "/audit": [

@@ -1,31 +1,35 @@
+/**
+ * [INPUT]: 依赖租户模型配置和统一表单。
+ * [OUTPUT]: 提供模型方案配置。
+ * [POS]: Kubernetes 规划只配置模型；Worker 由 Operator 调度。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import { useState } from "react";
-import { Plus, KeyRound, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useUI } from "@/components/providers";
-import { Empty, ErrorBox, Field, Loading, SectionTitle, Status } from "@/components/common";
-import { SubmitForm, SecretDialog } from "@/components/forms";
+import { Empty, ErrorBox, Field, Loading, SectionTitle } from "@/components/common";
+import { SubmitForm } from "@/components/forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/dialog";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
-import type { AIWorker, ModelProfile } from "@/lib/types";
+import type { ModelProfile } from "@/lib/types";
 
 export function AISettings() {
-  const { t, date, number } = useUI();
+  const { t } = useUI();
   const models = useRemote<ModelProfile[]>("/model-profiles");
-  const workers = useRemote<AIWorker[]>("/ai-workers", 5000);
   const [editing, setEditing] = useState<ModelProfile | "new">();
-  const [secret, setSecret] = useState<string>();
   const [error, setError] = useState<Error>();
   async function action(path: string, body: unknown, method = "POST") {
     setError(undefined);
-    try { await mutation(path, body, method); await Promise.all([models.reload(), workers.reload()]); }
+    try { await mutation(path, body, method); await models.reload(); }
     catch (error) { setError(asError(error)); }
   }
   return <div className="space-y-6">
-    <ErrorBox message={error || models.error || workers.error} />
+    <ErrorBox message={error || models.error} />
     <div className="notice">{t("ai.settingsDescription")}</div>
     <section className="panel">
       <SectionTitle title={t("ai.models")}><Button size="sm" onClick={() => setEditing("new")}><Plus />{t("ai.addModel")}</Button></SectionTitle>
@@ -40,26 +44,9 @@ export function AISettings() {
         </tr>)}</tbody>
       </table></div>}
     </section>
-    <section className="panel">
-      <SectionTitle title={t("ai.workers")} detail={t("ai.workerHint")}><Button variant="secondary" size="sm" onClick={() => {
-        setError(undefined);
-        void mutation<{token: string}>("/ai-enrollment-tokens", {}).then((result) => setSecret(result.token)).catch((error) => setError(asError(error)));
-      }}><KeyRound />{t("ai.enrollWorker")}</Button></SectionTitle>
-      {!workers.data ? <div className="px-5"><Loading /></div> : workers.data.length === 0 ? <Empty title={t("ai.noWorkers")} detail={t("ai.noWorkersHint")} /> : <div className="table-scroll"><table>
-        <thead><tr><th>{t("common.name")}</th><th>{t("common.status")}</th><th>{t("ai.lastSeen")}</th><th>{t("ai.certificateExpires")}</th><th /></tr></thead>
-        <tbody>{workers.data.map((worker) => <tr key={worker.id}>
-          <td className="font-medium">{worker.name}{worker.active_run && <p className="mt-1 font-mono text-xs text-muted-foreground">{worker.active_run.slice(0, 8)}</p>}</td>
-          <td><Status value={worker.revoked ? "revoked" : worker.draining ? "draining" : worker.online ? "online" : "offline"} /></td>
-          <td className="text-xs">{date(worker.last_seen)}</td><td className="text-xs">{date(worker.certificate_expires_at)}</td>
-          <td><div className="flex gap-2"><Button size="sm" variant="secondary" disabled={worker.revoked} onClick={() => void action(`/ai-workers/${worker.id}`, {draining: !worker.draining, revoked: worker.revoked}, "PATCH")}>{worker.draining ? t("ai.resume") : t("nodes.drain")}</Button><Button size="sm" variant="ghost" disabled={worker.revoked} onClick={() => void action(`/ai-workers/${worker.id}`, {draining: true, revoked: true}, "PATCH")}>{t("common.revoke")}</Button></div></td>
-        </tr>)}</tbody>
-      </table></div>}
-      {workers.data && <p className="border-t border-border p-4 text-xs text-muted-foreground">{t("ai.workerCount", {count: number(workers.data.length)})}</p>}
-    </section>
     <Modal open={!!editing} onOpenChange={(open) => {if (!open) setEditing(undefined);}} title={editing === "new" ? t("ai.addModel") : t("ai.editModel")} description={t("ai.modelSecretHint")}>
       {editing && <ModelForm profile={editing === "new" ? undefined : editing} defaultModel={!models.data?.some((profile) => profile.is_default)} done={() => {setEditing(undefined); void models.reload();}} />}
     </Modal>
-    <SecretDialog value={secret} title={t("ai.enrollmentTitle")} close={() => setSecret(undefined)} hint={t("ai.enrollmentHint")} />
   </div>;
 }
 

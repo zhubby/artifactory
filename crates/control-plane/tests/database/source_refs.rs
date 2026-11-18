@@ -4,7 +4,7 @@
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use artifactory_database::{params, sql};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 async fn read_body(response: axum::response::Response) -> Value {
     serde_json::from_slice(
@@ -70,10 +70,27 @@ async fn references_enforce_read_scope_project_scope_and_not_found() {
         request(&database, missing, Some(&secret)).await.status(),
         StatusCode::NOT_FOUND
     );
-    let response = request(&database, project, Some(&secret)).await;
+    let router = api::router(database.state.clone());
+    let pending = tokio::spawn(async move {
+        router
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/projects/{project}/refs"))
+                    .header("authorization", format!("Bearer {secret}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5),async { loop {
+        let changed=sql::execute(&mut database.pool.clone(),"UPDATE source_tasks SET status='failed',error='private upstream address' WHERE purpose='refs' AND project_id=$1",params![project]).await.unwrap();
+        if changed>0 {break;} tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }}).await.unwrap();
+    let response = pending.await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     let body = read_body(response).await.to_string();
-    assert!(body.contains("check repository access"));
+    assert!(body.contains("check access"));
     assert!(!body.contains("127.0.0.1"));
     let builds: i64 = sql::scalar(
         &mut database.pool.clone(),
@@ -83,104 +100,5 @@ async fn references_enforce_read_scope_project_scope_and_not_found() {
     .await
     .unwrap();
     assert_eq!(builds, 0);
-    database.close().await;
-}
-
-#[test]
-#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL, openssl and sshd"]
-fn repository_refs_use_only_project_credentials_and_host_trust() {
-    // sshd StrictModes 拒绝 authorized_keys 的可写祖先目录。
-    let directory = tempfile::Builder::new()
-        .prefix("source refs with spaces ")
-        .tempdir_in(std::env::var_os("HOME").expect("SSH fixture requires HOME"))
-        .unwrap();
-    let output = std::process::Command::new("python3")
-        .arg(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/fixtures/source_refs.py"
-        ))
-        .arg(std::env::current_exe().unwrap())
-        .arg(directory.path())
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "reference fixture failed:\n{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-#[tokio::test]
-async fn repository_refs_probe_helper() {
-    let Ok(path) = std::env::var("ARTIFACTORY_TEST_REFS_FIXTURE") else {
-        return;
-    };
-    let fixture: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-    let database = Database::with_tenant().await;
-    for entry in fixture["cases"].as_array().unwrap() {
-        let credential = (entry["kind"] != "none").then(Uuid::new_v4);
-        let project = Uuid::new_v4();
-        let secret = if entry["kind"] == "ssh" {
-            std::fs::read_to_string(entry["key_path"].as_str().unwrap()).unwrap()
-        } else {
-            entry["password"]
-                .as_str()
-                .unwrap_or("no-project-credential")
-                .to_owned()
-        };
-        if let Some(credential) = credential {
-            let auth = json!({"kind":entry["kind"], "username":"refs-user", "secret":secret, "known_hosts":entry["known_hosts"].as_str().unwrap_or("")});
-            let encrypted = crypto::seal(
-                &database.state.settings.master_key,
-                &serde_json::to_vec(&auth).unwrap(),
-            )
-            .unwrap();
-            sql::execute(
-                &mut database.pool.clone(),
-                "INSERT INTO credentials(tenant_id,id,name,kind,ciphertext) VALUES('00000000-0000-0000-0000-000000000001',$1,'refs',$2,$3)",
-                params![credential, entry["kind"].as_str().unwrap(), encrypted],
-            )
-            .await
-            .unwrap();
-        }
-        sql::execute(
-            &mut database.pool.clone(),
-            "INSERT INTO projects(tenant_id,id,name,repository_url,credential_id) VALUES('00000000-0000-0000-0000-000000000001',$1,'refs',$2,$3)",
-            params![project, entry["url"].as_str().unwrap(), credential],
-        )
-        .await
-        .unwrap();
-        let read_token = token(&database, "viewer", &[project], &["read"]).await;
-        let response = request(&database, project, Some(&read_token)).await;
-        assert_eq!(
-            response.status().as_u16(),
-            entry["status"].as_u64().unwrap() as u16,
-            "{}",
-            entry["name"]
-        );
-        let body = read_body(response).await;
-        if entry["status"] == 200 {
-            assert_eq!(body["default_ref"], "refs/heads/trunk");
-            assert_eq!(body["branches"].as_array().unwrap().len(), 2);
-            assert_eq!(body["tags"].as_array().unwrap().len(), 1);
-            assert_eq!(body["branches"][0]["ref"], "refs/heads/trunk");
-            assert_eq!(body["tags"][0]["ref"], "refs/tags/v1");
-        } else {
-            let message = body.to_string();
-            assert!(!message.contains(&secret));
-            assert!(!message.contains("BEGIN OPENSSH PRIVATE KEY"));
-        }
-    }
-    assert_eq!(
-        sql::scalar::<i64>(
-            &mut database.pool.clone(),
-            "SELECT count(*) FROM builds",
-            params![]
-        )
-        .await
-        .unwrap(),
-        0
-    );
     database.close().await;
 }

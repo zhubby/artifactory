@@ -9,13 +9,11 @@ use serde_json::json;
 mod regressions;
 async fn image(db: &Database) -> (Uuid, Uuid, Uuid, Uuid) {
     let (project, build, job) = db.fixture().await;
-    let repository = Uuid::new_v4();
     let snapshot = Uuid::new_v4();
-    sql::execute(&mut db.pool.clone(),"INSERT INTO source_repositories(id,project_id,repository_url,cache_key) VALUES($1,$2,'https://example.com/repo.git',$3)",params![repository,project,crypto::hash(repository.to_string())]).await.unwrap();
-    sql::execute(&mut db.pool.clone(),"INSERT INTO source_snapshots(id,project_id,root_repository_id,commit_sha,manifest,digest) VALUES($1,$2,$3,$4,'{}',$5)",params![snapshot,project,repository,"0".repeat(40),"a".repeat(64)]).await.unwrap();
+    db.source(project, snapshot).await;
     sql::execute(
         &mut db.pool.clone(),
-        "UPDATE builds SET source_snapshot_id=$2 WHERE id=$1",
+        "UPDATE builds SET source_manifest_id=$2 WHERE id=$1",
         params![build, snapshot],
     )
     .await
@@ -34,7 +32,7 @@ async fn image(db: &Database) -> (Uuid, Uuid, Uuid, Uuid) {
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn image_build_has_no_device_attempt_and_fences_canceled_source() {
     let db = Database::with_tenant().await;
-    let (_, build, job, snapshot) = image(&db).await;
+    let (_, build, job, _manifest) = image(&db).await;
     let id = Uuid::new_v4();
     let store = &db.state.store;
     assert!(
@@ -49,16 +47,8 @@ async fn image_build_has_no_device_attempt_and_fences_canceled_source() {
             .await
             .unwrap()
     );
-    store
-        .save_image_task(id, "sealed", Some(&crypto::hash("source")))
-        .await
-        .unwrap();
-    assert!(
-        store
-            .image_source_authorized(&crypto::hash("source"), snapshot)
-            .await
-            .unwrap()
-    );
+    store.save_image_task(id, "sealed").await.unwrap();
+    assert!(store.image_live(id).await.unwrap());
     assert_eq!(store.image_token(id, "build").await.unwrap(), Some(false));
     assert_eq!(store.image_token(id, "publish").await.unwrap(), Some(true));
     assert_eq!(store.image_token(id, "wrong").await.unwrap(), None);
@@ -102,12 +92,7 @@ async fn image_build_has_no_device_attempt_and_fences_canceled_source() {
     );
     store.cancel_build(build).await.unwrap();
     assert!(!store.image_live(id).await.unwrap());
-    assert!(
-        !store
-            .image_source_authorized(&crypto::hash("source"), snapshot)
-            .await
-            .unwrap()
-    );
+    assert!(!store.image_live(id).await.unwrap());
     assert!(
         store
             .image_report(id, false, &heartbeat, None)
@@ -139,7 +124,7 @@ async fn image_publication_is_complete_and_idempotent() {
         .claim_image(job, id, "build", "publish")
         .await
         .unwrap();
-    store.save_image_task(id, "sealed", None).await.unwrap();
+    store.save_image_task(id, "sealed").await.unwrap();
     let expected: Vec<String> = vec!["linux/amd64".into(), "linux/arm64".into()];
     let results: Vec<_> = expected
         .iter()
@@ -299,7 +284,7 @@ async fn failed_publication_retries_without_building_and_external_failure_preser
         .claim_image(job, id, "build", "publish")
         .await
         .unwrap();
-    store.save_image_task(id, "sealed", None).await.unwrap();
+    store.save_image_task(id, "sealed").await.unwrap();
     assert_eq!(
         store
             .image_execution(id)
@@ -343,7 +328,7 @@ async fn failed_publication_retries_without_building_and_external_failure_preser
             .unwrap()
     );
     store
-        .save_image_task(retry, "sealed-publisher", None)
+        .save_image_task(retry, "sealed-publisher")
         .await
         .unwrap();
     store
@@ -383,7 +368,7 @@ async fn failed_publication_retries_without_building_and_external_failure_preser
             .destination_repository
     );
     store
-        .save_image_task(external, "sealed-external", None)
+        .save_image_task(external, "sealed-external")
         .await
         .unwrap();
     store
@@ -454,7 +439,7 @@ async fn publication_rejects_other_project_and_revoked_credentials() {
         .claim_image(job, id, "build", "publish")
         .await
         .unwrap();
-    store.save_image_task(id, "sealed", None).await.unwrap();
+    store.save_image_task(id, "sealed").await.unwrap();
     let digest = platform_results(&store, id).await;
     store
         .image_report(id, true, &Report::Published { digest }, None)
@@ -490,17 +475,14 @@ async fn publication_rejects_other_project_and_revoked_credentials() {
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn deadline_revokes_source_and_all_worker_reports() {
     let db = Database::with_tenant().await;
-    let (_, _, job, snapshot) = image(&db).await;
+    let (_, _, job, _manifest) = image(&db).await;
     let store = &db.state.store;
     let id = Uuid::new_v4();
     store
         .claim_image(job, id, "build", "publish")
         .await
         .unwrap();
-    store
-        .save_image_task(id, "sealed", Some("source-hash"))
-        .await
-        .unwrap();
+    store.save_image_task(id, "sealed").await.unwrap();
     sql::execute(
         &mut db.pool.clone(),
         "UPDATE image_executions SET deadline_at=now()-interval '1 second' WHERE id=$1",
@@ -509,12 +491,7 @@ async fn deadline_revokes_source_and_all_worker_reports() {
     .await
     .unwrap();
     assert!(!store.image_live(id).await.unwrap());
-    assert!(
-        !store
-            .image_source_authorized("source-hash", snapshot)
-            .await
-            .unwrap()
-    );
+    assert!(!store.image_live(id).await.unwrap());
     assert!(
         store
             .image_report(
@@ -529,12 +506,7 @@ async fn deadline_revokes_source_and_all_worker_reports() {
             .await
             .is_err()
     );
-    assert!(
-        store
-            .save_image_task(id, "new-envelope", None)
-            .await
-            .is_err()
-    );
+    assert!(store.save_image_task(id, "new-envelope").await.is_err());
     store.finish_image(id, "failed").await.unwrap();
     db.close().await;
 }
@@ -561,7 +533,7 @@ async fn image_dispatch_rotates_more_than_one_batch_and_prioritizes_cancellation
                 .await
                 .unwrap()
         );
-        store.save_image_task(id, "sealed", None).await.unwrap();
+        store.save_image_task(id, "sealed").await.unwrap();
         executions.push(id);
     }
     let first = store.image_pending().await.unwrap();

@@ -4,7 +4,8 @@
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Scheduler persistence. Claim, publish and resolver lock lifetimes are owned here.
 use super::ControlStore;
-use crate::recipe::{Recipe, Target};
+use crate::recipe::Recipe;
+
 use anyhow::{Context, Result, ensure};
 use artifactory_database::{params, sql};
 use serde_json::Value;
@@ -15,43 +16,13 @@ pub(crate) struct AssignmentContext {
     pub target: String,
     pub target_config: Value,
     pub plan_revision_id: Option<Uuid>,
-    pub source_snapshot_id: Option<Uuid>,
+    pub source_manifest_id: Option<Uuid>,
     pub id: Uuid,
     pub commit_sha: String,
     pub config_snapshot: Value,
     pub parameters: Value,
-    pub repository_url: String,
-    pub credential_id: Option<Uuid>,
     pub plan: Option<Value>,
 }
-pub(crate) struct ResolutionInput {
-    pub project_id: Uuid,
-    pub requested_ref: String,
-    pub parameters: Value,
-    pub selected_targets: Vec<String>,
-    pub release_version: Option<String>,
-    pub goal: Option<String>,
-    pub planning_context: Value,
-    pub model_config_snapshot: Option<Value>,
-    pub repository_url: String,
-    pub credential_id: Option<Uuid>,
-    pub signing_profiles: Vec<String>,
-}
-pub(crate) enum ResolvedSource {
-    Planned {
-        commit: String,
-        snapshot_id: Uuid,
-        model: Value,
-    },
-    Recipe {
-        snapshot_id: Option<Uuid>,
-        commit: String,
-        yaml: String,
-        recipe: Recipe,
-        targets: Vec<(String, Target)>,
-    },
-}
-
 impl ControlStore {
     pub async fn expire(&self) -> Result<()> {
         let mut transaction_db = self.pool.clone();
@@ -138,7 +109,7 @@ impl ControlStore {
         let mut transaction = transaction_db.transaction().await?;
         let build = sql::record(
             &mut transaction,
-            "SELECT id,project_id,requested_ref,commit_sha,config_yaml,config_snapshot,parameters,selected_targets,status,error,release_version,publish_status,publish_error,cancel_requested,requested_by,created_at,finished_at,source_repository_url,source_credential_id,goal,target_requirements,planning_context,model_config_snapshot,source_snapshot_id,revision_count,clarification,current_plan_id,planner_backend FROM builds WHERE id=$1 FOR UPDATE",
+            "SELECT id,project_id,requested_ref,commit_sha,config_yaml,config_snapshot,parameters,selected_targets,status,error,release_version,publish_status,publish_error,cancel_requested,requested_by,created_at,finished_at,source_repository_url,source_credential_id,goal,target_requirements,planning_context,model_config_snapshot,source_manifest_id,revision_count,clarification,current_plan_id FROM builds WHERE id=$1 FOR UPDATE",
             params![id],
             &[
                 ("id", Type::Uuid),
@@ -164,11 +135,10 @@ impl ControlStore {
                 ("target_requirements", Type::String),
                 ("planning_context", Type::String),
                 ("model_config_snapshot", Type::String),
-                ("source_snapshot_id", Type::Uuid),
+                ("source_manifest_id", Type::Uuid),
                 ("revision_count", Type::I32),
                 ("clarification", Type::String),
                 ("current_plan_id", Type::Uuid),
-                ("planner_backend", Type::String),
             ],
         )
         .await?;
@@ -195,7 +165,7 @@ impl ControlStore {
         {
             return Ok(existing);
         }
-        let artifacts:Vec<Uuid>=sql::scalars(&mut transaction, "SELECT ar.id FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id WHERE j.build_id=$1 AND j.status='succeeded' AND a.status='succeeded' AND a.plan_revision_id IS NOT DISTINCT FROM j.plan_revision_id AND a.source_snapshot_id IS NOT DISTINCT FROM (SELECT source_snapshot_id FROM builds WHERE id=$1) AND a.id=(SELECT id FROM attempts WHERE job_id=j.id ORDER BY created_at DESC,id DESC LIMIT 1)", params![id]).await?;
+        let artifacts:Vec<Uuid>=sql::scalars(&mut transaction, "SELECT ar.id FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id WHERE j.build_id=$1 AND j.status='succeeded' AND a.status='succeeded' AND a.plan_revision_id IS NOT DISTINCT FROM j.plan_revision_id AND a.source_manifest_id IS NOT DISTINCT FROM (SELECT source_manifest_id FROM builds WHERE id=$1) AND a.id=(SELECT id FROM attempts WHERE job_id=j.id ORDER BY created_at DESC,id DESC LIMIT 1)", params![id]).await?;
         let jobs: i64 = sql::scalar(
             &mut transaction,
             "SELECT count(*) FROM jobs WHERE build_id=$1",
@@ -203,7 +173,7 @@ impl ControlStore {
         )
         .await?;
         let complete:i64=sql::scalar(&mut transaction, "SELECT count(DISTINCT j.id) FROM jobs j JOIN attempts a ON a.job_id=j.id AND a.status='succeeded' JOIN artifacts ar ON ar.attempt_id=a.id WHERE j.build_id=$1 AND j.status='succeeded' AND ar.id=ANY($2)", params![id, &artifacts]).await?;
-        let images:Vec<Uuid>=sql::scalars(&mut transaction,"SELECT i.id FROM image_artifacts i JOIN image_executions e ON e.id=i.execution_id JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id WHERE b.id=$1 AND j.status='succeeded' AND e.status='succeeded' AND e.snapshot_id=b.source_snapshot_id AND e.plan_revision_id IS NOT DISTINCT FROM j.plan_revision_id AND e.id=(SELECT id FROM image_executions WHERE job_id=j.id AND operation='build' ORDER BY created_at DESC,id DESC LIMIT 1)",params![id]).await?;
+        let images:Vec<Uuid>=sql::scalars(&mut transaction,"SELECT i.id FROM image_artifacts i JOIN image_executions e ON e.id=i.execution_id JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id WHERE b.id=$1 AND j.status='succeeded' AND e.status='succeeded' AND e.source_manifest_id=b.source_manifest_id AND e.plan_revision_id IS NOT DISTINCT FROM j.plan_revision_id AND e.id=(SELECT id FROM image_executions WHERE job_id=j.id AND operation='build' ORDER BY created_at DESC,id DESC LIMIT 1)",params![id]).await?;
         ensure!(
             jobs > 0 && jobs == complete + images.len() as i64,
             "every target must have verified artifacts"
@@ -268,7 +238,7 @@ impl ControlStore {
     }
 
     pub(crate) async fn assignment_context(&self, job: Uuid) -> Result<AssignmentContext> {
-        let row=sql::record(&mut self.pool.clone(), "SELECT j.target,j.target_config,j.plan_revision_id,b.source_snapshot_id,b.id,b.commit_sha,b.config_snapshot,b.parameters,b.source_repository_url AS repository_url,b.source_credential_id AS credential_id FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1", params![job], &[("target", Type::String),("target_config", Type::String),("plan_revision_id", Type::Uuid),("source_snapshot_id", Type::Uuid),("id", Type::Uuid),("commit_sha", Type::String),("config_snapshot", Type::String),("parameters", Type::String),("repository_url", Type::String),("credential_id", Type::Uuid)]).await?;
+        let row=sql::record(&mut self.pool.clone(), "SELECT j.target,j.target_config,j.plan_revision_id,b.source_manifest_id,b.id,b.commit_sha,b.config_snapshot,b.parameters FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1", params![job], &[("target", Type::String),("target_config", Type::String),("plan_revision_id", Type::Uuid),("source_manifest_id", Type::Uuid),("id", Type::Uuid),("commit_sha", Type::String),("config_snapshot", Type::String),("parameters", Type::String)]).await?;
         let plan_id: Option<Uuid> = row.decode("plan_revision_id")?;
         let plan = if let Some(id) = plan_id {
             sql::optional_scalar(
@@ -284,78 +254,12 @@ impl ControlStore {
             target: row.decode("target")?,
             target_config: row.decode("target_config")?,
             plan_revision_id: row.decode("plan_revision_id")?,
-            source_snapshot_id: row.decode("source_snapshot_id")?,
+            source_manifest_id: row.decode("source_manifest_id")?,
             id: row.decode("id")?,
             commit_sha: row.decode("commit_sha")?,
             config_snapshot: row.decode("config_snapshot")?,
             parameters: row.decode("parameters")?,
-            repository_url: row.decode("repository_url")?,
-            credential_id: row.decode("credential_id")?,
             plan,
         })
-    }
-
-    pub(crate) async fn resolve_build<F, Fut>(&self, prepare: F) -> Result<()>
-    where
-        F: FnOnce(ResolutionInput) -> Fut,
-        Fut: std::future::Future<Output = Result<ResolvedSource>>,
-    {
-        let mut resolver_lock_db = self.pool.clone();
-        let mut resolver_lock = resolver_lock_db.transaction().await?;
-        let acquired: bool = sql::scalar(
-            &mut resolver_lock,
-            "SELECT pg_try_advisory_xact_lock(hashtextextended('artifactory:source-resolver',2))",
-            params![],
-        )
-        .await?;
-        if !acquired {
-            return Ok(());
-        }
-        let Some(row) = sql::optional_record(&mut self.pool.clone(), "SELECT b.id,b.project_id,b.requested_ref,b.parameters,b.selected_targets,b.release_version,b.goal,b.planning_context,b.model_config_snapshot,b.source_repository_url AS repository_url,b.source_credential_id AS credential_id,p.signing_profiles FROM builds b JOIN projects p ON p.id=b.project_id WHERE b.status='resolving' AND b.planner_backend='poll' AND NOT b.cancel_requested ORDER BY b.created_at LIMIT 1", params![], &[("id", Type::Uuid),("project_id", Type::Uuid),("requested_ref", Type::String),("parameters", Type::String),("selected_targets", Type::List(Box::new(Type::String))),("release_version", Type::String),("goal", Type::String),("planning_context", Type::String),("model_config_snapshot", Type::String),("repository_url", Type::String),("credential_id", Type::Uuid),("signing_profiles", Type::List(Box::new(Type::String)))]).await? else { return Ok(()); };
-        let id: Uuid = row.decode("id")?;
-        let input = ResolutionInput {
-            project_id: row.decode("project_id")?,
-            requested_ref: row.decode("requested_ref")?,
-            parameters: row.decode("parameters")?,
-            selected_targets: row.decode("selected_targets")?,
-            release_version: row.decode("release_version")?,
-            goal: row.decode("goal")?,
-            planning_context: row.decode("planning_context")?,
-            model_config_snapshot: row.decode("model_config_snapshot")?,
-            repository_url: row.decode("repository_url")?,
-            credential_id: row.decode("credential_id")?,
-            signing_profiles: row.decode("signing_profiles")?,
-        };
-        let result = async {
-        match prepare(input).await? {
-            ResolvedSource::Planned { commit, snapshot_id, model } => {
-                let mut tx_db = self.pool.clone();
-let mut tx = tx_db.transaction().await?;
-                let status: String = sql::scalar(&mut tx, "SELECT status FROM builds WHERE id=$1 FOR UPDATE", params![id]).await?;
-                if status != "resolving" { return Ok(()); }
-                sql::execute(&mut tx, "UPDATE builds SET commit_sha=$2,source_snapshot_id=$3,status='planning' WHERE id=$1", params![id, commit, snapshot_id]).await?;
-                super::models::PlanningRun::create().id(Uuid::new_v4()).build_id(id).purpose("initial").model_config(toasty::Json((model).clone())).exec(&mut tx).await?;
-                tx.commit().await?;
-            }
-            ResolvedSource::Recipe { snapshot_id, commit, yaml, recipe, targets } => {
-                let mut transaction_db = self.pool.clone();
-let mut transaction = transaction_db.transaction().await?;
-                let canceled: bool = sql::scalar(&mut transaction, "SELECT cancel_requested FROM builds WHERE id=$1 FOR UPDATE", params![id]).await?;
-                if canceled { return Ok(()); }
-                for (name, target) in targets {
-                    super::models::Job::upsert_by_build_id_and_target(id,name).id(Uuid::new_v4()).target_config(toasty::Json((serde_json::to_value(target)?).clone())).or_ignore().exec(&mut transaction).await?;
-                }
-                sql::execute(&mut transaction, "UPDATE builds SET commit_sha=$2,config_yaml=$3,config_snapshot=$4,source_snapshot_id=$5,status='queued' WHERE id=$1", params![id, commit, yaml, serde_json::to_value(recipe)?,snapshot_id]).await?;
-                transaction.commit().await?;
-            }
-        }
-        Ok::<(), anyhow::Error>(())
-    }.await;
-        if let Err(error) = result {
-            sql::execute(&mut self.pool.clone(), "UPDATE builds SET status='failed',error=$2,finished_at=now() WHERE id=$1 AND status='resolving' AND NOT cancel_requested", params![id, error.to_string()]).await?;
-        }
-        // Keep the resolver lock until preparation and the final state update finish.
-        drop(resolver_lock);
-        Ok(())
     }
 }

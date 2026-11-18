@@ -16,13 +16,13 @@ lifecycle_cleanup.rs: 依据删除清单清除业务状态和签名密文。
 builds.rs: 创建构建，读取原生及镜像 Release、制品与日志游标。
 executions.rs: 以兼容取消外键的写锁维护节点 session、事件与不可变制品登记。
 scheduling.rs: 分配任务并生成不可变 Release。
-planning.rs: 维护规划租约、工具结果和固定上下文。
-planning_management.rs: 写入模型方案及规划 Worker 授权。
+planning.rs: 读取固定规划上下文、计划和失败日志。
+planning_management.rs: 写入模型方案、澄清及对话查询上下文。
 placements.rs: 保存节点候选并校验分配条件。
 replication.rs: 协调副本归属和持久化唤醒。
 runtime_bridge.rs: 转换 Runtime 规划意图与业务状态。
-maintenance.rs: 回收过期租约并修复后台状态。
-source_cache.rs: 记录固定源码快照和缓存占用。
+sources.rs: 以 CAS 固定源码元数据并授权任务拉取材料。
+sources_tests.rs: 验证源码事务幂等、取消、截止时间及凭据范围。
 lookups.rs: 读取调度、构建和授权对象。
 node_metadata.rs: 记录启动元数据和能力摘要。
 node_queries.rs: 执行项目范围内的节点查询。
@@ -32,5 +32,7 @@ performance.rs: 验证存储查询预算和响应规模。
 execution_fences.rs: 以真实事件、心跳与取消事务验证节点锁等待及权限租约拒绝。
 
 images.rs: 保存排空续跑身份、超时分类和发布仓库来源快照。
+
+runtime_bridge_tests.rs: 在新数据库验证重排脚本、资源和版本不可变约束。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

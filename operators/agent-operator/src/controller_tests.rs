@@ -1,33 +1,8 @@
 //! [INPUT]: 依赖父模块控制器与隔离 Kubernetes peer。
-//! [OUTPUT]: 验证资源归属、Source 配额、回收和故障恢复。
+//! [OUTPUT]: 验证运行归属、状态更新与终态清理。
 //! [POS]: Agent 控制器的行为回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
-
-#[test]
-fn source_shards_declare_cpu_and_memory_limits_for_resource_quota() {
-    for tls in ["", "service-tls"] {
-        let spec: SourcePoolSpec = serde_json::from_value(json!({
-            "shards": 1, "image": "source:fixed", "runtimeUrl": "https://runtime",
-            "controlUrl": "https://control", "secretName": "source",
-            "storageClass": "local-path", "storageSize": "5Gi",
-            "cpu": "250m", "memory": "768Mi", "tlsSecretName": tls,
-            "publicUrlTemplate": "https://{pod}.source.example.com"
-        }))
-        .unwrap();
-        let pool = SourcePool::new("sources", spec);
-        let workload = source_stateful_set(&pool, "builds").unwrap();
-        let pod = workload.spec.template.spec.unwrap();
-        let resources = pod.containers[0].resources.as_ref().unwrap();
-        let limits = resources
-            .limits
-            .as_ref()
-            .expect("Source must declare CPU and memory limits for quota admission");
-        assert_eq!(limits.get("cpu").unwrap().0, "250m");
-        assert_eq!(limits.get("memory").unwrap().0, "768Mi");
-        assert_eq!(resources.requests.as_ref(), Some(limits));
-    }
-}
 
 #[tokio::test]
 async fn status_transitions_clear_stale_fields_and_steady_reconcile_does_not_write() {
@@ -47,8 +22,8 @@ async fn status_transitions_clear_stale_fields_and_steady_reconcile_does_not_wri
             run_id: "run".into(),
             generation: 1,
             pool: "pool".into(),
-            snapshot_id: "snapshot".into(),
-            snapshot_digest: "a".repeat(64),
+            source_manifest_id: Some("manifest".into()),
+            source_digest: Some("a".repeat(64)),
         },
     );
     run.metadata.namespace = Some("test".into());
@@ -103,6 +78,7 @@ async fn status_transitions_clear_stale_fields_and_steady_reconcile_does_not_wri
         client: client.clone(),
         namespace: "test".into(),
         runtime: ServiceClient::new("https://runtime.invalid".into(), "x".repeat(64)).unwrap(),
+        source_admission: tokio::sync::Mutex::new(()),
         leader: Leadership {
             api: Api::namespaced(client, "test"),
             identity: Arc::new("leader".into()),
@@ -158,8 +134,8 @@ fn job_cleanup_cascades_pods_and_fences_replaced_resource_uids() {
             run_id: "run".into(),
             generation: 1,
             pool: "pool".into(),
-            snapshot_id: "snapshot".into(),
-            snapshot_digest: "a".repeat(64),
+            source_manifest_id: Some("manifest".into()),
+            source_digest: Some("a".repeat(64)),
         },
     );
     run.metadata.uid = Some("original-run".into());
@@ -199,8 +175,8 @@ async fn cleanup_keeps_identity_until_pods_disappear_and_retries_api_failures() 
             run_id: "run".into(),
             generation: 1,
             pool: "pool".into(),
-            snapshot_id: "snapshot".into(),
-            snapshot_digest: "a".repeat(64),
+            source_manifest_id: Some("manifest".into()),
+            source_digest: Some("a".repeat(64)),
         },
     );
     run.metadata.uid = Some("run-a".into());
@@ -307,6 +283,7 @@ async fn cleanup_keeps_identity_until_pods_disappear_and_retries_api_failures() 
         client: client.clone(),
         namespace: "test".into(),
         runtime: ServiceClient::new("https://runtime.invalid".into(), "x".repeat(64)).unwrap(),
+        source_admission: tokio::sync::Mutex::new(()),
         leader: Leadership {
             api: Api::namespaced(client, "test"),
             identity: Arc::new("leader".into()),
@@ -373,8 +350,8 @@ fn history_retention_does_not_remove_pending_cleanup() {
             run_id: "run".into(),
             generation: 1,
             pool: "pool".into(),
-            snapshot_id: "snapshot".into(),
-            snapshot_digest: "a".repeat(64),
+            source_manifest_id: Some("manifest".into()),
+            source_digest: Some("a".repeat(64)),
         },
     );
     run.metadata.creation_timestamp = Some(Time(
@@ -402,37 +379,71 @@ fn history_retention_does_not_remove_pending_cleanup() {
 }
 
 #[test]
-fn snapshot_metadata_cleanup_preserves_referenced_recent_and_user_managed_resources() {
-    use k8s_openapi::{apimachinery::pkg::apis::meta::v1::Time, jiff::Timestamp};
-    let now = chrono::Utc::now().timestamp();
-    let mut snapshot = SourceSnapshot::new(
-        "snapshot",
-        SourceSnapshotSpec {
-            snapshot_id: "fixed-snapshot".into(),
-            digest: "a".repeat(64),
-            source_pool: "sources".into(),
-            source_url: "https://source".into(),
+fn planning_job_keeps_source_identity_out_of_main_container() {
+    let mut run = AgentRun::new(
+        "run-test",
+        AgentRunSpec {
+            run_id: "run".into(),
+            generation: 1,
+            pool: "pool".into(),
+            source_manifest_id: Some("manifest".into()),
+            source_digest: Some("a".repeat(64)),
         },
     );
-    snapshot.metadata.creation_timestamp = Some(Time(
-        Timestamp::from_second(now - HISTORY_SECONDS - 1).unwrap(),
-    ));
-    let mut protected = HashSet::new();
-    assert!(
-        !snapshot_reclaimable(&snapshot, &protected, now),
-        "never collect user-declared CRDs"
+    run.metadata.uid = Some("run-uid".into());
+    let pool:AgentPool=serde_json::from_value(json!({"metadata":{"name":"pool"},"spec":{"maxActive":2,"maxPerProject":1,"image":"worker:1","sourcePreparerImage":"preparer:1","runtimeUrl":"https://runtime","controlUrl":"https://control"}})).unwrap();
+    let value = serde_json::to_value(job(&run, &pool).unwrap()).unwrap();
+    let pod = &value["spec"]["template"]["spec"];
+    assert_eq!(
+        pod["initContainers"][0]["command"],
+        json!(["artifactory-source-preparer", "checkout"])
     );
-    snapshot.metadata.labels = Some([(MANAGED_SNAPSHOT.into(), "true".into())].into());
-    protected.insert(snapshot.spec.snapshot_id.clone());
     assert!(
-        !snapshot_reclaimable(&snapshot, &protected, now),
-        "run references retain their metadata"
+        pod["containers"][0]["volumeMounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|m| m["name"] != "source-auth" && m["name"] != "source-identity")
     );
-    protected.clear();
-    assert!(snapshot_reclaimable(&snapshot, &protected, now));
-    snapshot.metadata.creation_timestamp = Some(Time(Timestamp::from_second(now).unwrap()));
     assert!(
-        !snapshot_reclaimable(&snapshot, &protected, now),
-        "preserve the diagnostic retention window"
+        pod["containers"][0]["volumeMounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["name"] == "source" && m["readOnly"] == true)
+    );
+    run.spec.source_manifest_id = None;
+    let value = serde_json::to_value(job(&run, &pool).unwrap()).unwrap();
+    assert!(
+        value["spec"]["template"]["spec"]
+            .get("initContainers")
+            .is_none(),
+        "placement never checks out code"
+    );
+}
+
+#[test]
+fn source_tasks_only_project_bound_tokens_and_temporary_volumes() {
+    let mut task:SourceTask=serde_json::from_value(json!({"metadata":{"name":"source-task","namespace":"test","uid":"task-uid"},"spec":{"taskId":"00000000-0000-0000-0000-000000000001","tenantId":"tenant","projectId":"project","pool":"pool","purpose":"resolve"}})).unwrap();
+    let pool:AgentPool=serde_json::from_value(json!({"metadata":{"name":"pool"},"spec":{"maxActive":2,"maxPerProject":1,"image":"worker:1","sourcePreparerImage":"preparer:1","runtimeUrl":"https://runtime","controlUrl":"https://control"}})).unwrap();
+    let value = serde_json::to_value(crate::source_tasks::job(&task, &pool).unwrap()).unwrap();
+    let pod = &value["spec"]["template"]["spec"];
+    assert_eq!(value["spec"]["activeDeadlineSeconds"], 900);
+    assert_eq!(pod["serviceAccountName"], "artifactory-source-preparer");
+    assert!(
+        pod["volumes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|v| v.get("persistentVolumeClaim").is_none())
+    );
+    assert_eq!(pod["containers"][0]["command"][1], "resolve");
+    task.spec.purpose = SourcePurpose::Refs;
+    task.spec.timeout_seconds = 30;
+    let value = serde_json::to_value(crate::source_tasks::job(&task, &pool).unwrap()).unwrap();
+    assert_eq!(value["spec"]["activeDeadlineSeconds"], 30);
+    assert_eq!(
+        value["spec"]["template"]["spec"]["containers"][0]["command"][1],
+        "refs"
     );
 }

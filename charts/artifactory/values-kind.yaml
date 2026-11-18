@@ -1,9 +1,9 @@
-# Local development only. Bind browser/Emissary URLs to the actual node IP when
-# using NodePorts, or port-forward these same ports to 127.0.0.1.
+# [INPUT]: 本机 kind、NodePort 与开发 HTTP 开关。
+# [OUTPUT]: 配置本机入口和数据库、对象存储容量。
+# [POS]: 仅供本机服务开发；任务源码仍使用临时卷。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 development:
   insecureHttp: true
-sourceCache:
-  maxBytes: "536870912"
 console:
   publicUrl: http://127.0.0.1:31080
   service:
@@ -15,6 +15,5 @@ grpc:
     nodePort: 31443
 persistence:
   storageClass: standard
-  control-plane: 1Gi
   postgres: 1Gi
   s3: 2Gi

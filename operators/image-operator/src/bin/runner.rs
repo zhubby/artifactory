@@ -3,9 +3,6 @@
 //! [POS]: Image Runner 独立进程入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 fn main() -> anyhow::Result<()> {
-    if artifactory_image_operator::worker::askpass() {
-        return Ok(());
-    }
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?

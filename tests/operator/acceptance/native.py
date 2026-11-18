@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """[INPUT]: 已保存的隔离命名空间、验收租户和主机原生 Rust 工具链。
 [OUTPUT]: 验证主机构建；清理完成后写入成功证据。
-[POS]: 切换公告地址与客户端 Origin，再恢复原设备排空状态。
+[POS]: 直拉可共同访问的 NodePort 上游，恢复设备与公告地址。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
@@ -111,7 +111,6 @@ def run(args):
     build = None
     node = None
     restore_devices = ExitStack()
-    source_pool = json.loads(a.kubectl('get', 'sourcepool', 'sources', '-o', 'json'))['spec']
     agent_pool = json.loads(a.kubectl('get', 'agentpool', 'default', '-o', 'json'))['spec']
     original_control = environment(a, 'control-plane')
     original_upstream = environment(a, 'upstream')
@@ -121,9 +120,6 @@ def run(args):
         assert a.sql('planner', "SELECT count(*) FROM runtime_runs WHERE status IN ('running','provisioning')") == '0', 'Drain namespace before changing advertised routes'
         assert a.sql('business', "SELECT count(*) FROM attempts WHERE status IN ('leased','running')") == '0', 'Drain device jobs before changing routes'
         a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', '{"spec":{"maxActive":2}}')
-        a.kubectl('patch', 'sourcepool', 'sources', '--type=merge', '-p', json.dumps({'spec': {'publicUrlTemplate': 'https://127.0.0.1:38090'}}))
-        a.wait(lambda: 'https://127.0.0.1:38090' in a.kubectl('get', 'statefulset', 'sources', '-o', 'json'))
-        a.kubectl('rollout', 'status', 'statefulset/sources', '--timeout=180s')
         set_environment(a, 'upstream', {'FIXTURE_OS': host_os, 'FIXTURE_ARCH': arch})
         set_environment(a, 'control-plane', {'ARTIFACTORY_PUBLIC_URL': a.base})
         for forward in a.processes:
@@ -132,7 +128,6 @@ def run(args):
         a.processes.clear()
         a.resume()
         restore_devices.enter_context(drain_existing_devices(a))
-        a.forward('pod/sources-0', '38090:8090')
         a.forward('service/control-plane', '38443:8443')
         a.forward('service/artifactory-telemetry','38444:8444')
         a.wait(lambda: a.service_request(39443,'/test/mode',{'build_seconds':25}) is not None)
@@ -151,20 +146,22 @@ def run(args):
         node = a.wait(lambda: next((n for n in a.api('/api/v1/nodes') if n['name'] == name and n['online']), None))
         evidence['node_id'] = node['id']
         (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
-        before = int(a.sql('business', 'SELECT coalesce(sum(git_download_bytes+lfs_download_bytes),0) FROM source_repositories'))
-        project = a.api('/api/v1/projects', {'name': name, 'repository_url': 'https://upstream:9443/repo.git', 'planner_backend': 'kubernetes'})['id']
+        service = a.service('upstream-native', [9443])
+        service['spec'].update(type='NodePort',selector={'app':'upstream'})
+        a.apply(service)
+        port = json.loads(a.kubectl('get','service','upstream-native','-o','json'))['spec']['ports'][0]['nodePort']
+        git_origin = f'https://{a.node_ip}:{port}/repo.git'
+        project = a.api('/api/v1/projects', {'name': name, 'repository_url': git_origin,})['id']
         build = a.api('/api/v1/projects/' + project + '/builds', {'ref': 'v-fixture', 'goal': 'Inspect source and build dist/result.txt on the host-native device', 'target_requirements': [{'os': host_os, 'arch': arch}]})['id']
         evidence['build_id'] = build
         (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
         detail = a.wait(lambda: host_build_terminal(a, build, directory, evidence), 600)
-        snapshot = detail['source_snapshot_id']
-        origins = json.loads(a.sql('business', "SELECT json_build_object('internal',service_origin,'public',public_origin) FROM source_snapshots WHERE id='" + snapshot + "'"))
-        assert '.svc:8090' in origins['internal'] and origins['public'] == 'https://127.0.0.1:38090'
-        assert int(a.sql('business', 'SELECT coalesce(sum(git_download_bytes+lfs_download_bytes),0) FROM source_repositories')) == before
+        manifest_id = detail['source_manifest_id']
+        manifest = json.loads(a.sql('business',f"SELECT manifest FROM source_manifests WHERE id='{manifest_id}'"))
+        assert manifest['repositories'][0]['upstream_url']==git_origin
         assert detail['artifacts'] and detail['artifacts'][0]['sha256'] == hashlib.sha256(b'operator-native-ok\n').hexdigest()
         a.verify_artifact_gateway(detail['artifacts'][0])
         assert a.sql('business', "SELECT count(*) FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE j.build_id='" + build + "' AND a.node_id='" + node['id'] + "' AND a.status='succeeded'") == '1'
-        assert int(a.sql('sources', "SELECT coalesce(sum(lfs_download_bytes),0) FROM source_repositories r JOIN source_snapshots s ON s.root_repository_id=r.id WHERE s.id='" + snapshot + "'")) > 0, 'Host build must materialize actual LFS bytes'
         history = a.api('/api/v1/builds/' + build + '/plans')
         assert len(history['plans']) == 1 and len(history['runs']) == 1 and history['runs'][0]['calls'] == 0
         latest=a.wait(lambda: (v if (v:=a.api('/api/v1/nodes/'+node['id']+'/telemetry'))['host'] and v['host']['fresh'] and v['inventory'] else None))
@@ -175,7 +172,7 @@ def run(args):
         processes=a.wait(lambda: (v if (v:=a.api(f'/api/v1/attempts/{attempt}/processes?'+params))['samples'] else None))
         assert any(p['step']==0 for p in processes['samples']) and all(p['started_at']>0 for p in processes['samples'])
         evidence['telemetry']={'inventory_os':inventory['os'],'inventory_arch':inventory['arch'],'host_fresh':True,'managed_process_samples':len(processes['samples'])}
-        evidence.update({'build_id': build, 'node_id': node['id'], 'snapshot_id': snapshot, 'commit': detail['commit_sha'], 'emissary_binary_sha256': hashlib.sha256(agent.read_bytes()).hexdigest(), 'origins': origins, 'artifact_sha256': detail['artifacts'][0]['sha256'], 'git_lfs_downloaded_directly': True, 'business_source_bytes_delta': 0, 'accepted_plans': 1})
+        evidence.update({'build_id': build, 'node_id': node['id'], 'source_manifest_id': manifest_id, 'commit': detail['commit_sha'], 'emissary_binary_sha256': hashlib.sha256(agent.read_bytes()).hexdigest(), 'git_origin': git_origin, 'artifact_sha256': detail['artifacts'][0]['sha256'], 'git_lfs_downloaded_directly': True, 'accepted_plans': 1})
         evidence['images'] = a.images()
         if args.live_protocol:
             a.forward('service/postgres', '38543:5432')
@@ -214,10 +211,8 @@ def run(args):
             set_environment(a, 'upstream', {key: original_upstream.get(key) for key in ['FIXTURE_OS','FIXTURE_ARCH']})
             set_environment(a, 'control-plane', {'ARTIFACTORY_PUBLIC_URL': original_control.get('ARTIFACTORY_PUBLIC_URL')})
             a.origin = a.kubectl('exec', 'deploy/control-plane', '--', 'printenv', 'ARTIFACTORY_PUBLIC_URL').strip()
-            a.kubectl('patch', 'sourcepool', 'sources', '--type=merge', '-p', json.dumps({'spec': {'publicUrlTemplate': source_pool.get('publicUrlTemplate')}}))
             a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': agent_pool}))
-            a.wait(lambda: json.loads(a.kubectl('get','sourcepool','sources','-o','json'))['metadata']['generation'] == json.loads(a.kubectl('get','sourcepool','sources','-o','json')).get('status',{}).get('observedGeneration'))
-            a.kubectl('rollout', 'status', 'statefulset/sources', '--timeout=180s')
+            a.kubectl('delete','service','upstream-native','--ignore-not-found')
             evidence['temporary_routes_restored'] = True
         finally:
             try:

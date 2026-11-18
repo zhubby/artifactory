@@ -46,16 +46,14 @@
 | `GET, PATCH /projects/{id}` | PATCH 使用完整项目设置，不是任意 JSON Patch |
 | `POST /projects/{id}/builds` | `{ref,goal,target_requirements?,parameters?,targets?,release_version?}`；所有新构建走 AI |
 | `GET /builds` | 可选 `?project_id=`，最多 100 条 |
-| `GET /builds/{id}` | 源码快照、当前计划 ID、修订次数、澄清、目标、设备 attempt、步骤、制品、镜像执行和发布记录 |
+| `GET /builds/{id}` | 完整源码清单、当前计划 ID、修订次数、澄清、目标、设备 attempt、步骤、制品、镜像执行和发布记录 |
 | `GET /builds/{id}/plans` | 不可变计划历史、摘要、文件依据、规划运行和调用统计；不返回模型密钥或 checkpoint |
+| `GET /builds/{id}/planning/conversations` | 项目 read；按运行与 generation 返回会话摘要 |
+| `GET /builds/{id}/planning/conversations/{run}/{generation}/messages` | 项目 read；`after` 游标与 `limit`（最多 100），返回消息及 `next_cursor` |
 | `POST /builds/{id}/clarifications` | `{answer}`；只在 needs_input 继续规划，仍固定原源码与目标 |
 | `GET, POST /model-profiles` | 管理员；接口类型/地址/模型/密钥/parameters/enabled/is_default/max_calls/timeout_seconds |
 | `PATCH, DELETE /model-profiles/{id}` | 更新增加配置版本；密钥空值保留原值，查询仅返回掩码 |
 | `GET /model-options` | 操作者会话可读模型 ID、名称和 enabled，用于项目选择 |
-| `GET /ai-workers` | 管理员；在线、排空、吊销、证书期限和活动规划任务 |
-| `POST /ai-enrollment-tokens` | 管理员；15 分钟一次性 worker 注册令牌 |
-| `PATCH /ai-workers/{id}` | `{draining,revoked}`；吊销不可逆 |
-| `GET /source-metrics` | 管理员；平台/Emissary 缓存命中、磁盘占用及下载字节，fetched_bytes 是磁盘增长 |
 | `POST /builds/{id}/cancel` | 空对象，停止队列和在途任务 |
 | `POST /jobs/{id}/retry` | 空对象，仅失败 / lost / canceled 且尚未发布的 job |
 | `POST /builds/{id}/publish` | `{version?}`；既有版本不可更改；重试复用制品 |

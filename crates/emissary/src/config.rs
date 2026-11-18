@@ -29,7 +29,6 @@ pub struct Config {
     pub metadata: BTreeMap<String, serde_json::Value>,
     pub signing_profiles: BTreeMap<String, BTreeMap<String, String>>,
     pub log_buffer_bytes: u64,
-    pub source_cache_bytes: u64,
     pub allow_http_uploads: bool,
 }
 impl Config {
@@ -46,9 +45,6 @@ impl Config {
         if cfg.log_buffer_bytes == 0 {
             cfg.log_buffer_bytes = 256 << 20;
         }
-        if cfg.source_cache_bytes == 0 {
-            cfg.source_cache_bytes = 20 << 30;
-        }
         if cfg.telemetry_buffer_bytes == 0 {
             cfg.telemetry_buffer_bytes = 32 << 20;
         }
@@ -59,10 +55,6 @@ impl Config {
         ensure!(
             cfg.log_buffer_bytes >= 1 << 20,
             "log buffer must be at least 1 MiB"
-        );
-        ensure!(
-            cfg.source_cache_bytes >= 1 << 20,
-            "source cache quota must be at least 1 MiB"
         );
         Ok(cfg)
     }

@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖Runtime 的认证 HTTP/gRPC 接口。
-//! [OUTPUT]: 查询规划任务并登记执行身份。
+//! [OUTPUT]: 以 8 MiB 封套查询任务并登记执行身份。
 //! [POS]: 控制器到 Runtime 的服务边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::Result;
@@ -22,7 +22,9 @@ pub async fn call(method: &str, value: &Value) -> Result<Value> {
         }
         endpoint = endpoint.tls_config(tls)?;
     }
-    let mut client = RuntimeClient::new(endpoint.connect().await?);
+    let mut client = RuntimeClient::new(endpoint.connect().await?)
+        .max_decoding_message_size(service::SERVICE_JSON_LIMIT)
+        .max_encoding_message_size(service::SERVICE_JSON_LIMIT);
     let mut request = tonic::Request::new(JsonRequest {
         json: value.to_string(),
     });

@@ -65,8 +65,6 @@ def main():
                              f"DNS:{prefix}-grpc.{args.namespace}.svc",
                              "DNS:" + prefix + "-gateway-internal",
                              f"DNS:{prefix}-gateway-internal.{args.namespace}.svc",
-                             "DNS:" + prefix + "-local-source",
-                             f"DNS:{prefix}-local-source.{args.namespace}.svc",
                              "DNS:" + prefix + "-telemetry",
                              f"DNS:{prefix}-telemetry.{args.namespace}.svc"]
     (pki / "server.ext").write_text(

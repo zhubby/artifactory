@@ -1,4 +1,7 @@
-//! Planning administration and atomic profile/clarification operations.
+//! [INPUT]: 依赖模型配置、规划记录和项目读取权限。
+//! [OUTPUT]: 保存模型方案、澄清回复和对话查询上下文。
+//! [POS]: 控制台规划管理与 Runtime 审计查询的业务边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use super::dto;
 use super::models::ModelProfile;
@@ -36,13 +39,6 @@ pub struct ProfileInput {
     pub(crate) timeout_seconds: i32,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WorkerUpdate {
-    pub(crate) draining: bool,
-    pub(crate) revoked: bool,
-}
-
 fn object() -> Value {
     json!({})
 }
@@ -60,6 +56,17 @@ fn timeout() -> i32 {
 }
 
 impl ControlStore {
+    pub(crate) async fn conversation_context(&self, build: Uuid) -> anyhow::Result<Value> {
+        let project: Uuid = sql::scalar(
+            &mut self.pool.clone(),
+            "SELECT project_id FROM builds WHERE id=$1 AND tenant_id=$2",
+            params![build, self.tenant()?],
+        )
+        .await?;
+        let runs: Vec<Value> = sql::scalars(&mut self.pool.clone(), "SELECT jsonb_build_object('run_id',id,'purpose',purpose) FROM planning_runs WHERE build_id=$1 ORDER BY created_at,id", params![build]).await?;
+        Ok(json!({"project_id":project,"runs":runs}))
+    }
+
     pub async fn model_profiles(&self) -> Result<Vec<dto::ModelProfile>> {
         Ok(sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(m)-'key_ciphertext') || jsonb_build_object('has_key',key_ciphertext<>'','api_key','********') FROM model_profiles m WHERE tenant_id=$1 ORDER BY created_at", params![self.tenant()?]).await?)
     }
@@ -161,33 +168,6 @@ impl ControlStore {
         Ok(sql::optional_scalar(&mut self.pool.clone(), "SELECT to_jsonb(m) FROM model_profiles m WHERE tenant_id=$2 AND enabled AND (($1::uuid IS NOT NULL AND id=$1) OR ($1::uuid IS NULL AND is_default)) LIMIT 1", params![id,tenant]).await?)
     }
 
-    pub async fn workers(&self) -> Result<Vec<dto::WorkerSummary>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(w)-'certificate_hash') || jsonb_build_object('online',last_seen>now()-interval '30 seconds','active_run',(SELECT id FROM planning_runs r WHERE r.worker_id=w.id AND r.state='leased' LIMIT 1)) FROM ai_workers w WHERE tenant_id=$1 ORDER BY created_at", params![self.tenant()?]).await?)
-    }
-
-    pub async fn update_worker(&self, id: Uuid, input: &WorkerUpdate) -> Result<bool> {
-        let mut tx_db = self.pool.clone();
-        let mut tx = tx_db.transaction().await?;
-        let revoked: bool = sql::optional_scalar(
-            &mut tx,
-            "UPDATE ai_workers SET draining=$2,revoked=revoked OR $3 WHERE id=$1 RETURNING revoked",
-            params![id, input.draining, input.revoked],
-        )
-        .await?
-        .ok_or(ApiError::NotFound)?;
-        tx.commit().await?;
-        Ok(revoked)
-    }
-
-    pub async fn planner_enrollment(&self, id: Uuid, hash: String) -> Result<()> {
-        sql::execute(&mut self.pool.clone(), "INSERT INTO ai_enrollment_tokens(id,token_hash,expires_at,tenant_id) VALUES($1,$2,now()+interval '15 minutes',$3)", params![id, hash,self.tenant()?]).await?;
-        Ok(())
-    }
-
-    pub async fn source_metrics(&self) -> Result<Vec<dto::SourceRepositorySummary>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(s)-'cache_key' FROM source_repositories s WHERE tenant_id=$1 AND project_id=ANY($2) ORDER BY last_used_at DESC LIMIT 100", params![self.tenant()?,self.scoped_projects().unwrap_or_default()]).await?)
-    }
-
     pub async fn clarify_build(&self, id: Uuid, answer: &str, auth: &Auth) -> Result<()> {
         let mut tx_db = self.pool.clone();
         let mut tx = tx_db.transaction().await?;
@@ -236,7 +216,7 @@ impl ControlStore {
         )
         .await?;
         let runs:Vec<dto::PlanningRun>=sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(r)-'model_config'-'lease_hash' FROM planning_runs r WHERE build_id=$1 ORDER BY created_at", params![id]).await?;
-        let events:Vec<dto::PlanningEvent>=sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(e) FROM planning_events e JOIN planning_runs r ON r.id=e.run_id WHERE r.build_id=$1 AND e.kind<>'checkpoint' ORDER BY e.id DESC LIMIT 300", params![id]).await?;
+        let events:Vec<dto::PlanningEvent>=sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(e) FROM planning_events e JOIN planning_runs r ON r.id=e.run_id WHERE r.build_id=$1 ORDER BY e.id DESC LIMIT 300", params![id]).await?;
         Ok(dto::BuildPlans {
             plans,
             runs,

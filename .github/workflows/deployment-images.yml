@@ -34,8 +34,8 @@ jobs:
             file: operators/agent-operator/Dockerfile
           - component: planner-runtime
             file: crates/planner-runtime/Dockerfile
-          - component: source-service
-            file: crates/source-service/Dockerfile
+          - component: source-preparer
+            file: crates/source-preparer/Dockerfile
           - component: image-operator
             file: operators/image-operator/Dockerfile
           - component: image-worker

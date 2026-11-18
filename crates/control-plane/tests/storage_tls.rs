@@ -35,7 +35,6 @@ async fn storage_tls_probe_helper() {
     let endpoint = std::env::var("ARTIFACTORY_TEST_STORAGE_TLS_ENDPOINT").unwrap();
     let directory = std::env::var("ARTIFACTORY_TEST_STORAGE_TLS_DIRECTORY").unwrap();
     let settings = Settings {
-        local_source_url: None,
         control: Default::default(),
         database_url: "unused".into(),
         http_bind: "unused".into(),

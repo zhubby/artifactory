@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖节点工具配置和有界原生探测。
-//! [OUTPUT]: 提供诊断和执行能力声明。
+//! [INPUT]: 依赖节点工具配置和指定工具集合的有界探测。
+//! [OUTPUT]: 提供诊断和通过实际探测的执行能力声明。
 //! [POS]: 调度匹配前的节点能力入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{COMMIT, VERSION, config::Config, platform, process};
@@ -42,12 +42,11 @@ pub async fn doctor(cfg: &Config) -> (Value, Vec<String>) {
     .map(str::to_owned)
     .collect();
     names.extend(cfg.tools.keys().cloned());
+    probe_tools(cfg, names).await
+}
+async fn probe_tools(cfg: &Config, names: BTreeSet<String>) -> (Value, Vec<String>) {
     let mut tools = serde_json::Map::new();
-    let mut capabilities = vec![
-        "source-cache-v1".into(),
-        "external-build-plan-v1".into(),
-        "managed-signing-v1".into(),
-    ];
+    let mut capabilities = vec!["external-build-plan-v1".into(), "managed-signing-v1".into()];
     for name in names {
         let binary = cfg.tool(&name);
         let Ok(Ok(path)) = tokio::task::spawn_blocking(move || which::which(binary)).await else {
@@ -125,7 +124,8 @@ mod tests {
         let mut cfg = Config::default();
         cfg.tools.insert("sh".into(), path.to_string_lossy().into());
 
-        let (diagnostics, capabilities) = doctor(&cfg).await;
+        let (diagnostics, capabilities) =
+            probe_tools(&cfg, cfg.tools.keys().cloned().collect()).await;
 
         assert!(capabilities.iter().any(|name| name == "sh"));
         assert_eq!(diagnostics["tools"]["sh"]["available"], true);
@@ -144,8 +144,18 @@ mod tests {
             crate::config::private_write(&path, contents.as_bytes(), true, true).unwrap();
             cfg.tools.insert(name.into(), path.to_string_lossy().into());
         }
-        let (_, capabilities) = doctor(&cfg).await;
-        assert!(capabilities.iter().any(|s| s == "working"));
-        assert!(!capabilities.iter().any(|s| s == "broken" || s == "hung"));
+        let (diagnostics, capabilities) =
+            probe_tools(&cfg, cfg.tools.keys().cloned().collect()).await;
+        assert!(
+            capabilities.iter().any(|s| s == "working"),
+            "working tool probe: {}",
+            diagnostics["tools"]["working"]
+        );
+        assert!(
+            !capabilities.iter().any(|s| s == "broken" || s == "hung"),
+            "rejected tool probes: {}",
+            diagnostics["tools"]
+        );
+        assert_eq!(diagnostics["tools"].as_object().unwrap().len(), 3);
     }
 }

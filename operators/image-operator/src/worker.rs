@@ -1,11 +1,11 @@
-//! [INPUT]: 依赖任务 Secret、固定源码检出、BuildKit socket 与日志脱敏。
+//! [INPUT]: 依赖推送 Secret、只读源码目录、BuildKit socket 与日志脱敏。
 //! [OUTPUT]: 构建单平台镜像，信任私有认证 CA 并提交限长脱敏日志。
 //! [POS]: BuildKit Job 的隔离执行进程。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::transport::Control;
 use anyhow::{Context, Result, ensure};
 use artifactory_emissary::{
-    config::{Config, private_dir, private_write},
+    config::{private_dir, private_write},
     process,
     signing::redact,
     source,
@@ -56,9 +56,6 @@ fn log_secrets(task: &BuildTask) -> redact::Secrets {
         "{}:{}",
         task.registry.username, task.registry.password
     )));
-    if let Some(source) = &task.assignment.source {
-        secrets.add(&source.access_token);
-    }
     if let Some(auths) = task.docker_auth["auths"].as_object() {
         for auth in auths.values() {
             for key in ["password", "identitytoken", "registrytoken"] {
@@ -85,20 +82,6 @@ fn log_secrets(task: &BuildTask) -> redact::Secrets {
     secrets
 }
 
-pub fn askpass() -> bool {
-    if std::env::var_os("ARTIFACTORY_GIT_ASKPASS").is_none() {
-        return false;
-    }
-    let prompt = std::env::args().nth(1).unwrap_or_default();
-    let key = if prompt.to_ascii_lowercase().contains("username") {
-        "ARTIFACTORY_GIT_USERNAME"
-    } else {
-        "ARTIFACTORY_GIT_PASSWORD"
-    };
-    println!("{}", std::env::var(key).unwrap_or_default());
-    true
-}
-
 async fn build(
     task: &BuildTask,
     platform: &str,
@@ -110,23 +93,16 @@ async fn build(
         task.image.platforms.iter().any(|p| p == platform),
         "platform is not authorized"
     );
-    ensure!(
-        task.assignment.source.is_some(),
-        "fixed source snapshot required"
-    );
     let pod = uuid::Uuid::parse_str(&std::env::var("POD_UID")?)?;
-    let root = Path::new("/workspace").join(pod.to_string());
+    let root = Path::new("/work").join(pod.to_string());
     std::fs::create_dir(&root).context("isolated workspace already exists")?;
-    let cfg = Config {
-        root: root.clone(),
-        allow_http_uploads: task.insecure,
-        git_ca_file: std::env::var_os("ARTIFACTORY_SERVICE_CA")
-            .map(Into::into)
-            .unwrap_or_default(),
-        ..Default::default()
-    };
-    private_dir(&root.join("cache"))?;
-    let workspace = root.join("source");
+    let workspace = Path::new("/workspace/source");
+    let prepared: artifactory_source_checkout::SourceManifest =
+        serde_json::from_slice(&tokio::fs::read("/workspace/source-manifest.json").await?)?;
+    ensure!(
+        prepared == task.source,
+        "prepared source differs from authorized manifest"
+    );
     let (emit, mut events) = Emitter::channel();
     let logs = control.clone();
     let log_platform = platform.to_owned();
@@ -152,16 +128,17 @@ async fn build(
         Ok::<_, anyhow::Error>(())
     });
     let result = async {
-        source::checkout(&cfg, &task.assignment, &root, &workspace, cancel, &emit).await?;
-        let context = source::managed_path(
-            &workspace,
+        artifactory_source_checkout::verify(&task.source, workspace, cancel).await?;
+        let context = artifactory_source_checkout::managed_path(
+            workspace,
             if task.image.context == "." {
                 ""
             } else {
                 &task.image.context
             },
         )?;
-        let dockerfile = source::managed_path(&workspace, &task.image.dockerfile)?;
+        let dockerfile =
+            artifactory_source_checkout::managed_path(workspace, &task.image.dockerfile)?;
         ensure!(
             context.is_dir() && dockerfile.is_file(),
             "build context or Dockerfile missing"
@@ -239,23 +216,6 @@ async fn build(
                 .arg("--secret")
                 .arg(format!("id={name},src={}", path.display()));
         }
-        let cache = format!("{}/{}-{arch}", registry.host(), task.cache_repository);
-        for (flag, value) in [
-            ("--import-cache", format!("type=registry,ref={cache}")),
-            (
-                "--export-cache",
-                format!(
-                    "type=registry,ref={cache},mode=max,image-manifest=true,oci-mediatypes=true{}",
-                    if task.insecure {
-                        ",registry.insecure=true"
-                    } else {
-                        ""
-                    }
-                ),
-            ),
-        ] {
-            command.arg(flag).arg(value);
-        }
         command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -273,13 +233,13 @@ async fn build(
         let result = process::wait(
             &mut *child,
             cancel,
-            Duration::from_secs(u64::from(task.assignment.timeout_seconds)),
+            Duration::from_secs(u64::from(task.timeout_seconds)),
         )
         .await;
         out.await??;
         err.await??;
         ensure!(result?.success(), "BuildKit failed; inspect build logs");
-        source::verify(&cfg, &task.assignment, &workspace, cancel).await?;
+        artifactory_source_checkout::verify(&task.source, workspace, cancel).await?;
         let bytes = tokio::fs::read(&metadata).await?;
         ensure!(bytes.len() <= 65536, "oversized BuildKit metadata");
         let metadata: serde_json::Value = serde_json::from_slice(&bytes)?;
@@ -381,8 +341,8 @@ mod tests {
         let task: BuildTask = serde_json::from_value(serde_json::json!({
             "execution_id":"test", "token":"task-token", "control_url":"https://control.example/",
             "registry":{"endpoint":"https://registry.example/","username":"runner","password":"internal-password"},
-            "repository":"candidate", "cache_repository":"cache", "image":{"name":"app"},
-            "assignment":serde_json::to_value(artifactory_emissary::protocol::Assignment::default()).unwrap(), "docker_auth":{"auths":{"external.example":{"auth":"dXNlcjpleHRlcm5hbC1wYXNzd29yZA=="}}},
+            "repository":"candidate", "image":{"name":"app"},
+            "source":{"id":"00000000-0000-0000-0000-000000000001","digest":"a".repeat(64),"repositories":[]}, "timeout_seconds":300, "docker_auth":{"auths":{"external.example":{"auth":"dXNlcjpleHRlcm5hbC1wYXNzd29yZA=="}}},
             "insecure":false
         })).unwrap();
         let (emit, mut events) = Emitter::channel();

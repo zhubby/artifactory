@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定 ImageBuild、管理员 BuilderPool 和可用节点。
-//! [OUTPUT]: 按 BuilderPool sidecar 模式创建隔离 BuildKit 与 Publisher Job。
+//! [OUTPUT]: 创建一次性源码、BuildKit 与 Publisher Job。
 //! [POS]: 声明工作负载身份、凭据投影和调度安全边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::api::{BuilderPool, ImageBuild};
@@ -8,38 +8,6 @@ use k8s_openapi::api::{batch::v1::Job, core::v1::Node};
 use kube::{Resource, ResourceExt};
 use serde_json::json;
 use std::collections::BTreeMap;
-
-pub(crate) const LEGACY_WORKER: &str = r#"set -eu
-trap 'touch /run/buildkit/worker.done' EXIT
-trap 'exit 143' TERM
-trap 'exit 130' INT
-attempt=0
-until buildctl --addr unix:///run/buildkit/buildkitd.sock debug workers >/dev/null 2>&1; do
-    attempt=$((attempt + 1))
-    if [ "$attempt" -ge 90 ]; then
-        echo 'BuildKit startup timed out' >&2
-        exit 1
-    fi
-    sleep 2
-done
-"$@"
-"#;
-
-pub(crate) const LEGACY_BUILDKIT: &str = r#"set -eu
-rootlesskit buildkitd "$@" &
-daemon=$!
-trap 'kill "$daemon" 2>/dev/null || true; wait "$daemon" 2>/dev/null || true' EXIT
-trap 'exit 143' TERM
-trap 'exit 130' INT
-while kill -0 "$daemon" 2>/dev/null; do
-    if [ -f /run/buildkit/worker.done ]; then
-        exit 0
-    fi
-    sleep 1 &
-    wait $!
-done
-wait "$daemon"
-"#;
 
 pub fn name(build: &ImageBuild, platform: Option<&str>) -> Result<String> {
     let id = uuid::Uuid::parse_str(&build.spec.execution_id)?;
@@ -129,8 +97,8 @@ pub fn job(
     } else {
         "artifactory-image-runner"
     };
-    let labels = json!({"app.kubernetes.io/name":"artifactory-image-worker","artifactory.dev/image-build":build.name_any(),"artifactory.dev/builder-pool":build.spec.pool,"artifactory.dev/project":build.spec.project_id});
-    let mut value = json!({"apiVersion":"batch/v1","kind":"Job","metadata":{"name":name(build,platform)?,"namespace":build.namespace(),"ownerReferences":[owner],"labels":labels},"spec":{"backoffLimit":0,"activeDeadlineSeconds":build.spec.timeout_seconds,"ttlSecondsAfterFinished":86400,"template":{"metadata":{"labels":labels},"spec":{"serviceAccountName":"artifactory-image-worker","automountServiceAccountToken":false,"restartPolicy":"Never","nodeSelector":selector,"securityContext":{"runAsUser":1000,"runAsGroup":1000,"fsGroup":1000,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"worker","image":pool.spec.worker_image,"imagePullPolicy":pool.spec.image_pull_policy,"command":[binary],"env":[{"name":"ARTIFACTORY_IMAGE_TASK","value":"/run/task/task.json"},{"name":"ARTIFACTORY_IMAGE_PLATFORM","value":platform.unwrap_or("publish")},{"name":"POD_UID","valueFrom":{"fieldRef":{"fieldPath":"metadata.uid"}}},{"name":"BUILDKIT_HOST","value":"unix:///run/buildkit/buildkitd.sock"}],"resources":{"requests":{"cpu":pool.spec.cpu,"memory":pool.spec.memory,"ephemeral-storage":pool.spec.ephemeral_storage},"limits":{"cpu":pool.spec.cpu,"memory":pool.spec.memory,"ephemeral-storage":pool.spec.ephemeral_storage}},"securityContext":{"readOnlyRootFilesystem":true,"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"task","mountPath":"/run/task","readOnly":true},{"name":"workspace","mountPath":"/workspace"},{"name":"tmp","mountPath":"/tmp"},{"name":"socket","mountPath":"/run/buildkit"}]}],"volumes":[{"name":"task","secret":{"secretName":build.spec.task_secret,"defaultMode":288,"items":[{"key":task_key,"path":"task.json"}]}},{"name":"workspace","emptyDir":{"sizeLimit":pool.spec.ephemeral_storage}},{"name":"tmp","emptyDir":{"medium":"Memory","sizeLimit":"64Mi"}},{"name":"socket","emptyDir":{}}]}}}});
+    let labels = json!({"app.kubernetes.io/name":"artifactory-image-worker","artifactory.dev/image-build":build.name_any(),"artifactory.dev/builder-pool":build.spec.pool,"artifactory.dev/project":build.spec.project_id,"artifactory.dev/platform":platform.unwrap_or("publish").strip_prefix("linux/").unwrap_or("publish")});
+    let mut value = json!({"apiVersion":"batch/v1","kind":"Job","metadata":{"name":name(build,platform)?,"namespace":build.namespace(),"ownerReferences":[owner],"labels":labels},"spec":{"backoffLimit":0,"activeDeadlineSeconds":build.spec.timeout_seconds,"template":{"metadata":{"labels":labels},"spec":{"serviceAccountName":"artifactory-image-worker","automountServiceAccountToken":false,"restartPolicy":"Never","nodeSelector":selector,"securityContext":{"runAsUser":1000,"runAsGroup":1000,"fsGroup":1000,"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"worker","image":pool.spec.worker_image,"imagePullPolicy":pool.spec.image_pull_policy,"command":[binary],"env":[{"name":"ARTIFACTORY_IMAGE_TASK","value":"/run/task/task.json"},{"name":"ARTIFACTORY_IMAGE_PLATFORM","value":platform.unwrap_or("publish")},{"name":"POD_UID","valueFrom":{"fieldRef":{"fieldPath":"metadata.uid"}}},{"name":"BUILDKIT_HOST","value":"unix:///run/buildkit/buildkitd.sock"}],"resources":{"requests":{"cpu":pool.spec.cpu,"memory":pool.spec.memory,"ephemeral-storage":pool.spec.ephemeral_storage},"limits":{"cpu":pool.spec.cpu,"memory":pool.spec.memory,"ephemeral-storage":pool.spec.ephemeral_storage}},"securityContext":{"readOnlyRootFilesystem":true,"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"name":"task","mountPath":"/run/task","readOnly":true},{"name":"workspace","mountPath":"/workspace","readOnly":true},{"name":"work","mountPath":"/work"},{"name":"tmp","mountPath":"/tmp"},{"name":"socket","mountPath":"/run/buildkit"}]}],"volumes":[{"name":"task","secret":{"secretName":build.spec.task_secret,"defaultMode":288,"items":[{"key":task_key,"path":"task.json"}]}},{"name":"workspace","emptyDir":{"sizeLimit":pool.spec.ephemeral_storage}},{"name":"work","emptyDir":{"sizeLimit":pool.spec.ephemeral_storage}},{"name":"tmp","emptyDir":{"medium":"Memory","sizeLimit":"64Mi"}},{"name":"socket","emptyDir":{}}]}}}});
     let pod = &mut value["spec"]["template"]["spec"];
     if !publisher {
         pod["initContainers"] = json!([{"name":"buildkit","restartPolicy":"Always","image":pool.spec.buildkit_image,"imagePullPolicy":pool.spec.image_pull_policy,"args":["--addr","unix:///run/buildkit/buildkitd.sock","--oci-worker-no-process-sandbox"],"securityContext":{"runAsUser":1000,"runAsGroup":1000,"runAsNonRoot":true,"seccompProfile":{"type":"Unconfined"},"appArmorProfile":{"type":"Unconfined"}},"resources":{"requests":{"cpu":pool.spec.cpu,"memory":pool.spec.memory,"ephemeral-storage":pool.spec.ephemeral_storage},"limits":{"cpu":pool.spec.cpu,"memory":pool.spec.memory,"ephemeral-storage":pool.spec.ephemeral_storage}},"volumeMounts":[{"name":"socket","mountPath":"/run/buildkit"},{"name":"buildkit-state","mountPath":"/home/user/.local/share/buildkit"}],"startupProbe":{"exec":{"command":["buildctl","--addr","unix:///run/buildkit/buildkitd.sock","debug","workers"]},"periodSeconds":2,"failureThreshold":90}}]);
@@ -171,22 +139,43 @@ pub fn job(
             json!({"name":"GIT_SSL_CAINFO","value":"/run/ca/ca.crt"}),
         ]);
     }
-    if !publisher && !pool.spec.native_sidecar {
-        // 旧集群以共享完成标记停止普通容器，保留 Runner 的退出码。
-        let mut buildkit = pod
-            .as_object_mut()
-            .unwrap()
-            .remove("initContainers")
-            .unwrap()[0]
-            .take();
-        buildkit.as_object_mut().unwrap().remove("restartPolicy");
-        buildkit["command"] = json!(["/bin/sh", "-c", LEGACY_BUILDKIT, "buildkit-sidecar"]);
-        pod["containers"][0]["command"] =
-            json!(["/bin/sh", "-c", LEGACY_WORKER, "image-worker", binary]);
-        pod["containers"].as_array_mut().unwrap().push(buildkit);
-        value["spec"]["template"]["metadata"]["annotations"] = json!({
-            "container.apparmor.security.beta.kubernetes.io/buildkit": "unconfined"
+    if !publisher {
+        let mut source = json!({
+            "name":"source", "image":pool.spec.source_preparer_image, "imagePullPolicy":pool.spec.image_pull_policy,
+            "command":["artifactory-source-preparer","checkout"],
+            "env":[
+                {"name":"ARTIFACTORY_SOURCE_PREPARE_URL","value":format!("{}/internal/source/prepare",pool.spec.control_url.trim_end_matches('/'))},
+                {"name":"ARTIFACTORY_SOURCE_IDENTITY","value":json!({"kind":"image-build","execution_id":build.spec.execution_id,"platform":platform}).to_string()},
+                {"name":"ARTIFACTORY_SOURCE_ROOT","value":"/workspace/source"},
+                {"name":"ARTIFACTORY_SOURCE_METADATA","value":"/workspace/source-manifest.json"},
+                {"name":"ARTIFACTORY_SOURCE_AUTH_ROOT","value":"/run/source-auth"},
+                {"name":"ARTIFACTORY_POD_TOKEN","value":"/var/run/source-identity/token"},
+                {"name":"POD_NAME","valueFrom":{"fieldRef":{"fieldPath":"metadata.name"}}},
+                {"name":"POD_UID","valueFrom":{"fieldRef":{"fieldPath":"metadata.uid"}}},
+                {"name":"POD_NAMESPACE","valueFrom":{"fieldRef":{"fieldPath":"metadata.namespace"}}}
+            ],
+            "resources":{"requests":{"cpu":pool.spec.cpu,"memory":pool.spec.memory,"ephemeral-storage":pool.spec.ephemeral_storage},"limits":{"cpu":pool.spec.cpu,"memory":pool.spec.memory,"ephemeral-storage":pool.spec.ephemeral_storage}},
+            "securityContext":{"readOnlyRootFilesystem":true,"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},
+            "volumeMounts":[{"name":"workspace","mountPath":"/workspace"},{"name":"source-auth","mountPath":"/run/source-auth"},{"name":"source-identity","mountPath":"/var/run/source-identity","readOnly":true},{"name":"tmp","mountPath":"/tmp"}]
         });
+        if !pool.spec.ca_secret.is_empty() {
+            source["env"]
+                .as_array_mut()
+                .expect("environment array")
+                .push(json!({"name":"ARTIFACTORY_SERVICE_CA","value":"/run/ca/ca.crt"}));
+            source["volumeMounts"]
+                .as_array_mut()
+                .expect("mount array")
+                .push(json!({"name":"ca","mountPath":"/run/ca","readOnly":true}));
+        }
+        pod["initContainers"]
+            .as_array_mut()
+            .expect("init array")
+            .insert(0, source);
+        pod["volumes"].as_array_mut().expect("volume array").extend([
+            json!({"name":"source-auth","emptyDir":{"medium":"Memory","sizeLimit":"16Mi"}}),
+            json!({"name":"source-identity","projected":{"sources":[{"serviceAccountToken":{"audience":"artifactory-source-prepare","expirationSeconds":600,"path":"token"}}]}})
+        ]);
     }
     Ok(serde_json::from_value(value)?)
 }

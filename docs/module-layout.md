@@ -1,27 +1,30 @@
+<!--
+[INPUT]: Rust 工作区与独立 Node.js 规划模块。
+[OUTPUT]: 定义当前模块名称、职责和依赖方向。
+[POS]: 项目目录导航；只描述当前架构。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # 模块布局与命名
 
-| 模块 | 目录 | 包 / 命令 | 中文名称 |
-|---|---|---|---|
-| control-plane | `crates/control-plane` | Cargo `artifactory-control-plane`，Rust `artifactory_control_plane` | 控制平面 |
-| agent-worker | `packages/agent-worker` | npm / CLI `artifactory-agent-worker` | Agent worker |
-| agent-operator | `operators/agent-operator` | Cargo / CLI `artifactory-agent-operator` | Agent Operator |
-| image-operator | `operators/image-operator` | Cargo / CLI `artifactory-image-operator` | 镜像构建 Operator |
-| image-protocol | `crates/image-protocol` | Cargo `artifactory-image-protocol` | 镜像执行契约 |
-| image-registry | `crates/image-registry` | Cargo `artifactory-image-registry` | OCI 仓库客户端 |
-| gateway | `crates/gateway` | Cargo / CLI `artifactory-gateway` | 反向代理网关 |
+| 目录 | 包或命令 | 职责 |
+|---|---|---|
+| `crates/control-plane` | `artifactory-control-plane` | 业务身份、源码元数据、构建授权与制品 |
+| `crates/source-checkout` | `artifactory-source-checkout` | 固定源码清单、直接 Git/LFS 拉取与核验 |
+| `crates/source-preparer` | `artifactory-source-preparer` | 任务 Pod 的源码解析及 init container 入口 |
+| `crates/planner-runtime` | `artifactory-planner-runtime` | AI 预算、租约、模型请求与规划恢复 |
+| `packages/agent-worker` | `artifactory-agent-worker` | 每个规划 Job 的本地只读源码工具与 AI 循环 |
+| `operators/agent-operator` | `artifactory-agent-operator` | SourceTask 与 AgentRun 临时 Job |
+| `operators/image-operator` | `artifactory-image-operator` | 每个平台的临时 BuildKit 与 Publisher Job |
+| `crates/image-protocol` | `artifactory-image-protocol` | 镜像目标与执行材料契约 |
+| `crates/image-registry` | `artifactory-image-registry` | OCI 图校验与镜像发布 |
+| `crates/gateway` | `artifactory-gateway` | 统一反向代理和设备 TLS 透传 |
+| `crates/emissary` | `artifactory-emissary` | 原生设备任务、临时 checkout 与制品上传 |
+| `web` | `artifactory-console` | Next.js 多租户控制台 |
 
-Rust 服务和共享库使用 `crates/`；Kubernetes Operator 使用 `operators/`，每个 Operator 是独立 crate 与运行镜像。Node.js 模块使用 `packages/`，各模块保留自己的 `package.json` 与锁文件。Next.js 控制台位于 `web/`。
+两个 Operator 是独立 crate 和 Deployment，均位于 `operators/`。共享服务与库位于 `crates/`。Node.js 规划主容器只通过 Runtime 领取任务，每次 Job 的 init container 提供本次源码。
 
-控制平面的 Compose 服务、Helm Deployment / Service / PVC、镜像组件名统一为 `control-plane`；worker 对应名称统一为 `agent-worker`。Helm values 使用 `images.control-plane`、`resources.control-plane`、`persistence.control-plane` 和 `agentWorker.enabled` / `agentWorker.serverName`。
+Control 只保存仓库身份、commit、子模块、tag 和 LFS 摘要。制品与日志进入制品 Bucket，OCI 镜像进入独立 Registry Bucket。源码工作树、Git 对象与构建中间缓存只存在于任务临时目录。
 
-本次调整沿用数据库表、SQL 迁移文件内容、RPC、`/ai-workers` API、`ARTIFACTORY_AI_*` / `ARTIFACTORY_CONTROL_URL` 环境变量，以及 Operator 的 `controlUrl` 字段。已有注册身份和协议无需重新生成。
+主 Chart 部署 Control、Web、统一双副本网关、遥测和私有存储。Agent Operator Chart 部署 Runtime 与 AgentPool。Image Operator Chart 部署 BuilderPool。Registry Chart 部署 Distribution。
 
-## 从旧布局升级
-
-`operator/` 已迁移到 `operators/agent-operator/`，命令改为 `artifactory-agent-operator`。Chart 路径改为 `charts/artifactory-agent-operator`；Helm release、命名空间和 Agent/Source 持久身份保持原值。新旧控制器选主 Lease 不同，升级须先停止旧控制器。完整顺序见 [Operator 升级](operator-operations.md#从旧-operator-升级)。镜像构建由独立 `artifactory-image-operator` 提供，不与 Agent 控制器合并。
-
-2026-11-13 之前的控制平面源码目录为 `crates/control`，命令为 `artifactory-control`；worker 源码目录为 `ai-worker`，命令为 `artifactory-ai-worker`。历史验收结果仍对应记录中的源码提交。
-
-新安装使用 `.local/control-plane`、`.local/agent-worker`、`.deploy/control-plane` 和 `.deploy/agent-worker`。升级既有实例时，先按[运维手册](operations.md#备份恢复与保留)排空任务、停止写入并备份，再迁移原有控制平面数据和 worker 身份目录；沿用现有环境文件时，也需要更新其中的数据路径。保留原主密钥、CA、证书和身份配置。
-
-Helm 的控制平面 PVC 从 `<release>-control` 改为 `<release>-control-plane`，worker PVC 从 `<release>-ai-worker` 改为 `<release>-agent-worker`。升级前将原 PVC 内容恢复到对应新 PVC，验证恢复数据和身份后再启动新 Deployment；原 PVC 继续按保留策略保留。同步更新自定义 values 中的组件键、镜像、服务 DNS 和代理配置，并为变更后的内部 DNS 续签服务器证书。
+项目使用全新初始化数据库基线。原型数据重置后重新创建业务记录，不支持旧架构数据库升级或旧协议双路径。

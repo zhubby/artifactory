@@ -56,6 +56,7 @@ struct Peer {
     logs: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     ack_delay: Duration,
     metrics: Arc<TransportMetrics>,
+    materials: Arc<Mutex<HashMap<String, String>>>,
 }
 
 #[derive(Default)]
@@ -69,6 +70,24 @@ pub struct TransportMetrics {
 }
 #[tonic::async_trait]
 impl pb::control_server::Control for Peer {
+    async fn acquire_source_material(
+        &self,
+        request: Request<pb::SourceMaterialRequest>,
+    ) -> Result<Response<pb::SourceMaterialReply>, Status> {
+        if request.extensions().get::<tonic::transport::server::TlsConnectInfo<tonic::transport::server::TcpConnectInfo>>()
+            .and_then(|info|info.peer_certs()).is_none() { return Err(Status::unauthenticated("client certificate required")); }
+        let input = request.into_inner();
+        let material = self
+            .materials
+            .lock()
+            .expect("source materials mutex poisoned")
+            .get(&input.source_digest)
+            .cloned()
+            .ok_or_else(|| Status::permission_denied("source manifest is not authorized"))?;
+        Ok(Response::new(pb::SourceMaterialReply {
+            material_json: material,
+        }))
+    }
     async fn acquire_signing_material(
         &self,
         _: Request<pb::SigningMaterialRequest>,
@@ -228,6 +247,7 @@ pub struct Fixture {
     pub cfg: Config,
     pub connections: mpsc::Receiver<Connection>,
     pub metrics: Arc<TransportMetrics>,
+    materials: Arc<Mutex<HashMap<String, String>>>,
     #[cfg(unix)]
     logs: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     cancel: CancellationToken,
@@ -313,11 +333,13 @@ impl Fixture {
         );
         let (connected, connections) = mpsc::channel(8);
         let logs = Arc::new(Mutex::new(HashMap::new()));
+        let materials = Arc::new(Mutex::new(HashMap::new()));
         let peer = Peer {
             connected,
             logs: logs.clone(),
             ack_delay,
             metrics: metrics.clone(),
+            materials: materials.clone(),
         };
         let cancel = CancellationToken::new();
         let shutdown = cancel.clone();
@@ -341,11 +363,57 @@ impl Fixture {
             },
             connections,
             metrics,
+            materials,
             #[cfg(unix)]
             logs,
             cancel,
             server,
         }
+    }
+    pub async fn source_manifest(&self, repository: &Path, commit: &str) -> String {
+        use artifactory_source_checkout::{PrepareResponse, SourceManifest, SourceRepository};
+        let repository = repository.to_owned();
+        let app = axum::Router::new()
+            .fallback(axum::routing::any(source_backend))
+            .with_state(repository);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let cancel = self.cancel.clone();
+        tokio::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(cancel.cancelled_owned())
+                .await
+                .unwrap();
+        });
+        let manifest = SourceManifest::new(
+            uuid::Uuid::new_v4(),
+            vec![SourceRepository {
+                path: String::new(),
+                upstream_url: format!("http://{address}/git"),
+                commit_sha: commit.to_owned(),
+                tags: Default::default(),
+                lfs_objects: Vec::new(),
+            }],
+        )
+        .unwrap();
+        let material = PrepareResponse {
+            source_id: manifest.id,
+            repository_url: manifest.repositories[0].upstream_url.clone(),
+            reference: commit.to_owned(),
+            pinned_ref_oid: Some(commit.to_owned()),
+            frozen_tags: Default::default(),
+            manifest: Some(manifest.clone()),
+            credentials: Vec::new(),
+            completed_result: None,
+        };
+        self.materials
+            .lock()
+            .expect("source materials mutex poisoned")
+            .insert(
+                manifest.digest.clone(),
+                serde_json::to_string(&material).unwrap(),
+            );
+        serde_json::to_string(&manifest).unwrap()
     }
     pub async fn connection(&mut self) -> Connection {
         match tokio::time::timeout(Duration::from_secs(30), self.connections.recv()).await {
@@ -434,4 +502,67 @@ impl Drop for Fixture {
         self.cancel.cancel();
         self.server.abort();
     }
+}
+
+async fn source_backend(
+    axum::extract::State(repository): axum::extract::State<std::path::PathBuf>,
+    method: axum::http::Method,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> (axum::http::StatusCode, axum::http::HeaderMap, Vec<u8>) {
+    use std::io::Write;
+    let output = tokio::task::spawn_blocking(move || {
+        let mut child = std::process::Command::new("git")
+            .args(["-c", "safe.directory=*", "http-backend"])
+            .env("GIT_PROJECT_ROOT", repository.parent().unwrap())
+            .env("GIT_HTTP_EXPORT_ALL", "1")
+            .env(
+                "PATH_INFO",
+                format!(
+                    "/{}/{}",
+                    repository.file_name().unwrap().to_string_lossy(),
+                    uri.path().trim_start_matches("/git/")
+                ),
+            )
+            .env("REQUEST_METHOD", method.as_str())
+            .env("QUERY_STRING", uri.query().unwrap_or(""))
+            .env(
+                "CONTENT_TYPE",
+                headers
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or(""),
+            )
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(&body).unwrap();
+        child.wait_with_output().unwrap()
+    })
+    .await
+    .unwrap();
+    assert!(output.status.success());
+    let split = output
+        .stdout
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .unwrap();
+    let mut headers = axum::http::HeaderMap::new();
+    let mut status = axum::http::StatusCode::OK;
+    for line in String::from_utf8_lossy(&output.stdout[..split]).lines() {
+        if let Some((name, value)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("content-type") {
+                headers.insert("content-type", value.trim().parse().unwrap());
+            }
+            if name.eq_ignore_ascii_case("status") {
+                status = axum::http::StatusCode::from_u16(
+                    value.split_whitespace().next().unwrap().parse().unwrap(),
+                )
+                .unwrap();
+            }
+        }
+    }
+    (status, headers, output.stdout[split + 4..].to_vec())
 }

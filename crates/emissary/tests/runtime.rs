@@ -72,8 +72,9 @@ async fn log_batches_reuse_one_mtls_transport_and_retry_from_spool() {
             lease_token: "log-transport-fixture".into(),
             lease_seconds: 90,
             assignment: Some(pb::Assignment {
-                repository_url: repo.to_string_lossy().into(),
-                commit_sha: String::from_utf8(commit.stdout).unwrap().trim().into(),
+                source_manifest_json: fixture
+                    .source_manifest(&repo, String::from_utf8(commit.stdout).unwrap().trim())
+                    .await,
                 timeout_seconds: 30,
                 steps: vec![pb::Step {
                     name: "compile".into(),
@@ -103,8 +104,8 @@ async fn log_batches_reuse_one_mtls_transport_and_retry_from_spool() {
     assert!(fixture.metrics.log_batches.load(Ordering::SeqCst) >= 3);
     assert_eq!(
         fixture.metrics.accepted.load(Ordering::SeqCst),
-        2,
-        "control stream and all log batches should use two TLS connections"
+        3,
+        "control, source material, and log upload use three TLS connections"
     );
     assert!(
         std::process::Command::new("kill")
@@ -227,8 +228,9 @@ async fn slow_acknowledgements_do_not_starve_terminal_result() {
             lease_token: "delayed-ack".into(),
             lease_seconds: 90,
             assignment: Some(pb::Assignment {
-                repository_url: repo.to_string_lossy().into(),
-                commit_sha: String::from_utf8(commit.stdout).unwrap().trim().into(),
+                source_manifest_json: fixture
+                    .source_manifest(&repo, String::from_utf8(commit.stdout).unwrap().trim())
+                    .await,
                 timeout_seconds: 90,
                 steps: (0..20)
                     .map(|index| pb::Step {
@@ -479,7 +481,7 @@ async fn foreground_and_ota_shutdown_stop_authenticated_worker_tree() {
             .unwrap();
         let mut connection = fixture.connection().await;
         let attempt = uuid::Uuid::new_v4().to_string();
-        connection.commands.send(pb::Command{kind:"assign".into(),attempt_id:attempt.clone(),lease_token:"fixture-lease".into(),lease_seconds:90,assignment:Some(pb::Assignment{repository_url:repo.to_string_lossy().into(),commit_sha:commit,timeout_seconds:120,steps:vec![pb::Step{name:"tree".into(),shell:"sh".into(),run:"sh -c 'sleep 120 & wait' & pid=$!; printf '%s\\n' \"$pid\" > child.pid.tmp && mv child.pid.tmp child.pid; echo tree-started; wait".into(),timeout_seconds:120,..Default::default()}],..Default::default()}),..Default::default()}).await.unwrap();
+        connection.commands.send(pb::Command{kind:"assign".into(),attempt_id:attempt.clone(),lease_token:"fixture-lease".into(),lease_seconds:90,assignment:Some(pb::Assignment{source_manifest_json:fixture.source_manifest(&repo,&commit).await,timeout_seconds:120,steps:vec![pb::Step{name:"tree".into(),shell:"sh".into(),run:"sh -c 'sleep 120 & wait' & pid=$!; printf '%s\\n' \"$pid\" > child.pid.tmp && mv child.pid.tmp child.pid; echo tree-started; wait".into(),timeout_seconds:120,..Default::default()}],..Default::default()}),..Default::default()}).await.unwrap();
         let marker = fixture
             .cfg
             .root
@@ -532,5 +534,136 @@ async fn foreground_and_ota_shutdown_stop_authenticated_worker_tree() {
         let spool = fixture.cfg.root.join("spool").join(&attempt);
         assert!(!spool.exists() || fs::read_dir(spool).unwrap().next().is_none());
         config::Config::load(&path).unwrap();
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn worker_kills_process_tree_on_parent_death_and_lease_expiry() {
+    use artifactory_emissary::{
+        config::Config,
+        protocol::{Assignment, Step},
+        worker::{Event, Input},
+    };
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    for cause in ["parent-death", "lease-expiry", "sigterm"] {
+        let directory = tempfile::tempdir().unwrap();
+        let repo = directory.path().join("repo");
+        fs::create_dir(&repo).unwrap();
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args([
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@localhost",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        };
+        git(&["init"]);
+        fs::write(repo.join("README"), "fixture").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-m", "fixture"]);
+        let commit = git(&["rev-parse", "HEAD"]);
+        let id = uuid::Uuid::new_v4().to_string();
+        let root = directory.path().join("managed");
+        let fixture = support::Fixture::start(directory.path(), &[&rustls::version::TLS13]).await;
+        let input = Input {
+            kind: "start".into(),
+            config: Config {
+                root: root.clone(),
+                ..fixture.cfg.clone()
+            },
+            attempt_id: id.clone(),
+            lease_token: "test".into(),
+            lease_seconds: if cause == "lease-expiry" { 2 } else { 30 },
+            assignment: Some(Assignment {
+                source_manifest_json: fixture.source_manifest(&repo, &commit).await,
+                timeout_seconds: 60,
+                steps: vec![Step {
+                    name: "long".into(),
+                    shell: "sh".into(),
+                    run: "sh -c 'sleep 120 & wait' & pid=$!; printf '%s\\n' \"$pid\" > child.pid.tmp && mv child.pid.tmp child.pid; wait".into(),
+                    timeout_seconds: 60,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let mut child = Command::new(env!("CARGO_BIN_EXE_artifactory-emissary"))
+            .arg("worker")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        let mut line = serde_json::to_vec(&input).unwrap();
+        line.push(b'\n');
+        stdin.write_all(&line).await.unwrap();
+        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        let drain = tokio::spawn(async move {
+            let mut events = Vec::new();
+            while let Some(line) = lines.next_line().await.unwrap() {
+                events.push(serde_json::from_str::<Event>(&line).unwrap());
+            }
+            events
+        });
+        let marker = root.join("work").join(&id).join("source/child.pid");
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !marker.exists() {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let pid = fs::read_to_string(marker)
+            .unwrap()
+            .trim()
+            .parse::<u32>()
+            .unwrap();
+        if cause == "parent-death" {
+            drop(stdin);
+        } else if cause == "sigterm" {
+            assert!(
+                std::process::Command::new("kill")
+                    .args(["-TERM", &child.id().unwrap().to_string()])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+        tokio::time::timeout(Duration::from_secs(10), child.wait())
+            .await
+            .unwrap()
+            .unwrap();
+        let events = drain.await.unwrap();
+        assert!(
+            events
+                .iter()
+                .any(|e| e.kind == "finished" && e.payload["status"] == "failed"),
+            "{cause}"
+        );
+        assert!(
+            !root.join("work").join(&id).exists(),
+            "workspace remains: {cause}"
+        );
+        let mut system = sysinfo::System::new();
+        system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        assert!(
+            system
+                .process(sysinfo::Pid::from_u32(pid))
+                .is_none_or(|p| p.status() == sysinfo::ProcessStatus::Zombie),
+            "descendant remains: {cause}"
+        );
     }
 }

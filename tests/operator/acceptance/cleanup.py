@@ -87,7 +87,7 @@ def run(args):
         assert request('control-plane', '/healthz')['status'] == 'ok', 'Independent control path unavailable'
         request('upstream', '/test/mode', {'hold': True})
         project = a.api('/api/v1/projects', {'name': 'cleanup-fault-' + uuid.uuid4().hex[:8],
-                         'repository_url': 'https://upstream:9443/repo.git', 'planner_backend': 'kubernetes'})['id']
+                         'repository_url': 'https://upstream:9443/repo.git',})['id']
         build = a.api('/api/v1/projects/' + project + '/builds', {
             'ref': 'v-fixture', 'goal': 'Hold a real model request for node cleanup verification',
             'target_requirements': [{'os': 'linux', 'arch': a.arch}]})['id']

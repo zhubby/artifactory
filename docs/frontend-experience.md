@@ -46,7 +46,7 @@ rtk npm run test:docs
 
 独立 UI 测试使用完整 API fixtures，不需要账号、数据库或 Agent；覆盖桌面 1440px、平板 820px、手机 390px，中英双语、深浅配色、系统主题变化、偏好持久化、原始内容、无横向页面溢出、对话框焦点、权限控件及切换偏好时的状态保留。动效测试验证系统减少动态效果、手动关闭和偏好持久化。axe 自动检查覆盖核心页面、设备侧面板、个人设置与快捷面板。
 
-当前截图保存到忽略的 `.local/workspace-evidence/`、`.local/ux-evidence/` 和 `.local/docs-evidence/`，trace 与报告位于 `web/test-results/ui/`、`web/playwright-report/ui/`。真实后台验收继续运行 `rtk npm test`，需要按 README 启动 `scripts/acceptance.py --keep-alive` 并加载私有配置。fixtures 与真实构建、SSE、下载、发布和权限验收分开记录。
+当前截图保存到忽略的 `.local/workspace-evidence/`、`.local/ux-evidence/` 和 `.local/docs-evidence/`，trace 与报告位于 `web/test-results/ui/`、`web/playwright-report/ui/`。真实后台验收继续运行 `rtk npm test`，需要连接 Kubernetes 验收命名空间的 Gateway，并加载该次验收的私有配置。fixtures 与真实构建、SSE、下载、发布和权限验收分开记录。
 
 两套测试的输出目录相互独立：真实后台用例使用 `web/test-results/live/`、`web/playwright-report/live/`，避免清理其他套件的 trace。
 

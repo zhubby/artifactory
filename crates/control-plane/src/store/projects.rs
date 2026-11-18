@@ -8,7 +8,7 @@ use artifactory_database::{params, sql};
 use super::ControlStore;
 use super::{NodeAccess, NodeAccessMode};
 use crate::error::ApiError;
-use crate::{error::Result, source_cache::CredentialBinding};
+use crate::{error::Result, source::CredentialBinding};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -17,8 +17,6 @@ use uuid::Uuid;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectInput {
-    #[serde(default)]
-    pub planner_backend: Option<String>,
     pub name: String,
     pub repository_url: String,
     pub credential_id: Option<Uuid>,
@@ -40,7 +38,6 @@ pub struct ProjectInput {
 pub struct ProjectSource {
     pub repository_url: String,
     pub credential_id: Option<Uuid>,
-    pub planner_backend: String,
 }
 
 impl ControlStore {
@@ -72,7 +69,6 @@ impl ControlStore {
         Ok(ProjectSource {
             repository_url: row.repository_url,
             credential_id: row.credential_id,
-            planner_backend: row.planner_backend,
         })
     }
 
@@ -185,7 +181,7 @@ impl ControlStore {
         } else {
             (vec![], access.ids.clone())
         };
-        sql::execute(&mut tx,"INSERT INTO projects(id,tenant_id,name,repository_url,credential_id,pool_ids,node_ids,node_access_mode,signing_profiles,model_profile_id,build_context,source_credentials,planner_backend) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",params![id,self.tenant()?,&input.name,&input.repository_url,input.credential_id,pools,nodes,if access.mode==NodeAccessMode::Pools {"pools"} else {"nodes"},&input.signing_profiles,input.model_profile_id,&input.build_context,serde_json::to_value(&input.source_credentials).map_err(anyhow::Error::from)?,input.planner_backend.as_deref().unwrap_or("poll")]).await?;
+        sql::execute(&mut tx,"INSERT INTO projects(id,tenant_id,name,repository_url,credential_id,pool_ids,node_ids,node_access_mode,signing_profiles,model_profile_id,build_context,source_credentials) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",params![id,self.tenant()?,&input.name,&input.repository_url,input.credential_id,pools,nodes,if access.mode==NodeAccessMode::Pools {"pools"} else {"nodes"},&input.signing_profiles,input.model_profile_id,&input.build_context,serde_json::to_value(&input.source_credentials).map_err(anyhow::Error::from)?]).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -214,7 +210,7 @@ impl ControlStore {
         {
             return Err(ApiError::Forbidden);
         }
-        sql::execute(&mut tx,"UPDATE projects SET name=$2,repository_url=$3,credential_id=$4,signing_profiles=$5,model_profile_id=$6,build_context=$7,source_credentials=$8,planner_backend=coalesce($9,planner_backend) WHERE id=$1 AND tenant_id=$10",params![id,&input.name,&input.repository_url,input.credential_id,&input.signing_profiles,input.model_profile_id,&input.build_context,serde_json::to_value(&input.source_credentials).map_err(anyhow::Error::from)?,&input.planner_backend,self.tenant()?]).await?;
+        sql::execute(&mut tx,"UPDATE projects SET name=$2,repository_url=$3,credential_id=$4,signing_profiles=$5,model_profile_id=$6,build_context=$7,source_credentials=$8 WHERE id=$1 AND tenant_id=$9",params![id,&input.name,&input.repository_url,input.credential_id,&input.signing_profiles,input.model_profile_id,&input.build_context,serde_json::to_value(&input.source_credentials).map_err(anyhow::Error::from)?,self.tenant()?]).await?;
         if tenant_admin {
             let column = if access.mode == NodeAccessMode::Pools {
                 "pool_ids"

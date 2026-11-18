@@ -3,12 +3,11 @@
 //! [POS]: 将固定执行计划交给当前节点会话。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
-    protocol::{Assignment, GitCredential, Step},
+    protocol::{Assignment, Step},
     recipe::{Recipe, Target},
-    source,
     state::AppState,
 };
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use serde_json::{Value, json};
 use std::time::Duration;
 use uuid::Uuid;
@@ -53,17 +52,13 @@ pub fn start(state: AppState) {
             let resolver = state.clone();
             tokio::spawn(async move {
                 loop {
-                    if let Err(error) = crate::runtime_bridge::resolve_remote_next(&resolver).await
-                    {
+                    if let Err(error) = crate::source_tasks::reconcile(&resolver).await {
                         tracing::warn!(%error,"remote source resolution deferred");
                     }
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             });
         }
-    }
-    if state.settings.local_source_url.is_none() {
-        start_source(state.clone());
     }
     // Source restoration can take minutes. Keep assignment preparation apart
     // from cancellation, lease expiry and scheduling, with one bounded batch.
@@ -138,140 +133,6 @@ pub fn start(state: AppState) {
     });
 }
 
-/// Run the singleton legacy source cache and resolver on its retained volume.
-pub fn start_source(state: AppState) {
-    let cache = state.clone();
-    tokio::spawn(async move {
-        let quota = std::env::var("ARTIFACTORY_SOURCE_CACHE_BYTES")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(20 * 1024 * 1024 * 1024);
-        loop {
-            tokio::time::sleep(Duration::from_secs(60)).await;
-            if let Err(error) = crate::source_cache::collect(&cache, quota).await {
-                tracing::warn!(%error,"source cache collection failed");
-            }
-        }
-    });
-    let resolver = state.clone();
-    tokio::spawn(async move {
-        loop {
-            if let Err(error) = resolve_next(&resolver).await {
-                tracing::warn!(%error,"source resolution failed");
-            }
-            tokio::time::sleep(Duration::from_secs(2)).await;
-        }
-    });
-}
-
-async fn resolve_next(state: &AppState) -> Result<()> {
-    state
-        .store
-        .resolve_build(|input| async move {
-            if input.goal.is_some() {
-                let model = input.model_config_snapshot.ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "configure an enabled platform model profile before creating this build"
-                    )
-                })?;
-                let bindings = serde_json::from_value(
-                    input
-                        .planning_context
-                        .get("source_credentials")
-                        .cloned()
-                        .unwrap_or(json!([])),
-                )?;
-                let snapshot = crate::source_cache::capture(
-                    state,
-                    input.project_id,
-                    &input.repository_url,
-                    &input.requested_ref,
-                    input.credential_id,
-                    bindings,
-                )
-                .await?;
-                return Ok(crate::store::ResolvedSource::Planned {
-                    commit: snapshot.commit,
-                    snapshot_id: snapshot.id,
-                    model,
-                });
-            }
-            let auth = source::credential(state, input.credential_id).await?;
-            let (commit, yaml) =
-                source::resolve(state, &input.repository_url, &input.requested_ref, auth).await?;
-            let recipe = Recipe::parse(&yaml)?;
-            recipe.environment(&input.parameters)?;
-            ensure!(
-                input
-                    .selected_targets
-                    .iter()
-                    .all(|name| recipe.targets.contains_key(name)),
-                "unknown selected target"
-            );
-            let targets: Vec<_> = recipe
-                .targets
-                .iter()
-                .filter(|(name, _)| {
-                    input.selected_targets.is_empty() || input.selected_targets.contains(name)
-                })
-                .map(|(name, target)| (name.clone(), target.clone()))
-                .collect();
-            ensure!(!targets.is_empty(), "no selected targets");
-            crate::images::ensure_targets_enabled(
-                targets.iter().map(|(_, target)| target),
-                input.planning_context["image_builds_enabled"]
-                    .as_bool()
-                    .unwrap_or(false),
-            )?;
-            for (_, target) in &targets {
-                ensure!(
-                    target
-                        .signing_profiles
-                        .iter()
-                        .all(|profile| input.signing_profiles.contains(profile)),
-                    "project is not authorized for signing profile"
-                );
-            }
-            ensure!(
-                input.release_version.is_none() || recipe.release.enabled,
-                "release is not enabled by repository configuration"
-            );
-            let snapshot_id = if targets
-                .iter()
-                .any(|(_, target)| target.executor == "buildkit")
-            {
-                let bindings = serde_json::from_value(
-                    input
-                        .planning_context
-                        .get("source_credentials")
-                        .cloned()
-                        .unwrap_or(json!([])),
-                )?;
-                let snapshot = crate::source_cache::capture(
-                    state,
-                    input.project_id,
-                    &input.repository_url,
-                    &commit,
-                    input.credential_id,
-                    bindings,
-                )
-                .await?;
-                ensure!(snapshot.commit == commit, "recipe snapshot commit changed");
-                Some(snapshot.id)
-            } else {
-                None
-            };
-            Ok(crate::store::ResolvedSource::Recipe {
-                snapshot_id,
-                commit,
-                yaml,
-                recipe,
-                targets,
-            })
-        })
-        .await
-}
-
 pub fn matches(
     target: &Target,
     os: &str,
@@ -333,7 +194,6 @@ async fn maintain(state: &AppState) -> Result<()> {
     state
         .store
         .maintain(|| async {
-            crate::planning::reap(state).await?;
             expire(state).await?;
             refresh_builds(state).await?;
             queue_revisions(state).await?;
@@ -400,33 +260,19 @@ pub(crate) async fn assignment(state: &AppState, job: Uuid, attempt: Uuid) -> Re
     environment.insert("ARTIFACTORY_COMMIT_SHA".into(), context.commit_sha.clone());
     environment.insert("ARTIFACTORY_TARGET".into(), context.target.clone());
     environment.insert("ARTIFACTORY_BUILD_ID".into(), context.id.to_string());
-    let source_descriptor = if let Some(id) = context.source_snapshot_id {
-        Some(crate::source_cache::descriptor(state, id, attempt).await?)
-    } else {
-        None
-    };
-    let credential = source::credential(
-        state,
-        if source_descriptor.is_none() {
-            context.credential_id
-        } else {
-            None
-        },
-    )
-    .await?
-    .map(|auth| GitCredential {
-        kind: auth.kind,
-        username: auth.username,
-        secret: auth.secret,
-        known_hosts: auth.known_hosts,
-    });
+    let source = state
+        .store
+        .source_manifest(
+            context
+                .source_manifest_id
+                .ok_or_else(|| anyhow::anyhow!("source manifest missing"))?,
+        )
+        .await?;
     Ok(Assignment {
         managed_signing_json,
         job_id: job.to_string(),
         build_id: context.id.to_string(),
         target: context.target,
-        repository_url: context.repository_url,
-        commit_sha: context.commit_sha,
         steps: target
             .steps
             .into_iter()
@@ -448,9 +294,8 @@ pub(crate) async fn assignment(state: &AppState, job: Uuid, attempt: Uuid) -> Re
         artifacts: target.artifacts,
         environment: environment.into_iter().collect(),
         signing_profiles: target.signing_profiles,
-        git_credential: credential,
         timeout_seconds: target.timeout_seconds,
-        source: source_descriptor,
+        source_manifest_json: serde_json::to_string(&source)?,
         plan_revision_id: plan_id.map(|id| id.to_string()).unwrap_or_default(),
         scripts: plan.map(|plan| plan.scripts()).unwrap_or_default(),
     })

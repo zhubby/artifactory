@@ -1,4 +1,7 @@
-//! Real Tonic/mTLS connections against isolated database schemas and controlled storage.
+//! [INPUT]: 依赖隔离 PostgreSQL、真实 Tonic/mTLS 和存储桩。
+//! [OUTPUT]: 验证设备会话、心跳、制品传输和故障恢复。
+//! [POS]: 组合设备负载与节点元数据传输回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use artifactory_control_plane::{dispatch, grpc::EmissaryService, pki, protocol as pb};
 use rcgen::{BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair};
@@ -12,8 +15,6 @@ use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Server, 
 
 #[path = "device_load.rs"]
 mod load;
-#[path = "local_source.rs"]
-mod local_source;
 #[path = "node_metadata.rs"]
 mod node_metadata;
 
@@ -85,13 +86,11 @@ impl Replica {
             ))
             .client_ca_root(Certificate::from_pem(&certificates.ca));
         let service = EmissaryService(state.clone());
-        let planning = artifactory_control_plane::planning::PlanningService(state.clone());
         let server = tokio::spawn(async move {
             Server::builder()
                 .tls_config(tls)
                 .unwrap()
                 .add_service(pb::control_server::ControlServer::new(service))
-                .add_service(pb::planning_server::PlanningServer::new(planning))
                 .serve_with_incoming(incoming)
                 .await
                 .unwrap();

@@ -1,4 +1,7 @@
-//! Runtime records are private to the persistence layer.
+//! [INPUT]: 依赖固定意图、运行预算与审计消息。
+//! [OUTPUT]: 声明 Runtime 私有数据库模型。
+//! [POS]: SQL 投影与全新初始化基线的模型地图。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use uuid::Uuid;
 
 #[derive(Debug, toasty::Model)]
@@ -12,15 +15,13 @@ pub(super) struct Run {
     pub intent_ciphertext: Option<String>,
     pub project_id: Option<Uuid>,
     pub pool: Option<String>,
-    pub snapshot_id: Option<Uuid>,
-    pub snapshot_digest: Option<String>,
+    pub source_manifest_id: Option<Uuid>,
+    pub source_digest: Option<String>,
     #[column(type = jsonb)]
     pub lifecycle: toasty::Json<serde_json::Value>,
     pub status: String,
     #[column(type = jsonb)]
     pub execution: Option<toasty::Json<serde_json::Value>>,
-    #[column(type = jsonb)]
-    pub checkpoint: Option<toasty::Json<serde_json::Value>>,
     #[column(type = jsonb)]
     #[default(toasty::Json(serde_json::json!({})))]
     pub usage: toasty::Json<serde_json::Value>,
@@ -85,4 +86,30 @@ pub(super) struct Proposal {
     pub deadline_ms: i64,
     #[column(type = jsonb)]
     pub result: Option<toasty::Json<serde_json::Value>>,
+}
+
+#[derive(Debug, toasty::Model)]
+#[table = "runtime_conversations"]
+#[key(run_id, generation)]
+pub(super) struct Conversation {
+    pub run_id: Uuid,
+    pub generation: i64,
+    pub pod_uid: String,
+    pub status: String,
+    pub model: String,
+    pub source_digest: Option<String>,
+}
+
+#[derive(Debug, toasty::Model)]
+#[table = "runtime_messages"]
+#[key(run_id, generation, sequence)]
+pub(super) struct Message {
+    pub run_id: Uuid,
+    pub generation: i64,
+    pub sequence: i64,
+    pub event_id: Uuid,
+    pub kind: String,
+    pub input_hash: String,
+    #[column(type = jsonb)]
+    pub payload: toasty::Json<serde_json::Value>,
 }

@@ -1,21 +1,34 @@
 # [INPUT]: ImageBuild 命名空间和 Control 服务身份。
-# [OUTPUT]: 任务声明与任务 Secret 的最小命名空间权限。
-# [POS]: Control 下发任务；Image Operator 仅编排 Job。
+# [OUTPUT]: 源码任务身份校验、任务声明及镜像 Secret 权限。
+# [POS]: Control 验证 Pod 所属任务；Operator 只编排临时 Job。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
-{{- if .Values.imageBuilds.enabled }}
 apiVersion: v1
 kind: ServiceAccount
-metadata: {name: {{ include "artifactory.fullname" . }}-image-dispatch}
+metadata: {name: {{ include "artifactory.fullname" . }}-control}
 ---
+{{- $root := . }}
+{{- range $namespace := (list (.Values.planning.namespace | default .Release.Namespace) (.Values.imageBuilds.namespace | default .Release.Namespace) | uniq) }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "artifactory.fullname" . }}-image-dispatch
-  namespace: {{ .Values.imageBuilds.namespace | default .Release.Namespace }}
+  name: {{ include "artifactory.fullname" $root }}-control
+  namespace: {{ $namespace }}
 rules:
+  - apiGroups: [agents.artifactory.dev]
+    resources: [sourcetasks]
+    verbs: [get, create, patch]
+  - apiGroups: [agents.artifactory.dev]
+    resources: [agentpools, agentruns]
+    verbs: [get]
   - apiGroups: [images.artifactory.dev]
     resources: [imagebuilds]
     verbs: [get, create, patch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get]
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [get]
   - apiGroups: ['']
     resources: [secrets]
     verbs: [get, create, delete]
@@ -23,9 +36,25 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "artifactory.fullname" . }}-image-dispatch
-  namespace: {{ .Values.imageBuilds.namespace | default .Release.Namespace }}
+  name: {{ include "artifactory.fullname" $root }}-control
+  namespace: {{ $namespace }}
 subjects:
-  - {kind: ServiceAccount, name: {{ include "artifactory.fullname" . }}-image-dispatch, namespace: {{ .Release.Namespace }}}
-roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ include "artifactory.fullname" . }}-image-dispatch}
+  - {kind: ServiceAccount, name: {{ include "artifactory.fullname" $root }}-control, namespace: {{ $root.Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ include "artifactory.fullname" $root }}-control}
+
 {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: {{ .Release.Namespace }}-{{ .Release.Name }}-source-tokenreview}
+rules:
+  - apiGroups: [authentication.k8s.io]
+    resources: [tokenreviews]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: {{ .Release.Namespace }}-{{ .Release.Name }}-source-tokenreview}
+subjects:
+  - {kind: ServiceAccount, name: {{ include "artifactory.fullname" . }}-control, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ .Release.Namespace }}-{{ .Release.Name }}-source-tokenreview}

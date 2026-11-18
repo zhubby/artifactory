@@ -3,13 +3,12 @@
 
 NOTES.txt: 输出部署后的访问提示。
 _helpers.tpl: 定义资源命名和安全上下文。
-agent-worker.yaml: 部署规划 Worker。
 config.yaml: 生成非敏感服务配置。
-control-plane.yaml: 部署 Control 和独立 Source；私有密钥环初始化沿用 Control 资源预算。
+control-plane.yaml: 部署无状态 Control，使用临时目录和只读持久身份。
 gateway.yaml: 部署双副本统一网关，按端口和来源隔离入口。
-image-dispatch.yaml: 为 Control 下发 ImageBuild 和任务 Secret 授权。
+image-dispatch.yaml: 授权 Control 下发任务、校验 Pod 归属和调用 TokenReview。
 ingress.yaml: 单域名接入统一 Pingora HTTP 入口。
-persistence.yaml: 创建持久化存储声明。
+persistence.yaml: 只创建数据库和对象存储的 PVC。
 postgres.yaml: 部署 PostgreSQL 和 TimescaleDB。
 s3.yaml: 部署私有 S3 服务。
 services.yaml: 定义集群与设备服务地址。

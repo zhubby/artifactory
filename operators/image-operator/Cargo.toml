@@ -6,6 +6,7 @@ rust-version = "1.95.0"
 default-run = "artifactory-image-operator"
 
 [dependencies]
+artifactory-source-checkout = { path = "../../crates/source-checkout" }
 artifactory-image-registry = { path = "../../crates/image-registry" }
 anyhow = "1"
 artifactory-image-protocol = { path = "../../crates/image-protocol" }

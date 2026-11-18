@@ -5,13 +5,13 @@ lib.rs: 导出节点能力与统一版本标识。
 main.rs: CLI、凭据输入与服务启动入口。
 config.rs: 校验节点配置，创建私有目录并原子保存记录。
 client.rs: 校验入口地址 SAN，建立平台 mTLS 通道与节点注册。
-runner.rs: 会话、租约、事件确认与工作进程调度。
+runner.rs: 会话、租约、事件确认与独立进程会话调度。
 worker.rs: 执行隔离任务并上传制品，以栈预算回归保护原生 Worker。
 signing/: 临时领取材料、清理闭锁并原生校验最终副本。
-source.rs: 固定 Git/LFS 快照并校验源码完整性。
-process.rs: 约束进程树生命周期与日志流。
+source.rs: 领取源码材料，隔离 JVM/Maven 等任务缓存并在删除前回收会话。
+process.rs: 约束进程组与 Worker 会话，回收孤儿进程并读取日志。
 artifacts.rs: 在工作目录内收集、读取与校验制品。
-doctor.rs: 探测原生工具与节点资源。
+doctor.rs: 探测原生工具与节点资源，以独立工具集合验证能力准入。
 ota.rs: 校验签名更新、激活并回滚节点二进制。
 service.rs: 安装并控制原生服务。
 service/: Windows SCM 服务实现。

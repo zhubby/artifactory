@@ -6,8 +6,6 @@ controlPlane:
   replicas: 3
   databaseConnections: 20
   temporaryStorage: 2Gi
-localSource:
-  enabled: true
 postgres:
   maxConnections: 200
 console:
@@ -27,9 +25,6 @@ resources:
   postgres:
     requests: {cpu: 500m, memory: 512Mi}
     limits: {cpu: '2', memory: 2Gi}
-  agent-worker:
-    requests: {cpu: 100m, memory: 256Mi}
-    limits: {cpu: '1', memory: 1Gi}
   s3:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: '1', memory: 1Gi}

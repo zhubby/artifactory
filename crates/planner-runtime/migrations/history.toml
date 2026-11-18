@@ -1,16 +1,6 @@
 version = 1
 
 [[migrations]]
-id = 2026111302
+id = 2026111802
 name = "0000_baseline.sql"
 snapshot_name = "0000_snapshot.toml"
-
-[[migrations]]
-id = 2026111502
-name = "0001_tenants.sql"
-snapshot_name = "0001_snapshot.toml"
-
-[[migrations]]
-id = 2026111507
-name = "0002_lifecycle.sql"
-snapshot_name = "0002_snapshot.toml"

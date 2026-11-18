@@ -77,7 +77,7 @@ class Capacity:
                 if pod['podRef']['namespace'] != 'kube-system' and pod['podRef']['uid'] not in live:
                     continue
                 values.append({'name': pod['podRef']['name'], 'namespace': pod['podRef']['namespace'], 'uid': pod['podRef']['uid'], 'cpu_ns': pod.get('cpu',{}).get('usageCoreNanoSeconds',0), 'rss_bytes': pod.get('memory',{}).get('rssBytes',0), 'working_set_bytes': pod.get('memory',{}).get('workingSetBytes',0), 'rx_bytes': pod.get('network',{}).get('rxBytes',0), 'tx_bytes': pod.get('network',{}).get('txBytes',0)})
-        database = json.loads(self.a.sql('postgres', "SELECT json_build_object('connections',(SELECT json_agg(s) FROM (SELECT datname,wait_event_type,count(*) FROM pg_stat_activity WHERE datname IN ('business','planner','sources') GROUP BY datname,wait_event_type) s),'databases',(SELECT json_agg(s) FROM (SELECT datname,numbackends,xact_commit,xact_rollback,deadlocks FROM pg_stat_database WHERE datname IN ('business','planner','sources')) s))"))
+        database = json.loads(self.a.sql('postgres', "SELECT json_build_object('connections',(SELECT json_agg(s) FROM (SELECT datname,wait_event_type,count(*) FROM pg_stat_activity WHERE datname IN ('business','planner') GROUP BY datname,wait_event_type) s),'databases',(SELECT json_agg(s) FROM (SELECT datname,numbackends,xact_commit,xact_rollback,deadlocks FROM pg_stat_database WHERE datname IN ('business','planner')) s))"))
         counts = json.loads(self.a.sql('planner', "SELECT coalesce(json_object_agg(status,n),'{}') FROM (SELECT status,count(*) n FROM runtime_runs GROUP BY status) s"))
         pi = [self.pod_state(p) for p in current if p['metadata'].get('labels',{}).get('app.kubernetes.io/name') == 'artifactory-pi']
         executions = [] if not self.project else json.loads(self.a.sql('planner', "SELECT coalesce(json_agg(json_build_object('id',id,'status',status,'generation',lifecycle->'generation','owner',lifecycle->'owner','calls',lifecycle->'calls','lease_until_ms',lifecycle->'lease_until_ms')),'[]') FROM runtime_runs WHERE project_id='"+self.project+"'"))
@@ -147,7 +147,7 @@ class Capacity:
             stop.wait(max(0, 1-(time.monotonic()-tick)))
 
     def fingerprint(self, project):
-        return json.loads(self.a.sql('planner', "SELECT coalesce(json_agg(json_build_object('id',id,'generation',lifecycle->'generation','calls',lifecycle->'calls','deadline',lifecycle->'deadline_ms','snapshot_id',snapshot_id,'snapshot_digest',snapshot_digest) ORDER BY id),'[]') FROM runtime_runs WHERE project_id='"+project+"' AND status='running'"))
+        return json.loads(self.a.sql('planner', "SELECT coalesce(json_agg(json_build_object('id',id,'generation',lifecycle->'generation','calls',lifecycle->'calls','deadline',lifecycle->'deadline_ms','source_manifest_id',source_manifest_id,'source_digest',source_digest) ORDER BY id),'[]') FROM runtime_runs WHERE project_id='"+project+"' AND status='running'"))
 
     def run(self):
         self.preflight()
@@ -164,7 +164,7 @@ class Capacity:
         try:
             self.a.kubectl('patch','agentpool','default','--type=merge','-p',json.dumps({'spec':{'maxActive':self.args.active,'maxPerProject':self.args.active,'cpu':self.args.cpu,'memory':self.args.memory}}))
             self.a.service_request(39443,'/test/mode',{'hold':True})
-            project = self.a.api('/api/v1/projects',{'name':'active-capacity-'+uuid.uuid4().hex[:8],'repository_url':'https://upstream:9443/repo.git','planner_backend':'kubernetes'})['id']
+            project = self.a.api('/api/v1/projects',{'name':'active-capacity-'+uuid.uuid4().hex[:8],'repository_url':'https://upstream:9443/repo.git',})['id']
             self.project = project
             self.evidence['project_id'] = project
             self.evidence['apiserver_mutations_before'] = self.api_counters()
@@ -205,7 +205,7 @@ class Capacity:
             assert held['pi_running_pods'] == self.args.active, 'Database counts must correspond to real Pods'
             assert not held['running_owners_without_running_pod'] and not held['running_pods_without_runtime_owner'], 'Each running Pi must hold the current execution identity'
             assert held['agentrun_crds'] <= baseline_crds + self.args.active, 'Queued runs generated extra AgentRun CRDs'
-            assert self.fingerprint(project) == first, 'Hold must not reset budgets or change snapshots'
+            assert self.fingerprint(project) == first, 'Hold must not reset budgets or change source manifests'
             self.evidence['apiserver_mutations_after_hold'] = self.api_counters()
             before_hold = self.evidence['apiserver_mutations_before_hold']
             hold_writes = sum(v-before_hold.get(k,0) for k,v in self.evidence['apiserver_mutations_after_hold'].items())
@@ -243,7 +243,7 @@ class Capacity:
             assert {r['id'] for r in recovered} == set(prior), 'Restart must resume the original logical runs'
             for value in recovered:
                 previous = prior[value['id']]
-                assert all(value[k] == previous[k] for k in ['snapshot_id','snapshot_digest','deadline']), 'Restart changed fixed source or deadline'
+                assert all(value[k] == previous[k] for k in ['source_manifest_id','source_digest','deadline']), 'Restart changed fixed source or deadline'
                 assert value['generation'] >= previous['generation'] and previous['calls'] <= value['calls'] <= 20, 'Restart reset or exceeded cumulative budgets'
             self.evidence['restart_preserved_sources_deadlines_and_cumulative_budgets'] = True
             self.evidence['recovered_generations'] = {str(g):sum(r['generation']==g for r in recovered) for g in {r['generation'] for r in recovered}}

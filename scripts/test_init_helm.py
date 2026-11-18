@@ -23,7 +23,7 @@ class HelmBootstrapTests(unittest.TestCase):
         self.assertNotIn('do not scale its Deployment above one replica', notes)
         self.assertNotIn('all three PVCs', notes)
         self.assertIn('.Values.controlPlane.replicas', notes)
-        self.assertIn('.Values.localSource.enabled', notes)
+        self.assertIn('task emptyDir', notes)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_trial_profile_is_replicated_private_and_uses_default_priority(self):
@@ -33,12 +33,12 @@ class HelmBootstrapTests(unittest.TestCase):
                                  '-f', str(chart / 'values-trial.yaml')],
                                 check=True, capture_output=True, text=True)
         self.assertIn('replicas: 3', result.stdout)
-        self.assertIn('name: artifactory-local-source', result.stdout)
+        self.assertNotIn('local-source', result.stdout)
         self.assertIn('kind: PodDisruptionBudget', result.stdout)
         self.assertNotIn('type: NodePort', result.stdout)
         self.assertNotIn('type: LoadBalancer', result.stdout)
         self.assertNotIn('kind: Ingress\n', result.stdout)
-        self.assertNotIn('kind: ClusterRole', result.stdout)
+        self.assertIn('resources: [tokenreviews]', result.stdout)
         self.assertNotIn('preemptionPolicy:', result.stdout)
         self.assertNotIn('priorityClassName:', result.stdout)
         self.assertNotIn('kind: PriorityClass', result.stdout)
@@ -46,21 +46,17 @@ class HelmBootstrapTests(unittest.TestCase):
         self.assertIn(f'ghcr.io/zhubby/artifactory-control-plane:{version}', result.stdout)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
-    def test_replicated_control_requires_source_isolation_and_renders_ha_resources(self):
+    def test_replicated_control_uses_temporary_storage_and_renders_ha_resources(self):
         chart = SCRIPT.parents[1] / 'charts/artifactory'
-        invalid = subprocess.run(['helm', 'template', 'ha-test', str(chart), '--set', 'controlPlane.replicas=3'],
-                                 capture_output=True, text=True)
-        self.assertNotEqual(invalid.returncode, 0)
-        self.assertIn('localSource.enabled', invalid.stderr)
         result = subprocess.run(['helm', 'template', 'ha-test', str(chart), '-f', str(chart / 'values-ha.yaml')],
                                 check=True, capture_output=True, text=True)
         self.assertIn('replicas: 3', result.stdout)
-        self.assertIn('command: [artifactory-control-plane, serve-source]', result.stdout)
+        self.assertNotIn('serve-source', result.stdout)
         self.assertIn('emptyDir: {sizeLimit: 10Gi}', result.stdout)
         self.assertIn('kind: PodDisruptionBudget', result.stdout)
-        self.assertIn('https://ha-test-local-source:8080', result.stdout)
+        self.assertNotIn('local-source', result.stdout)
         self.assertIn('ARTIFACTORY_SERVICE_CA, value: /run/ca/ca.crt', result.stdout)
-        self.assertIn('ARTIFACTORY_GATEWAY_SOURCE, value: "https://ha-test-local-source:8080"', result.stdout)
+        self.assertNotIn('ARTIFACTORY_GATEWAY_SOURCE', result.stdout)
         self.assertIn('ARTIFACTORY_DB_MAX_CONNECTIONS: "40"', result.stdout)
         self.assertIn('path: /readyz', result.stdout)
 
@@ -139,12 +135,25 @@ class HelmBootstrapTests(unittest.TestCase):
         self.assertIn('cidr: 10.233.0.0/16', devices)
         self.assertNotIn('port: 8445', public + devices)
         self.assertIn('port: 8445', internal)
-        self.assertIn('from: [{podSelector: {}}]', internal)
-        self.assertNotIn('namespaceSelector', internal)
+        self.assertIn('namespaceSelector:', internal)
+        self.assertIn('values: ["default"]', internal)
         invalid = subprocess.run(command + ['--set', 'grpc.service.telemetryNodePort=30843'],
                                  capture_output=True, text=True)
         self.assertNotEqual(invalid.returncode, 0)
         self.assertIn('must differ', invalid.stderr)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_source_and_image_namespaces_have_identity_access_and_internal_gateway_route(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        rendered = subprocess.run(['helm', 'template', 'boundary', str(chart), '--namespace', 'control',
+                                   '--set', 'planning.namespace=planning,imageBuilds.namespace=images'],
+                                  check=True, capture_output=True, text=True).stdout
+        policy = next(document for document in rendered.split('---') if 'kind: NetworkPolicy\n' in document)
+        self.assertIn('values: ["control","planning","images"]', policy)
+        bindings = [document for document in rendered.split('---') if 'kind: RoleBinding\n' in document]
+        self.assertTrue(any('namespace: planning\n' in document for document in bindings))
+        self.assertTrue(any('namespace: images\n' in document for document in bindings))
+        self.assertTrue(all('namespace: control}' in document for document in bindings))
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_telemetry_backend_cannot_publish_a_second_device_entry(self):
@@ -229,7 +238,7 @@ class HelmBootstrapTests(unittest.TestCase):
                             "-verify_ip", "127.0.0.1", str(output / "pki/server.pem")],
                            check=True, capture_output=True)
             subprocess.run(["openssl", "verify", "-CAfile", str(output / "pki/ca.pem"),
-                            "-verify_hostname", "test-kit-local-source", str(output / "pki/server.pem")],
+                            "-verify_hostname", "test-kit-gateway-internal", str(output / "pki/server.pem")],
                            check=True, capture_output=True)
             subprocess.run(["openssl", "verify", "-CAfile", str(output / "pki/ca.pem"),
                             "-verify_hostname", "test-kit-gateway-internal", str(output / "pki/server.pem")],

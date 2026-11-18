@@ -1,6 +1,6 @@
-//! [INPUT]: 依赖固定任务、租约、私有配置和日志事件管道。
-//! [OUTPUT]: 提供受栈预算约束的步骤执行、签名生命周期和制品上传。
-//! [POS]: 每任务子进程；签名材料只进入 sign 步骤。
+//! [INPUT]: 依赖固定清单、租约、私有配置和日志事件管道。
+//! [OUTPUT]: 临时检出源码，执行步骤、上传制品并检查目录清理。
+//! [POS]: 每任务子进程；凭据在用户步骤前删除。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     artifacts, client,
@@ -227,6 +227,7 @@ async fn execute_with_session(
     if let Some(materials) = &mut materials {
         materials.cleanup(&input.config).await?;
     }
+    source::cleanup_attempt(&input.config, &input.attempt_id)?;
     result
 }
 async fn execute_inner(
@@ -240,6 +241,8 @@ async fn execute_inner(
     let mut managed = crate::signing::Assignment::parse(&assignment.managed_signing_json)?;
     managed.sessions = Some(sessions);
     let mut secrets = crate::signing::redact::Secrets::default();
+    source::ready(&input.config)?;
+    let _attempt_lock = source::attempt_lock(&input.config, &input.attempt_id)?;
     let work = input.config.root.join("work");
     private_dir(&work)?;
     let base = work.join(&input.attempt_id);
@@ -249,16 +252,9 @@ async fn execute_inner(
     let workspace = base.path().join("source");
     let scripts = base.path().join("scripts");
     private_dir(&scripts)?;
-    source::checkout(
-        &input.config,
-        assignment,
-        base.path(),
-        &workspace,
-        cancel,
-        emit,
-    )
-    .await
-    .map_err(|e| Failure::wrap("source", e))?;
+    source::checkout(input, base.path(), &workspace, cancel, emit)
+        .await
+        .map_err(|e| Failure::wrap("source", e))?;
     for script in &assignment.scripts {
         ensure!(
             safe_script_name(&script.name),
@@ -284,6 +280,7 @@ async fn execute_inner(
                 .iter()
                 .map(|(k, v)| (k.into(), v.into())),
         );
+        source::isolate_environment(base.path(), &mut env)?;
         env.insert(
             "ARTIFACTORY_SCRIPT_DIR".into(),
             scripts.clone().into_os_string(),

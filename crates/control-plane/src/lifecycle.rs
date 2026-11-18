@@ -39,8 +39,6 @@ pub async fn tick(state: &AppState) -> Result<()> {
 
 enum ServiceStep {
     Revoke,
-    LocalSource(Uuid),
-    Source(Uuid, String),
     Runtime(Uuid),
     Telemetry(Vec<Uuid>, Vec<Uuid>),
 }
@@ -48,12 +46,7 @@ enum ServiceStep {
 fn service_steps(lease: &Lease, telemetry: bool) -> Result<Vec<ServiceStep>> {
     let mut steps = vec![ServiceStep::Revoke];
     let projects: Vec<Uuid> = serde_json::from_value(lease.manifest["projects"].clone())?;
-    let origins: Vec<String> = serde_json::from_value(lease.manifest["source_origins"].clone())?;
     for project in projects {
-        steps.push(ServiceStep::LocalSource(project));
-        for origin in &origins {
-            steps.push(ServiceStep::Source(project, origin.clone()));
-        }
         if lease.manifest["runtime"] == true {
             steps.push(ServiceStep::Runtime(project));
         }
@@ -84,23 +77,6 @@ async fn purge_service(state: &AppState, lease: &Lease, service: &ServiceStep) -
             for node in nodes {
                 connections.remove(&node);
             }
-        }
-        ServiceStep::LocalSource(project) => {
-            if let Some(client) = crate::local_source::client(state).await? {
-                let _: Value = client
-                    .post(
-                        "/internal/local-source",
-                        &json!({"operation":"purge","project_id":project}),
-                    )
-                    .await?;
-            } else {
-                crate::local_source::purge_project(state, *project).await?;
-            }
-        }
-        ServiceStep::Source(project, origin) => {
-            let _: Value = crate::runtime_bridge::source(origin.clone())?
-                .post("/v1/purge", &json!({"project_id":project}))
-                .await?;
         }
         ServiceStep::Runtime(project) => {
             let _: Value = crate::runtime_bridge::runtime()?
@@ -162,14 +138,8 @@ async fn step(state: &AppState, lease: &Lease) -> Result<()> {
                 .context("missing release inventory")?;
             let cursor = usize::try_from(lease.object_cursor)?;
             let object_batches = objects.len().div_ceil(32);
-            // 旧清单没有镜像日志项，继续沿用原游标布局。
-            let image_projects: Vec<Uuid> = serde_json::from_value(
-                lease
-                    .manifest
-                    .get("image_log_projects")
-                    .cloned()
-                    .unwrap_or(json!([])),
-            )?;
+            let image_projects: Vec<Uuid> =
+                serde_json::from_value(lease.manifest["image_log_projects"].clone())?;
             if cursor < object_batches {
                 for key in objects.iter().skip(cursor * 32).take(32) {
                     state

@@ -19,7 +19,7 @@ that suite were opt-in; this baseline does not claim they ran.
 | executor.Lease, NewLease, Renew, Expired | worker::Lease::{new,renew,expired} | local monotonic deadline anchored to the original request |
 | worker.Input, Event, Run, logWriter.Write | worker::{Input,Event,run,Emitter}, process::read_log | isolated worker and bounded event pipe |
 | worker.Askpass | main askpass entry, source credential environment | private Git credentials excluded from build steps |
-| worker source preparation | source::{checkout,lock,build_environment} | immutable checkout, cache locks, LFS copies and local signing |
+| worker source preparation | source::{checkout,isolate_environment,settle_attempt} | per-attempt upstream checkout, temporary credentials, task caches and checked cleanup |
 | agent.Runner, Run, Doctor | runner::run, doctor::{doctor,metrics} | acknowledged events, bounded disk spool and working capabilities |
 | ota.Config, Image, State, Request, Health, HealthWindow | ota::{OtaConfig,Image,State,Request,Health,HealthWindow} | durable generation fence, drain, health and rollback |
 | ota.State.Recover, HealthWindow.Ack | ota::State::recover, ota::HealthWindow::ack | interrupted activation and consecutive session confirmations |
@@ -49,9 +49,9 @@ CI 从隔离验收记录传入 `ARTIFACTORY_LIVE_TENANT_ID`。
 | TestCollectRejectsEscapesAndSymlinks | contracts::collect_rejects_escapes_and_symlinks |
 | TestLeaseUsesLocalMonotonicDeadline | contracts::lease_uses_local_monotonic_deadline |
 | TestJobObjectTerminatesDescendants | process_tree::process_tree_terminates_descendants (Windows) |
-| TestPlatformCheckoutReusesObjectsAndIsolatesAttempts | source::checkout_reuses_objects_and_isolates_attempts |
-| TestBuildEnvironmentAndLFSFilesAreIndependent | source::build_environment_and_lfs_files_are_independent |
-| TestWorkerKillsProcessTreeOnParentDeathAndLeaseExpiry | process_tree::worker_kills_process_tree_on_parent_death_and_lease_expiry (Unix, also SIGTERM) |
+| Upstream source identity and content | artifactory-source-checkout::upstream (fresh fetch, frozen tags, submodules and Git LFS) |
+| Task cache and crash cleanup | source::{task_environment_contains_all_writable_caches,startup_sweep_kills_orphaned_worker_sessions_before_deleting_source} |
+| TestWorkerKillsProcessTreeOnParentDeathAndLeaseExpiry | runtime::worker_kills_process_tree_on_parent_death_and_lease_expiry (Unix, also SIGTERM) |
 | TestSignedPackageVerification | contracts::signed_package_verification |
 | TestInterruptedActivationRollsBackOnce | contracts::interrupted_activation_rolls_back_once |
 | TestHealthRequiresConsecutiveSessionConfirmations | contracts::health_requires_consecutive_session_confirmations |
@@ -86,7 +86,12 @@ acknowledgements allowing all step and terminal events to complete.
   events every five seconds or after reconnecting. Replaying the full pending
   queue after every acknowledgement caused a real business-flow timeout; a
   delayed-acknowledgement test failed before this fix and passes afterward.
-- Unix process groups and suspended Windows Job Objects preserve descendant cleanup.
+- Unix Worker sessions and suspended Windows Job Objects preserve descendant cleanup.
+- Source manifests contain upstream URLs and fixed Git/LFS identities. Each attempt
+  acquires credentials over device mTLS and fetches upstream into its own directory.
+  No Git object or dependency cache persists between tasks. Startup cleanup kills
+  recorded Worker sessions before deleting abandoned workspaces. Cleanup failures
+  block task admission.
 - Build toolchains may still include Go; Go is not an Emissary implementation dependency.
 
 ## Preserved behavior
@@ -97,7 +102,7 @@ acknowledgements allowing all step and terminal events to complete.
   injected only for sign/verify steps with authorized local profile references.
 - OTA activation waits for workers, terminal acknowledgements and buffered logs.
   Three consecutive current-session health confirmations accept a replacement.
-- Started attempts lost to lease expiry require an explicit retry. Source snapshots,
+- Started attempts lost to lease expiry require an explicit retry. Source manifests,
   final artifacts and accepted plans retain their immutable identities.
 
 ## Validation

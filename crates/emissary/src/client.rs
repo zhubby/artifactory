@@ -79,7 +79,7 @@ pub async fn dial(cfg: &Config, enrollment: bool) -> Result<Channel> {
         .await?)
 }
 pub async fn control(cfg: &Config) -> Result<ControlClient<Channel>> {
-    Ok(ControlClient::new(dial(cfg, false).await?).max_decoding_message_size(512 * 1024))
+    Ok(ControlClient::new(dial(cfg, false).await?).max_decoding_message_size(8 * 1024 * 1024))
 }
 
 /// Randomize retry phase without extending the configured maximum backoff.

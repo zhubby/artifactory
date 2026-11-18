@@ -5,6 +5,7 @@ edition.workspace = true
 default-run = "artifactory-emissary"
 
 [dependencies]
+artifactory-source-checkout = { path = "../source-checkout" }
 artifactory-emissary-protocol = { path = "../emissary-protocol" }
 artifactory-telemetry-model = { path = "../telemetry-model" }
 anyhow = "1"

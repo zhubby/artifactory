@@ -449,7 +449,7 @@ impl ControlStore {
         let mut transaction_db = self.pool.clone();
         let mut transaction = transaction_db.transaction().await.map_err(internal)?;
         // 串行化事件写入，同时允许等待节点授权期间提交取消命令。
-        let row=sql::optional_record(&mut transaction, "SELECT a.id,a.job_id,a.node_id,a.lease_token,a.lease_expires_at,a.status,a.command_id,a.last_sequence,a.error,a.started_at,a.finished_at,a.created_at,a.plan_revision_id,a.source_snapshot_id,a.failure_kind,j.target_config FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=$1 AND a.node_id=$2 AND a.lease_token=$3 AND a.lease_expires_at>now() FOR NO KEY UPDATE OF a,j", params![id, node, event.lease_token], &[("id", Type::Uuid),("job_id", Type::Uuid),("node_id", Type::Uuid),("lease_token", Type::String),("lease_expires_at", Type::Timestamp),("status", Type::String),("command_id", Type::Uuid),("last_sequence", Type::I64),("error", Type::String),("started_at", Type::Timestamp),("finished_at", Type::Timestamp),("created_at", Type::Timestamp),("plan_revision_id", Type::Uuid),("source_snapshot_id", Type::Uuid),("failure_kind", Type::String),("target_config", Type::String)]).await.map_err(internal)?
+        let row=sql::optional_record(&mut transaction, "SELECT a.id,a.job_id,a.node_id,a.lease_token,a.lease_expires_at,a.status,a.command_id,a.last_sequence,a.error,a.started_at,a.finished_at,a.created_at,a.plan_revision_id,a.source_manifest_id,a.failure_kind,j.target_config FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE a.id=$1 AND a.node_id=$2 AND a.lease_token=$3 AND a.lease_expires_at>now() FOR NO KEY UPDATE OF a,j", params![id, node, event.lease_token], &[("id", Type::Uuid),("job_id", Type::Uuid),("node_id", Type::Uuid),("lease_token", Type::String),("lease_expires_at", Type::Timestamp),("status", Type::String),("command_id", Type::Uuid),("last_sequence", Type::I64),("error", Type::String),("started_at", Type::Timestamp),("finished_at", Type::Timestamp),("created_at", Type::Timestamp),("plan_revision_id", Type::Uuid),("source_manifest_id", Type::Uuid),("failure_kind", Type::String),("target_config", Type::String)]).await.map_err(internal)?
         .ok_or_else(|| Status::failed_precondition("attempt lease expired or unknown"))?;
         lock_authorized_node(&mut transaction, node, session).await?;
         // Cancellation can commit while either row lock waits. Read it with the
@@ -492,23 +492,6 @@ impl ControlStore {
             serde_json::from_value(row.decode("target_config").map_err(internal)?)
                 .map_err(internal)?;
         match event.kind {
-            "source_cache" => {
-                if payload.get("hit").and_then(Value::as_bool).is_none()
-                    || payload.get("path").and_then(Value::as_str).is_none()
-                    || payload
-                        .get("commit")
-                        .and_then(Value::as_str)
-                        .is_none_or(|value| !crate::source_cache::valid_commit(value))
-                {
-                    return Err(Status::invalid_argument("invalid source cache event"));
-                }
-                let updated=sql::execute(&mut transaction, "UPDATE source_repositories r SET emissary_cache_hits=emissary_cache_hits+CASE WHEN $2 THEN 1 ELSE 0 END,emissary_cache_misses=emissary_cache_misses+CASE WHEN $2 THEN 0 ELSE 1 END WHERE r.id IN (SELECT (entry->>'repository_id')::uuid FROM source_snapshots s CROSS JOIN LATERAL jsonb_array_elements(s.manifest->'repositories') entry JOIN attempts a ON a.source_snapshot_id=s.id WHERE a.id=$1 AND entry->>'path'=$3 AND entry->>'commit'=$4)", params![id, payload["hit"].as_bool().unwrap(), payload["path"].as_str().unwrap(), payload["commit"].as_str().unwrap()]).await.map_err(internal)?;
-                if updated != 1 {
-                    return Err(Status::invalid_argument(
-                        "source cache event does not match attempt snapshot",
-                    ));
-                }
-            }
             "step_started" => {
                 let index = payload
                     .get("index")

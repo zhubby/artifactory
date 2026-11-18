@@ -26,7 +26,6 @@ pub struct Settings {
     pub s3_secret_key: String,
     pub telemetry: Option<TelemetrySettings>,
     pub control: ControlLimits,
-    pub local_source_url: Option<String>,
 }
 
 /// Per-replica resource budgets; database capacity must cover their aggregate.
@@ -89,19 +88,7 @@ pub struct TelemetrySettings {
 
 impl Settings {
     pub fn from_env() -> Result<Self> {
-        if let Ok(value) = env::var("ARTIFACTORY_SOURCE_CACHE_BYTES") {
-            ensure!(
-                value.parse::<u64>().is_ok_and(|size| size > 0),
-                "ARTIFACTORY_SOURCE_CACHE_BYTES must be a positive byte count"
-            );
-        }
         let required = |name: &str| env::var(name).with_context(|| format!("{name} is required"));
-        let local_source_url = env::var("ARTIFACTORY_LOCAL_SOURCE_URL")
-            .ok()
-            .filter(|url| !url.is_empty());
-        if let Some(url) = &local_source_url {
-            artifactory_runtime_protocol::service::endpoint(url)?;
-        }
         let insecure_dev = env::var("ARTIFACTORY_INSECURE_DEV").as_deref() == Ok("true");
         let public_url = required("ARTIFACTORY_PUBLIC_URL")?;
         let s3_endpoint = required("ARTIFACTORY_S3_ENDPOINT")?;
@@ -143,7 +130,6 @@ impl Settings {
             anyhow::anyhow!("ARTIFACTORY_MASTER_KEY must contain 32 base64-encoded bytes")
         })?;
         Ok(Self {
-            local_source_url,
             control: ControlLimits::from_env()?,
             telemetry,
             database_url: required("DATABASE_URL")?,

@@ -1,10 +1,13 @@
+//! [INPUT]: 依赖服务认证、运行身份与固定源码清单。
+//! [OUTPUT]: 提供 Runtime 意图、模型配置和租约契约。
+//! [POS]: 控制平面、Operator 与 Kubernetes Worker 的共享协议。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub mod wire {
     tonic::include_proto!("artifactory.runtime.v1");
 }
 pub mod crypto;
 pub mod error;
 pub mod metrics;
-pub mod objects;
 pub mod service;
 
 use serde::{Deserialize, Serialize};
@@ -41,8 +44,8 @@ pub struct RunIntent {
     pub build_id: Uuid,
     pub project_id: Uuid,
     pub version: i64,
-    pub snapshot_id: Uuid,
-    pub snapshot_digest: String,
+    pub source_manifest_id: Option<Uuid>,
+    pub source_digest: Option<String>,
     pub context: Value,
     pub model: ModelConfiguration,
     #[serde(default = "default_pool")]

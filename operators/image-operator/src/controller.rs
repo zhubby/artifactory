@@ -9,7 +9,10 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use futures::StreamExt;
-use k8s_openapi::api::{batch::v1::Job, core::v1::Node};
+use k8s_openapi::api::{
+    batch::v1::Job,
+    core::v1::{Node, Pod},
+};
 use kube::{
     Api, Client, ResourceExt,
     api::{DeleteParams, ListParams, Patch, PatchParams, PostParams, Preconditions},
@@ -44,11 +47,16 @@ async fn update(
 
 async fn stop(ctx: &Context, build: &ImageBuild, jobs: &[Job]) -> Result<()> {
     let api: Api<Job> = Api::namespaced(ctx.client.clone(), &ctx.namespace);
-    for job in jobs
-        .iter()
-        .filter(|j| resources::owned(build, j) && resources::phase(j).is_none())
-    {
+    for job in jobs.iter().filter(|j| resources::owned(build, j)) {
+        if job.metadata.deletion_timestamp.is_some() {
+            continue;
+        }
         ctx.leader.ensure().await?;
+        match api.patch(&job.name_any(), &PatchParams::default(), &Patch::Merge(serde_json::json!({"metadata":{"resourceVersion":job.resource_version()},"spec":{"ttlSecondsAfterFinished":300}}))).await {
+            Ok(_) => (),
+            Err(kube::Error::Api(error)) if error.code == 404 => continue,
+            Err(error) => return Err(error.into()),
+        }
         let params = DeleteParams {
             preconditions: Some(Preconditions {
                 uid: job.uid(),
@@ -64,6 +72,54 @@ async fn stop(ctx: &Context, build: &ImageBuild, jobs: &[Job]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+async fn cleanup(ctx: &Context, build: &ImageBuild, jobs: &[Job], phase: &str) -> Result<Action> {
+    // 先持久化终态。删除后重启不会重建已完成的构建。
+    if build.status.as_ref().is_none_or(|s| s.phase != phase) {
+        return update(
+            ctx,
+            build,
+            phase,
+            Some("CleanupPending: waiting for Job/Pod deletion".into()),
+        )
+        .await;
+    }
+    stop(ctx, build, jobs).await?;
+    let pods = Api::<Pod>::namespaced(ctx.client.clone(), &ctx.namespace)
+        .list(
+            &ListParams::default()
+                .labels(&format!("artifactory.dev/image-build={}", build.name_any())),
+        )
+        .await?;
+    let job_uids: Vec<_> = jobs
+        .iter()
+        .filter(|j| resources::owned(build, j))
+        .filter_map(ResourceExt::uid)
+        .collect();
+    let pending = jobs.iter().any(|j| resources::owned(build, j))
+        || pods.iter().any(|pod| {
+            pod.owner_references().iter().any(|o| {
+                o.kind == "Job"
+                    && (job_uids.contains(&o.uid)
+                        || o.name.starts_with(&format!(
+                            "image-{}-",
+                            build.spec.execution_id.replace('-', "")
+                        )))
+            })
+        });
+    update(
+        ctx,
+        build,
+        phase,
+        pending.then(|| "CleanupPending: waiting for Job/Pod deletion".into()),
+    )
+    .await?;
+    Ok(if pending {
+        Action::requeue(Duration::from_secs(3))
+    } else {
+        Action::await_change()
+    })
 }
 
 async fn create(
@@ -131,28 +187,21 @@ async fn reconcile_inner(build: Arc<ImageBuild>, ctx: Arc<Context>) -> Result<Ac
         .await?
         .items;
     if build.spec.cancel_requested || build.metadata.deletion_timestamp.is_some() {
-        stop(&ctx, &build, &jobs).await?;
-        return update(&ctx, &build, "Canceled", None).await;
+        return cleanup(&ctx, &build, &jobs, "Canceled").await;
     }
     if jobs
         .iter()
         .any(|j| resources::owned(&build, j) && resources::phase(j) == Some("Failed"))
     {
-        stop(&ctx, &build, &jobs).await?;
-        return update(
-            &ctx,
-            &build,
-            "Failed",
-            Some("BuildKit or publisher Job failed".into()),
-        )
-        .await;
+        return cleanup(&ctx, &build, &jobs, "Failed").await;
     }
     if build
         .status
         .as_ref()
         .is_some_and(|s| ["Succeeded", "Failed", "Canceled"].contains(&s.phase.as_str()))
     {
-        return Ok(Action::await_change());
+        let phase = &build.status.as_ref().expect("terminal status").phase;
+        return cleanup(&ctx, &build, &jobs, phase).await;
     }
     let pool = Api::<BuilderPool>::namespaced(ctx.client.clone(), &ctx.namespace)
         .get(&build.spec.pool)
@@ -187,7 +236,7 @@ async fn reconcile_inner(build: Arc<ImageBuild>, ctx: Arc<Context>) -> Result<Ac
                 "publisher ownership conflict"
             );
             if resources::phase(job) == Some("Succeeded") {
-                return update(&ctx, &build, "Succeeded", None).await;
+                return cleanup(&ctx, &build, &jobs, "Succeeded").await;
             }
         } else {
             create(&ctx, &build, &pool, None, pool.spec.node_selector.clone()).await?;

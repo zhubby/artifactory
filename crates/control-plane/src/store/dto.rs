@@ -122,7 +122,6 @@ response! { Project {
     model_profile_id: Option<Uuid>,
     build_context: String,
     source_credentials: Value,
-    planner_backend: String,
 }}
 
 response! { LastBuild {
@@ -151,7 +150,6 @@ response! { ProjectSummary {
     model_profile_id: Option<Uuid>,
     build_context: String,
     source_credentials: Value,
-    planner_backend: String,
     build_count: i64,
     last_build: Option<LastBuild>,
 }}
@@ -178,33 +176,6 @@ response! { ModelOption {
     id: Uuid,
     name: String,
     enabled: bool,
-}}
-
-response! { WorkerSummary {
-    id: Uuid,
-    name: String,
-    certificate_expires_at: String,
-    draining: bool,
-    revoked: bool,
-    last_seen: Option<String>,
-    created_at: String,
-    online: Option<bool>,
-    active_run: Option<Uuid>,
-}}
-
-response! { SourceRepositorySummary {
-    id: Uuid,
-    project_id: Uuid,
-    repository_url: String,
-    credential_id: Option<Uuid>,
-    last_used_at: String,
-    fetched_bytes: i64,
-    cache_hits: i64,
-    cache_bytes: i64,
-    git_download_bytes: i64,
-    lfs_download_bytes: i64,
-    emissary_cache_hits: i64,
-    emissary_cache_misses: i64,
 }}
 
 response! { EmissaryRelease {
@@ -264,11 +235,10 @@ response! { BuildSummary {
     goal: Option<String>,
     target_requirements: Value,
     planning_context: Value,
-    source_snapshot_id: Option<Uuid>,
+    source_manifest_id: Option<Uuid>,
     revision_count: i32,
     clarification: Option<Value>,
     current_plan_id: Option<Uuid>,
-    planner_backend: String,
     project_name: String,
     targets: Vec<JobSummary>,
 }}
@@ -298,11 +268,10 @@ response! { BuildEnvelope {
     goal: Option<String>,
     target_requirements: Value,
     planning_context: Value,
-    source_snapshot_id: Option<Uuid>,
+    source_manifest_id: Option<Uuid>,
     revision_count: i32,
     clarification: Option<Value>,
     current_plan_id: Option<Uuid>,
-    planner_backend: String,
     project_name: String,
 }}
 
@@ -329,7 +298,7 @@ response! { Attempt {
     finished_at: Option<String>,
     created_at: String,
     plan_revision_id: Option<Uuid>,
-    source_snapshot_id: Option<Uuid>,
+    source_manifest_id: Option<Uuid>,
     failure_kind: String,
     node_name: String,
     steps: Vec<StepRun>,
@@ -434,7 +403,7 @@ response! { PlanRevision {
     build_id: Uuid,
     run_id: Uuid,
     revision: i32,
-    source_snapshot_id: Uuid,
+    source_manifest_id: Uuid,
     contents: Value,
     sha256: String,
     created_at: String,
@@ -443,7 +412,6 @@ response! { PlanRevision {
 response! { PlanningRun {
     id: Uuid,
     build_id: Uuid,
-    worker_id: Option<Uuid>,
     purpose: String,
     state: String,
     failed_targets: Vec<String>,
@@ -454,7 +422,6 @@ response! { PlanningRun {
     error: Option<String>,
     created_at: String,
     finished_at: Option<String>,
-    authority: String,
 }}
 
 response! { PlanningEvent {

@@ -10,8 +10,8 @@ image-protocol/: 定义平台镜像结果、任务与 OCI Index。
 image-registry/: 校验镜像内容并按摘要复制 OCI 图。
 planner-runtime/: 提供独立规划状态机与任务派发。
 runtime-protocol/: 定义规划运行时通信契约。
-source-core/: 校验源码身份、凭据引用和快照。
-source-service/: 提供隔离源码服务与缓存。
+source-checkout/: 提供固定 Git、子模块和 LFS 的共享检出引擎。
+source-preparer/: 提供临时解析、引用查询与 init 检出程序。
 telemetry-model/: 定义设备资源和遥测数据。
 telemetry-service/: 独立写入与查询时序数据。
 

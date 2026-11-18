@@ -69,38 +69,14 @@ pub async fn build(
     config: &Config,
     e: &ImageExecution,
     token: &str,
-) -> Result<(BuildTask, String)> {
+) -> Result<BuildTask> {
     let context = state.store.assignment_context(e.job_id).await?;
     ensure!(
-        context.source_snapshot_id == Some(e.snapshot_id)
+        context.source_manifest_id == Some(e.source_manifest_id)
             && context.plan_revision_id == e.plan_revision_id,
         "source identity changed"
     );
-    let snapshot = crate::source_cache::load(state, e.snapshot_id).await?;
-    crate::source_cache::ensure_available(state, &snapshot).await?;
-    let source_token = crypto::token();
-    let origin = crate::runtime_bridge::source_download_origin(state, e.snapshot_id)
-        .await?
-        .unwrap_or_else(|| state.settings.public_url.clone());
-    let root = format!("{origin}/api/v1/source/{}", e.snapshot_id);
-    let source = crate::protocol::SourceDescriptor {
-        snapshot_id: e.snapshot_id.to_string(),
-        access_token: source_token.clone(),
-        repositories: snapshot
-            .repositories
-            .iter()
-            .map(|r| crate::protocol::SourceRepository {
-                path: r.path.clone(),
-                repository_id: r.id.to_string(),
-                commit_sha: r.commit.clone(),
-                git_url: format!("{root}/{}/git", r.id),
-                lfs_url: format!("{root}/{}/lfs", r.id),
-                has_lfs: !r.lfs.is_empty(),
-                tags: r.tags.clone().into_iter().collect(),
-                cache_id: r.repository_id.to_string(),
-            })
-            .collect(),
-    };
+    let source = state.store.source_manifest(e.source_manifest_id).await?;
     let mut docker_auth = json!({"auths":{}});
     use base64::Engine;
     for id in &e.spec.pull_credentials {
@@ -119,23 +95,9 @@ pub async fn build(
             String::from_utf8(credential(state, e, Uuid::parse_str(id)?, "secret").await?)?,
         );
     }
-    let assignment = crate::protocol::Assignment {
-        job_id: e.job_id.to_string(),
-        build_id: context.id.to_string(),
-        target: context.target,
-        repository_url: context.repository_url,
-        commit_sha: context.commit_sha,
-        source: Some(source),
-        timeout_seconds: e.task_timeout_seconds.saturating_sub(600).max(1),
-        plan_revision_id: e
-            .plan_revision_id
-            .map(|id| id.to_string())
-            .unwrap_or_default(),
-        ..Default::default()
-    };
     ensure!(
-        snapshot.commit == assignment.commit_sha,
-        "snapshot commit mismatch"
+        source.root()?.commit_sha == context.commit_sha,
+        "source commit mismatch"
     );
     let task = BuildTask {
         execution_id: e.id.to_string(),
@@ -147,14 +109,14 @@ pub async fn build(
         ),
         registry: config.login(e.id, token),
         repository: e.candidate_repository.clone(),
-        cache_repository: format!("{}/{}/cache/{}", e.tenant_id, e.project_id, e.spec.name),
         image: e.spec.clone(),
-        assignment,
+        source,
+        timeout_seconds: e.task_timeout_seconds.saturating_sub(600).max(1),
         docker_auth,
         secrets,
         insecure: state.settings.insecure_dev,
     };
-    Ok((task, crypto::hash(source_token)))
+    Ok(task)
 }
 pub async fn verify_report(
     state: &AppState,

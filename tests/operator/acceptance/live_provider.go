@@ -1,5 +1,7 @@
-// Optional transparent supplier relay for this isolated acceptance fixture.
-// It never stores credentials, request bodies or generated argument contents.
+// [INPUT]: 依赖显式配置的模型供应商和隔离验收夹具。
+// [OUTPUT]: 转发模型请求，记录脱敏时序并注入故障。
+// [POS]: 与 fixture.go 共用入口，不持久化凭据和正文。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 package main
 
 import (

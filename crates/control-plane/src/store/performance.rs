@@ -1,7 +1,11 @@
-//! Same fixture and timing boundary for both database backends.
+//! [INPUT]: 依赖全新业务基线和隔离 PostgreSQL。
+//! [OUTPUT]: 测量领取、续租和执行事件的 p95。
+//! [POS]: 业务存储的显式性能验收入口。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{ControlStore, ExecutionEvent};
 use artifactory_database::{PoolSettings, connect, with_options};
 use artifactory_database::{params, sql};
+use artifactory_source_checkout::{SourceManifest, SourceRepository};
 use serde_json::json;
 use std::time::Instant;
 use uuid::Uuid;
@@ -40,6 +44,25 @@ async fn critical_store_latency() {
     let target = json!({"os":"linux","arch":"amd64","steps":[{"name":"compile","run":"true"}],"artifacts":[]});
     sql::execute(&mut pool.clone(), "INSERT INTO projects(id,tenant_id,name,repository_url,pool_ids) VALUES($1,'00000000-0000-0000-0000-000000000001','perf','https://example.invalid/repo.git','{00000000-0000-0000-0000-000000000001}')", params![project]).await.unwrap();
     sql::execute(&mut pool.clone(), "INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url) VALUES($1,$2,'main','queued','https://example.invalid/repo.git')", params![build, project])
+    .await
+    .unwrap();
+    let source = SourceManifest::new(
+        build,
+        vec![SourceRepository {
+            path: String::new(),
+            upstream_url: "https://example.invalid/repo.git".into(),
+            commit_sha: "a".repeat(40),
+            tags: Default::default(),
+            lfs_objects: Vec::new(),
+        }],
+    )
+    .unwrap();
+    sql::execute(&mut pool.clone(), "INSERT INTO source_manifests(id,project_id,commit_sha,manifest,digest) VALUES($1,$2,$3,$4,$5)",params![build,project,"a".repeat(40),serde_json::to_value(&source).unwrap(),&source.digest]).await.unwrap();
+    sql::execute(
+        &mut pool.clone(),
+        "UPDATE builds SET source_manifest_id=$2,commit_sha=$3 WHERE id=$1",
+        params![build, source.id, "a".repeat(40)],
+    )
     .await
     .unwrap();
     sql::execute(&mut pool.clone(), "INSERT INTO nodes(id,name,os,arch,pool_id,capabilities,certificate_hash,certificate_expires_at,active_session,last_seen,connection_owner) VALUES($1,'perf','linux','amd64','00000000-0000-0000-0000-000000000001','[\"git\",\"bash\"]',$2,now()+interval '1 day',$3,now(),$3)", params![node, node.to_string(), session]).await.unwrap();

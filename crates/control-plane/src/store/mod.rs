@@ -11,7 +11,6 @@ mod lifecycle_cleanup;
 mod tenancy;
 pub use tenancy::{NodeAccess, NodeAccessMode};
 pub mod dto;
-pub mod maintenance;
 mod management;
 mod models;
 mod planning_management;
@@ -28,16 +27,11 @@ pub use projects::{ProjectInput, ProjectSource};
 pub struct ControlStore {
     pool: toasty::Db,
     scope: Option<crate::auth::Auth>,
-    pub source: artifactory_source_core::store::SourceStore,
 }
 
 impl ControlStore {
     pub fn new(pool: toasty::Db) -> Self {
-        Self {
-            source: artifactory_source_core::store::SourceStore::embedded(pool.clone()),
-            pool,
-            scope: None,
-        }
+        Self { pool, scope: None }
     }
 
     pub async fn audit(
@@ -60,7 +54,7 @@ impl ControlStore {
 }
 
 pub use management::{NewToken, NodeUpdate};
-pub use planning_management::{ProfileInput, WorkerUpdate};
+pub use planning_management::ProfileInput;
 
 mod ota_management;
 pub use ota_management::Target;
@@ -70,7 +64,6 @@ pub mod images;
 pub use builds::{ArtifactDownload, BuildInput, LogChunk};
 
 mod scheduling;
-pub(crate) use scheduling::ResolvedSource;
 
 mod executions;
 pub(crate) use executions::{
@@ -81,18 +74,16 @@ mod lookups;
 mod ota;
 
 mod planning;
-pub(crate) use planning::{
-    PlanningAction, PlanningPrepared, PlanningToolResult, SubmissionContext,
-};
+pub(crate) use planning::SubmissionContext;
 
 mod runtime_bridge;
-pub(crate) use runtime_bridge::{RemoteSnapshot, RuntimeEventCommit};
+pub(crate) use runtime_bridge::RuntimeEventCommit;
 
 mod node_metadata;
 mod node_queries;
 mod placements;
 mod replication;
-mod source_cache;
+pub(crate) mod sources;
 pub(crate) use executions::SessionUpdate;
 
 impl ControlStore {
@@ -144,13 +135,11 @@ mod errors;
 mod execution_fences;
 #[cfg(test)]
 mod performance;
+#[cfg(test)]
+mod sources_tests;
 
 pub static MIGRATIONS: toasty::migration::MigrationSet = toasty::embed_migrations!("migrations");
 
 pub fn models() -> toasty::schema::app::ModelSet {
-    let mut models = models::registry();
-    for model in artifactory_source_core::store::embedded_models() {
-        models.add(model);
-    }
-    models
+    models::registry()
 }

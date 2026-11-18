@@ -12,7 +12,6 @@ pub mod execution_plan;
 pub mod grpc;
 pub mod images;
 pub mod lifecycle;
-pub mod local_source;
 pub mod ota;
 pub mod pki;
 pub mod planning;
@@ -21,7 +20,7 @@ pub mod scheduler;
 pub mod settings;
 pub mod signing;
 pub mod source;
-pub mod source_cache;
+pub mod source_tasks;
 pub mod state;
 pub mod storage;
 

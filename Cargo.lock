@@ -302,7 +302,7 @@ dependencies = [
  "artifactory-image-registry",
  "artifactory-planner-runtime",
  "artifactory-runtime-protocol",
- "artifactory-source-core",
+ "artifactory-source-checkout",
  "artifactory-telemetry-model",
  "async-stream",
  "axum",
@@ -371,6 +371,7 @@ dependencies = [
  "anyhow",
  "artifactory-database",
  "artifactory-emissary-protocol",
+ "artifactory-source-checkout",
  "artifactory-telemetry-model",
  "axum",
  "base64 0.22.1",
@@ -451,6 +452,7 @@ dependencies = [
  "artifactory-emissary",
  "artifactory-image-protocol",
  "artifactory-image-registry",
+ "artifactory-source-checkout",
  "async-trait",
  "axum",
  "base64 0.22.1",
@@ -479,7 +481,7 @@ name = "artifactory-image-protocol"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "artifactory-emissary-protocol",
+ "artifactory-source-checkout",
  "hex",
  "serde",
  "serde_json",
@@ -513,6 +515,7 @@ dependencies = [
  "anyhow",
  "artifactory-database",
  "artifactory-runtime-protocol",
+ "artifactory-source-checkout",
  "async-stream",
  "axum",
  "chrono",
@@ -549,13 +552,11 @@ dependencies = [
  "reqwest",
  "rustls",
  "rustls-pemfile",
- "rusty-s3",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "tokio",
  "tokio-rustls",
- "tokio-util",
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
@@ -564,48 +565,39 @@ dependencies = [
 ]
 
 [[package]]
-name = "artifactory-source-core"
+name = "artifactory-source-checkout"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "artifactory-database",
- "artifactory-runtime-protocol",
- "chrono",
+ "axum",
  "hex",
- "jiff",
+ "process-wrap",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
- "thiserror 2.0.21",
- "toasty",
  "tokio",
+ "tokio-util",
  "url",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
-name = "artifactory-source-service"
+name = "artifactory-source-preparer"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "artifactory-database",
- "artifactory-runtime-protocol",
- "artifactory-source-core",
- "async-stream",
+ "artifactory-source-checkout",
  "axum",
- "base64 0.22.1",
- "chrono",
- "futures",
+ "clap",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
- "toasty",
  "tokio",
  "tokio-util",
- "tower",
- "tracing",
- "tracing-subscriber",
+ "url",
  "uuid",
 ]
 

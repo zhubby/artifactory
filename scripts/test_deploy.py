@@ -152,7 +152,7 @@ class ProductionComposeTests(unittest.TestCase):
         manifest = json.loads(result.stdout)
         self.assertEqual(
             manifest['services']['control-plane']['tmpfs'],
-            ['/tmp:size=1g,mode=1777'],
+            ['/tmp:size=1g,mode=1777', '/var/lib/artifactory:size=1g,mode=1777'],
             'the size and mode must belong to the same absolute tmpfs mount',
         )
         services = manifest['services']

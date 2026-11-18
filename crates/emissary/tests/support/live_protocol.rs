@@ -1,5 +1,5 @@
 //! [INPUT]: 验收租户、Control 会话、数据库和设备 mTLS 配置。
-//! [OUTPUT]: 提供租户请求、已规划任务和兼容外键的协议行锁。
+//! [OUTPUT]: 提供租户请求、固定源码任务和协议行锁。
 //! [POS]: live_protocol 场景复用此夹具；签名上传不附会话凭据。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
@@ -158,10 +158,24 @@ impl<'a> Probe<'a> {
         let project=env.api(Method::POST,"/projects",json!({"name":"Rust protocol acceptance","repository_url":env.source["repository_url"],"credential_id":env.source["credential_id"],"signing_profiles":profiles,"pool_ids":[pool]})).await?["id"].as_str().context("missing project")?.parse::<Uuid>()?;
         let build = Uuid::new_v4();
         let job = Uuid::new_v4();
+        let source = artifactory_source_checkout::SourceManifest::new(
+            Uuid::new_v4(),
+            vec![artifactory_source_checkout::SourceRepository {
+                path: String::new(),
+                upstream_url: env.source["repository_url"]
+                    .as_str()
+                    .context("source URL missing")?
+                    .to_owned(),
+                commit_sha: "a".repeat(40),
+                tags: Default::default(),
+                lfs_objects: vec![],
+            }],
+        )?;
         let (os, arch) = platform();
         let target = json!({"os":os,"arch":arch,"executor":"native","labels":{},"capabilities":[],"signing_profiles":profiles,"timeout_seconds":120,"steps":[{"name":"probe","phase":"build","shell":if cfg!(windows){"pwsh"}else{"sh"},"run":"echo probe","timeout_seconds":60}],"artifacts":["dist/probe"]});
         // 协议验收直接创建已规划任务。真实规划由 Kubernetes Pi 验收覆盖。
-        sql::execute(&mut env.db.clone(), "INSERT INTO builds(id,project_id,requested_ref,commit_sha,config_snapshot,status,source_repository_url,tenant_id) VALUES($1,$2,'probe',$3,$4,'queued',$5,$6)", params![build, project, "a".repeat(40), json!({"version":1,"parameters":{},"targets":{"native":target},"release":{"enabled":false}}), env.source["repository_url"].as_str().context("source URL missing")?, env.tenant_id]).await?;
+        sql::execute(&mut env.db.clone(), "INSERT INTO source_manifests(id,project_id,tenant_id,commit_sha,manifest,digest) VALUES($1,$2,$3,$4,$5,$6)", params![source.id, project, env.tenant_id, "a".repeat(40), serde_json::to_value(&source)?, &source.digest]).await?;
+        sql::execute(&mut env.db.clone(), "INSERT INTO builds(id,project_id,requested_ref,commit_sha,config_snapshot,status,source_repository_url,tenant_id,source_manifest_id) VALUES($1,$2,'probe',$3,$4,'queued',$5,$6,$7)", params![build, project, "a".repeat(40), json!({"version":1,"parameters":{},"targets":{"native":target},"release":{"enabled":false}}), env.source["repository_url"].as_str().context("source URL missing")?, env.tenant_id, source.id]).await?;
         sql::execute(
             &mut env.db.clone(),
             "INSERT INTO jobs(id,build_id,target,target_config,tenant_id) VALUES($1,$2,'native',$3,$4)",

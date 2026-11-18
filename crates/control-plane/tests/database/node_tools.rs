@@ -11,7 +11,7 @@ async fn runtime_node_tools_authenticate_and_intersect_current_project_scope() {
     let (_, build, _) = database.fixture().await;
     let node = database.node().await;
     let run = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(),"UPDATE builds SET planner_backend='kubernetes',status='planning',planning_context=jsonb_build_object('pool_ids',jsonb_build_array('00000000-0000-0000-0000-000000000001'),'signing_profiles','[]'::jsonb) WHERE id=$1",params![build]).await.unwrap();
+    sql::execute(&mut database.pool.clone(),"UPDATE builds SET status='planning',planning_context=jsonb_build_object('pool_ids',jsonb_build_array('00000000-0000-0000-0000-000000000001'),'signing_profiles','[]'::jsonb) WHERE id=$1",params![build]).await.unwrap();
     sql::execute(
         &mut database.pool.clone(),
         "INSERT INTO planning_runs(id,build_id,purpose,model_config) VALUES($1,$2,'initial','{}')",
@@ -80,27 +80,6 @@ async fn runtime_node_tools_authenticate_and_intersect_current_project_scope() {
     database.close().await;
 }
 
-#[tokio::test]
-#[ignore = "requires isolated PostgreSQL, Node.js 24 and installed Agent Worker dependencies"]
-async fn official_mcp_sdk_initializes_lists_and_queries_over_real_mtls() {
-    let database = Database::with_tenant().await;
-    let (_, build, _) = database.fixture().await;
-    let node = database.node().await;
-    let certificates = Certificates::new();
-    let replica = Replica::start(database.state.clone(), &certificates).await;
-    let (_, _, mut config) = planner(&database, &replica, &certificates, build).await;
-    config["queries"] = json!([
-        {"name":"summarize_nodes","arguments":{}},
-        {"name":"query_nodes","arguments":{"os":"linux"}},
-        {"name":"get_node","arguments":{"node_id":node}}
-    ]);
-    let report = mcp_probe(&config).await;
-    assert_eq!(report["results"][1]["nodes"][0]["node_id"], json!(node));
-    assert_eq!(report["results"][2]["nodes"][0]["metadata"], json!({}));
-    replica.stop().await;
-    database.close().await;
-}
-
 async fn mcp_probe(config: &Value) -> Value {
     use tokio::io::AsyncWriteExt;
     let mut probe = tokio::process::Command::new(
@@ -151,7 +130,7 @@ async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
     let node = database.node().await;
     let run = Uuid::new_v4();
     let token = std::env::var("ARTIFACTORY_SERVICE_TOKEN").unwrap();
-    sql::execute(&mut database.pool.clone(),"UPDATE builds SET planner_backend='kubernetes',status='planning',planning_context=jsonb_build_object('pool_ids',jsonb_build_array('00000000-0000-0000-0000-000000000001'),'signing_profiles','[]'::jsonb) WHERE id=$1",params![build]).await.unwrap();
+    sql::execute(&mut database.pool.clone(),"UPDATE builds SET status='planning',planning_context=jsonb_build_object('pool_ids',jsonb_build_array('00000000-0000-0000-0000-000000000001'),'signing_profiles','[]'::jsonb) WHERE id=$1",params![build]).await.unwrap();
     sql::execute(
         &mut database.pool.clone(),
         "INSERT INTO planning_runs(id,build_id,purpose,model_config) VALUES($1,$2,'initial','{}')",
@@ -207,8 +186,8 @@ async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
         build_id: build,
         project_id: project,
         version: 1,
-        snapshot_id: Uuid::new_v4(),
-        snapshot_digest: "a".repeat(64),
+        source_manifest_id: Some(Uuid::new_v4()),
+        source_digest: Some("a".repeat(64)),
         pool: "default".into(),
         context: json!({}),
         model: ModelConfiguration {

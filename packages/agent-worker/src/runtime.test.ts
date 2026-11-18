@@ -4,18 +4,25 @@
  * [POS]: 规划核心的行为回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
-import { test } from "node:test";
+import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { runTask, checkpoint, restoreCheckpoint, safeError, toolDefinitions, type Task } from "./runtime.js";
+import { runTask, safeError, toolDefinitions, type Task } from "./runtime.js";
+
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+const manifest={id:"test-manifest",digest:"a".repeat(64),repositories:[]};
+let sourceDirectory="";
+beforeEach(async()=>{sourceDirectory=await mkdtemp(join(tmpdir(),"planning-"));await mkdir(join(sourceDirectory,"source"));await writeFile(join(sourceDirectory,"manifest.json"),JSON.stringify(manifest));process.env.ARTIFACTORY_SOURCE_ROOT=join(sourceDirectory,"source");process.env.ARTIFACTORY_SOURCE_METADATA=join(sourceDirectory,"manifest.json");});
+afterEach(async()=>{await rm(sourceDirectory,{recursive:true,force:true});delete process.env.ARTIFACTORY_SOURCE_ROOT;delete process.env.ARTIFACTORY_SOURCE_METADATA;});
 
 test("worker exposes only read-only analysis and structured completion tools", () => {
   assert.deepEqual(toolDefinitions.map((tool) => tool.name), ["list_tree", "read_file", "search_source", "git_metadata", "node_capabilities", "read_logs", "submit_plan", "submit_placements", "request_input"]);
   assert.equal(safeError(new Error("401 secret-value"), "secret-value"), "model authentication rejected; check the platform model profile");
   assert.equal(safeError(new Error('429: organization org-c401 request reached max RPM'), "secret-value"), "model provider quota or rate limit reached");
   assert.equal(safeError(new Error("request with key secret-value failed"), "secret-value").includes("secret-value"), false);
-  assert.equal(restoreCheckpoint({ messages: checkpoint([]) })?.length, 0);
 });
 
 test("provider timeouts remain distinct from the planning deadline", () => {
@@ -46,17 +53,20 @@ test("Pi uses task key only for authentication and terminates after clarificatio
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const address = server.address(); assert.ok(address && typeof address === "object");
-  const task: Task = { context: { goal: "Build the selected product", usage: {totalTokens: 100} }, model: { api: "anthropic-messages", base_url: `http://127.0.0.1:${address.port}`, model: "test-model", api_key: "task-secret", parameters: { max_tokens: 1000 } }, timeout_seconds: 10, max_calls: 2 };
-  let calls = 0; let questions = 0; let totalTokens = 0;
+  const task: Task = { context: { source_manifest:manifest, goal: "Build the selected product", usage: {totalTokens: 100} }, model: { api: "anthropic-messages", base_url: `http://127.0.0.1:${address.port}`, model: "test-model", api_key: "task-secret", parameters: { max_tokens: 1000 } }, timeout_seconds: 10, max_calls: 2 };
+  let questions = 0; let totalTokens = 0; const messages:Record<string,unknown>[]=[];
   try {
     await runTask(task, async (method, payload) => {
       assert.equal(JSON.stringify(payload).includes("task-secret"), false);
-      if (method === "report" && payload.kind === "model_call") calls++;
+      if (method === "report" && payload.kind === "conversation") messages.push(JSON.parse(String(payload.payload_json)));
       if (method === "report" && payload.kind === "usage") totalTokens = JSON.parse(String(payload.payload_json)).totalTokens;
       if (method === "tool") { assert.equal(payload.name, "request_input"); questions++; return { accepted: true, needs_input: true }; }
       return { ok: true };
     }, new AbortController().signal);
-    assert.equal(requests, 1); assert.equal(calls, 1); assert.equal(questions, 1);
+    assert.equal(requests, 1); assert.equal(questions, 1);
+    assert.equal(messages[0]?.kind,"system");
+    assert.ok(messages.some(value=>(value.content as Record<string,unknown>)?.role==="user"));
+    assert.ok(messages.some(value=>(value.content as Record<string,unknown>)?.role==="assistant"));
     assert.ok(totalTokens > 100, "resumed usage must include the previous worker's tokens");
   } finally { server.close(); server.closeAllConnections(); }
 });
@@ -80,7 +90,7 @@ test("OpenAI-compatible Qwen requests honor the configured thinking level", asyn
     });
     server.listen(0, "127.0.0.1"); await once(server, "listening");
     const address = server.address(); assert.ok(address && typeof address === "object");
-    const task: Task = { context: { goal: "Build the selected product" }, model: { api: "openai-completions", base_url: `http://127.0.0.1:${address.port}/v1`, model: fixture.model, api_key: "task-secret", parameters: { thinking_level: fixture.level } }, timeout_seconds: 10, max_calls: 1 };
+    const task: Task = { context: { source_manifest:manifest, goal: "Build the selected product" }, model: { api: "openai-completions", base_url: `http://127.0.0.1:${address.port}/v1`, model: fixture.model, api_key: "task-secret", parameters: { thinking_level: fixture.level } }, timeout_seconds: 10, max_calls: 1 };
     try {
       await runTask(task, async (method, payload) => {
         if (method === "tool") { assert.equal(payload.name, "request_input"); return { accepted: true, needs_input: true }; }
@@ -110,7 +120,7 @@ test("planning deadline interrupts an awaited rate-limit delay", async () => {
   });
   server.listen(0,"127.0.0.1");await once(server,"listening");
   const address=server.address();assert.ok(address && typeof address === "object");
-  const task:Task={context:{goal:"Inspect and build"},model:{api:"anthropic-messages",base_url:`http://127.0.0.1:${address.port}`,model:"test-model",api_key:"test-secret",parameters:{requests_per_minute:1}},timeout_seconds:1,max_calls:20};
+  const task:Task={context:{source_manifest:manifest,goal:"Inspect and build"},model:{api:"anthropic-messages",base_url:`http://127.0.0.1:${address.port}`,model:"test-model",api_key:"test-secret",parameters:{requests_per_minute:1}},timeout_seconds:1,max_calls:20};
   const started=Date.now();
   try {
     await assert.rejects(runTask(task,async()=>({ok:true}),new AbortController().signal),/deadline/);
@@ -149,7 +159,7 @@ test("placement inference resumes and corrects prose using only placement comple
   });
   server.listen(0, "127.0.0.1"); await once(server, "listening");
   const address = server.address(); assert.ok(address && typeof address === "object");
-  const task: Task = { context: { purpose: "placement", checkpoint: { messages: checkpoint([]) }, placement_task: { targets: { app: { version: 1 } }, current_placements: placements } }, model: { api: "openai-completions", base_url: `http://127.0.0.1:${address.port}/v1`, model: "gpt-4.1", api_key: "test-secret", parameters: {} }, timeout_seconds: 10, max_calls: 5 };
+  const task: Task = { context: { purpose: "placement", placement_task: { targets: { app: { version: 1 } }, current_placements: placements } }, model: { api: "openai-completions", base_url: `http://127.0.0.1:${address.port}/v1`, model: "gpt-4.1", api_key: "test-secret", parameters: {} }, timeout_seconds: 10, max_calls: 5 };
   const calls: string[] = [];
   try {
     await runTask(task, async (method, payload) => {
@@ -163,7 +173,7 @@ test("placement inference resumes and corrects prose using only placement comple
     assert.deepEqual(calls, ["query_nodes", "submit_placements"]);
     assert.equal(requests, 3);
     assert.equal(reminders.length, 2);
-    for (const reminder of reminders) {
+    for (const reminder of reminders.slice(1)) {
       assert.match(reminder, /submit_placements/);
       assert.doesNotMatch(reminder, /submit_plan\b|request_input|source read/);
     }

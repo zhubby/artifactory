@@ -114,7 +114,7 @@ pub async fn save_publication(
     let bytes =
         serde_json::to_vec(&serde_json::json!({"publish.json":serde_json::to_string(&task)?}))?;
     let envelope = crate::crypto::seal_context(&state.settings.master_key, &bytes, id.as_bytes())?;
-    state.store.save_image_task(id, &envelope, None).await
+    state.store.save_image_task(id, &envelope).await
 }
 
 #[cfg(test)]
