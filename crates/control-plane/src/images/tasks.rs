@@ -1,6 +1,6 @@
-//! [INPUT]: 依赖固定 Assignment、项目凭据引用与执行令牌。
-//! [OUTPUT]: 生成独立任务材料，核对发布仓库来源快照。
-//! [POS]: 明文材料只进入加密信封和 Kubernetes Secret。
+//! [INPUT]: 依赖完整固定源码清单、Assignment、凭据引用与执行令牌。
+//! [OUTPUT]: 校验清单与 commit，只向任务材料交付清单 ID 和摘要。
+//! [POS]: 镜像 Secret 仅携带固定源码引用与执行凭据。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::Config;
 use crate::{crypto, state::AppState, store::images::ImageExecution};
@@ -8,6 +8,19 @@ use anyhow::{Result, ensure};
 use artifactory_image_protocol::{BuildTask, PublishTask, RegistryLogin};
 use serde_json::{Value, json};
 use uuid::Uuid;
+
+fn fixed_source_identity(
+    source: &artifactory_source_checkout::SourceManifest,
+    expected_id: Uuid,
+    expected_commit: &str,
+) -> Result<(Uuid, String)> {
+    ensure!(source.id == expected_id, "source manifest identity changed");
+    ensure!(
+        source.root()?.commit_sha == expected_commit,
+        "source commit mismatch"
+    );
+    Ok((source.id, source.digest.clone()))
+}
 
 pub async fn credential(
     state: &AppState,
@@ -95,10 +108,8 @@ pub async fn build(
             String::from_utf8(credential(state, e, Uuid::parse_str(id)?, "secret").await?)?,
         );
     }
-    ensure!(
-        source.root()?.commit_sha == context.commit_sha,
-        "source commit mismatch"
-    );
+    let (source_manifest_id, source_digest) =
+        fixed_source_identity(&source, e.source_manifest_id, &context.commit_sha)?;
     let task = BuildTask {
         execution_id: e.id.to_string(),
         token: token.into(),
@@ -110,7 +121,8 @@ pub async fn build(
         registry: config.login(e.id, token),
         repository: e.candidate_repository.clone(),
         image: e.spec.clone(),
-        source,
+        source_manifest_id,
+        source_digest,
         timeout_seconds: e.task_timeout_seconds.saturating_sub(600).max(1),
         docker_auth,
         secrets,
@@ -187,4 +199,123 @@ pub async fn verify_report(
         _ => {}
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use artifactory_source_checkout::{LfsObject, SourceManifest, SourceRepository};
+    use std::collections::BTreeMap;
+
+    fn source(objects: usize) -> SourceManifest {
+        SourceManifest::new(
+            Uuid::new_v4(),
+            vec![SourceRepository {
+                path: String::new(),
+                upstream_url: "https://git.example.com/repository.git".into(),
+                commit_sha: "a".repeat(40),
+                tags: BTreeMap::new(),
+                lfs_objects: (0..objects)
+                    .map(|index| LfsObject {
+                        path: format!("payload-{index:05}.bin"),
+                        oid: "b".repeat(64),
+                        size: 1,
+                    })
+                    .collect(),
+            }],
+        )
+        .unwrap()
+    }
+
+    fn materials(source: &SourceManifest) -> (BuildTask, PublishTask) {
+        let (source_manifest_id, source_digest) =
+            fixed_source_identity(source, source.id, &"a".repeat(40)).unwrap();
+        let registry = RegistryLogin {
+            endpoint: "https://registry.example.com".into(),
+            username: "fixture".into(),
+            password: "synthetic-test-value".into(),
+        };
+        let image = serde_json::from_value::<artifactory_image_protocol::ImageSpec>(json!({
+            "name": "application", "platforms": ["linux/arm64"],
+        }))
+        .unwrap();
+        image.validate().unwrap();
+        (
+            BuildTask {
+                execution_id: Uuid::new_v4().to_string(),
+                token: "synthetic-build-token".into(),
+                control_url: "https://control.example.com/api/v1/image-tasks/fixture".into(),
+                registry: registry.clone(),
+                repository: "candidate/fixture".into(),
+                image,
+                source_manifest_id,
+                source_digest,
+                timeout_seconds: 600,
+                docker_auth: json!({"auths": {}}),
+                secrets: BTreeMap::new(),
+                insecure: false,
+            },
+            PublishTask {
+                execution_id: Uuid::new_v4().to_string(),
+                token: "synthetic-publish-token".into(),
+                control_url: "https://control.example.com/api/v1/image-tasks/fixture".into(),
+                registry,
+                source_repository: "candidate/fixture".into(),
+                destination_repository: "project/application".into(),
+                tags: vec!["latest".into()],
+                platforms: vec!["linux/arm64".into()],
+                insecure: false,
+                destination: None,
+                root_digest: None,
+            },
+        )
+    }
+
+    #[test]
+    fn large_fixed_manifest_stays_out_of_kubernetes_task_secret() {
+        let source = source(32_000);
+        source.validate().unwrap();
+        let manifest_bytes = serde_json::to_vec(&source).unwrap();
+        assert!(manifest_bytes.len() > 3 * 1024 * 1024);
+        let (build, publish) = materials(&source);
+        let bytes = super::super::dispatch::serialize_materials(&build, &publish).unwrap();
+        assert!(bytes.len() < 16 * 1024);
+        let serialized: BTreeMap<String, String> = serde_json::from_slice(&bytes).unwrap();
+        let decoded: BuildTask = serde_json::from_str(&serialized["build.json"]).unwrap();
+        assert_eq!(decoded.source_manifest_id, source.id);
+        assert_eq!(decoded.source_digest, source.digest);
+        let mut raw: Value = serde_json::from_str(&serialized["build.json"]).unwrap();
+        assert!(raw.get("source").is_none());
+        raw["source"] = json!({});
+        assert!(serde_json::from_value::<BuildTask>(raw).is_err());
+        println!(
+            "manifest_bytes={}, material_envelope_bytes={}, secret_data_bytes={}",
+            manifest_bytes.len(),
+            bytes.len(),
+            serialized.values().map(String::len).sum::<usize>()
+        );
+    }
+
+    #[test]
+    fn fixed_source_identity_still_validates_manifest_id_commit_and_digest() {
+        let mut source = source(1);
+        assert!(fixed_source_identity(&source, Uuid::new_v4(), &"a".repeat(40)).is_err());
+        assert!(fixed_source_identity(&source, source.id, &"c".repeat(40)).is_err());
+        source.digest = "d".repeat(64);
+        assert!(fixed_source_identity(&source, source.id, &"a".repeat(40)).is_err());
+    }
+
+    #[test]
+    fn oversized_execution_credentials_still_exceed_secret_limit() {
+        let (mut build, publish) = materials(&source(1));
+        build
+            .secrets
+            .insert("LARGE_FIXTURE".into(), "x".repeat(900 * 1024));
+        let error = super::super::dispatch::serialize_materials(&build, &publish).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("task Secret exceeds Kubernetes limit")
+        );
+    }
 }

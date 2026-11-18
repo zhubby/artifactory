@@ -1,10 +1,11 @@
-//! [INPUT]: 依赖镜像持久化认领、加密材料与 Kubernetes API。
-//! [OUTPUT]: 创建不可变任务，区分超时与取消并回收终态材料。
+//! [INPUT]: 依赖镜像持久化认领、固定源码引用、加密材料与 Kubernetes API。
+//! [OUTPUT]: 限制任务材料 900 KiB，交付不可变任务并回收终态材料。
 //! [POS]: 多副本可重放的控制平面到 Operator 交付边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{Config, tasks};
 use crate::{crypto, state::AppState, store::images::ImageExecution};
 use anyhow::{Result, ensure};
+use artifactory_image_protocol::{BuildTask, PublishTask};
 use k8s_openapi::api::core::v1::Secret;
 use kube::{
     Api, Client, ResourceExt,
@@ -12,6 +13,19 @@ use kube::{
 };
 use serde_json::json;
 use uuid::Uuid;
+
+pub(super) fn serialize_materials(build: &BuildTask, publish: &PublishTask) -> Result<Vec<u8>> {
+    let bytes = serde_json::to_vec(&json!({
+        "build.json": serde_json::to_string(build)?,
+        "publish.json": serde_json::to_string(publish)?,
+    }))?;
+    ensure!(
+        bytes.len() <= 900 * 1024,
+        "task Secret exceeds Kubernetes limit"
+    );
+    Ok(bytes)
+}
+
 fn api(client: &Client, config: &Config) -> Api<DynamicObject> {
     let resource = ApiResource {
         group: "images.artifactory.dev".into(),
@@ -156,20 +170,20 @@ pub async fn tick(state: &AppState, config: &Config, client: &Client) -> Result<
         {
             continue;
         }
-        let result=async{
-   let e=state.store.image_execution(id).await?;
-   let build=tasks::build(state,config,&e,&build_token).await?;
-   let publish=tasks::publication(state,config,&e,&publish_token).await?;
-   let bytes=serde_json::to_vec(&json!({"build.json":serde_json::to_string(&build)?,"publish.json":serde_json::to_string(&publish)?}))?;
-   ensure!(bytes.len()<=900*1024,"task Secret exceeds Kubernetes limit");
-   let envelope=crypto::seal_context(&state.settings.master_key,&bytes,id.as_bytes())?;
-   state.store.save_image_task(id,&envelope).await?;
-   let execution=state.store.image_execution(id).await?;
-   if let Err(error)=deliver(state,config,client,&execution).await {
-    tracing::warn!(%id,%error,"image delivery deferred");
-   }
-   Ok::<_,anyhow::Error>(())
-  }.await;
+        let result = async {
+            let e = state.store.image_execution(id).await?;
+            let build = tasks::build(state, config, &e, &build_token).await?;
+            let publish = tasks::publication(state, config, &e, &publish_token).await?;
+            let bytes = serialize_materials(&build, &publish)?;
+            let envelope = crypto::seal_context(&state.settings.master_key, &bytes, id.as_bytes())?;
+            state.store.save_image_task(id, &envelope).await?;
+            let execution = state.store.image_execution(id).await?;
+            if let Err(error) = deliver(state, config, client, &execution).await {
+                tracing::warn!(%id,%error,"image delivery deferred");
+            }
+            Ok::<_, anyhow::Error>(())
+        }
+        .await;
         if let Err(error) = result {
             tracing::warn!(%id,%error,"image preparation failed");
             state.store.finish_image(id, "failed").await?;

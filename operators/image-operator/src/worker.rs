@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖推送 Secret、只读源码目录、BuildKit socket 与日志脱敏。
+//! [INPUT]: 依赖清单身份与推送 Secret、init 清单、只读源码和 BuildKit。
 //! [OUTPUT]: 构建单平台镜像，信任私有认证 CA 并提交限长脱敏日志。
 //! [POS]: BuildKit Job 的隔离执行进程。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -82,6 +82,20 @@ fn log_secrets(task: &BuildTask) -> redact::Secrets {
     secrets
 }
 
+fn prepared_source(
+    id: uuid::Uuid,
+    digest: &str,
+    bytes: &[u8],
+) -> Result<artifactory_source_checkout::SourceManifest> {
+    let prepared: artifactory_source_checkout::SourceManifest = serde_json::from_slice(bytes)?;
+    ensure!(
+        prepared.id == id && prepared.digest == digest,
+        "prepared source differs from authorized manifest"
+    );
+    prepared.validate()?;
+    Ok(prepared)
+}
+
 async fn build(
     task: &BuildTask,
     platform: &str,
@@ -97,12 +111,11 @@ async fn build(
     let root = Path::new("/work").join(pod.to_string());
     std::fs::create_dir(&root).context("isolated workspace already exists")?;
     let workspace = Path::new("/workspace/source");
-    let prepared: artifactory_source_checkout::SourceManifest =
-        serde_json::from_slice(&tokio::fs::read("/workspace/source-manifest.json").await?)?;
-    ensure!(
-        prepared == task.source,
-        "prepared source differs from authorized manifest"
-    );
+    let prepared = prepared_source(
+        task.source_manifest_id,
+        &task.source_digest,
+        &tokio::fs::read("/workspace/source-manifest.json").await?,
+    )?;
     let (emit, mut events) = Emitter::channel();
     let logs = control.clone();
     let log_platform = platform.to_owned();
@@ -128,7 +141,7 @@ async fn build(
         Ok::<_, anyhow::Error>(())
     });
     let result = async {
-        artifactory_source_checkout::verify(&task.source, workspace, cancel).await?;
+        artifactory_source_checkout::verify(&prepared, workspace, cancel).await?;
         let context = artifactory_source_checkout::managed_path(
             workspace,
             if task.image.context == "." {
@@ -239,7 +252,7 @@ async fn build(
         out.await??;
         err.await??;
         ensure!(result?.success(), "BuildKit failed; inspect build logs");
-        artifactory_source_checkout::verify(&task.source, workspace, cancel).await?;
+        artifactory_source_checkout::verify(&prepared, workspace, cancel).await?;
         let bytes = tokio::fs::read(&metadata).await?;
         ensure!(bytes.len() <= 65536, "oversized BuildKit metadata");
         let metadata: serde_json::Value = serde_json::from_slice(&bytes)?;
@@ -286,6 +299,40 @@ pub async fn run() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn prepared_manifest_requires_authorized_identity_and_valid_contents() {
+        use artifactory_source_checkout::{SourceManifest, SourceRepository};
+        let manifest = SourceManifest::new(
+            uuid::Uuid::from_u128(1),
+            vec![SourceRepository {
+                path: String::new(),
+                upstream_url: "https://example.test/org/repo.git".into(),
+                commit_sha: "a".repeat(40),
+                tags: Default::default(),
+                lfs_objects: vec![],
+            }],
+        )
+        .unwrap();
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        assert_eq!(
+            prepared_source(manifest.id, &manifest.digest, &bytes).unwrap(),
+            manifest
+        );
+        assert!(prepared_source(uuid::Uuid::from_u128(2), &manifest.digest, &bytes).is_err());
+        assert!(prepared_source(manifest.id, &"b".repeat(64), &bytes).is_err());
+        let mut tampered = manifest.clone();
+        tampered.repositories[0].commit_sha = "c".repeat(40);
+        assert!(
+            prepared_source(
+                manifest.id,
+                &manifest.digest,
+                &serde_json::to_vec(&tampered).unwrap(),
+            )
+            .is_err(),
+            "matching claimed identity cannot hide changed manifest contents"
+        );
+    }
+
     #[test]
     fn buildctl_token_provider_trusts_private_ca_without_disabling_tls() {
         let command = buildctl(
@@ -342,7 +389,7 @@ mod tests {
             "execution_id":"test", "token":"task-token", "control_url":"https://control.example/",
             "registry":{"endpoint":"https://registry.example/","username":"runner","password":"internal-password"},
             "repository":"candidate", "image":{"name":"app"},
-            "source":{"id":"00000000-0000-0000-0000-000000000001","digest":"a".repeat(64),"repositories":[]}, "timeout_seconds":300, "docker_auth":{"auths":{"external.example":{"auth":"dXNlcjpleHRlcm5hbC1wYXNzd29yZA=="}}},
+            "source_manifest_id":"00000000-0000-0000-0000-000000000001","source_digest":"a".repeat(64), "timeout_seconds":300, "docker_auth":{"auths":{"external.example":{"auth":"dXNlcjpleHRlcm5hbC1wYXNzd29yZA=="}}},
             "insecure":false
         })).unwrap();
         let (emit, mut events) = Emitter::channel();

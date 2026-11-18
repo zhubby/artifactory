@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖固定源码元数据、Serde 和 SHA-256。
-//! [OUTPUT]: 提供镜像目标、执行材料、结果与 OCI Index 契约。
+//! [INPUT]: 依赖固定清单身份、Serde 和 SHA-256。
+//! [OUTPUT]: 提供镜像目标、紧凑执行材料与 OCI Index 契约。
 //! [POS]: 控制平面与 Image Operator 共用的执行边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
@@ -174,6 +174,7 @@ impl RegistryLogin {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BuildTask {
     pub execution_id: String,
     pub token: String,
@@ -181,7 +182,8 @@ pub struct BuildTask {
     pub registry: RegistryLogin,
     pub repository: String,
     pub image: ImageSpec,
-    pub source: artifactory_source_checkout::SourceManifest,
+    pub source_manifest_id: uuid::Uuid,
+    pub source_digest: String,
     pub timeout_seconds: u32,
     #[serde(default)]
     pub docker_auth: serde_json::Value,
