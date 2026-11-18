@@ -1,6 +1,6 @@
 <!--
-[INPUT]: 独立镜像 Operator、私有仓库与统一 Pingora 入口。
-[OUTPUT]: 定义镜像交付、四端口边界与监听就绪策略。
+[INPUT]: 独立镜像 Operator、固定清单引用、私有仓库与 Pingora。
+[OUTPUT]: 定义镜像材料、交付、四端口边界与监听就绪策略。
 [POS]: 镜像构建与统一网关的部署入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -125,6 +125,8 @@ builderPool:
 ```
 
 每个平台 Job 先执行源码 init container，再启动 rootless BuildKit sidecar 和 Runner。源码位于有大小限额的 emptyDir，Runner 只读挂载。Git 凭据与投影 token 只挂载到 init container；推送凭据 Secret 只挂载到 Runner。Publisher 不拉源码，不启动 BuildKit。
+
+Control 校验完整清单和固定提交后，在 `build.json` 的源码部分只写入 `source_manifest_id` 和 `source_digest`。完整清单由 init 直接领取并写入临时卷，Runner 核对 ID、摘要和清单内容，再在构建前后校验工作树。任务材料信封上限保持 900 KiB，合法 4 MiB 清单不写入 Kubernetes Secret。旧 `source` 字段被拒绝。
 
 BuildKit 的内容存储与快照仅存于本次 Pod 的 emptyDir。不导入或导出 Registry、S3、inline 或本地共享构建缓存，也不复用跨任务 daemon。`RUN --mount=type=cache` 只在本次 BuildKit 生命周期内有效。正式镜像是允许保留的制品，其 Dockerfile 明确复制的源码随镜像保存。
 
