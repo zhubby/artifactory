@@ -35,6 +35,7 @@
 
 - [实施与验收总览](acceptance.md)
 - [临时源码执行 · 2026-11-18](ephemeral-source-acceptance-2026-11-18.md)
+- [Kubernetes 1.28 镜像构建 · 2026-11-18](image-builds-kubernetes-128-acceptance-2026-11-18.md)
 - [集群镜像构建与独立 Operator · 2026-11-17](image-builds-kubernetes-acceptance-2026-11-17.md)
 - [新版 UI 恢复与旧代码清理 · 2026-11-17](acceptance/ui/2026-11-17-restore-and-remove-legacy.md)
 - [AI-Workspace macOS 托管证书签名 · 2026-11-17](ai-workspace-signing-acceptance-2026-11-17.md)
@@ -60,6 +61,7 @@
 
 # 设计与计划归档
 
+- [Kubernetes 1.28 一次性镜像构建方案 · 2026-11-18](plans/2026-11-18-001-refactor-kubernetes-128-build-plan.md)
 - [临时源码与任务独立拉取 · 2026-11-18](plans/2026-11-18-ephemeral-source-execution.md)
 - [设计基线 · 2026-11-09](superpowers/specs/2026-11-09-artifactory-design.md)
 - [设计契约审阅 · 2026-11-09](superpowers/specs/2026-11-09-artifactory-design-review.md)

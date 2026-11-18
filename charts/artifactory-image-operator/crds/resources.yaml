@@ -80,6 +80,31 @@ spec:
           status:
             nullable: true
             properties:
+              jobOwnership:
+                nullable: true
+                properties:
+                  imageBuildUid:
+                    type: string
+                  jobs:
+                    items:
+                      properties:
+                        name:
+                          type: string
+                        platform:
+                          type: string
+                        uid:
+                          type: string
+                      required:
+                      - name
+                      - platform
+                      - uid
+                      type: object
+                    maxItems: 3
+                    type: array
+                required:
+                - imageBuildUid
+                - jobs
+                type: object
               message:
                 nullable: true
                 type: string
@@ -201,6 +226,31 @@ spec:
           status:
             nullable: true
             properties:
+              jobOwnership:
+                nullable: true
+                properties:
+                  imageBuildUid:
+                    type: string
+                  jobs:
+                    items:
+                      properties:
+                        name:
+                          type: string
+                        platform:
+                          type: string
+                        uid:
+                          type: string
+                      required:
+                      - name
+                      - platform
+                      - uid
+                      type: object
+                    maxItems: 3
+                    type: array
+                required:
+                - imageBuildUid
+                - jobs
+                type: object
               message:
                 nullable: true
                 type: string

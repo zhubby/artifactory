@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 kube CRD、Serde 和固定执行身份。
-//! [OUTPUT]: 提供固定清单身份、平台集合与不可变执行 CRD。
+//! [OUTPUT]: 提供固定清单身份、不可变执行 CRD 与有界 Job UID 台账。
 //! [POS]: Image Operator 的 Kubernetes 公开契约。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use kube::{CustomResource, CustomResourceExt};
@@ -13,6 +13,24 @@ pub struct Status {
     pub phase: String,
     pub message: Option<String>,
     pub observed_generation: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_ownership: Option<JobOwnership>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct JobOwnership {
+    pub image_build_uid: String,
+    #[schemars(length(max = 3))]
+    pub jobs: Vec<OwnedJob>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OwnedJob {
+    pub name: String,
+    pub uid: String,
+    pub platform: String,
 }
 
 #[derive(CustomResource, Clone, Debug, Deserialize, Serialize, JsonSchema)]

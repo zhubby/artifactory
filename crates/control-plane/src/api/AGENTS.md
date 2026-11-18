@@ -13,7 +13,7 @@ signing.rs: 提供租户凭据、签名方案和项目默认设置。
 telemetry.rs: 提供设备与构建时序查询接口。
 tenants.rs: 提供租户、成员与项目授权接口。
 
-images.rs: 提供项目镜像目录、凭据、回执与固定目标发布。
+images.rs: 鉴权后幂等确认已存候选，提供镜像目录和固定目标发布。
 
 artifact_gateway.rs: 将加密票据转换为网关内部对象请求。
 

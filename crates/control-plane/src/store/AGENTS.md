@@ -31,7 +31,7 @@ ota_management.rs: 写入节点发布及升级目标。
 performance.rs: 验证存储查询预算和响应规模。
 execution_fences.rs: 以真实事件、心跳与取消事务验证节点锁等待及权限租约拒绝。
 
-images.rs: 保存排空续跑身份、超时分类和发布仓库来源快照。
+images.rs: 保存候选与 CR UID，锁内复核取消和截止时间后提交成功。
 
 runtime_bridge_tests.rs: 在新数据库验证重排脚本、资源和版本不可变约束。
 

@@ -1,14 +1,14 @@
 <!--
-[INPUT]: 独立 Agent Operator、Runtime 和源码初始化镜像。
-[OUTPUT]: 定义一次性源码与规划 Job 的安装及清理约束。
-[POS]: Kubernetes 规划工作负载运维入口。
+[INPUT]: 独立 Operator、Runtime 和一次性源码镜像。
+[OUTPUT]: 定义源码、规划和镜像 Job 的安装及收尾约束。
+[POS]: Kubernetes 1.28 工作负载运维入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
 # Kubernetes Agent Operator 运维
 
 Agent Operator 是独立 Rust 服务。它协调 `AgentPool`、`AgentRun` 和 `SourceTask`。源码任务与规划任务各自按 AgentPool 预算准入，均使用临时 Job，不创建常驻源码服务、源码 PVC 或源码 S3 对象。
 
-Kubernetes 最低版本为 1.33。使用同一命名空间部署一套 Runtime 与 Agent Operator。Operator 的两个副本共享 `artifactory-agent-operator` Lease，只有持有 Lease 的副本修改资源。
+Kubernetes 最低版本为 1.28。使用同一命名空间部署一套 Runtime 与 Agent Operator。Operator 的两个副本共享 `artifactory-agent-operator` Lease，只有持有 Lease 的副本修改资源。
 
 ## 安装
 
@@ -58,6 +58,12 @@ Operator 创建 `source-<taskId>` Job。Job 使用 `artifactory-source-preparer`
 主容器只读挂载 `/workspace/source` 和 `/workspace/source-manifest.json`，工具在本地读取文件。模型调用、预算、租约和结果仍由 Runtime 控制。AI 对话、日志、计划及明确产出的制品允许持久保存。
 
 ## 清理与故障
+
+镜像平台 Job 使用普通源码 init、Runner 和 BuildKit 两个普通容器。它不需要 `SidecarContainers` 功能开关。BuildKit 镜像必须包含 `artifactory-image-buildkit` 监督入口，不能直接替换成上游镜像。Runner 通过本地 Unix socket 维持租约，构建校验完成后等待 BuildKit 进程树停止，再提交平台结果。
+
+任一应用容器非零退出或 OOM，Image Operator 立即进入失败收尾。Published 回报只保存候选摘要。Control 核对原 ImageBuild UID、完整 Job 成功和任务期限后，才提交业务成功与制品记录。
+
+ImageBuild 保存所属 Job 的 UID 台账。创建 Job 前，Operator 安装清理 finalizer。直接删除 ImageBuild 也须等待实际任务 Pod 收尾，才能移除该 finalizer。删除 Job 后，Operator 仍按 Pod owner UID 识别残留执行。活动、状态未知或尚未确认停止的 Pod 占用容量。所有容器已终止的 Pod 保留诊断证据，但释放执行槽，允许 Publisher 准入。节点失联时保留 `CleanupPending`，不能以 API 逻辑删除代替实际停止。
 
 Job 不共享仓库或 BuildKit 缓存。源码任务结束、失败或取消后，Operator 按 owner UID 删除 Job，并等待 Pod 消失。删除失败保留 `CleanupPending`，后续继续重试。源码 Job 的 300 秒 TTL 仅在任务终态清理时设置，避免丢失终态观察后重新执行任务。规划 Job 有 300 秒 TTL 兜底，其执行状态以 Runtime 为准。
 

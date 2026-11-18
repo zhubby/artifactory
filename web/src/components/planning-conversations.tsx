@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖构建范围鉴权接口和分页审计消息。
- * [OUTPUT]: 按 run 与 generation 展示完整规划对话。
+ * [OUTPUT]: 按 run 与 generation 展示对话，重开补读终态。
  * [POS]: 对话按需读取；新会话不从审计历史恢复执行。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -36,7 +36,7 @@ function Conversation({buildId,session}:{buildId:string;session:PlanningConversa
  const load=useCallback(async(after:number)=>{const controller=new AbortController();requests.current.add(controller);setBusy(true);try{const page=await api<ConversationPage>(`${path}?after=${after}&limit=50`,{signal:controller.signal});if(controller.signal.aborted)return;setMessages(previous=>{const merged=new Map(previous.map(message=>[message.sequence,message]));for(const message of page.messages)merged.set(message.sequence,message);return [...merged.values()].sort((a,b)=>a.sequence-b.sequence);});latest.current=Math.max(latest.current,...page.messages.map(message=>message.sequence));setNext(page.next_cursor);setLoaded(true);setError(undefined);}catch(error){if(!controller.signal.aborted)setError(asError(error));}finally{requests.current.delete(controller);if(!controller.signal.aborted)setBusy(false);}},[path]);
  useEffect(()=>{const details=root.current?.parentElement;if(!details)return;const toggle=()=>setOpen((details as HTMLDetailsElement).open);details.addEventListener("toggle",toggle);return()=>details.removeEventListener("toggle",toggle);},[]);
  useEffect(()=>{if(open&&!loaded)void load(0);},[open,loaded,load]);
- useEffect(()=>{if(open&&loaded&&priorStatus.current==="running"&&session.status!=="running")void load(latest.current);priorStatus.current=session.status;},[open,loaded,session.status,load]);
+ useEffect(()=>{if(!open||!loaded)return;if(priorStatus.current==="running"&&session.status!=="running")void load(latest.current);priorStatus.current=session.status;},[open,loaded,session.status,load]);
  useEffect(()=>{if(!open||!loaded||next!==null||session.status!=="running")return;const timer=setInterval(()=>void load(latest.current),3000);return()=>clearInterval(timer);},[open,loaded,next,session.status,load]);
  useEffect(()=>{const pending=requests.current;return()=>{for(const request of pending)request.abort();pending.clear();};},[]);
  return <div ref={root} className="mt-3 space-y-3"><p className="break-all font-mono text-xs text-muted-foreground">{session.model} · {session.pod_uid}{session.source_digest&&` · ${session.source_digest}`}</p>{session.status==="interrupted"&&<p className="text-xs text-muted-foreground">{t("ai.conversationInterrupted")}</p>}<ErrorBox message={error}/>{combinedMessages(messages).map(message=><details key={message.sequence} className="rounded bg-background p-3"><summary className="cursor-pointer text-xs">{message.sequence} · {String(message.payload.role||message.kind)}</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(message.payload,null,2)}</pre></details>)}{next!==null&&<Button variant="secondary" size="sm" disabled={busy} onClick={()=>void load(next)}>{t("ai.moreMessages")}</Button>}{error&&<Button variant="secondary" size="sm" disabled={busy} onClick={()=>void load(latest.current)}>{t("common.retry")}</Button>}</div>;

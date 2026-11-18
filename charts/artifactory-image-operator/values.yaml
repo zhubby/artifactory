@@ -10,7 +10,7 @@ replicas: 2
 builderPool:
   name: default
   workerImage: ghcr.io/zhubby/artifactory-image-worker:0.2.0
-  buildkitImage: moby/buildkit:v0.26.2-rootless
+  buildkitImage: ghcr.io/zhubby/artifactory-buildkit:0.2.0
   sourcePreparerImage: ghcr.io/zhubby/artifactory-source-preparer:0.2.0
   controlUrl: https://artifactory-gateway-internal:8445
   maxActive: 8

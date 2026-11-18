@@ -1,5 +1,5 @@
 # [INPUT]: 独立 Image Operator 服务身份。
-# [OUTPUT]: CRD 状态、Job、Lease 与只读节点权限。
+# [OUTPUT]: ImageBuild finalizer、状态、Job、Lease 与只读节点权限。
 # [POS]: 控制器不读取任务 Secret，不修改 Node。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 apiVersion: rbac.authorization.k8s.io/v1
@@ -7,8 +7,11 @@ kind: Role
 metadata: {name: {{ .Release.Name }}-image-operator}
 rules:
   - apiGroups: [images.artifactory.dev]
-    resources: [builderpools, imagebuilds]
+    resources: [builderpools]
     verbs: [get, list, watch]
+  - apiGroups: [images.artifactory.dev]
+    resources: [imagebuilds]
+    verbs: [get, list, watch, patch]
   - apiGroups: [images.artifactory.dev]
     resources: [imagebuilds/status]
     verbs: [get, patch, update]

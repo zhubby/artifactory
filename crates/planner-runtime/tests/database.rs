@@ -14,6 +14,8 @@ use artifactory_runtime_protocol::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
+#[path = "database/conversation_chunks.rs"]
+mod conversation_chunks;
 #[path = "database/source_payload.rs"]
 mod source_payload;
 struct TestRuntime {

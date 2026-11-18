@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖固定 Job、租户授权和加密任务材料。
-//! [OUTPUT]: 提供执行认领、超时分类、回执及公开发布来源快照。
-//! [POS]: 分隔新任务准入与排空续跑；网络校验在事务外完成。
+//! [OUTPUT]: 保存候选与 CR UID，事务确认成功并登记唯一制品。
+//! [POS]: Control 是成功写入者；网络校验在事务外完成。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use crate::{
@@ -32,12 +32,20 @@ pub struct ImageExecution {
     pub destination_registry: Option<String>,
     pub tags: Vec<String>,
     pub root_digest: Option<String>,
+    pub published_digest: Option<String>,
+    pub image_build_uid: Option<String>,
     pub task_envelope: Option<String>,
     pub results: Vec<PlatformResult>,
     pub cancel_requested: bool,
     pub timeout_seconds: u32,
     #[serde(default)]
     pub task_timeout_seconds: u32,
+}
+#[derive(Debug, PartialEq, Eq)]
+/// 成功只回收材料；失败和取消主动终止残留任务。
+pub enum ImageStop {
+    Cleanup,
+    Terminate(&'static str),
 }
 const ROW: &str = "SELECT to_jsonb(e)||jsonb_build_object('timeout_seconds',greatest(1,extract(epoch FROM e.deadline_at-now())::int),'task_timeout_seconds',greatest(1,extract(epoch FROM e.deadline_at-e.created_at)::int)) FROM image_executions e";
 // 构建锁先于执行锁，顺序与取消、重试一致。
@@ -60,9 +68,22 @@ impl ControlStore {
                 .is_some(),
         )
     }
-    pub async fn image_stop_status(&self, id: Uuid) -> anyhow::Result<Option<&'static str>> {
-        let canceled: Option<bool> = sql::optional_scalar(&mut self.pool.clone(), &format!("SELECT e.cancel_requested OR b.cancel_requested OR b.source_manifest_id IS DISTINCT FROM e.source_manifest_id OR j.plan_revision_id IS DISTINCT FROM e.plan_revision_id OR p.status NOT IN ('active','draining') OR t.status NOT IN ('active','draining') FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=e.project_id JOIN tenants t ON t.id=e.tenant_id WHERE e.id=$1 AND NOT EXISTS({LIVE})"), params![id]).await?;
-        Ok(canceled.map(|canceled| if canceled { "canceled" } else { "failed" }))
+    pub async fn image_stop_status(&self, id: Uuid) -> anyhow::Result<Option<ImageStop>> {
+        let row = sql::optional_record(&mut self.pool.clone(), &format!("SELECT e.status,e.cancel_requested OR b.cancel_requested OR b.source_manifest_id IS DISTINCT FROM e.source_manifest_id OR j.plan_revision_id IS DISTINCT FROM e.plan_revision_id OR p.status NOT IN ('active','draining') OR t.status NOT IN ('active','draining') AS canceled FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=e.project_id JOIN tenants t ON t.id=e.tenant_id WHERE e.id=$1 AND NOT EXISTS({LIVE})"), params![id], &[("status",toasty::stmt::Type::String),("canceled",toasty::stmt::Type::Bool)]).await?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let status = row.decode::<String>("status")?;
+        if status == "succeeded" {
+            return Ok(Some(ImageStop::Cleanup));
+        }
+        Ok(Some(ImageStop::Terminate(
+            if status == "canceled" || row.decode::<bool>("canceled")? {
+                "canceled"
+            } else {
+                "failed"
+            },
+        )))
     }
     pub async fn image_pending(&self) -> anyhow::Result<Vec<Uuid>> {
         Ok(sql::scalars(&mut self.pool.clone(),"WITH pending AS (SELECT e.id FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id WHERE e.status='running' OR (e.status='preparing' AND e.created_at<now()-interval '5 minutes') OR (e.status NOT IN ('preparing','running') AND e.task_envelope IS NOT NULL) ORDER BY (e.cancel_requested OR b.cancel_requested OR e.deadline_at<=clock_timestamp() OR e.status NOT IN ('preparing','running')) DESC,e.last_dispatched_at NULLS FIRST,e.created_at,e.id LIMIT 32 FOR UPDATE OF e SKIP LOCKED) UPDATE image_executions e SET last_dispatched_at=clock_timestamp() FROM pending p WHERE e.id=p.id RETURNING e.id",params![]).await?)
@@ -142,6 +163,82 @@ impl ControlStore {
         let hash = crypto::hash(token);
         Ok(sql::optional_scalar(&mut self.pool.clone(),"SELECT publish_token_hash=$2 FROM image_executions WHERE id=$1 AND (publish_token_hash=$2 OR build_token_hash=$2)",params![id,hash]).await?)
     }
+    /// 固定首次交付的 CR UID；同名 CR 重建不能接管执行。
+    pub async fn bind_image_build(&self, id: Uuid, uid: &str) -> anyhow::Result<()> {
+        ensure!(!uid.is_empty(), "ImageBuild UID required");
+        let mut db = self.pool.clone();
+        let mut tx = db.transaction().await?;
+        sql::execute(&mut tx,"SELECT b.id FROM builds b JOIN jobs j ON j.build_id=b.id JOIN image_executions e ON e.job_id=j.id WHERE e.id=$1 FOR UPDATE OF b,j",params![id]).await?;
+        ensure!(
+            sql::optional_scalar::<Uuid>(&mut tx, &format!("{LIVE} FOR UPDATE OF e"), params![id])
+                .await?
+                .is_some(),
+            "image execution is stale or canceled"
+        );
+        let n = sql::execute(&mut tx,"UPDATE image_executions SET image_build_uid=$2 WHERE id=$1 AND (image_build_uid IS NULL OR image_build_uid=$2)",params![id,uid]).await?;
+        ensure!(n == 1, "ImageBuild UID changed");
+        tx.commit().await?;
+        Ok(())
+    }
+    /// CR 当前身份、spec 和成功状态复核后，原子提交候选。
+    pub async fn complete_image(&self, id: Uuid, uid: &str) -> anyhow::Result<()> {
+        let mut db = self.pool.clone();
+        let mut tx = db.transaction().await?;
+        sql::execute(&mut tx,"SELECT b.id FROM builds b JOIN jobs j ON j.build_id=b.id JOIN image_executions e ON e.job_id=j.id WHERE e.id=$1 FOR UPDATE OF b,j",params![id]).await?;
+        let row: Value = sql::scalar(
+            &mut tx,
+            &format!("{ROW} WHERE e.id=$1 FOR UPDATE OF e"),
+            params![id],
+        )
+        .await?;
+        let execution: ImageExecution = serde_json::from_value(row)?;
+        ensure!(
+            execution.image_build_uid.as_deref() == Some(uid) && !uid.is_empty(),
+            "ImageBuild UID changed"
+        );
+        if execution.status == "succeeded" {
+            return Ok(());
+        }
+        ensure!(
+            sql::optional_scalar::<Uuid>(&mut tx, LIVE, params![id])
+                .await?
+                .is_some(),
+            "image execution is stale or canceled"
+        );
+        let digest = artifactory_image_protocol::sha256(&artifactory_image_protocol::index(
+            &execution.spec.platforms,
+            &execution.results,
+        )?);
+        ensure!(
+            execution.published_digest.as_deref() == Some(&digest),
+            "published candidate required"
+        );
+        ensure!(
+            execution
+                .root_digest
+                .as_ref()
+                .is_none_or(|root| root == &digest),
+            "publication source changed"
+        );
+        let parent = execution.parent_id.unwrap_or(id);
+        if execution.destination_credential.is_none() {
+            let n = sql::execute(&mut tx,"INSERT INTO image_artifacts(id,tenant_id,project_id,job_id,execution_id,repository,digest,platforms) SELECT $1,tenant_id,project_id,job_id,id,destination_repository,$3,results FROM image_executions WHERE id=$2 ON CONFLICT(execution_id) DO UPDATE SET digest=image_artifacts.digest WHERE image_artifacts.digest=excluded.digest AND image_artifacts.repository=excluded.repository AND image_artifacts.platforms=excluded.platforms",params![Uuid::new_v4(),parent,&digest]).await?;
+            ensure!(n == 1, "image artifact changed");
+            if parent != id {
+                sql::execute(&mut tx,"UPDATE image_executions SET status='succeeded',root_digest=$2,error=NULL,finished_at=now() WHERE id=$1",params![parent,&digest]).await?;
+            }
+            sql::execute(
+                &mut tx,
+                "UPDATE jobs SET status='succeeded' WHERE id=$1",
+                params![execution.job_id],
+            )
+            .await?;
+        }
+        let n = sql::execute(&mut tx,"UPDATE image_executions SET status='succeeded',root_digest=$2,error=NULL,finished_at=now() WHERE id=$1 AND status IN ('preparing','running') AND NOT cancel_requested AND deadline_at>clock_timestamp()",params![id,&digest]).await?;
+        ensure!(n == 1, "image execution expired before commit");
+        tx.commit().await?;
+        Ok(())
+    }
     pub async fn image_report(
         &self,
         id: Uuid,
@@ -161,8 +258,7 @@ impl ControlStore {
         .await?;
         if let Report::Published { digest } = report
             && publisher
-            && row["status"] == "succeeded"
-            && row["root_digest"] == *digest
+            && row["published_digest"] == *digest
         {
             return Ok(());
         }
@@ -266,18 +362,19 @@ impl ControlStore {
                     )?)
                 };
                 ensure!(digest == &expected, "publication digest changed");
-                let parent = execution.parent_id.unwrap_or(id);
-                if execution.destination_credential.is_none() {
-                    sql::execute(&mut tx,"INSERT INTO image_artifacts(id,tenant_id,project_id,job_id,execution_id,repository,digest,platforms) SELECT $1,tenant_id,project_id,job_id,id,destination_repository,$3,results FROM image_executions WHERE id=$2 ON CONFLICT(execution_id) DO NOTHING",params![Uuid::new_v4(),parent,digest]).await?;
-                    sql::execute(&mut tx,"UPDATE image_executions SET status='succeeded',root_digest=$2,error=NULL,finished_at=now() WHERE id=$1",params![parent,digest]).await?;
-                    sql::execute(
-                        &mut tx,
-                        "UPDATE jobs SET status='succeeded' WHERE id=$1",
-                        params![execution.job_id],
-                    )
-                    .await?;
-                }
-                sql::execute(&mut tx,"UPDATE image_executions SET status='succeeded',root_digest=$2,error=NULL,finished_at=now() WHERE id=$1",params![id,digest]).await?;
+                ensure!(
+                    execution
+                        .published_digest
+                        .as_ref()
+                        .is_none_or(|saved| saved == digest),
+                    "published candidate changed"
+                );
+                sql::execute(
+                    &mut tx,
+                    "UPDATE image_executions SET published_digest=$2 WHERE id=$1",
+                    params![id, digest],
+                )
+                .await?;
             }
         }
         tx.commit().await?;

@@ -1,8 +1,10 @@
 //! [INPUT]: 依赖 Kubernetes Pod 身份、业务授权与 Runtime 存储。
-//! [OUTPUT]: 提供准备、租约、模型代理与分页对话接口。
+//! [OUTPUT]: 提供源码准备，区分资格拒绝与可重试存储故障。
 //! [POS]: 只允许固定 Pod 准备源码；首次 acquire 才启动模型时限。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
-use crate::store::{ModelReservation, RuntimeMetrics, RuntimeStore, ToolDisposition};
+use crate::store::{
+    ModelReservation, PreparationState, RuntimeMetrics, RuntimeStore, ToolDisposition,
+};
 use anyhow::{Context, Result, ensure};
 use artifactory_runtime_protocol::{
     Execution, Lease, RunIntent, crypto,
@@ -229,16 +231,28 @@ pub async fn prepare_material(
     if account != "artifactory-pi" {
         return Err(ApiError::Forbidden);
     }
-    s.store
-        .prepare_execution(execution)
-        .await
-        .map_err(|_| ApiError::Forbidden)?;
+    preparation_ready(s, execution).await?;
     let material = s.control.post("/internal/runtime/source-material",&json!({"run_id":execution.run_id,"generation":execution.generation,"pod_uid":execution.uid,"namespace":execution.namespace,"service_account":account})).await.map_err(|_|ApiError::Unavailable)?;
-    s.store
+    preparation_ready(s, execution).await?;
+    Ok(material)
+}
+async fn preparation_ready(
+    s: &Runtime,
+    execution: &Execution,
+) -> artifactory_runtime_protocol::error::Result<()> {
+    use artifactory_runtime_protocol::error::ApiError;
+    match s
+        .store
         .prepare_execution(execution)
         .await
-        .map_err(|_| ApiError::Forbidden)?;
-    Ok(material)
+        .map_err(|_| ApiError::Unavailable)?
+    {
+        PreparationState::Ready => Ok(()),
+        PreparationState::PendingRegistration => {
+            Err(ApiError::Conflict("execution registration pending".into()))
+        }
+        PreparationState::Denied => Err(ApiError::Forbidden),
+    }
 }
 async fn prepare(State(s): State<Runtime>, Json(v): Json<Value>) -> ApiResult<Value> {
     use artifactory_runtime_protocol::error::ApiError;
@@ -250,10 +264,6 @@ async fn prepare(State(s): State<Runtime>, Json(v): Json<Value>) -> ApiResult<Va
     let account = token_review(&execution, token)
         .await
         .map_err(authorization_error)?;
-    let current = s.store.read_run(execution.run_id).await?;
-    if current["execution"].is_null() {
-        return Err(ApiError::Conflict("execution registration pending".into()));
-    }
     Ok(Json(prepare_material(&s, &execution, &account).await?))
 }
 async fn conversations(State(s): State<Runtime>, Json(v): Json<Value>) -> ApiResult<Value> {

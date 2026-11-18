@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定运行意图、数据库事务和执行身份。
-//! [OUTPUT]: 持久化预算、提案和 generation 生命周期。
+//! [OUTPUT]: 持久化生命周期，区分源码准备资格与存储故障。
 //! [POS]: Runtime 操作状态边界；审计记录不用于恢复会话。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod conversations;
@@ -21,6 +21,13 @@ use uuid::Uuid;
 pub struct RuntimeStore {
     pool: toasty::Db,
     key: Arc<[u8; 32]>,
+}
+#[derive(Debug, PartialEq, Eq)]
+/// 源码准备资格；登记等待不等于授权拒绝。
+pub enum PreparationState {
+    Ready,
+    PendingRegistration,
+    Denied,
 }
 pub struct RuntimeMetrics {
     pub statuses: Vec<(String, i64)>,
@@ -285,33 +292,34 @@ impl RuntimeStore {
         Ok(json!({"ok":true}))
     }
 
-    pub async fn prepare_execution(&self, execution: &Execution) -> Result<()> {
-        let row = sql::record(
+    pub async fn prepare_execution(&self, execution: &Execution) -> Result<PreparationState> {
+        let Some(row) = sql::optional_record(
             &mut self.pool.clone(),
             "SELECT * FROM runtime_runs WHERE id=$1",
             params![execution.run_id],
             &run_fields(),
         )
-        .await?;
+        .await?
+        else {
+            return Ok(PreparationState::Denied);
+        };
         let life: Lifecycle = serde_json::from_value(row.decode("lifecycle")?)?;
-        ensure!(
-            !life.canceled && !life.pending && life.generation == execution.generation,
-            "execution fenced"
-        );
-        ensure!(
-            row.decode::<String>("status")? == "provisioning",
-            "run is not preparing"
-        );
-        ensure!(
-            row.decode::<Option<Value>>("execution")? == Some(serde_json::to_value(execution)?),
-            "unregistered Pod UID"
-        );
-        ensure!(
-            life.deadline_ms
-                .is_none_or(|deadline| deadline > Utc::now().timestamp_millis()),
-            "planning deadline reached"
-        );
-        Ok(())
+        if life.canceled
+            || life.pending
+            || life.generation != execution.generation
+            || row.decode::<String>("status")? != "provisioning"
+            || life
+                .deadline_ms
+                .is_some_and(|deadline| deadline <= Utc::now().timestamp_millis())
+        {
+            return Ok(PreparationState::Denied);
+        }
+        let registered = row.decode::<Option<Value>>("execution")?;
+        Ok(match registered {
+            None => PreparationState::PendingRegistration,
+            Some(value) if value == serde_json::to_value(execution)? => PreparationState::Ready,
+            Some(_) => PreparationState::Denied,
+        })
     }
 
     pub async fn heartbeat_run(&self, lease: Lease) -> Result<Value> {

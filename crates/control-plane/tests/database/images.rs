@@ -1,10 +1,12 @@
 //! [INPUT]: 依赖隔离数据库与镜像执行存储。
-//! [OUTPUT]: 验证无设备执行、平台身份、发布幂等和撤销。
+//! [OUTPUT]: 验证无设备执行、候选确认、发布幂等和撤销。
 //! [POS]: 镜像执行状态机的数据库集成验收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use artifactory_image_protocol::{MANIFEST_MEDIA_TYPE, PlatformResult, Report, index, sha256};
 use serde_json::json;
+#[path = "image_completion.rs"]
+mod completion;
 #[path = "image_regressions.rs"]
 mod regressions;
 async fn image(db: &Database) -> (Uuid, Uuid, Uuid, Uuid) {
@@ -162,6 +164,11 @@ async fn image_publication_is_complete_and_idempotent() {
         .image_report(id, true, &published, None)
         .await
         .unwrap();
+    confirm_image(store, id).await;
+    store
+        .image_report(id, true, &published, None)
+        .await
+        .unwrap();
     store
         .image_report(id, true, &published, None)
         .await
@@ -273,6 +280,13 @@ async fn platform_results(
     sha256(&index(&expected, &results).unwrap())
 }
 
+// 存储夹具代表已通过 CR 校验的 Control；完整校验由 completion 模块覆盖。
+async fn confirm_image(store: &artifactory_control_plane::store::ControlStore, id: Uuid) {
+    let uid = format!("fixture-{id}");
+    store.bind_image_build(id, &uid).await.unwrap();
+    store.complete_image(id, &uid).await.unwrap();
+}
+
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn failed_publication_retries_without_building_and_external_failure_preserves_result() {
@@ -342,6 +356,7 @@ async fn failed_publication_retries_without_building_and_external_failure_preser
         )
         .await
         .unwrap();
+    confirm_image(&store, retry).await;
     assert_eq!(store.image_execution(id).await.unwrap().status, "succeeded");
     let credential = Uuid::new_v4();
     sql::execute(&mut db.pool.clone(),"INSERT INTO image_credentials(id,tenant_id,project_id,name,kind,envelope,registry_origin) VALUES($1,'00000000-0000-0000-0000-000000000001',$2,'destination','registry','sealed','https://external.example.com:5443')",params![credential,project]).await.unwrap();
@@ -393,10 +408,11 @@ async fn failed_publication_retries_without_building_and_external_failure_preser
         .unwrap(),
         "succeeded"
     );
+    let external_retry = Uuid::new_v4();
     store
         .request_image_publication(
             id,
-            Uuid::new_v4(),
+            external_retry,
             Some(credential),
             Some("external/app"),
             &["v1".into()],
@@ -404,6 +420,49 @@ async fn failed_publication_retries_without_building_and_external_failure_preser
         )
         .await
         .unwrap();
+    store
+        .save_image_task(external_retry, "sealed-external-retry")
+        .await
+        .unwrap();
+    store
+        .image_report(
+            external_retry,
+            true,
+            &Report::Published {
+                digest: digest.clone(),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        store.image_execution(external_retry).await.unwrap().status,
+        "running"
+    );
+    confirm_image(&store, external_retry).await;
+    assert_eq!(
+        store.image_execution(external_retry).await.unwrap().status,
+        "succeeded"
+    );
+    assert_eq!(
+        store
+            .image_execution(id)
+            .await
+            .unwrap()
+            .root_digest
+            .as_ref(),
+        Some(&digest)
+    );
+    assert_eq!(
+        sql::scalar::<i64>(
+            &mut db.pool.clone(),
+            "SELECT count(*) FROM image_artifacts WHERE execution_id=$1",
+            params![id]
+        )
+        .await
+        .unwrap(),
+        1
+    );
     assert_eq!(
         sql::scalar::<i64>(
             &mut db.pool.clone(),
@@ -445,6 +504,7 @@ async fn publication_rejects_other_project_and_revoked_credentials() {
         .image_report(id, true, &Report::Published { digest }, None)
         .await
         .unwrap();
+    confirm_image(&store, id).await;
     for (credential_project, enabled) in [(other, true), (project, false)] {
         let credential = Uuid::new_v4();
         sql::execute(&mut db.pool.clone(),"INSERT INTO image_credentials(id,tenant_id,project_id,name,kind,envelope,enabled,registry_origin) VALUES($1,'00000000-0000-0000-0000-000000000001',$2,$3,'registry','sealed',$4,'https://external.example.com:5443')",params![credential,credential_project,credential.to_string(),enabled]).await.unwrap();

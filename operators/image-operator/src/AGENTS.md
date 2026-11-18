@@ -1,17 +1,19 @@
 # image-operator/src/
 > L2 | Parent: ../AGENTS.md
 
-api.rs: 定义构建池、平台集合与固定 SourceManifest 身份的不可变 ImageBuild CRD。
-resources.rs: 创建源码 init、原生 BuildKit sidecar 与发布 Job。
-controller.rs: 协调任务准入，先写终态再清理 Job 与 Pod。
+api.rs: 定义不可变执行身份、构建池和有界 Job UID 归属台账。
+resources.rs: 创建普通源码 init、Runner/BuildKit 普通容器和发布 Job，限定 1.28 权限。
+controller.rs: 先装 Finalizer，再建 Job；CR 删除前保留 UID 台账和残留容量。
 leadership.rs: 使用独立 Lease 保护 Image 控制器写入。
-worker.rs: 以任务清单 ID 与摘要校验 init 清单和源码，配置仓库认证并提交脱敏日志。
+buildkit.rs: 在容器 PID namespace 监督 rootless 进程树；只经有界协议交付失败诊断。
+lifecycle.rs: 定义限长 Unix 控制帧与诊断帧，Runner 独占连接并确认进程收尾。
+worker.rs: 以任务清单 ID 与摘要校验 init 清单和源码，配置仓库认证并脱敏构建日志及 daemon 诊断；确认 BuildKit 收尾后回报候选结果。
 transport.rs: 提供任务令牌认证的控制平面回执。
 publisher.rs: 使用 /work 临时磁盘卷校验 Blob，汇总平台结果并发布不可变 Index。
-lib.rs: 导出镜像执行模块。
+lib.rs: 隔离默认业务模块与最小本地协议构建。
 main.rs: 启动独立 Image Operator。
-bin/: 提供 CRD、Runner 和 Publisher 进程入口。
+bin/: 提供 CRD、Runner、Publisher 和 BuildKit 监督入口。
 
-resource_tests.rs: 验证平台、sidecar 生命周期、发布临时卷、任务材料与 CRD 字段类型。
+resource_tests.rs: 验证 1.28 资源、凭据隔离、架构放置与资源预算。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

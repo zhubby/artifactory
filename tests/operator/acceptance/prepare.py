@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 工作区源码、目标架构和隔离集群镜像地址。
-[OUTPUT]: 构建独立镜像，以目标架构归档导入 kind。
+[OUTPUT]: 构建独立服务/构建镜像与双架构 RUN 夹具，归档导入 kind。
 [POS]: 仅构建并导入指定镜像，不创建集群工作负载。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -25,10 +25,13 @@ if __name__ == '__main__':
     parser.add_argument('--base-image', default='debian:bookworm-slim')
     parser.add_argument('--pi-base', help='Optional Agent worker image using the current layout and identical pinned Pi dependencies')
     parser.add_argument('--skip-runtime-build', action='store_true', help='Reuse all previously built independent service and gateway images')
+    parser.add_argument('--include-images', action='store_true', help='Build/import Image Operator, Runner, supervised BuildKit and Distribution')
     parser.add_argument('--kind', help='Load platform archives into this kind cluster (Docker CLI 28+, Engine API 1.48+)')
     args = parser.parse_args()
     directory = ROOT / '.local/operator-test'; directory.mkdir(parents=True, exist_ok=True)
     components = {'agent-operator':'operators/agent-operator/Dockerfile','planner-runtime':'crates/planner-runtime/Dockerfile','source-preparer':'crates/source-preparer/Dockerfile','control-plane':'Dockerfile','emissary':'crates/emissary/Dockerfile','gateway':'crates/gateway/Dockerfile'}
+    if args.include_images:
+        components.update({'image-operator':'operators/image-operator/Dockerfile','image-worker':'operators/image-operator/Dockerfile.worker','buildkit':'operators/image-operator/Dockerfile.buildkit'})
     fixture = f'{args.registry}/operator-fixture:{args.tag}'
     pi = f'{args.registry}/operator-pi:{args.tag}'
     if not args.skip_runtime_build:
@@ -36,6 +39,8 @@ if __name__ == '__main__':
             run(['docker', 'build', '--platform', args.platform, '-f', dockerfile, '--build-arg', 'RUST_IMAGE='+args.rust_image, '--build-arg', 'BASE_IMAGE='+args.base_image, '-t', f'{args.registry}/{name}:{args.tag}', '.'])
     environment = dict(os.environ, CGO_ENABLED='0', GOOS='linux', GOARCH=args.platform.split('/')[1])
     run(['go', 'build', '-o', str(directory/'fixture'), str(ROOT/'tests/operator/acceptance/fixture.go'), str(ROOT/'tests/operator/acceptance/live_provider.go')], env=environment)
+    for architecture in ['arm64', 'amd64']:
+        run(['go', 'build', '-trimpath', '-ldflags=-s -w', '-o', str(directory/('arch-check-'+architecture)), str(ROOT/'tests/images/arch-check.go')], env=dict(environment, GOARCH=architecture))
     run(['docker', 'build', '--platform', args.platform, '-f', str(ROOT/'tests/operator/acceptance/Dockerfile'), '--build-arg', 'BASE_IMAGE='+f'{args.registry}/emissary:{args.tag}', '-t', fixture, str(directory)])
     if args.pi_base:
         run(['npm', 'run', 'build'], cwd=ROOT/'packages/agent-worker')
@@ -47,6 +52,8 @@ if __name__ == '__main__':
     else:
         run(['docker', 'build', '--platform', args.platform, '-f', 'packages/agent-worker/Dockerfile', '-t', pi, '.'])
     dependencies = [('timescale/timescaledb:2.32.0-pg17', f'{args.registry}/timescaledb:2.32.0-pg17'), ('chrislusf/seaweedfs:4.53', f'{args.registry}/seaweedfs:4.53')]
+    if args.include_images:
+        dependencies.append(('registry:3.0.0', f'{args.registry}/distribution:3.0.0'))
     for upstream, local in dependencies:
         existing = subprocess.run(['docker','image','inspect','--format','{{.Os}}/{{.Architecture}}',local],text=True,capture_output=True)
         if existing.returncode == 0 and existing.stdout.strip() == args.platform:

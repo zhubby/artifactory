@@ -39,6 +39,13 @@ class ProjectVersionTests(unittest.TestCase):
         for chart in ["artifactory", "artifactory-agent-operator"]:
             self.write(f"charts/{chart}/Chart.yaml", f"apiVersion: v2\nname: {chart}\n"
                        'version: 0.1.0\nappVersion: "0.1.0"\n')
+        self.write("charts/artifactory-image-operator/Chart.yaml", "version: 0.1.0\nappVersion: 0.1.0\n")
+        self.write("charts/artifactory-image-operator/values.yaml", "builderPool:\n"
+                   "  workerImage: ghcr.io/zhubby/artifactory-image-worker:0.1.0\n"
+                   "  buildkitImage: ghcr.io/zhubby/artifactory-buildkit:0.1.0\n"
+                   "  sourcePreparerImage: ghcr.io/zhubby/artifactory-source-preparer:0.1.0\n"
+                   "thirdParty: moby/buildkit:v0.26.2-rootless\n"
+                   "other: ghcr.io/zhubby/third-party:0.1.0\n")
         self.write("crates/emissary/Dockerfile", "FROM rust:1.95-bookworm\n"
                    "ARG ARTIFACTORY_BUILD_VERSION=0.1.0\n")
 
@@ -93,6 +100,13 @@ class ProjectVersionTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("crates/emissary/Dockerfile", result.stderr)
 
+    def test_check_reports_supervised_buildkit_image_version_drift(self):
+        path = self.root / "charts/artifactory-image-operator/values.yaml"
+        path.write_text(path.read_text().replace("artifactory-buildkit:0.1.0", "artifactory-buildkit:0.9.0"))
+        result = self.run_version("--check")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("artifactory-buildkit", result.stderr)
+
     def test_check_requires_workspace_version_inheritance(self):
         self.write("crates/control-plane/Cargo.toml", '[package]\n'
                    'name = "artifactory-control-plane"\nversion = "0.1.0"\n')
@@ -113,6 +127,11 @@ class ProjectVersionTests(unittest.TestCase):
         self.assertEqual(lock["packages"]["node_modules/third-party"]["version"], "0.1.0")
         self.assertIn('name = "third-party"\nversion = "0.1.0"',
                       (self.root / "Cargo.lock").read_text())
+        values = (self.root / "charts/artifactory-image-operator/values.yaml").read_text()
+        for component in ("image-worker", "buildkit", "source-preparer"):
+            self.assertIn(f"artifactory-{component}:0.2.0", values)
+        self.assertIn("moby/buildkit:v0.26.2-rootless", values)
+        self.assertIn("ghcr.io/zhubby/third-party:0.1.0", values)
         before = {path: path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
         self.assertEqual(self.run_version("--set", "0.2.0").returncode, 0)
         self.assertEqual(before, {path: path.read_bytes() for path in before})

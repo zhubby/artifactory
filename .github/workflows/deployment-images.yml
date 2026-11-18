@@ -40,6 +40,8 @@ jobs:
             file: operators/image-operator/Dockerfile
           - component: image-worker
             file: operators/image-operator/Dockerfile.worker
+          - component: buildkit
+            file: operators/image-operator/Dockerfile.buildkit
           - component: gateway
             file: crates/gateway/Dockerfile
           - component: emissary

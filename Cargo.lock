@@ -461,6 +461,7 @@ dependencies = [
  "hex",
  "k8s-openapi",
  "kube",
+ "libc",
  "reqwest",
  "schemars",
  "serde",

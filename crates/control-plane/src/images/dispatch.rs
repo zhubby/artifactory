@@ -1,9 +1,13 @@
 //! [INPUT]: 依赖镜像持久化认领、固定源码引用、加密材料与 Kubernetes API。
-//! [OUTPUT]: 限制任务材料 900 KiB，交付不可变任务并回收终态材料。
+//! [OUTPUT]: 固定 CR UID，核对当前 spec 与 Operator 成功后提交候选。
 //! [POS]: 多副本可重放的控制平面到 Operator 交付边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{Config, tasks};
-use crate::{crypto, state::AppState, store::images::ImageExecution};
+use crate::{
+    crypto,
+    state::AppState,
+    store::images::{ImageExecution, ImageStop},
+};
 use anyhow::{Result, ensure};
 use artifactory_image_protocol::{BuildTask, PublishTask};
 use k8s_openapi::api::core::v1::Secret;
@@ -45,22 +49,22 @@ async fn deliver(
     let api = api(client, config);
     let name = format!("image-{}", e.id.simple());
     let secret_name = format!("{name}-task");
-    if let Some(status) = state.store.image_stop_status(e.id).await? {
-        if let Some(existing) = api.get_opt(&name).await?
-            && status != "succeeded"
-        {
-            ensure!(
-                existing.labels().get("artifactory.dev/execution") == Some(&e.id.to_string()),
-                "ImageBuild identity conflict"
-            );
-            api.patch(
-                &name,
-                &PatchParams::default(),
-                &Patch::Merge(json!({"spec":{"cancelRequested":true}})),
-            )
-            .await?;
+    if let Some(stop) = state.store.image_stop_status(e.id).await? {
+        if let ImageStop::Terminate(status) = stop {
+            if let Some(existing) = api.get_opt(&name).await? {
+                ensure!(
+                    existing.labels().get("artifactory.dev/execution") == Some(&e.id.to_string()),
+                    "ImageBuild identity conflict"
+                );
+                api.patch(
+                    &name,
+                    &PatchParams::default(),
+                    &Patch::Merge(json!({"spec":{"cancelRequested":true}})),
+                )
+                .await?;
+            }
+            state.store.finish_image(e.id, status).await?;
         }
-        state.store.finish_image(e.id, status).await?;
         let secrets: Api<Secret> = Api::namespaced(client.clone(), &config.namespace);
         if let Some(secret) = secrets.get_opt(&secret_name).await? {
             ensure!(
@@ -93,18 +97,25 @@ async fn deliver(
         .store
         .source_manifest_digest(e.source_manifest_id)
         .await?;
-    let desired: DynamicObject = serde_json::from_value(
+    let desired_build: DynamicObject = serde_json::from_value(
         json!({"apiVersion":"images.artifactory.dev/v1alpha1","kind":"ImageBuild","metadata":{"name":name,"namespace":config.namespace,"labels":{"artifactory.dev/execution":e.id.to_string()}},"spec":{"executionId":e.id,"tenantId":e.tenant_id,"projectId":e.project_id,"pool":e.spec.pool,"sourceManifestId":e.source_manifest_id,"sourceDigest":digest,"taskSecret":secret_name,"platforms":e.spec.platforms,"allowEmulation":e.spec.allow_emulation,"publishOnly":e.operation=="publish","timeoutSeconds":e.task_timeout_seconds,"cancelRequested":false}}),
     )?;
     let build = match api.get_opt(&name).await? {
         Some(v) => v,
-        None => match api.create(&PostParams::default(), &desired).await {
-            Ok(v) => v,
-            Err(kube::Error::Api(e)) if e.code == 409 => api.get(&name).await?,
-            Err(e) => return Err(e.into()),
-        },
+        None => {
+            ensure!(e.image_build_uid.is_none(), "bound ImageBuild disappeared");
+            match api.create(&PostParams::default(), &desired_build).await {
+                Ok(v) => v,
+                Err(kube::Error::Api(e)) if e.code == 409 => api.get(&name).await?,
+                Err(e) => return Err(e.into()),
+            }
+        }
     };
-    verify_build(&build, &desired)?;
+    verify_build(&build, &desired_build)?;
+    let uid = build
+        .uid()
+        .ok_or_else(|| anyhow::anyhow!("ImageBuild UID required"))?;
+    state.store.bind_image_build(e.id, &uid).await?;
     let secrets: Api<Secret> = Api::namespaced(client.clone(), &config.namespace);
     let desired: Secret = serde_json::from_value(
         json!({"apiVersion":"v1","kind":"Secret","metadata":{"name":secret_name,"namespace":config.namespace,"labels":{"artifactory.dev/execution":e.id.to_string()},"ownerReferences":[{"apiVersion":"images.artifactory.dev/v1alpha1","kind":"ImageBuild","name":name,"uid":build.uid(),"controller":true,"blockOwnerDeletion":false}]},"immutable":true,"stringData":materials}),
@@ -135,6 +146,24 @@ async fn deliver(
     }
     if build.data["status"]["phase"] == "Failed" {
         state.store.finish_image(e.id, "failed").await?;
+    } else if build.data["status"]["phase"] == "Succeeded" {
+        let current = api.get(&name).await?;
+        verify_build(&current, &desired_build)?;
+        ensure!(
+            current.uid().as_deref() == Some(&uid),
+            "ImageBuild UID changed"
+        );
+        ensure!(
+            current.data["status"]["phase"] == "Succeeded"
+                && current
+                    .metadata
+                    .generation
+                    .is_some_and(|generation| generation > 0
+                        && current.data["status"]["observedGeneration"].as_i64()
+                            == Some(generation)),
+            "ImageBuild success observation is stale"
+        );
+        state.store.complete_image(e.id, &uid).await?;
     }
     Ok(())
 }

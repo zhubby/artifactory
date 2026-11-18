@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖已锁定的运行身份和完成消息。
-//! [OUTPUT]: 持久化 generation 会话并分页读取审计记录。
+//! [OUTPUT]: 原子分片大审计，按 generation 分页读取完整记录。
 //! [POS]: 审计数据独立于预算、租约和恢复状态。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{RuntimeStore, models};
@@ -8,6 +8,11 @@ use artifactory_database::{params, sql};
 use artifactory_runtime_protocol::{Execution, Lease, ModelConfiguration, crypto};
 use serde_json::{Value, json};
 use uuid::Uuid;
+
+const EVENT_BYTES: usize = 512 * 1024;
+// JSON 再次转义最多放大六倍，分片仍为行封套保留空间。
+const CHUNK_BYTES: usize = 64 * 1024;
+const PAGE_BYTES: usize = 1024 * 1024;
 
 pub(super) async fn open(
     tx: &mut toasty::db::Transaction<'_>,
@@ -47,16 +52,35 @@ pub(super) async fn record(
         return Ok(());
     }
     let sequence:i64=sql::scalar(tx,"SELECT coalesce(max(sequence),0)+1 FROM runtime_messages WHERE run_id=$1 AND generation=$2",params![run,generation]).await?;
-    models::Message::create()
-        .run_id(run)
-        .generation(generation)
-        .sequence(sequence)
-        .event_id(event)
-        .kind(kind)
-        .input_hash(hash)
-        .payload(toasty::Json(payload.clone()))
-        .exec(tx)
-        .await?;
+    let text = serde_json::to_string(payload)?;
+    let messages = if kind != "message_chunk" && text.len() > EVENT_BYTES {
+        let mut parts = Vec::new();
+        let mut rest = text.as_str();
+        while !rest.is_empty() {
+            let mut end = rest.len().min(CHUNK_BYTES);
+            while !rest.is_char_boundary(end) {
+                end -= 1;
+            }
+            parts.push(&rest[..end]);
+            rest = &rest[end..];
+        }
+        parts.iter().enumerate().map(|(index,part)|("message_chunk",json!({"message_id":event,"index":index,"total":parts.len(),"kind":kind,"text":part}))).collect::<Vec<_>>()
+    } else {
+        vec![(kind, payload.clone())]
+    };
+    for (index, (kind, payload)) in messages.into_iter().enumerate() {
+        // 首片保留原事件身份和完整输入摘要，重放不追加分片。
+        models::Message::create()
+            .run_id(run)
+            .generation(generation)
+            .sequence(sequence + i64::try_from(index)?)
+            .event_id(if index == 0 { event } else { Uuid::new_v4() })
+            .kind(kind)
+            .input_hash(hash.clone())
+            .payload(toasty::Json(payload))
+            .exec(tx)
+            .await?;
+    }
     Ok(())
 }
 pub(super) async fn append(
@@ -76,7 +100,7 @@ pub(super) async fn append(
         .get("content")
         .context("conversation content required")?;
     ensure!(
-        serde_json::to_vec(content)?.len() <= 512 * 1024,
+        serde_json::to_vec(content)?.len() <= EVENT_BYTES,
         "conversation event exceeds limit"
     );
     record(tx, lease.run_id, lease.generation, event, kind, content).await
@@ -111,11 +135,12 @@ impl RuntimeStore {
         let rows:Vec<Value>=sql::scalars(&mut self.pool.clone(),"SELECT jsonb_build_object('sequence',sequence,'kind',kind,'payload',payload,'created_at',created_at) FROM runtime_messages WHERE run_id=$1 AND generation=$2 AND sequence>$3 ORDER BY sequence LIMIT $4",params![run,generation,after,limit+1]).await?;
         // 对话分页保持独立的 1 MiB 响应预算。
         let mut messages = Vec::new();
-        let mut bytes = 0;
+        // 预留分页封套、最大游标和分隔符的实际序列化空间。
+        let mut bytes = serde_json::to_vec(&json!({"messages":[],"next_cursor":i64::MAX}))?.len();
         let mut more = false;
         for row in rows {
-            let size = serde_json::to_vec(&row)?.len();
-            if messages.len() >= limit as usize || bytes + size > 1024 * 1024 {
+            let size = serde_json::to_vec(&row)?.len() + 1;
+            if messages.len() >= limit as usize || bytes + size > PAGE_BYTES {
                 more = true;
                 break;
             }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # [INPUT]: Kubernetes 任务、卷和 Secret 名称。
-# [OUTPUT]: 检查任务临时存储与空闲清理结果。
+# [OUTPUT]: 检查任务临时卷、1.28 双容器隔离与空闲清理。
 # [POS]: 只读验收入口，不删除资源或读取 Secret 内容。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 """Verify ephemeral source storage in one Kubernetes namespace."""
@@ -14,6 +14,44 @@ import sys
 TASK_APPS = {"artifactory-source-task", "artifactory-pi", "artifactory-image-worker"}
 OLD_APPS = {"artifactory-source", "artifactory-local-source", "artifactory-source-service"}
 TASK_SECRET = re.compile(r"image-[a-f0-9]{32}-task$")
+
+
+def image_violations(spec, subject):
+    failures = []
+    containers = spec.get("containers", [])
+    init = spec.get("initContainers", [])
+    publisher = any(
+        "artifactory-image-publisher" in c.get("command", [])
+        or any(e.get("name") == "ARTIFACTORY_IMAGE_PLATFORM" and e.get("value") == "publish"
+               for e in c.get("env", []))
+        for c in containers
+    )
+    if any("restartPolicy" in c for c in init):
+        failures.append(f"{subject}: restartable init is not a Kubernetes 1.28 task")
+    if "appArmorProfile" in spec.get("securityContext", {}) or any(
+        "appArmorProfile" in c.get("securityContext", {}) for c in [*init, *containers]
+    ):
+        failures.append(f"{subject}: structured AppArmor field requires a newer Kubernetes API")
+    if spec.get("shareProcessNamespace"):
+        failures.append(f"{subject}: task containers share their process namespace")
+    if spec.get("automountServiceAccountToken") is not False:
+        failures.append(f"{subject}: application containers can receive an automatic API token")
+    if publisher:
+        if init or len(containers) != 1:
+            failures.append(f"{subject}: publisher must be a single container without source or BuildKit")
+        return failures
+    if len(containers) != 2 or {c["name"] for c in containers} != {"worker", "buildkit"}:
+        failures.append(f"{subject}: image build requires Runner and supervised BuildKit ordinary containers")
+    if len(init) != 1 or init[0]["name"] != "source":
+        failures.append(f"{subject}: image build requires one ordinary source init")
+    buildkit = next((c for c in containers if c["name"] == "buildkit"), None)
+    if buildkit:
+        if buildkit.get("command") not in (["artifactory-image-buildkit"], ["/usr/bin/artifactory-image-buildkit"]):
+            failures.append(f"{subject}: BuildKit does not use the lifecycle supervisor")
+        allowed = {"socket", "buildkit-state", "buildkit-config", "ca"}
+        if any(mount["name"] not in allowed for mount in buildkit.get("volumeMounts", [])):
+            failures.append(f"{subject}: BuildKit mounts Runner task, source, or private material")
+    return failures
 
 
 def violations(resources, secret_names=(), *, idle=False):
@@ -36,6 +74,8 @@ def violations(resources, secret_names=(), *, idle=False):
             spec = template.get("spec", {})
         if app not in TASK_APPS or kind not in {"Pod", "Job"}:
             continue
+        if app == "artifactory-image-worker":
+            failures.extend(image_violations(spec, f"{kind}/{name}"))
         if idle:
             failures.append(f"{kind}/{name}: task workload remains while idle")
         for volume in spec.get("volumes", []):

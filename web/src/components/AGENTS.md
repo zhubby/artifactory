@@ -8,7 +8,7 @@ brand-mark.tsx: 渲染 Artifactory 品牌标记。
 build-detail.tsx: 订阅活跃构建，展示终态日志与构建制品。
 build-log-history.tsx: 按 attempt 和步骤分页读取静态日志并保持阅读锚点。
 build-planning.tsx: 展示源码清单、规划、澄清与持久对话入口。
-planning-conversations.tsx: 按 generation 展开和分页读取完成消息审计。
+planning-conversations.tsx: 按 generation 分页读取审计，重开补读终态消息。
 build-table.tsx: 展示项目构建列表。
 build-wizard.tsx: 组合引用查询、三步构建引导和默认签名身份预览。
 common.tsx: 提供共享字段、状态和制品验签表。

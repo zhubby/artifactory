@@ -6,7 +6,7 @@
 -->
 # Helm / Kubernetes 部署
 
-主 Chart 位于 `charts/artifactory`。它部署 Control、Next.js、双副本 Pingora、TimescaleDB / PostgreSQL 17、私有 SeaweedFS S3 和遥测服务。独立 Chart 交付 Agent Operator、Image Operator 和 Distribution 仓库。完整源码、AI 规划与镜像构建链运行在 Kubernetes 1.33 及以上版本。
+主 Chart 位于 `charts/artifactory`。它部署 Control、Next.js、双副本 Pingora、TimescaleDB / PostgreSQL 17、私有 SeaweedFS S3 和遥测服务。独立 Chart 交付 Agent Operator、Image Operator 和 Distribution 仓库。完整源码、AI 规划与镜像构建链运行在 Kubernetes 1.28 及以上版本。
 
 Control 使用 `emptyDir`。源码解析任务和每个执行 Pod 直接向上游仓库拉取源码。源码目录、Git 对象、LFS 和 BuildKit 状态只存在于任务临时卷。平台只持久化固定 commit、manifest、AI 对话、计划、日志、制品与最终镜像。详见 [Operator 运维](operator-operations.md) 和 [镜像构建](image-builds.md)。
 
@@ -26,13 +26,14 @@ GitHub `release-images` 工作流仅在 **Release published** 时执行，正式
 - `ghcr.io/zhubby/artifactory-source-preparer:<release-tag>`
 - `ghcr.io/zhubby/artifactory-image-operator:<release-tag>`
 - `ghcr.io/zhubby/artifactory-image-worker:<release-tag>`
+- `ghcr.io/zhubby/artifactory-buildkit:<release-tag>`
 - `ghcr.io/zhubby/artifactory-gateway:<release-tag>`
 
 标签包含原始 Release tag、完整 `sha-<commit>`；语义版本额外提供不带 `v` 的版本标签。只有正式 Release 更新 `latest`。工作流使用 `GITHUB_TOKEN` 的 `packages:write`，不需要另存 PAT；它不会创建 Release。发布前先让对应提交的 `platform-contracts` 检查通过。首次 GHCR 包如果为私有，需要设置包可见性，或通过 `imagePullSecrets` 提供有读取权限的凭据。
 
 ## 首次准备凭据与 PKI
 
-需要 Kubernetes 1.33+、Helm 3、kubectl、Python 3、OpenSSL，以及供数据库和制品存储使用的默认 StorageClass。先确认 kube context 与目标命名空间。以下命令中的域名、镜像版本、Ingress 类和 TLS Secret 均需替换为实际配置。
+需要 Kubernetes 1.28+、Helm 3、kubectl、Python 3、OpenSSL，以及供数据库和制品存储使用的默认 StorageClass。先确认 kube context 与目标命名空间。以下命令中的域名、镜像版本、Ingress 类和 TLS Secret 均需替换为实际配置。
 
 ```sh
 python3 scripts/init-helm.py \
@@ -158,7 +159,7 @@ Control 多副本直接使用独立临时卷。连接预算和排空配置见 [C
 
 主 Chart 的 `planning.runtimeUrl` 指向独立 Runtime，`planning.namespace` 指向 Agent Operator 所在命名空间，`planning.agentPool` 选择 AgentPool。完整 Secret、TLS 与安装命令见 [Operator 运维](operator-operations.md)。
 
-Agent Operator 协调 `AgentRun` 与 `SourceTask`。`SourceTask` 解析 ref 或查询 refs；AI 规划 Job 的 init container 准备固定源码。Image Operator 为每个平台创建源码 init container、原生 BuildKit sidecar 和 Runner，并单独创建 Publisher。它们不创建源码 StatefulSet、Service、PVC 或共享缓存。
+Agent Operator 协调 `AgentRun` 与 `SourceTask`。`SourceTask` 解析 ref 或查询 refs；AI 规划 Job 的 init container 准备固定源码。Image Operator 为每个平台创建普通源码 init、Runner 和监督型 BuildKit 两个普通容器，并单独创建 Publisher。它们不创建源码 StatefulSet、Service、PVC 或共享缓存，也不依赖原生 sidecar 功能开关。
 
 公开入口经 `https://build.example.com` 进入 Pingora。内部服务使用 `https://<release>-gateway-internal:8445`。内部 TLS Secret 提供 `ca.pem/server.pem/server.key`，证书 SAN 覆盖内部 Service 名称。Runtime 和源码准备容器信任同一服务 CA。Control 通过 Kubernetes TokenReview 与 Pod→Job→CR 的 UID 链确认任务身份；普通 Worker 不挂载源码凭据和源码专用 token。
 

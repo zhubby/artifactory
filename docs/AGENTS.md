@@ -19,15 +19,16 @@ design-system.md: 定义中性色、字体、工作台布局和共享控件边�
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。
 frontend-experience.md: 定义语言、主题与动效行为。
-helm.md: 定义新实例 Helm 安装与临时源码验收。
-image-builds.md: 定义清单引用、镜像交付、网关端口与监听连接策略。
+helm.md: 定义 Kubernetes 1.28 新实例安装与临时源码验收。
+image-builds.md: 定义普通容器镜像生命周期、交付与网关边界。
 image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像、独立 Operator、网关迁移与空闲连接验收。
+image-builds-kubernetes-128-acceptance-2026-11-18.md: 记录 1.28 普通容器生命周期与正式节点实测。
 local-macmini-acceptance-2026-11-11.md: 记录本机和 Mac mini 的验收。
 module-layout.md: 定义模块命名和依赖边界。
 multitenancy.md: 定义租户权限和设备共享边界。
 node-placement.md: 定义节点能力查询与 AI 选机。
 operations.md: 定义部署、备份和故障恢复。
-operator-operations.md: 定义临时源码、规划与镜像任务运维。
+operator-operations.md: 定义临时源码、规划和镜像任务的收尾与容量。
 protocol.md: 定义 Emissary 通信和状态迁移。
 registration-acceptance-2026-11-11.md: 记录用户注册的本地验收。
 runtime-protocol.md: 定义 Runtime 与任务源码准备契约。

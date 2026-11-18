@@ -1,8 +1,10 @@
+//! ```text
 //! [INPUT]: 依赖清单身份与推送 Secret、init 清单、只读源码和 BuildKit。
-//! [OUTPUT]: 构建单平台镜像，信任私有认证 CA 并提交限长脱敏日志。
+//! [OUTPUT]: 构建并校验平台镜像，收尾 BuildKit 后提交候选结果和脱敏日志。
 //! [POS]: BuildKit Job 的隔离执行进程。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
-use crate::transport::Control;
+//! ```
+use crate::{lifecycle, transport::Control};
 use anyhow::{Context, Result, ensure};
 use artifactory_emissary::{
     config::{private_dir, private_write},
@@ -11,8 +13,16 @@ use artifactory_emissary::{
     source,
     worker::Emitter,
 };
-use artifactory_image_protocol::{BuildTask, Report};
-use std::{path::Path, process::Stdio, time::Duration};
+use artifactory_image_protocol::{BuildTask, PlatformResult, Report};
+use std::{
+    path::Path,
+    process::Stdio,
+    sync::{
+        Arc,
+        atomic::{AtomicI64, Ordering},
+    },
+    time::Duration,
+};
 use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 
@@ -29,6 +39,66 @@ fn log_chunks(data: &[u8]) -> Vec<String> {
         rest = &rest[end..];
     }
     chunks
+}
+
+async fn finish_log<T>(mut task: tokio::task::JoinHandle<Result<T>>, limit: Duration) -> Result<T> {
+    match tokio::time::timeout(limit, &mut task).await {
+        Ok(result) => result?,
+        Err(_) => {
+            task.abort();
+            let _ = task.await;
+            anyhow::bail!("build log drain timed out")
+        }
+    }
+}
+
+async fn diagnostic_chunks(
+    mut diagnostic: lifecycle::Diagnostic,
+    secrets: redact::Secrets,
+) -> Result<Vec<String>> {
+    if diagnostic.truncated {
+        // 环形尾部能切断密钥。丢弃最长期望密钥之前缀窗口，不输出截断密钥的后缀。
+        let skip = secrets
+            .0
+            .iter()
+            .map(|value| value.len())
+            .max()
+            .unwrap_or(0)
+            .saturating_sub(1)
+            .min(diagnostic.bytes.len());
+        diagnostic.bytes.drain(..skip);
+    }
+    let (emit, mut events) = Emitter::channel();
+    redact::read_log(&diagnostic.bytes[..], "buildkit-daemon", emit, secrets).await?;
+    let mut text = String::from(if diagnostic.channel == 0 {
+        "[BuildKit daemon stdout]\n"
+    } else {
+        "[BuildKit daemon stderr]\n"
+    });
+    while let Some(event) = events.recv().await {
+        text.push_str(&String::from_utf8_lossy(&event.data));
+    }
+    Ok(log_chunks(text.as_bytes()))
+}
+async fn report_diagnostics(
+    control: &Control,
+    platform: &str,
+    task: &BuildTask,
+    diagnostics: &lifecycle::Diagnostics,
+    sequence: &AtomicI64,
+) -> Result<()> {
+    for diagnostic in diagnostics.snapshot()? {
+        for text in diagnostic_chunks(diagnostic, log_secrets(task)).await? {
+            control
+                .report(&Report::Log {
+                    platform: platform.to_owned(),
+                    sequence: sequence.fetch_add(1, Ordering::Relaxed) + 1,
+                    text,
+                })
+                .await?;
+        }
+    }
+    Ok(())
 }
 
 fn buildctl(docker: &Path, registry: &str, ca: Option<&Path>) -> Command {
@@ -101,7 +171,8 @@ async fn build(
     platform: &str,
     control: &Control,
     cancel: &CancellationToken,
-) -> Result<()> {
+    log_sequence: Arc<AtomicI64>,
+) -> Result<PlatformResult> {
     task.image.validate()?;
     ensure!(
         task.image.platforms.iter().any(|p| p == platform),
@@ -121,10 +192,9 @@ async fn build(
     let log_platform = platform.to_owned();
     let log_cancel = cancel.clone();
     let drain = tokio::spawn(async move {
-        let mut sequence = 0;
         while let Some(event) = events.recv().await {
             for text in log_chunks(&event.data) {
-                sequence += 1;
+                let sequence = log_sequence.fetch_add(1, Ordering::Relaxed) + 1;
                 if let Err(error) = logs
                     .report(&Report::Log {
                         platform: log_platform.clone(),
@@ -249,8 +319,8 @@ async fn build(
             Duration::from_secs(u64::from(task.timeout_seconds)),
         )
         .await;
-        out.await??;
-        err.await??;
+        finish_log(out, Duration::from_secs(5)).await?;
+        finish_log(err, Duration::from_secs(5)).await?;
         ensure!(result?.success(), "BuildKit failed; inspect build logs");
         artifactory_source_checkout::verify(&prepared, workspace, cancel).await?;
         let bytes = tokio::fs::read(&metadata).await?;
@@ -262,16 +332,15 @@ async fn build(
         let result = registry
             .verify_platform(&task.repository, digest, platform)
             .await?;
-        control.report(&Report::Platform { result }).await?;
-        Ok::<_, anyhow::Error>(())
+        Ok::<_, anyhow::Error>(result)
     }
     .await;
     drop(emit);
-    let log_result = drain.await?;
+    let log_result = finish_log(drain, Duration::from_secs(20)).await;
     let _ = tokio::fs::remove_dir_all(&root).await;
-    result?;
+    let result = result?;
     log_result?;
-    Ok(())
+    Ok(result)
 }
 
 pub async fn run() -> Result<()> {
@@ -281,10 +350,50 @@ pub async fn run() -> Result<()> {
     let task: BuildTask = serde_json::from_slice(&bytes)?;
     let control = Control::new(task.control_url.clone(), task.token.clone(), task.insecure)?;
     let platform = std::env::var("ARTIFACTORY_IMAGE_PLATFORM")?;
+    let seconds: u64 = std::env::var("ARTIFACTORY_BUILDKIT_TIMEOUT_SECONDS")?.parse()?;
+    ensure!(
+        (1..=604800).contains(&seconds),
+        "invalid BuildKit task deadline"
+    );
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(seconds);
     let cancel = CancellationToken::new();
     let heartbeat = control.heartbeat(platform.clone(), cancel.clone());
-    let result = build(&task, &platform, &control, &cancel).await;
+    let diagnostics = lifecycle::Diagnostics::default();
+    let log_sequence = Arc::new(AtomicI64::new(0));
+    let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+    let result = async {
+        let client = tokio::select! {
+            result = lifecycle::Client::connect_recording(Path::new(lifecycle::SOCKET), deadline, cancel.clone(), diagnostics.clone()) => result?,
+            _ = term.recv() => { cancel.cancel(); anyhow::bail!("image execution interrupted before BuildKit readiness"); },
+            _ = interrupt.recv() => { cancel.cancel(); anyhow::bail!("image execution interrupted before BuildKit readiness"); },
+        };
+        let mut pending = Box::pin(build(&task, &platform, &control, &cancel, log_sequence.clone()));
+        let (built, finished) = tokio::select! {
+            result = &mut pending => (result, true),
+            _ = tokio::time::sleep_until(deadline) => { cancel.cancel(); (Err(anyhow::anyhow!("image task deadline exceeded")), false) },
+            _ = cancel.cancelled() => (Err(anyhow::anyhow!("image execution canceled")), false),
+            _ = term.recv() => { cancel.cancel(); (Err(anyhow::anyhow!("image execution interrupted")), false) },
+            _ = interrupt.recv() => { cancel.cancel(); (Err(anyhow::anyhow!("image execution interrupted")), false) },
+        };
+        if !finished {
+            let _ = tokio::time::timeout(Duration::from_secs(5), &mut pending).await;
+        }
+        drop(pending);
+        let stopped = client.stop().await;
+        let result = built?;
+        stopped?;
+        ensure!(!cancel.is_cancelled(), "image execution canceled before result report");
+        tokio::time::timeout_at(deadline, control.report(&Report::Platform { result })).await
+            .context("platform result acknowledgement timed out")??;
+        Ok(())
+    }.await;
     if result.is_err() {
+        let _ = tokio::time::timeout(
+            Duration::from_secs(5),
+            report_diagnostics(&control, &platform, &task, &diagnostics, &log_sequence),
+        )
+        .await;
         let _ = control
             .report(&Report::Failed {
                 message: "image build failed; inspect platform logs".into(),
@@ -299,6 +408,37 @@ pub async fn run() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn daemon_diagnostics_redact_secrets_and_hide_cut_secret_suffixes() {
+        let mut secrets = redact::Secrets::default();
+        secrets.add("private-password");
+        let text = diagnostic_chunks(
+            lifecycle::Diagnostic {
+                channel: 1,
+                truncated: false,
+                bytes: b"authentication failed for private-password".to_vec(),
+            },
+            secrets.clone(),
+        )
+        .await
+        .unwrap()
+        .concat();
+        assert!(text.contains("authentication failed for [REDACTED]"));
+        assert!(!text.contains("private-password"));
+        let text = diagnostic_chunks(
+            lifecycle::Diagnostic {
+                channel: 1,
+                truncated: true,
+                bytes: b"password and a later safe failure".to_vec(),
+            },
+            secrets,
+        )
+        .await
+        .unwrap()
+        .concat();
+        assert!(!text.contains("password"));
+        assert!(text.contains("safe failure"));
+    }
     #[test]
     fn prepared_manifest_requires_authorized_identity_and_valid_contents() {
         use artifactory_source_checkout::{SourceManifest, SourceRepository};

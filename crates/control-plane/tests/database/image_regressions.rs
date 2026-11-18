@@ -1,8 +1,249 @@
 //! [INPUT]: 依赖隔离数据库、镜像夹具与工作区租约。
-//! [OUTPUT]: 验证排空续跑、超时重发、孤立日志清扫和发布快照。
+//! [OUTPUT]: 验证成功材料回收、终止分类、排空和发布快照。
 //! [POS]: 镜像审查问题的跨边界回归验收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn successful_image_cleanup_preserves_success_and_deletes_only_its_secret() {
+    use axum::{
+        Router, body::Body, extract::State, http::Request, response::IntoResponse, routing::any,
+    };
+    use std::sync::Mutex;
+    type Requests = Arc<Mutex<Vec<(String, String, serde_json::Value)>>>;
+    let db = Database::with_tenant().await;
+    let (_, _, job, _) = image(&db).await;
+    let id = Uuid::new_v4();
+    let store = &db.state.store;
+    store
+        .claim_image(job, id, "build", "publish")
+        .await
+        .unwrap();
+    store.save_image_task(id, "sealed").await.unwrap();
+    let digest = platform_results(store, id).await;
+    store
+        .image_report(id, true, &Report::Published { digest }, None)
+        .await
+        .unwrap();
+    confirm_image(store, id).await;
+    let requests: Requests = Arc::new(Mutex::new(Vec::new()));
+    let secret = format!("image-{}-task", id.simple());
+    let secret_path = format!("/api/v1/namespaces/test/secrets/{secret}");
+    let app=Router::new().fallback(any({let secret_path=secret_path.clone();let secret=secret.clone();move|State(seen):State<Requests>,request:Request<Body>|{let secret_path=secret_path.clone();let secret=secret.clone();async move {
+        let method=request.method().as_str().to_string();let path=request.uri().path().to_string();let bytes=axum::body::to_bytes(request.into_body(),8192).await.unwrap();
+        let body=if bytes.is_empty(){json!(null)}else{serde_json::from_slice(&bytes).unwrap()};seen.lock().unwrap().push((method.clone(),path.clone(),body));
+        if method=="GET"&&path==secret_path {return axum::Json(json!({"apiVersion":"v1","kind":"Secret","metadata":{"name":secret,"namespace":"test","uid":"secret-cleanup-uid","labels":{"artifactory.dev/execution":id.to_string()}}})).into_response();}
+        if method=="DELETE"&&path==secret_path {return axum::Json(json!({"apiVersion":"v1","kind":"Status","status":"Success"})).into_response();}
+        if path.contains("/imagebuilds/") && matches!(method.as_str(),"GET"|"PATCH") {return axum::Json(json!({"apiVersion":"images.artifactory.dev/v1alpha1","kind":"ImageBuild","metadata":{"name":format!("image-{}",id.simple()),"namespace":"test","uid":"build-cleanup-uid","labels":{"artifactory.dev/execution":id.to_string()}},"status":{"phase":"Succeeded"}})).into_response();}
+        (StatusCode::NOT_FOUND,axum::Json(json!({"apiVersion":"v1","kind":"Status","code":404,"reason":"NotFound","message":"unexpected Kubernetes request"}))).into_response()
+    }}})).with_state(requests.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let client = kube::Client::try_from(kube::Config::new(
+        format!("http://{}", listener.local_addr().unwrap())
+            .parse()
+            .unwrap(),
+    ))
+    .unwrap();
+    let server = tokio::spawn(axum::serve(listener, app).into_future());
+    let config = artifactory_control_plane::images::Config {
+        namespace: "test".into(),
+        registry_url: "https://registry.invalid".into(),
+        control_url: "https://control.invalid".into(),
+        service: "registry".into(),
+        issuer: "fixture".into(),
+        signing_key: Default::default(),
+        signing_cert: Default::default(),
+    };
+    artifactory_control_plane::images::tick(&db.state, &config, &client)
+        .await
+        .unwrap();
+    let execution = store.image_execution(id).await.unwrap();
+    assert!(
+        execution.task_envelope.is_none(),
+        "completed image retained task materials"
+    );
+    assert_eq!(execution.status, "succeeded");
+    assert!(!execution.cancel_requested);
+    {
+        let seen = requests.lock().unwrap();
+        assert_eq!(
+            seen.iter()
+                .map(|r| (r.0.as_str(), r.1.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("GET", secret_path.as_str()),
+                ("DELETE", secret_path.as_str())
+            ],
+            "success must not patch cancelRequested"
+        );
+        assert_eq!(seen[1].2["preconditions"]["uid"], "secret-cleanup-uid");
+    }
+    server.abort();
+    db.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn failed_or_canceled_execution_stops_an_active_imagebuild_before_cleanup() {
+    use axum::{Router, body::Body, http::Request, response::IntoResponse, routing::any};
+    use std::sync::Mutex;
+    for status in ["failed", "publish_failed", "canceled"] {
+        let db = Database::with_tenant().await;
+        let (_, _, job, _) = image(&db).await;
+        let id = Uuid::new_v4();
+        let store = &db.state.store;
+        store
+            .claim_image(job, id, "build", "publish")
+            .await
+            .unwrap();
+        store.save_image_task(id, "sealed").await.unwrap();
+        if status == "canceled" {
+            store.finish_image(id, "canceled").await.unwrap();
+        } else {
+            store
+                .image_report(
+                    id,
+                    status == "publish_failed",
+                    &Report::Failed {
+                        message: "fixture failure before Kubernetes Job termination".into(),
+                    },
+                    None,
+                )
+                .await
+                .unwrap();
+        }
+        assert_eq!(store.image_execution(id).await.unwrap().status, status);
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let app = Router::new().fallback(any({
+            let requests = requests.clone();
+            move |request: Request<Body>| {
+                let requests = requests.clone();
+                async move {
+                    let method = request.method().as_str().to_string();
+                    let path = request.uri().path().to_string();
+                    let bytes = axum::body::to_bytes(request.into_body(), 8192).await.unwrap();
+                    let body: serde_json::Value = if bytes.is_empty() { json!(null) } else { serde_json::from_slice(&bytes).unwrap() };
+                    requests.lock().unwrap().push((method.clone(), path.clone(), body));
+                    if path.contains("/imagebuilds/") {
+                        return axum::Json(json!({"apiVersion":"images.artifactory.dev/v1alpha1","kind":"ImageBuild","metadata":{"name":format!("image-{}",id.simple()),"namespace":"test","uid":"active-build-uid","labels":{"artifactory.dev/execution":id.to_string()}},"spec":{"cancelRequested":false},"status":{"phase":"Running"}})).into_response();
+                    }
+                    if method == "GET" && path.contains("/secrets/") {
+                        return axum::Json(json!({"apiVersion":"v1","kind":"Secret","metadata":{"name":format!("image-{}-task",id.simple()),"namespace":"test","uid":"active-secret-uid","labels":{"artifactory.dev/execution":id.to_string()}}})).into_response();
+                    }
+                    axum::Json(json!({"apiVersion":"v1","kind":"Status","status":"Success"})).into_response()
+                }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = kube::Client::try_from(kube::Config::new(
+            format!("http://{}", listener.local_addr().unwrap())
+                .parse()
+                .unwrap(),
+        ))
+        .unwrap();
+        let server = tokio::spawn(axum::serve(listener, app).into_future());
+        let config = artifactory_control_plane::images::Config {
+            namespace: "test".into(),
+            registry_url: "https://registry.invalid".into(),
+            control_url: "https://control.invalid".into(),
+            service: "registry".into(),
+            issuer: "fixture".into(),
+            signing_key: Default::default(),
+            signing_cert: Default::default(),
+        };
+        artifactory_control_plane::images::tick(&db.state, &config, &client)
+            .await
+            .unwrap();
+        {
+            let requests = requests.lock().unwrap();
+            assert_eq!(
+                requests.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(),
+                vec!["GET", "PATCH", "GET", "DELETE"],
+                "{status} must stop the active CR before deleting its materials"
+            );
+            assert_eq!(requests[1].2["spec"]["cancelRequested"], true);
+            assert_eq!(requests[3].2["preconditions"]["uid"], "active-secret-uid");
+        }
+        let execution = store.image_execution(id).await.unwrap();
+        assert_eq!(
+            execution.status, status,
+            "cleanup changed the durable terminal outcome"
+        );
+        assert_eq!(execution.cancel_requested, status == "canceled");
+        assert!(execution.task_envelope.is_none());
+        server.abort();
+        db.close().await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn image_cleanup_classifies_success_separately_from_failure_cancellation_and_expiry() {
+    let db = Database::with_tenant().await;
+    for status in ["succeeded", "failed", "canceled", "publish_failed"] {
+        let (_, _, job, _) = image(&db).await;
+        let id = Uuid::new_v4();
+        let store = &db.state.store;
+        store
+            .claim_image(job, id, "build", "publish")
+            .await
+            .unwrap();
+        store.save_image_task(id, "sealed").await.unwrap();
+        sql::execute(
+            &mut db.pool.clone(),
+            "UPDATE image_executions SET status=$2 WHERE id=$1",
+            params![id, status],
+        )
+        .await
+        .unwrap();
+        let stop = store.image_stop_status(id).await.unwrap().unwrap();
+        let expected = if status == "succeeded" {
+            artifactory_control_plane::store::images::ImageStop::Cleanup
+        } else {
+            artifactory_control_plane::store::images::ImageStop::Terminate(
+                if status == "canceled" {
+                    "canceled"
+                } else {
+                    "failed"
+                },
+            )
+        };
+        assert_eq!(stop, expected, "terminal {status} cleanup classification");
+    }
+    for canceled in [false, true] {
+        let (_, build, job, _) = image(&db).await;
+        let id = Uuid::new_v4();
+        let store = &db.state.store;
+        store
+            .claim_image(job, id, "build", "publish")
+            .await
+            .unwrap();
+        store.save_image_task(id, "sealed").await.unwrap();
+        assert!(store.image_stop_status(id).await.unwrap().is_none());
+        if canceled {
+            store.cancel_build(build).await.unwrap();
+        } else {
+            sql::execute(
+                &mut db.pool.clone(),
+                "UPDATE image_executions SET deadline_at=now()-interval '1 second' WHERE id=$1",
+                params![id],
+            )
+            .await
+            .unwrap();
+        }
+        let stop = store.image_stop_status(id).await.unwrap().unwrap();
+        assert_eq!(
+            stop,
+            artifactory_control_plane::store::images::ImageStop::Terminate(if canceled {
+                "canceled"
+            } else {
+                "failed"
+            })
+        );
+    }
+    db.close().await;
+}
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
@@ -88,6 +329,7 @@ async fn deletion_sweeps_orphan_image_logs_after_grace_and_resumes_storage_failu
         .image_report(id, true, &Report::Published { digest }, None)
         .await
         .unwrap();
+    confirm_image(store, id).await;
     store.refresh_builds().await.unwrap();
     let owner: Uuid = sql::scalar(
         &mut db.pool.clone(),
@@ -180,6 +422,7 @@ async fn external_history_keeps_public_registry_origin_after_revocation() {
         .image_report(id, true, &Report::Published { digest }, None)
         .await
         .unwrap();
+    confirm_image(&store, id).await;
     let credential = Uuid::new_v4();
     sql::execute(&mut db.pool.clone(),"INSERT INTO image_credentials(id,tenant_id,project_id,name,kind,envelope,registry_origin) VALUES($1,'00000000-0000-0000-0000-000000000001',$2,'destination','registry','private-envelope','https://external.example.com:5443')",params![credential,project]).await.unwrap();
     let external = Uuid::new_v4();
@@ -244,8 +487,11 @@ async fn dispatch_deadline_keeps_complete_platforms_retryable() {
     .await
     .unwrap();
     let status = store.image_stop_status(id).await.unwrap().unwrap();
-    assert_eq!(status, "failed");
-    store.finish_image(id, status).await.unwrap();
+    assert_eq!(
+        status,
+        artifactory_control_plane::store::images::ImageStop::Terminate("failed")
+    );
+    store.finish_image(id, "failed").await.unwrap();
     let execution = store.image_execution(id).await.unwrap();
     assert_eq!(execution.status, "publish_failed");
     assert!(!execution.cancel_requested);
@@ -333,6 +579,7 @@ async fn draining_preserves_accepted_images_and_rejects_new_work() {
                 .image_report(execution, true, &Report::Published { digest }, None)
                 .await
                 .unwrap();
+            confirm_image(store, execution).await;
         }
         assert!(
             store

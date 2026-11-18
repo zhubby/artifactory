@@ -1,5 +1,5 @@
 // [INPUT]: 隔离服务身份、固定 Git/LFS 夹具与模型故障开关。
-// [OUTPUT]: 提供同源 Git/LFS、确定性工具调用与验收回执代理。
+// [OUTPUT]: 提供同源 Git/LFS、显式 native/BuildKit 规划与验收回执代理。
 // [POS]: Kubernetes 新任务契约的上游与供应商夹具。
 // [PROTOCOL]: Update this header on change, then check AGENTS.md
 package main
@@ -54,7 +54,64 @@ func lfsBatch(lfsOID string, lfsPayload []byte, gitDown *atomic.Bool) http.Handl
 	}
 }
 
+func imagePlatforms(value, architecture string) ([]string, error) {
+	if value == "" {
+		value = "linux/" + architecture
+	}
+	platforms := strings.Split(value, ",")
+	if len(platforms) > 2 {
+		return nil, fmt.Errorf("at most two image platforms")
+	}
+	seen := map[string]bool{}
+	for _, platform := range platforms {
+		if (platform != "linux/amd64" && platform != "linux/arm64") || seen[platform] {
+			return nil, fmt.Errorf("invalid image platform")
+		}
+		seen[platform] = true
+	}
+	return platforms, nil
+}
+
+func imageTarget(architecture string, platforms []string, allowEmulation bool, delay int64) map[string]any {
+	return map[string]any{"os": "linux", "arch": architecture, "executor": "buildkit", "timeout_seconds": 300,
+		"image": map[string]any{"name": "acceptance", "context": ".", "dockerfile": "Dockerfile", "platforms": platforms,
+			"pool": "default", "allow_emulation": allowEmulation, "tags": []string{"init-verified"},
+			"build_args": map[string]string{"BUILD_DELAY_SECONDS": fmt.Sprint(delay)}}}
+}
+
+func installImageSource(repo, binaries string) error {
+	for _, architecture := range []string{"arm64", "amd64"} {
+		executable, err := os.ReadFile(filepath.Join(binaries, "arch-check-"+architecture))
+		if err != nil {
+			return fmt.Errorf("architecture fixture binary missing")
+		}
+		if err := os.WriteFile(filepath.Join(repo, "arch-check-"+architecture), executable, 0700); err != nil {
+			return err
+		}
+	}
+	dockerfile := "FROM scratch\nARG TARGETARCH\nARG BUILD_DELAY_SECONDS=5\nENV ARCH_CHECK_DELAY_SECONDS=$BUILD_DELAY_SECONDS\nCOPY arch-check-${TARGETARCH} /arch-check\nRUN [\"/arch-check\"]\nCOPY hello.txt /hello.txt\n"
+	if err := os.WriteFile(filepath.Join(repo, "Dockerfile"), []byte(dockerfile), 0600); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(repo, "hello.txt"), []byte("image-source-init-ok\n"), 0600)
+}
+
 func main() {
+	executor := os.Getenv("FIXTURE_EXECUTOR")
+	if executor == "" {
+		executor = "native"
+	}
+	if executor != "native" && executor != "buildkit" {
+		log.Fatal("invalid fixture executor")
+	}
+	architecture := os.Getenv("FIXTURE_ARCH")
+	if architecture == "" {
+		architecture = "arm64"
+	}
+	platforms, err := imagePlatforms(os.Getenv("FIXTURE_IMAGE_PLATFORMS"), architecture)
+	if err != nil {
+		log.Fatal(err)
+	}
 	root := "/tmp/upstream"
 	repo := filepath.Join(root, "repo.git")
 	_ = os.MkdirAll(repo, 0700)
@@ -66,6 +123,11 @@ func main() {
 	_ = os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("payload.dat filter=lfs diff=lfs merge=lfs -text\n"), 0600)
 	_ = os.WriteFile(filepath.Join(repo, "payload.dat"), lfsPayload, 0600)
 	_ = os.WriteFile(filepath.Join(repo, "build.sh"), []byte("#!/bin/sh\nset -eu\ntest \"$(cat payload.dat)\" = operator-source-lfs\nmkdir -p dist\nprintf 'operator-native-ok\\n' > dist/result.txt\n"), 0700)
+	if executor == "buildkit" {
+		if err := installImageSource(repo, "/opt/acceptance"); err != nil {
+			log.Fatal(err)
+		}
+	}
 	git(repo, "add", ".")
 	git(repo, "commit", "-m", "immutable source fixture")
 	git(repo, "tag", "-a", "v-fixture", "-m", "frozen source")
@@ -75,6 +137,9 @@ func main() {
 	var dropAck atomic.Int64
 	var dropped atomic.Int64
 	var buildSeconds atomic.Int64
+	if executor == "buildkit" {
+		buildSeconds.Store(5)
+	}
 	dropAck.Store(1)
 	mux := http.NewServeMux()
 	mountLiveProvider(mux)
@@ -135,6 +200,9 @@ func main() {
 		if toolCount == 1 {
 			name = "read_file"
 			arguments = map[string]any{"path": "README.md"}
+			if executor == "buildkit" {
+				arguments = map[string]any{"path": "Dockerfile"}
+			}
 		}
 		if toolCount >= 2 {
 			name = "submit_plan"
@@ -151,10 +219,15 @@ func main() {
 				run = fmt.Sprintf("sleep %d; sh build.sh", seconds)
 			}
 			target := map[string]any{"os": targetOS, "arch": arch, "executor": "native", "timeout_seconds": 90, "steps": []any{map[string]any{"name": "build", "run": run, "timeout_seconds": 45}}, "artifacts": []string{"dist/result.txt"}}
+			key, path, summary := "app", "README.md", "Build the fixed repository on a device Agent"
+			if executor == "buildkit" {
+				target = imageTarget(architecture, platforms, os.Getenv("FIXTURE_ALLOW_EMULATION") == "true", buildSeconds.Load())
+				key, path, summary = "image", "Dockerfile", "Build the fixed repository with isolated BuildKit"
+			}
 			if toolCount == 2 {
 				target["os"] = "invalid-platform"
 			} // Must return validation feedback, then correct in the same run.
-			arguments = map[string]any{"plan": map[string]any{"summary": "Build the fixed repository on a device Agent", "evidence": []any{map[string]any{"path": "README.md", "reason": "Documents the build command and output"}}, "recipe": map[string]any{"version": 1, "targets": map[string]any{"app": target}}}}
+			arguments = map[string]any{"plan": map[string]any{"summary": summary, "evidence": []any{map[string]any{"path": path, "reason": "Documents the fixed build command and output"}}, "recipe": map[string]any{"version": 1, "targets": map[string]any{key: target}}}}
 		}
 		text, _ := json.Marshal(arguments)
 		w.Header().Set("Content-Type", "text/event-stream")

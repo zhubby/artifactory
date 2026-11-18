@@ -1,0 +1,30 @@
+# [INPUT]: 最小 Rust 监督入口与固定版本官方 rootless BuildKit。
+# [OUTPUT]: 交付含独占生命周期握手的静态监督型构建镜像。
+# [POS]: 保留 rootless 工具与 UID 映射，仅替换容器入口。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+ARG RUST_IMAGE=rust:1.95-bookworm
+ARG BUILDKIT_IMAGE=moby/buildkit:v0.26.2-rootless@sha256:0ffa2fcf6b8757c47d569b3ef0f03f9d5eb3b9ff5ce68d858f994f89b749da0c
+FROM ${RUST_IMAGE} AS builder
+ARG TARGETARCH
+# Rust 自带 musl CRT；musl-gcc 的 static PIE specs 会插入动态 loader。
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=cc \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=cc \
+    RUSTFLAGS="-C target-feature=+crt-static"
+RUN case "$TARGETARCH" in amd64) target=x86_64-unknown-linux-musl ;; arm64) target=aarch64-unknown-linux-musl ;; *) exit 1 ;; esac && \
+    rustup target add "$target"
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY vendor ./vendor
+COPY crates ./crates
+COPY operators ./operators
+COPY proto ./proto
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/build/target \
+    case "$TARGETARCH" in amd64) target=x86_64-unknown-linux-musl ;; arm64) target=aarch64-unknown-linux-musl ;; *) exit 1 ;; esac && \
+    cargo build --locked --release -p artifactory-image-operator --no-default-features --bin artifactory-image-buildkit --target "$target" && \
+    readelf --program-headers "target/$target/release/artifactory-image-buildkit" > /tmp/buildkit-elf.txt && \
+    ! grep -q INTERP /tmp/buildkit-elf.txt && \
+    cp "target/$target/release/artifactory-image-buildkit" /usr/local/bin/artifactory-image-buildkit
+FROM ${BUILDKIT_IMAGE}
+COPY --from=builder /usr/local/bin/artifactory-image-buildkit /usr/bin/artifactory-image-buildkit
+USER 1000:1000
+ENTRYPOINT ["/usr/bin/artifactory-image-buildkit"]

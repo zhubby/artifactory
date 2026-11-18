@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖项目权限、执行令牌和仓库内容校验。
-//! [OUTPUT]: 提供镜像凭据、无秘密仓库来源、日志与独立发布接口。
+//! [OUTPUT]: 提供镜像凭据、候选回执幂等确认及独立发布接口。
 //! [POS]: 人员 API 与工作 Pod API 使用独立认证边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -49,8 +49,7 @@ pub async fn report(
     let e = state.store.image_execution(id).await?;
     if let Report::Published { digest } = &report
         && publisher
-        && e.status == "succeeded"
-        && e.root_digest.as_ref() == Some(digest)
+        && e.published_digest.as_ref() == Some(digest)
     {
         return Ok(Json(json!({"ok":true})));
     }

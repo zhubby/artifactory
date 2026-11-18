@@ -1,10 +1,191 @@
 //! [INPUT]: 依赖真实 PostgreSQL、HTTP Router 和固定源码清单。
-//! [OUTPUT]: 验证大清单链路和材料出口的 generation 拒绝。
+//! [OUTPUT]: 验证大清单、准备故障重试及材料出口的身份复核。
 //! [POS]: 固定源码准备的传输与并发授权回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use artifactory_source_checkout::{LfsObject, SourceManifest, SourceRepository};
 use axum::{Json, Router, extract::State, routing::post};
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn source_preparation_storage_faults_return_retryable_503_before_and_after_material() {
+    use artifactory_runtime_protocol::error::ApiError;
+    use axum::response::IntoResponse;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::Notify;
+    for after_material in [false, true] {
+        let s = state().await;
+        let run = Uuid::new_v4();
+        server::put_intent(&s, serde_json::to_value(intent(run)).unwrap())
+            .await
+            .unwrap();
+        s.store.queue("default", 1, 1).await.unwrap();
+        let execution = Execution {
+            run_id: run,
+            generation: 1,
+            uid: "fault-pod".into(),
+            name: "fault".into(),
+            namespace: "test".into(),
+        };
+        s.store.register_execution(execution.clone()).await.unwrap();
+        let entered = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let calls = Arc::new(AtomicUsize::new(0));
+        let app = Router::new().route(
+            "/internal/runtime/source-material",
+            post({
+                let entered = entered.clone();
+                let release = release.clone();
+                let calls = calls.clone();
+                move || {
+                    let entered = entered.clone();
+                    let release = release.clone();
+                    let calls = calls.clone();
+                    async move {
+                        let n = calls.fetch_add(1, Ordering::SeqCst);
+                        if after_material && n == 0 {
+                            entered.notify_one();
+                            release.notified().await;
+                        }
+                        Json(json!({"manifest":"material-fixture","credentials":[]}))
+                    }
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut local = s.clone();
+        local.control.origin = format!("http://{}", listener.local_addr().unwrap());
+        let control = tokio::spawn(axum::serve(listener, app).into_future());
+        // 与正式 prepare 路由共用材料授权函数，省去外部 TokenReview。
+        let app = Router::new()
+            .route(
+                "/prepare",
+                post(
+                    |State(runtime): State<Runtime>, Json(execution): Json<Execution>| async move {
+                        server::prepare_material(&runtime, &execution, "artifactory-pi")
+                            .await
+                            .map(Json)
+                    },
+                ),
+            )
+            .with_state(local.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/prepare", listener.local_addr().unwrap());
+        let service = tokio::spawn(axum::serve(listener, app).into_future());
+        if !after_material {
+            sql::execute(
+                &mut s.pool.clone(),
+                "ALTER TABLE runtime_runs RENAME TO unavailable_runs",
+                params![],
+            )
+            .await
+            .unwrap();
+        }
+        let request = {
+            let url = url.clone();
+            let execution = execution.clone();
+            tokio::spawn(async move {
+                reqwest::Client::new()
+                    .post(url)
+                    .json(&execution)
+                    .send()
+                    .await
+                    .unwrap()
+            })
+        };
+        if after_material {
+            tokio::time::timeout(std::time::Duration::from_secs(10), entered.notified())
+                .await
+                .unwrap();
+            sql::execute(
+                &mut s.pool.clone(),
+                "ALTER TABLE runtime_runs RENAME TO unavailable_runs",
+                params![],
+            )
+            .await
+            .unwrap();
+            release.notify_one();
+        }
+        let response = request.await.unwrap();
+        sql::execute(
+            &mut s.pool.clone(),
+            "ALTER TABLE unavailable_runs RENAME TO runtime_runs",
+            params![],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            response.status(),
+            503,
+            "storage fault must remain retryable, after_material={after_material}"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), usize::from(after_material));
+        let response = reqwest::Client::new()
+            .post(&url)
+            .json(&execution)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let value: Value = response.json().await.unwrap();
+        assert_eq!(value["manifest"], "material-fixture");
+        for stale in [
+            Execution {
+                run_id: Uuid::new_v4(),
+                ..execution.clone()
+            },
+            Execution {
+                generation: 2,
+                ..execution.clone()
+            },
+            Execution {
+                uid: "wrong-pod".into(),
+                ..execution.clone()
+            },
+        ] {
+            let response = reqwest::Client::new()
+                .post(&url)
+                .json(&stale)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 403);
+        }
+        server::put_intent(&s, json!({"run_id":run,"version":2,"canceled":true}))
+            .await
+            .unwrap();
+        assert!(matches!(
+            server::prepare_material(&local, &execution, "artifactory-pi").await,
+            Err(ApiError::Forbidden)
+        ));
+        assert_eq!(ApiError::Unavailable.into_response().status(), 503);
+        service.abort();
+        control.abort();
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn source_preparation_registration_pending_returns_409_without_fetching_material() {
+    use artifactory_runtime_protocol::error::ApiError;
+    let s = state().await;
+    let run = Uuid::new_v4();
+    server::put_intent(&s, serde_json::to_value(intent(run)).unwrap())
+        .await
+        .unwrap();
+    s.store.queue("default", 1, 1).await.unwrap();
+    let execution = Execution {
+        run_id: run,
+        generation: 1,
+        uid: "pending-pod".into(),
+        name: "pending".into(),
+        namespace: "test".into(),
+    };
+    assert!(matches!(
+        server::prepare_material(&s, &execution, "artifactory-pi").await,
+        Err(ApiError::Conflict(_))
+    ));
+}
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]

@@ -1,5 +1,5 @@
-# [INPUT]: 提交源码、固定 kind/Android 版本、节点 CIDR 策略与隔离租户服务。
-# [OUTPUT]: 验证版本、原生签名、CRD 安装与跨服务契约。
+# [INPUT]: 提交源码、固定 1.28/1.37 kind、节点策略与隔离租户服务。
+# [OUTPUT]: 验证版本、原生签名、普通容器生命周期与跨服务契约。
 # [POS]: 合并交付的自动化验证入口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: platform-contracts
@@ -128,6 +128,68 @@ jobs:
             web/playwright-report/
             .local/frontend-evidence/
             .local/docs-evidence/
+  kubernetes-128-images:
+    needs: version-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.27.x
+      - uses: helm/kind-action@v1
+        with:
+          version: v0.24.0
+          cluster_name: image-k128
+          node_image: kindest/node:v1.28.13@sha256:45d319897776e11167e4698f6b14938eb4d52eb381d9e3d7a9086c16c69a8110
+          config: tests/images/kind-1.28.yaml
+          kubectl_version: v1.28.15
+          wait: 180s
+      - name: Verify Kubernetes 1.28 without restartable init containers
+        run: |
+          kubectl version -o json
+          docker exec image-k128-control-plane cat /var/lib/kubelet/config.yaml | grep -A 2 featureGates
+          kubectl apply --dry-run=server -f operators/agent-operator/config/crd/resources.yaml
+          kubectl apply --dry-run=server -f operators/image-operator/config/crd/resources.yaml
+          helm template native charts/artifactory-agent-operator --kube-version 1.28.13 > /dev/null
+          helm template images charts/artifactory-image-operator --kube-version 1.28.13 > /dev/null
+      - name: Install native acceptance tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler rclone git-lfs apache2-utils
+      - name: Build independent Linux images including supervised BuildKit
+        run: python3 -u tests/operator/acceptance/prepare.py --platform linux/amd64 --tag k128-ci --kind image-k128 --include-images
+      - name: Source, planning, leases and native delivery against the 1.28 API
+        env:
+          ARTIFACTORY_ACCEPTANCE_IMAGE_TAG: k128-ci
+        run: python3 -u tests/operator/acceptance/run.py --context kind-image-k128 --namespace artifact-image-k128 --pull-policy IfNotPresent
+      - name: Native amd64 image, private CA, internal and external registry
+        run: python3 -u tests/images/run.py --context kind-image-k128 --namespace artifact-image-k128 --tag k128-ci --resume --mode amd64 --external-http
+      - name: Real process failures, OOM, cancellation and lease recovery
+        run: |
+          for fault in runner-kill buildkit-kill supervisor-kill runner-oom supervisor-oom cancel source-init job-deadline operator-restart node-unreachable; do
+            python3 -u tests/images/run.py --context kind-image-k128 --namespace artifact-image-k128 --tag k128-ci --resume --mode amd64 --fault "$fault" --node-container image-k128-control-plane
+          done
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - name: Verify explicitly enabled cross-architecture execution
+        run: |
+          docker run --rm --platform linux/arm64 --entrypoint uname moby/buildkit:v0.26.2-rootless@sha256:0ffa2fcf6b8757c47d569b3ef0f03f9d5eb3b9ff5ce68d858f994f89b749da0c -m | grep -x aarch64
+          kubectl label node image-k128-control-plane artifactory.dev/acceptance-emulation=verified
+          python3 -u tests/images/run.py --context kind-image-k128 --namespace artifact-image-k128 --tag k128-ci --resume --mode multiarch --allow-emulation --emulation-selector artifactory.dev/acceptance-emulation=verified --external-http
+      - name: Preserve sanitized 1.28 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubernetes-128-image-diagnostics
+          include-hidden-files: true
+          retention-days: 7
+          path: |
+            .local/operator-acceptance/*/evidence.json
+            .local/operator-acceptance/*/image-evidence.json
   kubernetes-pi:
     needs: version-contract
     runs-on: ubuntu-latest

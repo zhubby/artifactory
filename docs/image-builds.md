@@ -1,6 +1,6 @@
 <!--
-[INPUT]: 独立镜像 Operator、固定清单引用、私有仓库与 Pingora。
-[OUTPUT]: 定义镜像材料、交付、四端口边界与监听就绪策略。
+[INPUT]: 独立镜像 Operator、监督型 BuildKit、私有仓库与 Pingora。
+[OUTPUT]: 定义 1.28 镜像生命周期、交付和四端口边界。
 [POS]: 镜像构建与统一网关的部署入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -41,7 +41,7 @@ HTTP 上游连接回池后最多空闲三十秒。该时限不终止活动中的
 
 ## 安装顺序
 
-部署前准备 Kubernetes、StorageClass、业务 PostgreSQL、制品 S3、仓库 S3 和可达的 HTTPS 网关。主 Chart 的内建制品 S3 使用私有 ClusterIP HTTP；外部私有 HTTP 端点须显式设置 `s3.allowHttp=true`。仓库的 Kubernetes 测试配置使用 1.37。BuildKit 仅使用 Kubernetes 1.33 及以上的原生 sidecar。任务使用 rootless user namespace、Unconfined seccomp/AppArmor，以及 `--oci-worker-no-process-sandbox`。节点和准入策略必须允许这些设置。任务只运行可信项目源码；rootless 不能替代租户安全沙箱。
+部署前准备 Kubernetes 1.28 及以上版本、StorageClass、业务 PostgreSQL、制品 S3、仓库 S3 和可达的 HTTPS 网关。主 Chart 的内建制品 S3 使用私有 ClusterIP HTTP；外部私有 HTTP 端点须显式设置 `s3.allowHttp=true`。构建使用两个普通应用容器，无原生 sidecar 或版本分支。任务使用 rootless user namespace、Unconfined seccomp/AppArmor，以及 `--oci-worker-no-process-sandbox`。节点和准入策略必须允许这些设置。任务只运行可信项目源码；rootless 不能替代租户安全沙箱。
 
 1. 按 [Helm 指南](helm.md) 准备主部署 Secret。设备 CA 与仓库 RSA 签名身份独立。仓库签名私钥只挂载到 Control；Distribution 只挂载公开证书。
 2. 预先创建仓库 Bucket。使用独立 S3 身份，仅授权该 Bucket。Distribution 3 写对象时设置私有 ACL，身份须具备 `s3:PutObjectAcl`。SeaweedFS 除读写、列举与标签权限外，还须授予 `WriteAcp:<bucket>`。不要改用全局 `Admin` 权限。不要复用原生制品 Bucket。保持 Bucket 私有，并限制网络入口。
@@ -113,7 +113,7 @@ BuilderPool 是管理员配置。它固定工作镜像、BuildKit 镜像、节�
 builderPool:
   name: default
   workerImage: ghcr.io/zhubby/artifactory-image-worker:0.2.0
-  buildkitImage: moby/buildkit:v0.26.2-rootless
+  buildkitImage: ghcr.io/zhubby/artifactory-buildkit:0.2.0
   sourcePreparerImage: ghcr.io/zhubby/artifactory-source-preparer:0.2.0
   controlUrl: https://artifactory-gateway-internal:8445
   maxActive: 8
@@ -124,7 +124,13 @@ builderPool:
   buildkitConfigMap: buildkit-config
 ```
 
-每个平台 Job 先执行源码 init container，再启动 rootless BuildKit sidecar 和 Runner。源码位于有大小限额的 emptyDir，Runner 只读挂载。Git 凭据与投影 token 只挂载到 init container；推送凭据 Secret 只挂载到 Runner。Publisher 不拉源码，不启动 BuildKit。
+每个平台 Job 先执行普通源码 init，再并发启动 Runner 和 BuildKit 普通容器。源码位于有大小限额的 emptyDir，Runner 只读挂载。Git 凭据与投影 token 只挂载到 init；推送凭据 Secret 只挂载到 Runner。BuildKit 不挂载这些凭据、源码卷或 Runner 私有工作卷。Publisher 不拉源码，不启动 BuildKit。
+
+监督入口作为 BuildKit 容器 PID 1，启动 rootlesskit/buildkitd，并校验容器 PID namespace 与 `/proc`。Runner 等待 daemon 就绪，再调用 buildctl。它在结果与源码校验后请求停止，并等待进程树回收确认。EOF、心跳到期、总期限或信号使监督程序停止 BuildKit。Pod 保留 45 秒终止窗口，本地收尾期限为 15 秒。
+
+不启用共享 PID namespace，也不额外嵌套 rootlesskit PID namespace。该路径适用于默认关闭 `ProcMountType` 的 1.28。Dockerfile `RUN` 能看到 BuildKit 容器内的监督进程；它不能访问另一容器的 Runner PID 或私有卷。可信源码约束仍然适用。
+
+节点必须支持未特权 user namespace，且 `user.max_user_namespaces` 非零。先在实际构建节点验证 UID/GID 映射、容器 PID/procfs 和真实 Dockerfile `RUN`，再添加构建节点标签。旧内核须单独验证 snapshotter，不能仅依据 Kubernetes 版本判断可用性。不得以 privileged、hostPID 或宿主目录挂载绕过失败。
 
 Control 校验完整清单和固定提交后，在 `build.json` 的源码部分只写入 `source_manifest_id` 和 `source_digest`。完整清单由 init 直接领取并写入临时卷，Runner 核对 ID、摘要和清单内容，再在构建前后校验工作树。任务材料信封上限保持 900 KiB，合法 4 MiB 清单不写入 Kubernetes Secret。旧 `source` 字段被拒绝。
 

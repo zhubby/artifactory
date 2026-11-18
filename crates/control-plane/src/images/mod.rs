@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖镜像执行存储、源码快照、OCI 客户端和 Kubernetes。
-//! [OUTPUT]: 提供镜像准入、启动校验、任务调度与内容校验。
+//! [OUTPUT]: 提供镜像准入、启动校验、单轮调度与内容校验。
 //! [POS]: 控制平面的镜像编排边界；独立于设备调度循环。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod dispatch;
@@ -7,6 +7,7 @@ pub mod registry;
 mod tasks;
 use anyhow::{Context, Result, ensure};
 use artifactory_image_protocol::RegistryLogin;
+pub use dispatch::tick;
 use std::path::PathBuf;
 pub use tasks::verify_report;
 
@@ -95,7 +96,7 @@ pub fn start(state: crate::state::AppState) -> Result<()> {
             tokio::select! {_=state.coordination.stop.cancelled()=>return,_=tokio::time::sleep(std::time::Duration::from_secs(3))=>{}}
         };
         while !state.coordination.is_draining() {
-            if let Err(error) = dispatch::tick(&state, &config, &client).await {
+            if let Err(error) = tick(&state, &config, &client).await {
                 tracing::warn!(%error,"image dispatch deferred");
             }
             tokio::select! {_=state.coordination.stop.cancelled()=>break,_=tokio::time::sleep(std::time::Duration::from_secs(3))=>{}}

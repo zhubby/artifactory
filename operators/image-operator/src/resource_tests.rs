@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖声明式资源生成器和模拟节点能力。
-//! [OUTPUT]: 验证架构、sidecar 生命周期、临时卷与固定清单 CRD。
+//! [OUTPUT]: 验证 1.28 双容器、权限隔离、资源预算与归属 CRD。
 //! [POS]: 不连接集群的工作负载契约回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -45,7 +45,7 @@ fn native_architecture_precedes_explicit_emulation() {
     assert!(!native.contains_key("build.example.com/binfmt"));
 }
 #[test]
-fn workers_mount_only_their_task_and_sidecar_stops_with_job() {
+fn kubernetes_128_workers_use_two_regular_containers_and_a_single_source_init() {
     let build = build();
     let pool = pool();
     let build_job = resources::job(&build, &pool, Some("linux/amd64"), Default::default()).unwrap();
@@ -61,7 +61,66 @@ fn workers_mount_only_their_task_and_sidecar_stops_with_job() {
     let pod = &value["spec"]["template"]["spec"];
     assert_eq!(pod["automountServiceAccountToken"], false);
     assert_eq!(pod["volumes"][0]["secret"]["items"][0]["key"], "build.json");
-    assert_eq!(pod["initContainers"][1]["restartPolicy"], "Always");
+    assert_eq!(pod["initContainers"].as_array().unwrap().len(), 1);
+    assert_eq!(pod["containers"].as_array().unwrap().len(), 2);
+    assert_eq!(pod["terminationGracePeriodSeconds"], 45);
+    assert_ne!(pod["shareProcessNamespace"], true);
+    assert_eq!(pod["containers"][1]["name"], "buildkit");
+    assert_eq!(
+        pod["containers"][1]["command"],
+        json!(["artifactory-image-buildkit"])
+    );
+    assert_eq!(
+        pod["containers"][1]["args"],
+        json!(["--config", "/etc/buildkit/buildkitd.toml"])
+    );
+    assert!(pod["containers"][1].get("restartPolicy").is_none());
+    assert!(
+        pod["containers"][1]["securityContext"]
+            .get("appArmorProfile")
+            .is_none()
+    );
+    assert_eq!(
+        value["spec"]["template"]["metadata"]["annotations"]["container.apparmor.security.beta.kubernetes.io/buildkit"],
+        "unconfined"
+    );
+    assert_eq!(
+        pod["containers"][1]["securityContext"]["seccompProfile"]["type"],
+        "Unconfined"
+    );
+    assert_eq!(
+        pod["containers"][0]["securityContext"]["allowPrivilegeEscalation"],
+        false
+    );
+    assert_eq!(
+        pod["containers"][1]["securityContext"]["allowPrivilegeEscalation"],
+        true
+    );
+    for worker in pod["containers"].as_array().unwrap() {
+        assert_eq!(worker["resources"]["requests"]["cpu"], "1");
+        assert_eq!(worker["resources"]["requests"]["memory"], "2Gi");
+        assert_eq!(worker["resources"]["requests"]["ephemeral-storage"], "20Gi");
+        assert!(worker["env"].as_array().unwrap().iter().any(|e| e["name"] == "ARTIFACTORY_BUILDKIT_TIMEOUT_SECONDS" && e["value"] == "600"));
+        assert!(
+            worker["env"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["name"] == "POD_UID")
+        );
+    }
+    let mounts = pod["containers"][1]["volumeMounts"].as_array().unwrap();
+    assert!(mounts.iter().all(|m| {
+        ![
+            "task",
+            "workspace",
+            "work",
+            "source-auth",
+            "source-identity",
+        ]
+        .iter()
+        .any(|name| m["name"] == *name)
+    }));
     assert_eq!(
         pod["containers"][0]["securityContext"]["readOnlyRootFilesystem"],
         true
@@ -121,7 +180,8 @@ fn source_init_has_exclusive_auth_and_no_persistent_cache() {
     .unwrap();
     let pod = &value["spec"]["template"]["spec"];
     assert_eq!(pod["initContainers"][0]["name"], "source");
-    assert_eq!(pod["initContainers"][1]["name"], "buildkit");
+    assert_eq!(pod["initContainers"].as_array().unwrap().len(), 1);
+    assert_eq!(pod["containers"][1]["name"], "buildkit");
     assert!(
         value["spec"].get("ttlSecondsAfterFinished").is_none(),
         "platform history survives a slower architecture"
@@ -149,6 +209,24 @@ fn source_init_has_exclusive_auth_and_no_persistent_cache() {
             .iter()
             .all(|v| v.get("persistentVolumeClaim").is_none())
     );
+}
+
+#[test]
+fn image_status_owns_a_bounded_job_uid_ledger() {
+    let crds = crate::api::crds();
+    let crd = serde_json::to_value(&crds[1]).unwrap();
+    let ledger = &crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["status"]["properties"]
+        ["jobOwnership"];
+    assert_eq!(ledger["properties"]["imageBuildUid"]["type"], "string");
+    assert_eq!(ledger["properties"]["jobs"]["maxItems"], 3);
+    for field in ["name", "uid", "platform"] {
+        assert!(
+            ledger["properties"]["jobs"]["items"]["properties"]
+                .get(field)
+                .is_some(),
+            "missing {field}"
+        );
+    }
 }
 
 #[test]

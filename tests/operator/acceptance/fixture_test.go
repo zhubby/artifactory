@@ -1,6 +1,6 @@
-// [INPUT]: 真实 TLS HTTP 服务器、LFS batch 夹具与多种请求地址。
-// [OUTPUT]: 验证下载地址保留请求源地址，忽略转发头。
-// [POS]: 阻止集群 Service 地址泄漏到主机 NodePort 的夹具回归。
+// [INPUT]: 真实 TLS HTTP 服务器、LFS、镜像规划与双架构源码夹具。
+// [OUTPUT]: 验证同源下载、显式平台/仿真设置与 Dockerfile RUN 程序。
+// [POS]: 规划上游的公开契约回归，不连接 Kubernetes。
 // [PROTOCOL]: Update this header on change, then check AGENTS.md
 package main
 
@@ -12,10 +12,56 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 )
+
+func TestImagePlatformsAndExplicitEmulation(t *testing.T) {
+	for _, invalid := range []string{"linux/ppc64le", "linux/amd64,linux/amd64", "linux/amd64,linux/arm64,linux/amd64", "linux/arm64,"} {
+		if _, err := imagePlatforms(invalid, "arm64"); err == nil {
+			t.Fatalf("accepted invalid platform %q", invalid)
+		}
+	}
+	platforms, err := imagePlatforms("linux/amd64,linux/arm64", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, allow := range []bool{false, true} {
+		target := imageTarget("amd64", platforms, allow, 5)
+		image := target["image"].(map[string]any)
+		if target["executor"] != "buildkit" || image["allow_emulation"] != allow || len(image["platforms"].([]string)) != 2 {
+			t.Fatalf("image contract lost explicit settings: %+v", target)
+		}
+	}
+}
+
+func TestImageRepositoryRequiresBothArchitectureExecutables(t *testing.T) {
+	repo, binaries := t.TempDir(), t.TempDir()
+	if err := installImageSource(repo, binaries); err == nil {
+		t.Fatal("missing executable accepted")
+	}
+	for _, arch := range []string{"arm64", "amd64"} {
+		if err := os.WriteFile(filepath.Join(binaries, "arch-check-"+arch), []byte("fixture-"+arch), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := installImageSource(repo, binaries); err != nil {
+		t.Fatal(err)
+	}
+	dockerfile, err := os.ReadFile(filepath.Join(repo, "Dockerfile"))
+	if err != nil || !strings.Contains(string(dockerfile), "RUN [\"/arch-check\"]") || !strings.Contains(string(dockerfile), "arch-check-${TARGETARCH}") {
+		t.Fatalf("repository does not prove architecture execution: %q %v", dockerfile, err)
+	}
+	for _, arch := range []string{"arm64", "amd64"} {
+		info, err := os.Stat(filepath.Join(repo, "arch-check-"+arch))
+		if err != nil || info.Mode().Perm()&0100 == 0 {
+			t.Fatalf("architecture executable is not executable: %v", err)
+		}
+	}
+}
 
 func TestLFSDownloadUsesRequestOrigin(t *testing.T) {
 	payload := []byte("source-from-upstream\n")

@@ -1,3 +1,7 @@
+# [INPUT]: 工作区版本、发布清单与官方镜像版本标签。
+# [OUTPUT]: 检查或同步 Rust、Node、Chart 与工作镜像版本。
+# [POS]: 发布流程的统一版本边界；不重写第三方镜像。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 import argparse
 import json
 from pathlib import Path
@@ -7,6 +11,14 @@ import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
+FIRST_PARTY_COMPONENTS = (
+    "control-plane", "web", "agent-worker", "agent-operator", "planner-runtime",
+    "source-preparer", "image-operator", "image-worker", "buildkit", "gateway", "emissary",
+)
+FIRST_PARTY_IMAGE = re.compile(
+    r"(?P<image>ghcr\.io/zhubby/artifactory-(?:" + "|".join(FIRST_PARTY_COMPONENTS)
+    + r"):)" + r"(?P<version>(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))(?=[\s'\"#]|$)"
+)
 STABLE_VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")
 
 
@@ -59,6 +71,9 @@ def inspect_project(root):
             if not match:
                 raise ValueError(f"{path.relative_to(root)}: missing {field}")
             entries.append((path, field, match.group(1).split(" #", 1)[0].strip().strip("\"'")))
+    for path in sorted((root / "charts").glob("*/values.yaml")):
+        for match in FIRST_PARTY_IMAGE.finditer(path.read_text()):
+            entries.append((path, match["image"].removesuffix(":"), match["version"]))
     path = root / "crates/emissary/Dockerfile"
     match = re.search(r"(?m)^ARG ARTIFACTORY_BUILD_VERSION=([^\n]+)$", path.read_text())
     if not match:
@@ -104,6 +119,8 @@ def synchronize(root, version, entries, package_names):
                 changed = changed or package["packages"][""]["version"] != version
                 package["packages"][""]["version"] = version
             updated = json.dumps(package, indent=2, ensure_ascii=False) + "\n" if changed else text
+        elif path.name == "values.yaml":
+            updated = FIRST_PARTY_IMAGE.sub(lambda match: f'{match["image"]}{version}', text)
         elif path.name == "Dockerfile":
             updated = re.sub(r"(?m)^ARG ARTIFACTORY_BUILD_VERSION=[^\n]+$",
                              f"ARG ARTIFACTORY_BUILD_VERSION={version}", text)

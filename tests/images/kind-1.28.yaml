@@ -1,0 +1,10 @@
+# [INPUT]: 固定 Kubernetes 1.28 node 镜像与默认 kind CNI。
+# [OUTPUT]: 禁用 Alpha 原生 sidecar 的隔离单节点集群。
+# [POS]: 镜像生命周期验收配置；不修改正式集群开关。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  SidecarContainers: false
+nodes:
+  - role: control-plane

@@ -21,6 +21,7 @@ transport.rs: 组合真实 Tonic/mTLS、设备负载与制品传输回归。
 workspace_lifecycle.rs: 验证工作区归档、删除和故障恢复。
 
 images.rs: 验证镜像准入、轮转调度、固定发布与凭据撤销。
-image_regressions.rs: 验证排空续跑、超时重发、日志清扫和发布快照。
+image_regressions.rs: 验证终态 Secret UID 回收、终止分类、排空和发布快照。
+image_completion.rs: 验证候选回执、最终成功与 Kubernetes 身份围栏。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

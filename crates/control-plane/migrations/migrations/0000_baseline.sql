@@ -1,5 +1,5 @@
 -- [INPUT]: 依赖全新的 PostgreSQL 数据库。
--- [OUTPUT]: 创建业务、租户、固定源码清单和任务约束。
+-- [OUTPUT]: 创建业务、租户、固定源码、镜像候选和 CR UID 约束。
 -- [POS]: 原型重置后的唯一初始化基线。
 -- [PROTOCOL]: Update this header on change, then check AGENTS.md
 CREATE FUNCTION assign_build_number() RETURNS trigger
@@ -610,6 +610,8 @@ CREATE TABLE image_executions (
     destination_registry text,
     tags text[] NOT NULL,
     root_digest text,
+    published_digest text,
+    image_build_uid text,
     error text,
     deadline_at timestamp with time zone NOT NULL,
     cancel_requested boolean DEFAULT false NOT NULL,

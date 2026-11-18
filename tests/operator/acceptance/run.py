@@ -27,6 +27,7 @@ class Acceptance:
     def __init__(self, context, namespace=None, pull_policy='Always', resume=False):
         self.context = context
         self.image_tag = os.environ.get('ARTIFACTORY_ACCEPTANCE_IMAGE_TAG', 'rust-native')
+        self.registry = os.environ.get('ARTIFACTORY_ACCEPTANCE_IMAGE_REGISTRY', 'localhost:5001/artifactory').rstrip('/')
         nodes = json.loads(subprocess.check_output(['kubectl','--context',context,'get','nodes','-o','json']))
         self.arch = nodes['items'][0]['status']['nodeInfo']['architecture']
         self.node_ip = next(address['address'] for address in nodes['items'][0]['status']['addresses'] if address['type']=='InternalIP')
@@ -62,7 +63,7 @@ class Acceptance:
         return [{'pod': p['metadata']['name'], 'uid': p['metadata']['uid'], 'images': [{'image': c['image'], 'imageID': c.get('imageID')} for c in p.get('status', {}).get('containerStatuses', [])]} for p in pods if p['status']['phase'] == 'Running' and not p['metadata'].get('deletionTimestamp')]
 
     def image(self, name):
-        return f'localhost:5001/artifactory/{name}:{self.image_tag}'
+        return f'{self.registry}/{name}:{self.image_tag}'
 
     def apply(self, *items):
         self.kubectl('apply', '-f', '-', data=json.dumps({'apiVersion': 'v1', 'kind': 'List', 'items': list(items)}).encode())
@@ -180,12 +181,12 @@ class Acceptance:
         self.token=token
         self.tls=ssl.create_default_context(cafile=str(pki/'ca.pem'))
         databases = "\n".join(f"CREATE USER {role} PASSWORD '{password}'; CREATE DATABASE {role} OWNER {role};\n\\connect {role}\nCREATE EXTENSION IF NOT EXISTS timescaledb;\n\\connect postgres" for role in ['business','planner','telemetry'])
-        postgres = self.workload('postgres', 'localhost:5001/artifactory/timescaledb:2.32.0-pg17', [], {'POSTGRES_USER': 'admin', 'POSTGRES_PASSWORD': password, 'TIMESCALEDB_TELEMETRY':'off'})
+        postgres = self.workload('postgres', self.registry+'/timescaledb:2.32.0-pg17', [], {'POSTGRES_USER': 'admin', 'POSTGRES_PASSWORD': password, 'TIMESCALEDB_TELEMETRY':'off'})
         postgres['spec']['template']['spec']['containers'][0]['volumeMounts'] = [{'name': 'init', 'mountPath': '/docker-entrypoint-initdb.d'}]
         postgres['spec']['template']['spec']['volumes'] = [{'name': 'init', 'configMap': {'name': 'init-databases'}}]
         self.apply({'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'init-databases'},'data':{'100_init.sql':databases}}, postgres, self.service('postgres',[5432]))
         s3config = {'identities':[{'name':'acceptance','credentials':[{'accessKey':'acceptance','secretKey':password}],'actions':['Admin','Read','Write','List','Tagging']}]}
-        s3 = self.workload('s3','localhost:5001/artifactory/seaweedfs:4.53',['mini','-dir=/data','-s3.port=8333','-s3.config=/run/s3/s3.json','-s3.iam.readOnly=true','-admin.ui=false','-ip.bind=0.0.0.0'])
+        s3 = self.workload('s3',self.registry+'/seaweedfs:4.53',['mini','-dir=/data','-s3.port=8333','-s3.config=/run/s3/s3.json','-s3.iam.readOnly=true','-admin.ui=false','-ip.bind=0.0.0.0'])
         s3['spec']['template']['spec']['containers'][0]['volumeMounts']=[{'name':'config','mountPath':'/run/s3','readOnly':True}]
         s3['spec']['template']['spec']['volumes']=[{'name':'config','secret':{'secretName':'s3-config'}}]
         self.apply(self.secret('s3-config',{'s3.json':json.dumps(s3config)}),s3,self.service('s3',[8333]))
@@ -203,7 +204,7 @@ class Acceptance:
         self.apply(*self.control_identity(),self.secret('telemetry',telemetry),self.secret('runtime',runtime),self.secret('control-plane',control),self.workload('control-plane',self.image('control-plane'),['serve'],secret='control-plane',pki=True),self.service('control-plane',[8080,8443]),*self.gateway(gateway_token),self.workload('upstream',self.image('operator-fixture'),[],env={'FIXTURE_ARCH':self.arch},pki=True),self.service('upstream',[9443]))
         self.wait(lambda:self.sql('business','SELECT 1')=='1')
         self.command(['kubectl','--context',self.context,'apply','-f',str(ROOT/'operators/agent-operator/config/crd/resources.yaml')])
-        values={'image':{'repository':'localhost:5001/artifactory/agent-operator','tag':self.image_tag,'pullPolicy':self.pull_policy},'runtime':{'secretName':'runtime','image':{'repository':'localhost:5001/artifactory/planner-runtime','tag':self.image_tag}},'telemetry':{'secretName':'telemetry','pkiSecretName':'acceptance-pki','image':{'repository':'localhost:5001/artifactory/control-plane','tag':self.image_tag}},'agentPool':{'image':self.image('operator-pi'),'sourcePreparerImage':self.image('source-preparer'),'maxActive':2,'maxPerProject':1,'ephemeralStorage':'2Gi'},'tls':{'secretName':'service-tls'},'controlUrl':'https://upstream:9443','networkPolicy':{'enabled':True,'gitPorts':[9443]}}
+        values={'image':{'repository':self.registry+'/agent-operator','tag':self.image_tag,'pullPolicy':self.pull_policy},'runtime':{'secretName':'runtime','image':{'repository':self.registry+'/planner-runtime','tag':self.image_tag}},'telemetry':{'secretName':'telemetry','pkiSecretName':'acceptance-pki','image':{'repository':self.registry+'/control-plane','tag':self.image_tag}},'agentPool':{'image':self.image('operator-pi'),'sourcePreparerImage':self.image('source-preparer'),'maxActive':2,'maxPerProject':1,'ephemeralStorage':'2Gi'},'tls':{'secretName':'service-tls'},'controlUrl':'https://upstream:9443','networkPolicy':{'enabled':True,'gitPorts':[9443]}}
         path=self.run/'values.json';path.write_text(json.dumps(values))
         self.command(['helm','--kube-context',self.context,'upgrade','--install','native',str(ROOT/'charts/artifactory-agent-operator'),'-n',self.ns,'-f',str(path)])
         self.kubectl('rollout','status','deploy/control-plane','--timeout=180s')

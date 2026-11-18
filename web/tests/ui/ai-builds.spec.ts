@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证规划与会话交互，保存桌面和移动截图。
+ * [OUTPUT]: 验证规划、分页与折叠终态补读，保存响应式截图。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -231,4 +231,34 @@ test("planning conversation reads final messages after its status changes",async
  await expect(page.locator("summary").filter({hasText:"2 · proposal_result"})).toBeVisible({timeout:8000});
  await page.locator("summary").filter({hasText:"2 · proposal_result"}).click();await expect(page.getByText(/final durable receipt/)).toBeVisible();
  await page.screenshot({path:info.outputPath("planning-conversation-final.png"),fullPage:true});
+});
+
+test("collapsed planning conversation reads completion once when reopened",async({page},info)=>{
+ await fixtureAPI(page);
+ await page.context().addCookies([{name:"artifactory-locale",value:"en",url:"http://127.0.0.1:3100"}]);
+ const item={...build,goal:"Build source",status:"planning",source_manifest_id:"manifest-fixed"};
+ await page.route("**/api/v1/projects/by-slug/desktop-client/builds/128",route=>route.fulfill({json:item}));
+ await page.route("**/api/v1/builds/build-main/events",route=>route.fulfill({contentType:"text/event-stream",body:`retry: 600000\nevent: snapshot\ndata: ${JSON.stringify(item)}\n\n`}));
+ await page.route("**/api/v1/builds/build-main/plans",route=>route.fulfill({json:{plans:[],runs:[],events:[]}}));
+ let status="running";const reads:string[]=[];
+ await page.route("**/api/v1/builds/build-main/planning/conversations",route=>route.fulfill({json:{conversations:[{run_id:"run-collapsed",generation:1,pod_uid:"pod-1",status,model:"test-model",started_at:build.created_at}]}}));
+ await page.route("**/api/v1/builds/build-main/planning/conversations/run-collapsed/1/messages?*",route=>{
+  const after=new URL(route.request().url()).searchParams.get("after")!;reads.push(after);
+  // 待翻页状态停止消息轮询；终态消息只能来自重开补读。
+  return route.fulfill({json:after==="0"?{messages:[{sequence:1,kind:"message",payload:{role:"user",content:"Initial request"},created_at:build.created_at}],next_cursor:1}:{messages:[{sequence:2,kind:"proposal_result",payload:{accepted:true,finalAudit:"collapsed final durable receipt"},created_at:build.created_at}],next_cursor:null}});
+ });
+ await page.goto(tenantURL("/projects/desktop-client/builds/128"));
+ await page.getByRole("tab",{name:"Plan",exact:true}).click();
+ await page.getByText("AI conversation audit",{exact:true}).click();
+ const session=page.locator("summary").filter({hasText:"run-coll"});
+ await session.click();await expect.poll(()=>reads).toEqual(["0"]);
+ await session.click();status="succeeded";
+ await expect(session).toContainText("succeeded",{timeout:8000});
+ expect(reads).toEqual(["0"]);
+ await session.click();
+ await expect(page.locator("summary").filter({hasText:"2 · proposal_result"})).toBeVisible();
+ await page.locator("summary").filter({hasText:"2 · proposal_result"}).click();
+ await expect(page.getByText(/collapsed final durable receipt/)).toBeVisible();
+ await page.waitForTimeout(3500);expect(reads).toEqual(["0","1"]);
+ await page.screenshot({path:info.outputPath("planning-conversation-reopened.png"),fullPage:true});
 });

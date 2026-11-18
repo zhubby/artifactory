@@ -237,6 +237,7 @@ class HarnessTests(unittest.TestCase):
     def test_gateway_has_resolver_token_without_storage_or_service_credentials(self):
         acceptance = MODULE.Acceptance.__new__(MODULE.Acceptance)
         acceptance.image_tag = 'fixture'
+        acceptance.registry = 'localhost:5001/artifactory'
         acceptance.pull_policy = 'IfNotPresent'
         secret, deployment, service = acceptance.gateway('isolated-token-' + 'x' * 32)
         env = secret['stringData']
