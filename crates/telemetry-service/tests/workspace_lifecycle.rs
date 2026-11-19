@@ -1,4 +1,4 @@
-//! [INPUT]: 隔离 TimescaleDB、停用后台策略的手动维护夹具。
+//! [INPUT]: 隔离 TimescaleDB、策略创建前停用当前库调度器的手动维护夹具。
 //! [OUTPUT]: 验证定向清扫、其他身份保留和重放隔离。
 //! [POS]: 工作区生命周期的遥测数据删除回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -33,35 +33,18 @@ async fn purging_columnstore_and_expired_raw_preserves_other_identities_and_fenc
     artifactory_database::require_timescale(&pool)
         .await
         .unwrap();
-    artifactory_database::migrate(&pool, &store::MIGRATIONS)
-        .await
-        .unwrap();
-    // 本用例手动执行保留、列存和聚合操作。
-    // 关闭后台策略，再等待已启动的策略退出。
-    sql::execute(
+    // 在创建策略前停用当前测试库的调度器，避免历史统计与在途任务竞争。
+    let stopped: bool = sql::scalar(
         &mut pool.clone(),
-        "SELECT alter_job(job_id, scheduled=>false) FROM timescaledb_information.jobs WHERE proc_name IN ('policy_retention','policy_refresh_continuous_aggregate','policy_compression')",
+        "SELECT _timescaledb_functions.stop_background_workers()",
         params![],
     )
     .await
     .unwrap();
-    tokio::time::timeout(std::time::Duration::from_secs(30), async {
-        loop {
-            let idle: bool = sql::scalar(
-                &mut pool.clone(),
-                "SELECT NOT EXISTS(SELECT 1 FROM timescaledb_information.job_stats s JOIN timescaledb_information.jobs j USING(job_id) WHERE j.proc_name IN ('policy_retention','policy_refresh_continuous_aggregate','policy_compression') AND (s.job_status='Running' OR (s.last_run_started_at>'-infinity'::timestamptz AND s.last_run_duration IS NULL)))",
-                params![],
-            )
-            .await
-            .unwrap();
-            if idle {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("Timescale policy jobs must finish before manual fixture maintenance");
+    assert!(stopped, "the isolated database scheduler must stop");
+    artifactory_database::migrate(&pool, &store::MIGRATIONS)
+        .await
+        .unwrap();
     let target = Uuid::new_v4();
     let survivor = Uuid::new_v4();
     let attempt = Uuid::new_v4();

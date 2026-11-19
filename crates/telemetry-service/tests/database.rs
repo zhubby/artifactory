@@ -1,4 +1,4 @@
-//! [INPUT]: 隔离 TimescaleDB、已停后台策略、真实遥测批次与 mTLS 服务。
+//! [INPUT]: 隔离 TimescaleDB、已停当前库调度器、真实遥测批次与 mTLS 服务。
 //! [OUTPUT]: 验证幂等重放、微秒时间、列存、聚合和设备授权。
 //! [POS]: 遥测持久化与 RPC 的跨边界集成回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -28,34 +28,18 @@ async fn durable_replay_ordering_nulls_columnstore_and_rollups() {
     artifactory_database::require_timescale(&pool)
         .await
         .unwrap();
-    artifactory_database::migrate(&pool, &store::MIGRATIONS)
-        .await
-        .unwrap();
-    // 本用例手动刷新聚合。先停用后台策略，再等待在途任务退出。
-    sql::execute(
+    // 在创建策略前停用当前测试库的调度器，避免历史统计与在途任务竞争。
+    let stopped: bool = sql::scalar(
         &mut pool.clone(),
-        "SELECT alter_job(job_id, scheduled=>false) FROM timescaledb_information.jobs WHERE proc_name IN ('policy_retention','policy_refresh_continuous_aggregate','policy_compression')",
+        "SELECT _timescaledb_functions.stop_background_workers()",
         params![],
     )
     .await
     .unwrap();
-    tokio::time::timeout(std::time::Duration::from_secs(30), async {
-        loop {
-            let idle: bool = sql::scalar(
-                &mut pool.clone(),
-                "SELECT NOT EXISTS(SELECT 1 FROM timescaledb_information.job_stats s JOIN timescaledb_information.jobs j USING(job_id) WHERE j.proc_name IN ('policy_retention','policy_refresh_continuous_aggregate','policy_compression') AND (s.job_status='Running' OR (s.last_run_started_at>'-infinity'::timestamptz AND s.last_run_duration IS NULL)))",
-                params![],
-            )
-            .await
-            .unwrap();
-            if idle {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("Timescale policy jobs must finish before manual aggregate refresh");
+    assert!(stopped, "the isolated database scheduler must stop");
+    artifactory_database::migrate(&pool, &store::MIGRATIONS)
+        .await
+        .unwrap();
     let node = Uuid::new_v4();
     let attempt = Uuid::new_v4();
     let at = Utc::now() - Duration::minutes(10);
