@@ -1,5 +1,5 @@
 # [INPUT]: 临时源码验收规则与 Kubernetes 资源夹具。
-# [OUTPUT]: 验证持久卷、材料泄漏与未清理任务的检测。
+# [OUTPUT]: 验证临时卷、材料隔离、AppArmor 语义与任务清理。
 # [POS]: 只读验收脚本的离线回归。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 import unittest
@@ -14,6 +14,7 @@ def pod(volumes=None, mounts=None):
     return {
         "kind": "Pod",
         "metadata": {"name": "image-test", "labels": {"app.kubernetes.io/name": "artifactory-image-worker"},
+                     "annotations": {"container.apparmor.security.beta.kubernetes.io/buildkit": "unconfined"},
                      "ownerReferences": [{"apiVersion": "images.artifactory.dev/v1alpha1", "kind": "ImageBuild", "name": "build", "uid": "build-uid", "controller": True}]},
         "spec": {
             "restartPolicy": "Never",
@@ -50,12 +51,45 @@ class EphemeralSourceChecks(unittest.TestCase):
         self.assertTrue(violations([{"kind": "PersistentVolumeClaim", "metadata": {"name": "cache-sources-0"}}]))
         self.assertTrue(violations([{"kind": "StatefulSet", "metadata": {"name": "sources"}}]))
 
-    def test_native_sidecar_and_newer_apparmor_fields_are_rejected(self):
+    def test_native_sidecar_is_rejected(self):
         task = pod()
         task["spec"]["initContainers"].append({"name": "buildkit", "restartPolicy": "Always"})
         self.assertTrue(violations([task]))
+
+    def test_equivalent_api_defaulted_apparmor_is_accepted(self):
+        self.assertEqual(violations([pod()]), [])
+        for annotation in [True, False]:
+            task = pod()
+            if not annotation:
+                task["metadata"]["annotations"] = {}
+            task["spec"]["securityContext"] = {"appArmorProfile": {"type": "RuntimeDefault"}}
+            task["spec"]["containers"][1]["securityContext"] = {"appArmorProfile": {"type": "Unconfined"}}
+            self.assertEqual(violations([task]), [])
+
+    def test_incorrect_or_conflicting_buildkit_apparmor_is_rejected(self):
+        for profile in [{"type": "RuntimeDefault"}, {"type": "Localhost", "localhostProfile": "buildkit"}]:
+            for annotation in [True, False]:
+                with self.subTest(profile=profile, annotation=annotation):
+                    task = pod()
+                    if not annotation:
+                        task["metadata"]["annotations"] = {}
+                    task["spec"]["containers"][1]["securityContext"] = {"appArmorProfile": profile}
+                    self.assertTrue(violations([task]))
         task = pod()
+        task["metadata"]["annotations"] = {}
+        self.assertTrue(violations([task]))
+        task = pod()
+        task["metadata"]["annotations"]["container.apparmor.security.beta.kubernetes.io/buildkit"] = "runtime/default"
         task["spec"]["containers"][1]["securityContext"] = {"appArmorProfile": {"type": "Unconfined"}}
+        self.assertTrue(violations([task]))
+
+    def test_unconfined_apparmor_cannot_spread_to_source_or_runner(self):
+        for container in ["source", "worker"]:
+            task = pod()
+            task["metadata"]["annotations"]["container.apparmor.security.beta.kubernetes.io/" + container] = "unconfined"
+            self.assertTrue(violations([task]), container)
+        task = pod()
+        task["spec"]["securityContext"] = {"appArmorProfile": {"type": "Unconfined"}}
         self.assertTrue(violations([task]))
 
     def test_buildkit_cannot_mount_runner_or_source_material(self):

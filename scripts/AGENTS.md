@@ -2,7 +2,7 @@
 > L2 | Parent: ../AGENTS.md
 
 check_data_access.py: 检查数据库访问边界及依赖。
-check_ephemeral_source.py: 只读检查直接 Pod 归属、临时卷、1.28 双容器隔离与空闲清理。
+check_ephemeral_source.py: 只读检查直接 Pod、临时卷与空闲清理；镜像验收复用跨版本 AppArmor 安全规则。
 check_docs.py: 校验 mdBook 导航覆盖与生成结果中的本地链接。
 compose_acceptance.py: 创建隔离 Compose，验证 HTTPS、鉴权与重启。
 compose_probe.py: 从隔离容器验证 HTTPS、会话、租户鉴权和重启。
@@ -15,7 +15,7 @@ local_gateway.py: 固定控制与 Web 后端，隔离凭据并回收服务进程
 local-services.sh: 启动独立数据库与对象存储。
 native-service-account.ps1: 准备 Windows 原生服务验收账号。
 run-telemetry.sh: 启动本机遥测服务。
-test_ephemeral_source.py: 验证直接 Pod、拒绝 Job、双容器隔离与残留任务检测。
+test_ephemeral_source.py: 验证直接 Pod、临时卷、AppArmor 默认化与错误配置拒绝。
 test_data_access.py: 验证数据库访问规则。
 test_deploy.py: 验证单机部署清单。
 test_local_gateway.py: 验证本机网关环境的凭据隔离与固定来源。

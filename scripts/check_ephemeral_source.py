@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # [INPUT]: Kubernetes 任务、卷和 Secret 名称。
-# [OUTPUT]: 检查直接 Pod 归属、临时卷与 1.28 容器隔离。
-# [POS]: 只读验收入口，不删除资源或读取 Secret 内容。
+# [OUTPUT]: 检查直接 Pod、临时卷与跨版本 AppArmor 安全语义。
+# [POS]: 只读验收入口；镜像验收复用安全规则，不读取 Secret 内容。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 """Verify ephemeral source storage in one Kubernetes namespace."""
 
@@ -14,9 +14,28 @@ import sys
 TASK_APPS = {"artifactory-source-task", "artifactory-pi", "artifactory-image-worker"}
 OLD_APPS = {"artifactory-source", "artifactory-local-source", "artifactory-source-service"}
 TASK_SECRET = re.compile(r"image-[a-f0-9]{32}-task$")
+APPARMOR_ANNOTATION = "container.apparmor.security.beta.kubernetes.io/"
 
 
-def image_violations(spec, subject):
+def apparmor_violations(spec, annotations, subject):
+    failures = []
+    pod_profile = spec.get("securityContext", {}).get("appArmorProfile")
+    for container in [*spec.get("initContainers", []), *spec.get("containers", [])]:
+        name = container["name"]
+        expected = {"type": "Unconfined" if name == "buildkit" else "RuntimeDefault"}
+        profile = container.get("securityContext", {}).get("appArmorProfile")
+        annotation = annotations.get(APPARMOR_ANNOTATION + name)
+        legacy = {"unconfined": {"type": "Unconfined"}, "runtime/default": {"type": "RuntimeDefault"}}.get(annotation)
+        # 高版本 API 将旧注解补充为容器字段；两种表示必须语义一致。
+        if annotation is not None and (legacy is None or (profile is not None and profile != legacy)):
+            failures.append(f"{subject}: {name} has conflicting or unsupported AppArmor configuration")
+        effective = profile if profile is not None else legacy if annotation is not None else pod_profile
+        if (effective if effective is not None else {"type": "RuntimeDefault"}) != expected:
+            failures.append(f"{subject}: {name} must use {expected['type']} AppArmor")
+    return failures
+
+
+def image_violations(spec, annotations, subject):
     failures = []
     containers = spec.get("containers", [])
     init = spec.get("initContainers", [])
@@ -28,10 +47,7 @@ def image_violations(spec, subject):
     )
     if any("restartPolicy" in c for c in init):
         failures.append(f"{subject}: restartable init is not a Kubernetes 1.28 task")
-    if "appArmorProfile" in spec.get("securityContext", {}) or any(
-        "appArmorProfile" in c.get("securityContext", {}) for c in [*init, *containers]
-    ):
-        failures.append(f"{subject}: structured AppArmor field requires a newer Kubernetes API")
+    failures.extend(apparmor_violations(spec, annotations, subject))
     if spec.get("shareProcessNamespace"):
         failures.append(f"{subject}: task containers share their process namespace")
     if spec.get("automountServiceAccountToken") is not False:
@@ -88,7 +104,7 @@ def violations(resources, secret_names=(), *, idle=False):
         if spec.get("restartPolicy") != "Never":
             failures.append(f"{kind}/{name}: task Pod must not restart containers")
         if app == "artifactory-image-worker":
-            failures.extend(image_violations(spec, f"{kind}/{name}"))
+            failures.extend(image_violations(spec, metadata.get("annotations", {}), f"{kind}/{name}"))
         if idle:
             failures.append(f"{kind}/{name}: task workload remains while idle")
         for volume in spec.get("volumes", []):

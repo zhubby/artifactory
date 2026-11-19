@@ -1,5 +1,5 @@
 """[INPUT]: 合成 OCI Blob、隔离身份与模拟 Kubernetes 读接口。
-[OUTPUT]: 验证 namespace、真实 RUN、故障 UID、CAS 终态保护与 OOM 事件。
+[OUTPUT]: 验证 API 默认化安全语义、真实 RUN、终态保护与 OOM 事件。
 [POS]: 端到端脚本的离线回归，不连接任何集群。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -18,7 +18,7 @@ from faults import _confirmed_exit, container_cgroup, container_oom_observed, fo
 from registry import registry_graph
 from setup import ImageAcceptance, install, safe_namespace
 from node_unreachable import NodeUnreachable, kind_target
-from run import io_diagnostic
+from run import io_diagnostic, observe
 
 
 def graph(marker='executed-linux-amd64\n', machine=62, corrupt_layer=False):
@@ -95,6 +95,37 @@ class DeadlineClient:
 
 
 class HarnessTests(unittest.TestCase):
+    def test_observer_accepts_equivalent_api_defaulted_apparmor(self):
+        for defaulted in [False, True]:
+            with self.subTest(defaulted=defaulted):
+                pod={'metadata':{'name':'image-pod','uid':'image-uid',
+                    'labels':{'artifactory.dev/platform':'amd64'},
+                    'annotations':{'container.apparmor.security.beta.kubernetes.io/buildkit':'unconfined'}},
+                    'spec':{'initContainers':[{'name':'source'}],
+                        'containers':[{'name':'worker','volumeMounts':[{'name':'workspace','readOnly':True}]},
+                            {'name':'buildkit','volumeMounts':[]}],
+                        'volumes':[{'name':'source-auth','emptyDir':{'medium':'Memory'}},
+                            {'name':'workspace','emptyDir':{}},{'name':'task','secret':{'secretName':'task'}}]}}
+                if defaulted:
+                    pod['spec']['containers'][1]['securityContext']={'appArmorProfile':{'type':'Unconfined'}}
+                client=Mock()
+                client.kubectl.side_effect=[json.dumps({'items':[pod]}),RuntimeError('task already cleaned')]
+                evidence={'pods':{}}
+                observe(client,'project',evidence)
+                self.assertEqual(evidence['pods']['image-pod']['uid'],'image-uid')
+                self.assertTrue(evidence['pods']['image-pod']['separate_containers'])
+
+    def test_observer_rejects_conflicting_buildkit_apparmor(self):
+        pod={'metadata':{'name':'image-pod','labels':{'artifactory.dev/platform':'amd64'},
+            'annotations':{'container.apparmor.security.beta.kubernetes.io/buildkit':'runtime/default'}},
+            'spec':{'initContainers':[{'name':'source'}],
+                'containers':[{'name':'worker'},
+                    {'name':'buildkit','securityContext':{'appArmorProfile':{'type':'Unconfined'}}}]}}
+        client=Mock()
+        client.kubectl.return_value=json.dumps({'items':[pod]})
+        with self.assertRaises(AssertionError):
+            observe(client,'project',{'pods':{}})
+
     def test_deadline_retries_cas_conflicts_and_preserves_terminal_before_fast_gc(self):
         client=DeadlineClient(conflicts={'install':2,'remove':2})
         original=json.loads(json.dumps(client.pod))

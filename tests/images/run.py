@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """[INPUT]: 显式 Kubernetes context、隔离 namespace、镜像 tag 和平台。
-[OUTPUT]: 验证真实源码 init、BuildKit RUN、OCI 推送与网关摘要拉取。
-[POS]: 可恢复的端到端验收入口；只保存白名单证据并回收临时身份。
+[OUTPUT]: 验证跨版本容器隔离、源码 init、BuildKit RUN 与 OCI 交付。
+[POS]: 复用只读安全规则；仅保存白名单证据并回收临时身份。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
 import base64
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -20,6 +21,10 @@ from registry import registry_graph
 from setup import ImageAcceptance, install
 from faults import inject
 from node_unreachable import NodeUnreachable
+
+spec = importlib.util.spec_from_file_location('image_source_check', Path(__file__).resolve().parents[2]/'scripts/check_ephemeral_source.py')
+source_check = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(source_check)
 
 IO_KINDS=set('NotFound PermissionDenied ConnectionRefused ConnectionReset HostUnreachable NetworkUnreachable ConnectionAborted NotConnected AddrInUse AddrNotAvailable NetworkDown BrokenPipe AlreadyExists WouldBlock NotADirectory IsADirectory DirectoryNotEmpty ReadOnlyFilesystem FilesystemLoop StaleNetworkFileHandle InvalidInput InvalidData TimedOut WriteZero StorageFull NotSeekable QuotaExceeded FileTooLarge ResourceBusy ExecutableFileBusy Deadlock CrossesDevices TooManyLinks InvalidFilename ArgumentListTooLong Interrupted Unsupported UnexpectedEof OutOfMemory InProgress Other'.split())
 
@@ -56,8 +61,7 @@ def observe(a, project, evidence):
         assert [c['name'] for c in spec['containers']] == ['worker','buildkit']
         assert not spec.get('shareProcessNamespace',False)
         assert all('restartPolicy' not in c for c in spec['initContainers'])
-        assert all('appArmorProfile' not in c.get('securityContext',{}) for c in spec['containers'])
-        assert pod['metadata']['annotations']['container.apparmor.security.beta.kubernetes.io/buildkit'] == 'unconfined'
+        assert not source_check.apparmor_violations(spec,pod['metadata'].get('annotations',{}),'Pod/'+name)
         mounts = {c['name']:{m['name']:m for m in c.get('volumeMounts',[])} for c in spec['containers']}
         assert mounts['worker']['workspace']['readOnly']
         assert not {'task','workspace','work','source-auth','source-identity'} & set(mounts['buildkit'])
