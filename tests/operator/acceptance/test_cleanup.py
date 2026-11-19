@@ -32,7 +32,6 @@ class CleanupTests(unittest.TestCase):
                       'status': {'podIP': '10.0.0.1', 'containerStatuses': [
                           {'containerID': 'containerd://' + role}]}}
                      for role, labels in [('control-plane', {'app': 'control-plane'}),
-                                          ('runtime', {'app.kubernetes.io/name': 'artifactory-runtime'}),
                                           ('upstream', {'app': 'upstream'})]]
 
         def command(args):

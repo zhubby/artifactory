@@ -1,7 +1,7 @@
 <!--
 [INPUT]: 固定源码身份、Operator 执行观察和 Runtime 事务。
 [OUTPUT]: 定义准备、领取、故障回报与恢复边界。
-[POS]: 控制平面与独立规划 Runtime 的协议入口。
+[POS]: 控制平面内嵌的规划 Runtime 协议入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
 # Runtime 与临时源码协议 v1
@@ -13,12 +13,12 @@
 | 数据 | 写入方 | 存储 |
 | --- | --- | --- |
 | Build、源码任务、固定源码清单、计划接纳、设备执行、制品 | control-plane | 业务 PostgreSQL |
-| 运行队列、有效 Pod、累计调用、原 deadline、持久提案 | planner-runtime | Runtime PostgreSQL |
-| 按 run/generation 排序的完成对话、系统提示、工具调用与结果 | planner-runtime | Runtime PostgreSQL |
+| 运行队列、有效 Pod、累计调用、原 deadline、持久提案 | Control 内的规划 Runtime | Runtime PostgreSQL |
+| 按 run/generation 排序的完成对话、系统提示、工具调用与结果 | Control 内的规划 Runtime | Runtime PostgreSQL |
 | Git checkout、Git/LFS 下载目录、认证 HOME | source-preparer / 原生执行进程 | 单任务临时目录 |
 | AgentPool、AgentRun、SourceTask、ImageBuild | Operator | Kubernetes API |
 
-业务数据库和 Runtime 数据库分别初始化。服务不能跨库查询。数据库只保存仓库地址、commit、冻结 tag 对象、LFS OID 与大小。凭据通过凭据引用传入；密钥不进入 URL、CRD 和审计消息。制品和内建 OCI 仓库继续使用独立对象存储。
+业务数据库和 Runtime 数据库分别初始化。规划 Runtime 使用独立连接池，通过业务 API 获取控制平面的授权与数据。源码清单只保存仓库地址、commit、冻结 tag 对象、LFS OID 与大小。凭据通过凭据引用传入；密钥不进入 URL、CRD 和审计消息。制品和内建 OCI 仓库继续使用独立对象存储。
 
 ## 源码任务
 
@@ -58,6 +58,8 @@ ARTIFACTORY_SERVICE_CA=<optional CA path>
 
 ## Runtime 接口
 
+Control 在 `/internal/planner` 挂载以下 HTTP 路由。Operator、Worker 与 init container 的基址为 `https://artifactory-gateway-internal:8445/internal/planner`。
+
 | 路径 | 身份 | 作用 |
 | --- | --- | --- |
 | `/v1/intent` | 控制平面服务身份 | 不可变意图或高版本取消 tombstone |
@@ -73,13 +75,13 @@ ARTIFACTORY_SERVICE_CA=<optional CA path>
 | `/v1/conversations` | 服务身份及 run/tenant/project | 列出 generation 会话摘要 |
 | `/v1/conversation/messages` | 服务身份及 run/tenant/project/generation | 按 sequence 增量分页读取消息 |
 
-Operator 通过受认证 HTTP 客户端读取和登记执行。Runtime 同时提供版本化 Tonic gRPC GetRun/RegisterExecution 接口。服务使用 TLS，HTTP 仅允许显式开发配置。共享客户端禁止重定向。源码清单上限为 4 MiB；服务 JSON 请求和响应上限为 8 MiB。完成消息超过单事件大小时按 Unicode 安全分片，并使用稳定事件 UUID 顺序持久化。
+Operator 使用服务令牌读取和登记执行。内部网关使用 TLS，客户端仅在显式开发模式下接受明文 HTTP。共享客户端禁止重定向。源码清单上限为 4 MiB；服务 JSON 请求和响应上限为 8 MiB。完成消息超过单事件大小时按 Unicode 安全分片，并使用稳定事件 UUID 顺序持久化。
 
 故障回报包含 `execution` 和固定枚举 `reason`。
 `execution` 必须匹配 run、generation、Pod UID、Pod 名与 namespace。
 `reason` 仅包含源码退出码、Worker 退出码或 Pod 失败类别。
 容器日志和 Kubernetes message 不进入该回报。
-Runtime 在同一事务中置为失败、清除 grant、结束会话并写入失败 outbox。
+Runtime 在同一事务中清除 grant 并结束会话。Worker 已领取租约但无法确认结果时，以退出码 `75` 回报中断。Runtime 在原预算和截止时间内排队下一 generation。其他故障或预算耗尽进入失败终态并写入 outbox。
 控制平面消费 outbox 后结束业务构建。
 重复回报不重复写入事件，旧身份被拒绝。
 已提交提案继续由原回执决定结果，Pod 退出不能覆盖已接受结果。

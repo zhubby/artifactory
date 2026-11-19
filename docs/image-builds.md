@@ -25,13 +25,13 @@ Image Operator 在 Kubernetes 中启动 BuildKit。平台固定源码清单后�
 
 | Service | Pod 端口 | 访问边界 |
 |---|---|---|
-| `<release>-web` | 8080 | 控制台、API、仓库与制品；拒绝 `/internal/*` |
-| `<release>-grpc` | 8443、8444 | 控制与遥测的端到端设备 mTLS 透传 |
-| `<release>-gateway-internal` | 8445 | 仅内部 HTTPS API 与健康检查 |
+| `<prefix>-web` | 8080 | 控制台、API、仓库与制品；拒绝 `/internal/*` |
+| `<prefix>-grpc` | 8443、8444 | 控制与遥测的端到端设备 mTLS 透传 |
+| `<prefix>-gateway-internal` | 8445 | 仅内部 HTTPS API 与健康检查 |
 
 Gateway NetworkPolicy 将 8445 限制为 Control、planning.namespace 和 imageBuilds.namespace 中的 Pod。`gateway.networkPolicy.publicFrom` 和 `deviceFrom` 接受 Kubernetes 网络来源列表；空列表允许任意来源。设置这些列表时同步检查其他 NetworkPolicy，相加规则仍能放行相同流量。设备长连接在建立时选择后端，网关不重放设备消息。新增 Control 副本接纳新连接，已有连接通过排空和客户端重连迁移。
 
-Runtime 与源码任务使用独立 ClusterIP `https://<release>-gateway-internal:8445`。该入口只接受内部 API 和健康检查，强制 TLS，并由 Control 核验服务令牌或任务身份。默认服务器身份来自设备 PKI；已有独立服务 CA 使用 `gateway.internalTlsSecret` 提供受 Runtime 与源码任务信任的证书。不要将内部 Service 添加到公开 Ingress。
+Runtime 与源码任务使用独立 ClusterIP `https://<prefix>-gateway-internal:8445`。该入口只接受内部 API 和健康检查，强制 TLS，并由 Control 核验服务令牌或任务身份。默认服务器身份来自设备 PKI；已有独立服务 CA 使用 `gateway.internalTlsSecret` 提供受 Runtime 与源码任务信任的证书。不要将内部 Service 添加到公开 Ingress。
 
 公开和内部 `/healthz` 汇总全部必要监听。网关向本机固定监听端口发起启动探测，等待自己的接受回调；其他进程占用端口不能使探测成功。四个监听全部完成端口绑定、TLS 构建并接受连接后，健康检查返回 200。在此之前返回 503。启动探测期限为三十五秒，包含 Pingora 的端口占用重试。监听任务崩溃、提前结束或探测超时会使进程非零退出。收到正常关闭信号后撤销就绪状态。
 
@@ -88,7 +88,6 @@ Registry Chart 配置：
 
 ```yaml
 replicas: 2
-service: artifactory-registry
 s3:
   bucket: artifactory-registry
   endpoint: https://private-s3.internal.example.com

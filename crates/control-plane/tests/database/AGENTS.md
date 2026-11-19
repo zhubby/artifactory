@@ -8,7 +8,7 @@ build_logs.rs: 验证历史日志分页、过滤、授权和终态流结束。
 device_load.rs: 验证三个控制平面的设备群连接、续租和调度预算。
 node_metadata.rs: 验证节点元数据和 Runtime 查询范围，提供候选夹具。
 node_placement.rs: 验证候选准入、资源时钟和设备槽位。
-node_tools.rs: 验证 Control、Runtime 节点工具及真实 MCP SDK 的授权。
+node_tools.rs: 验证内嵌 Runtime 前缀、服务鉴权及真实 MCP SDK 节点工具。
 readable_routes.rs: 验证 slug 路由与对象权限。
 registration.rs: 验证账号生命周期、项目权限和网关对象票据。
 replication.rs: 验证副本锁和租约回收。

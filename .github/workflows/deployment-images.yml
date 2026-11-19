@@ -32,8 +32,6 @@ jobs:
             file: web/Dockerfile
           - component: agent-operator
             file: operators/agent-operator/Dockerfile
-          - component: planner-runtime
-            file: crates/planner-runtime/Dockerfile
           - component: source-preparer
             file: crates/source-preparer/Dockerfile
           - component: image-operator

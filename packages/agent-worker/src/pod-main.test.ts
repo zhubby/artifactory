@@ -10,6 +10,31 @@ import { httpPost, runtimeRpc, reportTerminalFailure } from "./transport/runtime
 import { type Task } from "./runtime.js";
 import { createServer } from "node:http";
 import { once } from "node:events";
+import { spawn } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+test("the real Pod process signals an unconfirmed interruption after acquiring its lease", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "artifactory-pod-test-"));
+  const token = join(dir, "token");
+  await writeFile(token, "test");
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ lease: { run_id: "run", generation: 1, uid: "pod", token: "grant" }, task: { model: { api: "openai-completions", base_url: "http://127.0.0.1", model: "test", api_key: "grant", parameters: {} } } }));
+  });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  try {
+    const child = spawn(process.execPath, [fileURLToPath(new URL("./pod-main.js", import.meta.url))], { env: { ...process.env, ARTIFACTORY_RUNTIME_URL: `http://127.0.0.1:${address.port}`, ARTIFACTORY_RUN_ID: "run", ARTIFACTORY_RUN_GENERATION: "1", POD_UID: "pod", POD_NAME: "pod", POD_NAMESPACE: "test", ARTIFACTORY_POD_TOKEN: token }, stdio: "ignore" });
+    const [code, signal] = await once(child, "exit");
+    assert.equal(signal, null); assert.equal(code, 75);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("a lost submission acknowledgement queries the same proposal without new inference", async () => {
   const requests: string[] = [];
@@ -33,10 +58,10 @@ test("a disconnected Pod leaves recovery to Runtime but explicit budget failure 
   const post = async (_path: string, body: Record<string, unknown>) => { events.push(body); return { ok: true }; };
   const signal = new AbortController().signal;
   for (const error of [new TypeError("fetch failed"), new Error("runtime request rejected (503)"), new Error("request timed out"), new Error("socket connection lost")]) {
-    await reportTerminalFailure(error, task, lease, post, signal);
+    assert.equal(await reportTerminalFailure(error, task, lease, post, signal), false);
   }
   assert.equal(events.length, 0, "transport failure must not permanently fail the logical run");
-  await reportTerminalFailure(new Error("model call limit reached"), task, lease, post, signal);
+  assert.equal(await reportTerminalFailure(new Error("model call limit reached"), task, lease, post, signal), true);
   assert.equal(events.length, 1);
   assert.equal(events[0]?.kind, "failed");
   assert.deepEqual(events[0]?.payload, { error: "model call limit reached" });
@@ -44,6 +69,9 @@ test("a disconnected Pod leaves recovery to Runtime but explicit budget failure 
   assert.deepEqual(events[1]?.payload, { error: "planning deadline reached" });
   await reportTerminalFailure(new Error("401 private-grant"), task, lease, post, signal);
   assert.deepEqual(events[2]?.payload, { error: "model authentication rejected; check the platform model profile" });
+  assert.equal(await reportTerminalFailure(new Error("401"), task, lease, async () => { throw new Error("connection lost"); }, signal), false);
+  const aborted = new AbortController(); aborted.abort();
+  assert.equal(await reportTerminalFailure(new Error("401"), task, lease, post, aborted.signal), false);
 });
 
 test("audit reports retry the same durable event identity",async()=>{

@@ -171,7 +171,10 @@ async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
     // Only disposable loopback fixtures use HTTP; service authorization remains active.
     upstream.origin = control_origin;
     let runtime_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let origin = format!("http://{}", runtime_listener.local_addr().unwrap());
+    let origin = format!(
+        "http://{}/internal/planner",
+        runtime_listener.local_addr().unwrap()
+    );
     let key = Arc::new([7; 32]);
     let runtime = server::Runtime {
         store: RuntimeStore::new(runtime_db.clone(), key.clone()),
@@ -228,10 +231,22 @@ async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
         .unwrap();
     let mut stale = acquired["lease"].clone();
     stale["generation"] = json!(0);
-    let app = server::router(runtime, token);
+    let app = api::mount_planner(axum::Router::new(), runtime, token.clone());
+    let unauthorized = reqwest::Client::new()
+        .post(format!("{origin}/v1/queue"))
+        .json(&json!({}))
+        .send();
+    let health = reqwest::Client::new()
+        .get(format!("{origin}/healthz"))
+        .send();
     let runner = tokio::spawn(async move {
         axum::serve(runtime_listener, app).await.unwrap();
     });
+    assert_eq!(
+        unauthorized.await.unwrap().status(),
+        reqwest::StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(health.await.unwrap().status(), reqwest::StatusCode::OK);
     let config = json!({"transport":"runtime","endpoint":origin,"lease":acquired["lease"],"stale_lease":stale,"queries":[
         {"name":"summarize_nodes","arguments":{}},
         {"name":"query_nodes","arguments":{"os":"linux"}},

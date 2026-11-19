@@ -12,13 +12,13 @@ execution_plan.rs: 要求显式应用分类，校验并密封 AI 执行计划。
 grpc.rs: 认证设备并接收构建事件。
 lib.rs: 导出控制平面模块与协议。
 lifecycle.rs: 按游标执行工作区清理并清扫镜像日志前缀。
-main.rs: 校验启动配置并启动 HTTP、gRPC 和后台协调。
+main.rs: 启动 HTTP、gRPC、内嵌规划运行时和后台协调。
 node_query.rs: 按项目授权查询节点能力和资源。
 ota.rs: 校验节点升级包并协调升级状态。
 pki.rs: 创建服务和设备证书。
 planning.rs: 分隔原生 LFS 能力与镜像准入，复验并提交执行计划。
 recipe.rs: 校验应用分类、原生步骤和 BuildKit 目标；保留非应用 null。
-runtime_bridge.rs: 以 8 MiB 封套传递意图和材料；材料出口复核 Runtime 身份。
+runtime_bridge.rs: 以内嵌 Runtime 的受权 HTTP 接口传递意图和材料。材料出口复核 Runtime 身份。
 scheduler.rs: 校验解析目标准入并向授权设备分配原生任务。
 signing/: 提供托管材料加密、导入和默认签名约束。
 settings.rs: 读取启动配置与密钥路径。

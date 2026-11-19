@@ -2,10 +2,10 @@
 # [OUTPUT]: 只创建数据库和对象存储的 PVC。
 # [POS]: 任务源码与 Control 临时目录不使用持久卷。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
-{{- $components := list }}
-{{- if .Values.postgres.enabled }}{{- $components = append $components "postgres" }}{{- end }}
-{{- if .Values.s3.enabled }}{{- $components = append $components "s3" }}{{- end }}
-{{- range $component := $components }}
+{{- $components := dict }}
+{{- if .Values.postgres.enabled }}{{- $_ := set $components "timescaledb" .Values.persistence.postgres }}{{- end }}
+{{- if .Values.s3.enabled }}{{- $_ := set $components "seaweedfs" .Values.persistence.s3 }}{{- end }}
+{{- range $component, $size := $components }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -25,5 +25,5 @@ spec:
   {{- end }}
   resources:
     requests:
-      storage: {{ index $.Values.persistence $component | quote }}
+      storage: {{ $size | quote }}
 {{- end }}

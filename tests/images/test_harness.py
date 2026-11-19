@@ -227,8 +227,8 @@ class HarnessTests(unittest.TestCase):
             def kubectl(*args):
                 if args[:3]==('get','deploy','upstream'):
                     return json.dumps({'kind':'Deployment','metadata':{'name':'upstream'},'spec':{'template':{'spec':{'containers':[{'name':'upstream'}]}}}})
-                self.assertEqual(args[:3],('rollout','status','deploy/image-s3'))
-                storage=next(item for item in applied if item['kind']=='Deployment' and item['metadata']['name']=='image-s3')
+                self.assertEqual(args[:3],('rollout','status','deploy/artifactory-seaweedfs-registry'))
+                storage=next(item for item in applied if item['kind']=='Deployment' and item['metadata']['name']=='artifactory-seaweedfs-registry')
                 probe=storage['spec']['template']['spec']['containers'][0].get('readinessProbe')
                 self.assertEqual(probe,{'tcpSocket':{'port':8333},'periodSeconds':1,'failureThreshold':90})
                 raise ReadyChecked()

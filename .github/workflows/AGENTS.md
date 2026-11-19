@@ -1,8 +1,8 @@
 # .github/workflows/
 > L2 | Parent: ../AGENTS.md
 
-ci.yml: 在最低 1.28 与较新 1.37 验证完整镜像链，并验证 1.37 Cilium 网络隔离。
-deployment-images.yml: 按源码 SHA 发布十一个服务与构建运行镜像的 amd64 产物。
+ci.yml: 在 1.28 基线验证镜像链与 Cilium 隔离，归档控制平面和 Operator 日志。
+deployment-images.yml: 按源码 SHA 发布服务与构建运行镜像的 amd64 产物。
 emissary-release.yml: 生成 Emissary 各平台发布产物。
 release-images.yml: 发布含监督型 BuildKit 的双架构镜像和四个版本化 Chart。
 trial-image-mirrors.yml: 保留数据库、S3、tls-edge、Registry 与 BuildKit 固定 digest。

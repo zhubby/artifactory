@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""[INPUT]: 独立服务镜像、临时命名空间和确定性模型夹具。
+"""[INPUT]: 独立镜像、命名统一的中间件与确定性模型夹具。
 [OUTPUT]: 验证任务交付、恢复暂停池，并收集全副本日志。
 [POS]: 仅修改指定验收命名空间；私密证据保存在 .local/。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -148,31 +148,33 @@ class Acceptance:
 
     def gateway(self, token):
         env = {
-            'ARTIFACTORY_GATEWAY_PROFILE': 'all',
+            'ARTIFACTORY_GATEWAY_PROFILE': 'unified',
             'ARTIFACTORY_GATEWAY_HTTP_BIND': '0.0.0.0:8080',
             'ARTIFACTORY_GATEWAY_CONTROL': 'http://control-plane:8080',
             'ARTIFACTORY_GATEWAY_REGISTRY': 'http://control-plane:8080',
             'ARTIFACTORY_GATEWAY_WEB': 'http://control-plane:8080',
             'ARTIFACTORY_GATEWAY_DEVICE': 'control-plane:8443',
             'ARTIFACTORY_GATEWAY_TOKEN': token,
-            'ARTIFACTORY_S3_ENDPOINT': 'http://s3:8333',
+            'ARTIFACTORY_GATEWAY_INTERNAL_TLS_CERT': '/run/pki/server.pem',
+            'ARTIFACTORY_GATEWAY_INTERNAL_TLS_KEY': '/run/pki/server.key',
+            'ARTIFACTORY_S3_ENDPOINT': 'http://artifactory-seaweedfs:8333',
             'ARTIFACTORY_INSECURE_DEV': 'true',
         }
         secret = self.secret('gateway', env)
-        deployment = self.workload('gateway', self.image('gateway'), [], secret='gateway')
+        deployment = self.workload('gateway', self.image('gateway'), [], secret='gateway', pki=True)
         deployment['spec']['template']['spec']['automountServiceAccountToken'] = False
         deployment['spec']['template']['spec']['containers'][0]['readinessProbe'] = {'httpGet': {'path': '/healthz', 'port': 8080}}
-        return secret, deployment, self.service('gateway', [8080])
+        return secret, deployment, self.service('gateway', [8080, 8445])
 
     def sql(self, database, statement):
-        return self.kubectl('exec', 'service/postgres', '--', 'psql', '-U', 'admin', '-d', database, '-qAt', '-v', 'ON_ERROR_STOP=1', '-c', statement).strip()
+        return self.kubectl('exec', 'service/artifactory-timescaledb', '--', 'psql', '-U', 'admin', '-d', database, '-qAt', '-v', 'ON_ERROR_STOP=1', '-c', statement).strip()
 
     def setup(self):
         self.command(['kubectl', '--context', self.context, 'create', 'namespace', self.ns])
         pki = self.run / 'pki'; pki.mkdir()
         self.command(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', str(pki/'ca.key'), '-out', str(pki/'ca.pem'), '-days', '2', '-subj', '/CN=Operator isolated acceptance', '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-addext', 'subjectKeyIdentifier=hash'])
         self.command(['openssl', 'req', '-newkey', 'rsa:2048', '-nodes', '-keyout', str(pki/'server.key'), '-out', str(pki/'server.csr'), '-subj', '/CN=upstream'])
-        (pki/'ext').write_text('subjectAltName=DNS:localhost,DNS:control-plane,DNS:upstream,DNS:artifactory-runtime,DNS:artifactory-telemetry,IP:127.0.0.1,IP:'+self.node_ip+'\nextendedKeyUsage=serverAuth\nkeyUsage=critical,digitalSignature,keyEncipherment\nbasicConstraints=critical,CA:FALSE\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\n')
+        (pki/'ext').write_text('subjectAltName=DNS:localhost,DNS:control-plane,DNS:upstream,DNS:gateway,DNS:artifactory-telemetry,IP:127.0.0.1,IP:'+self.node_ip+'\nextendedKeyUsage=serverAuth\nkeyUsage=critical,digitalSignature,keyEncipherment\nbasicConstraints=critical,CA:FALSE\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\n')
         self.command(['openssl', 'x509', '-req', '-in', str(pki/'server.csr'), '-CA', str(pki/'ca.pem'), '-CAkey', str(pki/'ca.key'), '-CAcreateserial', '-out', str(pki/'server.pem'), '-days', '2', '-extfile', str(pki/'ext')])
         self.command(['openssl', 'verify', '-x509_strict', '-CAfile', str(pki/'ca.pem'), str(pki/'server.pem')])
         self.apply(self.secret('acceptance-pki', {name: (pki/name).read_text() for name in ['ca.key','ca.pem','server.key','server.pem']}), self.secret('service-tls', {'ca.crt': (pki/'ca.pem').read_text(), 'tls.crt': (pki/'server.pem').read_text(), 'tls.key': (pki/'server.key').read_text()}))
@@ -180,21 +182,22 @@ class Acceptance:
         self.token=token
         self.tls=ssl.create_default_context(cafile=str(pki/'ca.pem'))
         databases = "\n".join(f"CREATE USER {role} PASSWORD '{password}'; CREATE DATABASE {role} OWNER {role};\n\\connect {role}\nCREATE EXTENSION IF NOT EXISTS timescaledb;\n\\connect postgres" for role in ['business','planner','telemetry'])
-        postgres = self.workload('postgres', self.registry+'/timescaledb:2.32.0-pg17', [], {'POSTGRES_USER': 'admin', 'POSTGRES_PASSWORD': password, 'TIMESCALEDB_TELEMETRY':'off'})
+        postgres = self.workload('artifactory-timescaledb', self.registry+'/timescaledb:2.32.0-pg17', [], {'POSTGRES_USER': 'admin', 'POSTGRES_PASSWORD': password, 'TIMESCALEDB_TELEMETRY':'off'})
         postgres['spec']['template']['spec']['containers'][0]['volumeMounts'] = [{'name': 'init', 'mountPath': '/docker-entrypoint-initdb.d'}]
         postgres['spec']['template']['spec']['volumes'] = [{'name': 'init', 'configMap': {'name': 'init-databases'}}]
-        self.apply({'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'init-databases'},'data':{'100_init.sql':databases}}, postgres, self.service('postgres',[5432]))
+        self.apply({'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'init-databases'},'data':{'100_init.sql':databases}}, postgres, self.service('artifactory-timescaledb',[5432]))
         s3config = {'identities':[{'name':'acceptance','credentials':[{'accessKey':'acceptance','secretKey':password}],'actions':['Admin','Read','Write','List','Tagging']}]}
-        s3 = self.workload('s3',self.registry+'/seaweedfs:4.53',['mini','-dir=/data','-s3.port=8333','-s3.config=/run/s3/s3.json','-s3.iam.readOnly=true','-admin.ui=false','-ip.bind=0.0.0.0'])
+        s3 = self.workload('artifactory-seaweedfs',self.registry+'/seaweedfs:4.53',['mini','-dir=/data','-s3.port=8333','-s3.config=/run/s3/s3.json','-s3.iam.readOnly=true','-admin.ui=false','-ip.bind=0.0.0.0'])
         s3['spec']['template']['spec']['containers'][0]['volumeMounts']=[{'name':'config','mountPath':'/run/s3','readOnly':True}]
         s3['spec']['template']['spec']['volumes']=[{'name':'config','secret':{'secretName':'s3-config'}}]
-        self.apply(self.secret('s3-config',{'s3.json':json.dumps(s3config)}),s3,self.service('s3',[8333]))
-        shared={'ARTIFACTORY_SERVICE_TOKEN':token,'ARTIFACTORY_S3_ENDPOINT':'http://s3:8333','ARTIFACTORY_S3_BUCKET':'operator-acceptance','ARTIFACTORY_S3_ACCESS_KEY':'acceptance','ARTIFACTORY_S3_SECRET_KEY':password}
+        self.apply(self.secret('s3-config',{'s3.json':json.dumps(s3config)}),s3,self.service('artifactory-seaweedfs',[8333]))
+        shared={'ARTIFACTORY_SERVICE_TOKEN':token,'ARTIFACTORY_S3_ENDPOINT':'http://artifactory-seaweedfs:8333','ARTIFACTORY_S3_BUCKET':'operator-acceptance','ARTIFACTORY_S3_ACCESS_KEY':'acceptance','ARTIFACTORY_S3_SECRET_KEY':password}
         shared['RUST_LOG']='info'
-        runtime=dict(shared,DATABASE_URL=f'postgres://planner:{password}@postgres:5432/planner',ARTIFACTORY_SERVICE_KEY=base64.b64encode(secrets.token_bytes(32)).decode())
-        control=dict(shared,DATABASE_URL=f'postgres://business:{password}@postgres:5432/business',ARTIFACTORY_MASTER_KEY=base64.b64encode(secrets.token_bytes(32)).decode(),ARTIFACTORY_BOOTSTRAP_USERNAME='operator-admin',ARTIFACTORY_BOOTSTRAP_PASSWORD=admin,
-                     ARTIFACTORY_RUNTIME_URL='https://artifactory-runtime:8091',ARTIFACTORY_KUBERNETES_NAMESPACE=self.ns,ARTIFACTORY_AGENT_POOL='default',ARTIFACTORY_SERVICE_CA='/run/pki/ca.pem',ARTIFACTORY_PUBLIC_URL=self.base,ARTIFACTORY_INSECURE_DEV='true',ARTIFACTORY_HTTP_BIND='0.0.0.0:8080',ARTIFACTORY_GRPC_BIND='0.0.0.0:8443',ARTIFACTORY_PKI_DIR='/run/pki',ARTIFACTORY_DATA_DIR='/tmp/control')
-        telemetry=dict(DATABASE_URL=f'postgres://telemetry:{password}@postgres:5432/telemetry',ARTIFACTORY_BUSINESS_DATABASE_URL=f'postgres://business:{password}@postgres:5432/business',ARTIFACTORY_TELEMETRY_TOKEN=token)
+        runtime=dict(shared,ARTIFACTORY_RUNTIME_DATABASE_URL=f'postgres://planner:{password}@artifactory-timescaledb:5432/planner',ARTIFACTORY_SERVICE_KEY=base64.b64encode(secrets.token_bytes(32)).decode())
+        control=dict(shared,DATABASE_URL=f'postgres://business:{password}@artifactory-timescaledb:5432/business',ARTIFACTORY_MASTER_KEY=base64.b64encode(secrets.token_bytes(32)).decode(),ARTIFACTORY_BOOTSTRAP_USERNAME='operator-admin',ARTIFACTORY_BOOTSTRAP_PASSWORD=admin,
+                     ARTIFACTORY_RUNTIME_URL='https://gateway:8445/internal/planner',ARTIFACTORY_KUBERNETES_NAMESPACE=self.ns,ARTIFACTORY_AGENT_POOL='default',ARTIFACTORY_SERVICE_CA='/run/pki/ca.pem',ARTIFACTORY_PUBLIC_URL=self.base,ARTIFACTORY_INSECURE_DEV='true',ARTIFACTORY_HTTP_BIND='0.0.0.0:8080',ARTIFACTORY_GRPC_BIND='0.0.0.0:8443',ARTIFACTORY_PKI_DIR='/run/pki',ARTIFACTORY_DATA_DIR='/tmp/control')
+        control.update(ARTIFACTORY_RUNTIME_DATABASE_URL=runtime['ARTIFACTORY_RUNTIME_DATABASE_URL'], ARTIFACTORY_SERVICE_KEY=runtime['ARTIFACTORY_SERVICE_KEY'], ARTIFACTORY_CONTROL_URL='https://upstream:9443')
+        telemetry=dict(DATABASE_URL=f'postgres://telemetry:{password}@artifactory-timescaledb:5432/telemetry',ARTIFACTORY_BUSINESS_DATABASE_URL=f'postgres://business:{password}@artifactory-timescaledb:5432/business',ARTIFACTORY_TELEMETRY_TOKEN=token)
         control.update(ARTIFACTORY_TELEMETRY_ENDPOINT='https://artifactory-telemetry:8444',ARTIFACTORY_TELEMETRY_URL='https://artifactory-telemetry:8093',ARTIFACTORY_TELEMETRY_TOKEN=token)
         # 设备使用集群网关，主机客户端通过端口转发访问同一入口。
         control['ARTIFACTORY_PUBLIC_URL']='http://gateway:8080'
@@ -203,7 +206,7 @@ class Acceptance:
         self.apply(*self.control_identity(),self.secret('telemetry',telemetry),self.secret('runtime',runtime),self.secret('control-plane',control),self.workload('control-plane',self.image('control-plane'),['serve'],secret='control-plane',pki=True),self.service('control-plane',[8080,8443]),*self.gateway(gateway_token),self.workload('upstream',self.image('operator-fixture'),[],env={'FIXTURE_ARCH':self.arch},pki=True),self.service('upstream',[9443]))
         self.wait(lambda:self.sql('business','SELECT 1')=='1')
         self.command(['kubectl','--context',self.context,'apply','-f',str(ROOT/'operators/agent-operator/config/crd/resources.yaml')])
-        values={'image':{'repository':self.registry+'/agent-operator','tag':self.image_tag,'pullPolicy':self.pull_policy},'runtime':{'secretName':'runtime','image':{'repository':self.registry+'/planner-runtime','tag':self.image_tag}},'telemetry':{'secretName':'telemetry','pkiSecretName':'acceptance-pki','image':{'repository':self.registry+'/control-plane','tag':self.image_tag}},'agentPool':{'image':self.image('operator-pi'),'sourcePreparerImage':self.image('source-preparer'),'maxActive':2,'maxPerProject':1,'ephemeralStorage':'2Gi'},'tls':{'secretName':'service-tls'},'controlUrl':'https://upstream:9443','networkPolicy':{'enabled':True,'gitPorts':[9443]}}
+        values={'image':{'repository':self.registry+'/agent-operator','tag':self.image_tag,'pullPolicy':self.pull_policy},'runtime':{'secretName':'runtime','url':'https://gateway:8445/internal/planner'},'telemetry':{'enabled':True,'secretName':'telemetry','pkiSecretName':'acceptance-pki','image':{'repository':self.registry+'/control-plane','tag':self.image_tag}},'agentPool':{'image':self.image('operator-pi'),'sourcePreparerImage':self.image('source-preparer'),'maxActive':2,'maxPerProject':1,'ephemeralStorage':'2Gi'},'tls':{'secretName':'service-tls'},'controlUrl':'https://upstream:9443','networkPolicy':{'enabled':True,'gitPorts':[9443]}}
         path=self.run/'values.json';path.write_text(json.dumps(values))
         self.command(['helm','--kube-context',self.context,'upgrade','--install','native',str(ROOT/'charts/artifactory-agent-operator'),'-n',self.ns,'-f',str(path)])
         self.kubectl('rollout','status','deploy/control-plane','--timeout=180s')
@@ -368,10 +371,10 @@ class Acceptance:
         print('EVIDENCE',self.run/'evidence.json',flush=True)
 
     def faults(self, commit):
-        self.forward('service/artifactory-runtime','38091:8091')
-        self.wait(lambda:'artifactory_runtime_runs' in self.service_request(38091,'/metrics'))
+        self.forward('service/gateway','38091:8445')
+        self.wait(lambda:'artifactory_runtime_runs' in self.service_request(38091,'/internal/planner/metrics'))
         try:
-            urllib.request.urlopen('https://127.0.0.1:38091/metrics',context=self.tls,timeout=10)
+            urllib.request.urlopen('https://127.0.0.1:38091/internal/planner/metrics',context=self.tls,timeout=10)
             unauthorized=False
         except urllib.error.HTTPError as error:
             unauthorized=error.code==401
@@ -412,8 +415,8 @@ class Acceptance:
         self.check('cancel revokes authorization and stops Pi without creating device jobs',not self.api('/api/v1/builds/'+build)['jobs'])
         self.evidence['cancel_physical_stop_seconds']=round(time.monotonic()-started,3)
         self.service_request(39443,'/test/mode',{})
-        self.kubectl('rollout','restart','deploy/native-runtime')
-        self.kubectl('rollout','status','deploy/native-runtime','--timeout=120s')
+        self.kubectl('rollout','restart','deploy/control-plane')
+        self.kubectl('rollout','status','deploy/control-plane','--timeout=120s')
         persisted=json.loads(self.sql('planner',f"SELECT lifecycle FROM runtime_runs WHERE id='{run}'"))
         self.check('Runtime restart preserves cancellation, budget and deadline',persisted['canceled'] and persisted['calls']==2 and persisted['deadline_ms']==before['life']['deadline_ms'])
         # 暂停只阻止新准入；验收退出前恢复原容量。
@@ -462,8 +465,8 @@ class Acceptance:
 
     def cleanup(self):
         for process in self.processes:process.terminate()
-        for name in ['control-plane','gateway','native-agent-operator','native-runtime','native-telemetry','upstream','device']:
-            target = ['-l', 'app.kubernetes.io/name=artifactory-agent-operator', '--prefix=true', '--max-log-requests=10'] if name == 'native-agent-operator' else ['deploy/'+name]
+        for name in ['control-plane','gateway','artifactory-agent-operator','artifactory-telemetry','upstream','device']:
+            target = ['-l', 'app.kubernetes.io/name=artifactory-agent-operator', '--prefix=true', '--max-log-requests=10'] if name == 'artifactory-agent-operator' else ['deploy/'+name]
             try:(self.run/(name+'.log')).write_text(self.kubectl('logs',*target,'--all-containers=true','--tail=500'))
             except RuntimeError:pass
         # Keep the namespace for inspection; explicit user cleanup is separate.

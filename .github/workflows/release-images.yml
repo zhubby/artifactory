@@ -54,7 +54,6 @@ jobs:
           - {name: web, context: ., file: web/Dockerfile}
           - {name: agent-worker, context: ., file: packages/agent-worker/Dockerfile}
           - {name: agent-operator, context: ., file: operators/agent-operator/Dockerfile}
-          - {name: planner-runtime, context: ., file: crates/planner-runtime/Dockerfile}
           - {name: source-preparer, context: ., file: crates/source-preparer/Dockerfile}
           - {name: image-operator, context: ., file: operators/image-operator/Dockerfile}
           - {name: image-worker, context: ., file: operators/image-operator/Dockerfile.worker}
@@ -120,7 +119,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        component: [control-plane, web, agent-worker, agent-operator, planner-runtime, source-preparer, image-operator, image-worker, buildkit, gateway, emissary]
+        component: [control-plane, web, agent-worker, agent-operator, source-preparer, image-operator, image-worker, buildkit, gateway, emissary]
     steps:
       - uses: actions/checkout@v4
         with:

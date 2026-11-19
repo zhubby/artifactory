@@ -60,23 +60,21 @@ def run(args):
             {key: c.get(key) for key in ['image', 'imageID']} for c in p['status'].get('containerStatuses', [])]}
             for p in pods if p['metadata'].get('labels', {}).get('app.kubernetes.io/name') == 'artifactory-agent-operator']
         control = next(p for p in pods if p['metadata'].get('labels', {}).get('app') == 'control-plane')
-        runtime = next(p for p in pods if p['metadata'].get('labels', {}).get('app.kubernetes.io/name') == 'artifactory-runtime')
         upstream = next(p for p in pods if p['metadata'].get('labels', {}).get('app') == 'upstream')
-        runtime_id = runtime['status']['containerStatuses'][0]['containerID'].split('://', 1)[1]
+        runtime_id = control['status']['containerStatuses'][0]['containerID'].split('://', 1)[1]
         runtime_pid = json.loads(docker(args.node_container, 'crictl', 'inspect', runtime_id).stdout)['info']['pid']
-        ca = '/proc/' + str(runtime_pid) + '/root/run/service-tls/ca.crt'
+        ca = '/proc/' + str(runtime_pid) + '/root/run/pki/ca.pem'
         cookie = '; '.join(c.name + '=' + c.value for c in a.jar)
 
         def request(role, path, body=None):
             # Credentials enter curl through stdin, never argv or captured headers.
             config = ['silent', 'show-error', 'fail', 'max-time = 15', 'noproxy = "*"']
-            if role == 'control-plane':
-                url = 'http://' + control['status']['podIP'] + ':8080' + path
-                headers = {'Cookie': cookie, 'Origin': a.origin, 'x-artifactory-csrf': '1',
-                           'X-Artifactory-Tenant': a.tenant_id}
+            if role in ('control-plane', 'artifactory-runtime'):
+                url = 'http://' + control['status']['podIP'] + ':8080' + ('/internal/planner' if role == 'artifactory-runtime' else '') + path
+                headers = {'Authorization': 'Bearer ' + a.token} if role == 'artifactory-runtime' else {'Cookie': cookie, 'Origin': a.origin, 'x-artifactory-csrf': '1', 'X-Artifactory-Tenant': a.tenant_id}
             else:
-                pod = runtime if role == 'artifactory-runtime' else upstream
-                port = 8091 if role == 'artifactory-runtime' else 9443
+                pod = upstream
+                port = 9443
                 url = 'https://' + role + ':' + str(port) + path
                 config += ['resolve = ' + json.dumps(role + ':' + str(port) + ':' + pod['status']['podIP']),
                            'cacert = ' + json.dumps(ca)]

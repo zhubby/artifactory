@@ -7,7 +7,7 @@ crates/ - 控制平面、临时源码检出、执行节点与 Pingora 网关。
 operators/ - 独立 Agent 与镜像构建 Operator。
 packages/ - Kubernetes Pod 使用的 Node.js AI 规划 Worker。
 web/ - 多租户构建控制台。
-proto/ - 设备与运行时通信协议。
+proto/ - 设备通信协议。
 schemas/ - 持久化数据与执行计划契约。
 charts/ - Artifactory Helm 部署清单。
 deploy/ - 容器服务和运维配置。

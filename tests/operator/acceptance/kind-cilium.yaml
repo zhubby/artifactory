@@ -1,5 +1,11 @@
+# [INPUT]: Kubernetes 1.28 node 镜像与外部 Cilium CNI。
+# [OUTPUT]: 禁用 Alpha 原生 sidecar 的隔离单节点集群。
+# [POS]: 最低 Kubernetes 版本的网络策略与 Operator 验收配置。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  SidecarContainers: false
 networking:
   disableDefaultCNI: true
   kubeProxyMode: iptables

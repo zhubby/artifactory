@@ -2,9 +2,10 @@
 # [OUTPUT]: 私有 Distribution Deployment、配置和 ClusterIP。
 # [POS]: 网关是客户端唯一入口；禁止 S3 重定向与上游镜像缓存。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
+{{- $prefix := regexReplaceAll "-+$" (default "artifactory" .Values.fullnameOverride | trunc 46) "" }}
 apiVersion: v1
 kind: ConfigMap
-metadata: {name: {{ .Release.Name }}-registry}
+metadata: {name: {{ $prefix }}-registry}
 data:
   config.yml: |
     version: 0.1
@@ -36,7 +37,7 @@ data:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: {{ .Release.Name }}-registry}
+metadata: {name: {{ $prefix }}-registry}
 spec:
   replicas: {{ .Values.replicas }}
   selector:
@@ -57,7 +58,7 @@ spec:
           env:
             {{- range $env, $key := dict "REGISTRY_STORAGE_S3_ACCESSKEY" "access-key" "REGISTRY_STORAGE_S3_SECRETKEY" "secret-key" "REGISTRY_HTTP_SECRET" "http-secret" }}
             - name: {{ $env }}
-              valueFrom: {secretKeyRef: {name: {{ $.Values.s3.secretName }}, key: {{ $key }}}}
+              valueFrom: {secretKeyRef: {name: {{ (default (printf "%s-registry-storage" $prefix) $.Values.s3.secretName) }}, key: {{ $key }}}}
             {{- end }}
           securityContext: {readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
           readinessProbe: {tcpSocket: {port: registry}}
@@ -68,16 +69,16 @@ spec:
             - {name: token, mountPath: /run/token, readOnly: true}
             - {name: tmp, mountPath: /tmp}
       volumes:
-        - {name: config, configMap: {name: {{ .Release.Name }}-registry}}
+        - {name: config, configMap: {name: {{ $prefix }}-registry}}
         - name: token
           secret:
-            secretName: {{ .Values.auth.certificateSecret }}
+            secretName: {{ (default (printf "%s-registry-signing-public" $prefix) .Values.auth.certificateSecret) }}
             items: [{key: tls.crt, path: tls.crt}]
         - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
 ---
 apiVersion: v1
 kind: Service
-metadata: {name: {{ .Values.service }}}
+metadata: {name: {{ $prefix }}-registry}
 spec:
   type: ClusterIP
   ports: [{name: registry, port: 5000, targetPort: registry}]

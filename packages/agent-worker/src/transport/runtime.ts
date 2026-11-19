@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Runtime 租约和稳定事件身份。
- * [OUTPUT]: 提供幂等提案、审计报告与终态错误上报。
+ * [OUTPUT]: 提供幂等提案、审计报告与终态错误确认。
  * [POS]: Kubernetes Worker 的唯一平台传输。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -9,14 +9,14 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 export interface Lease { run_id: string; generation: number; uid: string; token: string }
 export type Post = (path: string, body: Record<string, unknown>) => Promise<Record<string, unknown>>;
-export async function reportTerminalFailure(error: unknown, task: Task, lease: Lease, post: Post, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return;
+export async function reportTerminalFailure(error: unknown, task: Task, lease: Lease, post: Post, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return false;
   const message = error instanceof Error ? error.message : String(error);
   // Transport failures may have an unknown outcome. Runtime retries the same
   // logical run under its persisted budget/deadline and bounded generations.
   // Only explicit budget/configuration failures may end it here.
-  if (!/model call limit reached|model call budget exhausted|planning (?:deadline|context budget) reached|\b40[0134]\b|model (?:authentication rejected|not found)|invalid (?:model|api key)/i.test(message)) return;
-  try { await runtimeRpc(lease, post, signal)("report", { kind: "failed", payload_json: JSON.stringify({ error: safeError(error, task.model.api_key) }) }); } catch { /* Fenced identities cannot report. */ }
+  if (!/model call limit reached|model call budget exhausted|planning (?:deadline|context budget) reached|\b40[0134]\b|model (?:authentication rejected|not found)|invalid (?:model|api key)/i.test(message)) return false;
+  try { await runtimeRpc(lease, post, signal)("report", { kind: "failed", payload_json: JSON.stringify({ error: safeError(error, task.model.api_key) }) }); return true; } catch { return false; }
 }
 export function httpPost(origin: string, signal: AbortSignal): Post {
   return async (path, body) => {

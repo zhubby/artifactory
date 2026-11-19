@@ -1,5 +1,5 @@
 # [INPUT]: 遥测预算、服务身份与统一网关入口。
-# [OUTPUT]: 遥测工作负载、初始化配置与私有后端 Service。
+# [OUTPUT]: 遥测工作负载、TimescaleDB 初始化配置与私有后端 Service。
 # [POS]: 遥测后端只接收集群流量；设备入口由统一网关提供。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 {{- if or (ne .Values.telemetry.service.type "ClusterIP") .Values.telemetry.service.nodePort }}
@@ -8,7 +8,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "artifactory.fullname" . }}-timescale-init
+  name: {{ include "artifactory.fullname" . }}-timescaledb-init
 data:
   init.sh: |
     #!/bin/sh

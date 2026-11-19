@@ -96,7 +96,7 @@ def run(args):
         inventory = latest['inventory']['inventory']
         a.check('versioned OS, hardware, quota and tool inventory is available', inventory['logical_cpus'] > 0 and inventory['physical_memory_bytes'] > 0 and inventory['tools']['git']['available'] and 'collectors' in inventory)
         a.check('business tables remain ordinary relational tables', all(a.sql(db,"SELECT count(*) FROM timescaledb_information.hypertables WHERE hypertable_schema='public'") == '0' for db in ('business','planner')))
-        a.kubectl('scale','deploy/native-telemetry','--replicas=0');stopped=True
+        a.kubectl('scale','deploy/artifactory-telemetry','--replicas=0');stopped=True
         a.wait(lambda: not json.loads(a.kubectl('get','pods','-l','app.kubernetes.io/name=artifactory-telemetry','-o','json'))['items'])
         a.service_request(39443,'/test/mode',{'build_seconds':25})
         build = a.api(f'/api/v1/projects/{a.project}/builds',{'ref':'v-fixture','goal':'Build dist/result.txt while telemetry is unavailable','target_requirements':[{'os':'linux','arch':a.arch}]})['id']
@@ -114,8 +114,8 @@ def run(args):
         a.check('offline telemetry persists in its independent spool',int(buffered)>0)
         attempt=a.sql('business',f"SELECT a.id FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE j.build_id='{build}' ORDER BY a.created_at DESC LIMIT 1")
         assert len(attempt)==36
-        a.kubectl('scale','deploy/native-telemetry','--replicas=1');stopped=False
-        a.kubectl('rollout','status','deploy/native-telemetry','--timeout=180s')
+        a.kubectl('scale','deploy/artifactory-telemetry','--replicas=1');stopped=False
+        a.kubectl('rollout','status','deploy/artifactory-telemetry','--timeout=180s')
         a.wait(lambda: int(a.sql('telemetry',f"SELECT count(*) FROM process_samples WHERE attempt_id='{attempt}'"))>0)
         a.wait(lambda: int(a.kubectl('exec','deploy/device','--','sh','-ec','find /tmp/emissary/telemetry -name "*.batch" | wc -l').strip())==0)
         a.check('restart replays build process samples and drains the spool',True)
@@ -135,7 +135,7 @@ def run(args):
             if build:record_build(a, build)
         finally:
             try:
-                if stopped:a.kubectl('scale','deploy/native-telemetry','--replicas=1')
+                if stopped:a.kubectl('scale','deploy/artifactory-telemetry','--replicas=1')
                 a.service_request(39443,'/test/mode',{})
             finally:a.cleanup()
 

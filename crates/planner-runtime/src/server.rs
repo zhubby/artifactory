@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖 Kubernetes Pod 身份、业务授权与 Runtime 存储。
-//! [OUTPUT]: 提供源码准备与 Operator 故障上报。
+//! [INPUT]: 依赖独立数据库、Kubernetes Pod 身份与业务授权。
+//! [OUTPUT]: 构建 Runtime 状态，提供源码准备与 Operator 故障上报。
 //! [POS]: 校验服务和 Pod 身份；首次 acquire 启动模型时限。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::store::{
@@ -31,9 +31,9 @@ pub struct Runtime {
     pub model_http: reqwest::Client,
     pub public_url: String,
 }
-pub async fn from_env() -> Result<Runtime> {
+pub async fn from_env(database_url: &str) -> Result<Runtime> {
     let key = Arc::new(service::key("ARTIFACTORY_SERVICE_KEY")?);
-    let store = RuntimeStore::connect(&service::required("DATABASE_URL")?, key.clone()).await?;
+    let store = RuntimeStore::connect(database_url, key.clone()).await?;
     Ok(Runtime {
         store,
         key,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""[INPUT]: 固定源码版本、独立镜像和隔离 TLS 域名。
+"""[INPUT]: 固定源码版本、隔离 TLS 域名与本机中间件容器名。
 [OUTPUT]: 验证 Compose 的公网 TLS、鉴权与服务重启。
 [POS]: 只创建带归属标签的网络、容器和临时卷。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -109,7 +109,7 @@ def main():
     worker_name = project + '-probe'
     resources = {}
     baseline = {}
-    for name in ('artifactory-postgres-test', 'artifactory-s3-test'):
+    for name in ('artifactory-timescaledb-test', 'artifactory-s3-test'):
         result = subprocess.run(['docker', 'inspect', name], capture_output=True, text=True, timeout=15)
         if result.returncode == 0:
             state = json.loads(result.stdout)[0]

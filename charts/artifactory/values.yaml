@@ -29,7 +29,7 @@ images:
     pullPolicy: IfNotPresent
 
 # Created separately by scripts/init-helm.py, never generated during upgrades.
-# Empty names select <release>-credentials and <release>-pki.
+# Empty names select <prefix>-credentials and <prefix>-pki.
 secrets:
   credentials: ""
   pki: ""
@@ -127,7 +127,7 @@ resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: "1", memory: 768Mi}
 
-# Runtime are installed by the separate artifactory-agent-operator release.
+# Runtime is embedded in the control plane.
 # Kubernetes Pod is the only planning backend.
 planning:
   runtimeUrl: ""
@@ -141,13 +141,13 @@ gateway:
   # Optional ca.pem/server.pem/server.key for an existing service CA.
   # Empty selects the device PKI; Runtime must trust its CA.
   internalTlsSecret: ''
-  # Secret key token; empty selects <release>-gateway.
+  # Secret key token; empty selects <prefix>-gateway.
   secretName: ''
   httpConnections: 1024
   deviceConnections: 4096
   telemetryConnections: 4096
   internalConnections: 1024
-  registryUrl: http://artifactory-registry:5000
+  registryUrl: "" # Empty selects the registry Service under fullnameOverride.
   networkPolicy:
     enabled: true
     # 原生 NetworkPolicy peer；空数组允许所有公开入口来源。
@@ -159,6 +159,6 @@ imageBuilds:
   registryUrl: https://build.example.com
   controlUrl: https://build.example.com
   # Independent RSA tls.key and tls.crt, never the device CA.
-  signingSecret: '' # Empty selects <release>-registry-signing.
+  signingSecret: '' # Empty selects <prefix>-registry-signing.
   registryService: artifactory-registry
   registryIssuer: artifactory

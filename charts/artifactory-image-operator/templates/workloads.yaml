@@ -2,9 +2,10 @@
 # [OUTPUT]: Image Operator Deployment、ServiceAccount 与 BuilderPool。
 # [POS]: 每个任务直接创建带收尾 Finalizer 的 Pod；控制器不读取任务 Secret。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
+{{- $prefix := regexReplaceAll "-+$" (default "artifactory" .Values.fullnameOverride | trunc 46) "" }}
 apiVersion: v1
 kind: ServiceAccount
-metadata: {name: artifactory-image-operator}
+metadata: {name: {{ $prefix }}-image-operator}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -13,7 +14,7 @@ automountServiceAccountToken: false
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: {{ .Release.Name }}-image-operator}
+metadata: {name: {{ $prefix }}-image-operator}
 spec:
   replicas: {{ .Values.replicas }}
   selector:
@@ -22,7 +23,7 @@ spec:
     metadata:
       labels: {app.kubernetes.io/name: artifactory-image-operator, app.kubernetes.io/instance: {{ .Release.Name }}}
     spec:
-      serviceAccountName: artifactory-image-operator
+      serviceAccountName: {{ $prefix }}-image-operator
       securityContext: {runAsNonRoot: true, runAsUser: 10001, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: operator
@@ -39,4 +40,4 @@ spec:
 apiVersion: images.artifactory.dev/v1alpha1
 kind: BuilderPool
 metadata: {name: {{ .Values.builderPool.name }}}
-spec: {{ toYaml (omit .Values.builderPool "name") | nindent 2 }}
+spec: {{ toYaml (merge (dict "controlUrl" (default (printf "https://%s-gateway-internal:8445" $prefix) .Values.builderPool.controlUrl)) (omit .Values.builderPool "name" "controlUrl")) | nindent 2 }}

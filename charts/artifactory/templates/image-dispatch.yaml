@@ -1,7 +1,8 @@
-# [INPUT]: ImageBuild 命名空间和 Control 服务身份。
-# [OUTPUT]: 源码任务身份校验、任务声明及镜像 Secret 权限。
+# [INPUT]: 任务命名空间、资源前缀和 Control 服务身份。
+# [OUTPUT]: 源码与规划身份校验、任务声明及镜像 Secret 权限。
 # [POS]: Control 验证 Pod 直接归属 CR；Operator 编排普通 Pod。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
+{{- $tokenReviewName := printf "%s-%s-source-tokenreview" (include "artifactory.fullname" .) .Release.Namespace }}
 apiVersion: v1
 kind: ServiceAccount
 metadata: {name: {{ include "artifactory.fullname" . }}-control}
@@ -43,7 +44,7 @@ roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ include "art
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
-metadata: {name: {{ .Release.Namespace }}-{{ .Release.Name }}-source-tokenreview}
+metadata: {name: {{ $tokenReviewName }}}
 rules:
   - apiGroups: [authentication.k8s.io]
     resources: [tokenreviews]
@@ -51,7 +52,7 @@ rules:
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
-metadata: {name: {{ .Release.Namespace }}-{{ .Release.Name }}-source-tokenreview}
+metadata: {name: {{ $tokenReviewName }}}
 subjects:
   - {kind: ServiceAccount, name: {{ include "artifactory.fullname" . }}-control, namespace: {{ .Release.Namespace }}}
-roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ .Release.Namespace }}-{{ .Release.Name }}-source-tokenreview}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ $tokenReviewName }}}

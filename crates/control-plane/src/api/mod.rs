@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户 HTTP 处理器、统一鉴权和请求限制。
-//! [OUTPUT]: 组合业务路由与签名导入的独立正文上限。
+//! [OUTPUT]: 组合业务路由、规划运行时和独立正文上限。
 //! [POS]: 控制平面 HTTP 接口入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub(crate) mod ai_management;
@@ -21,6 +21,17 @@ use axum::{
     extract::DefaultBodyLimit,
     routing::{delete, get, patch, post, put},
 };
+
+pub fn mount_planner(
+    router: Router,
+    runtime: artifactory_planner_runtime::server::Runtime,
+    token: String,
+) -> Router {
+    router.nest(
+        "/internal/planner",
+        artifactory_planner_runtime::server::router(runtime, token),
+    )
+}
 
 pub fn router(state: AppState) -> Router {
     health_routes()

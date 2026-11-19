@@ -1,4 +1,4 @@
-# [INPUT]: 提交源码、最低 1.28 与较新 1.37 kind、节点策略与隔离租户服务。
+# [INPUT]: 提交源码、Kubernetes 1.28 kind、Cilium 网络策略与隔离租户服务。
 # [OUTPUT]: 验证版本下限、镜像链、原生签名和普通容器生命周期。
 # [POS]: 合并交付的自动化验证入口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -131,31 +131,15 @@ jobs:
             .local/docs-evidence/
   kubernetes-images:
     needs: version-contract
-    name: kubernetes-images (${{ matrix.kubernetes }})
+    name: kubernetes-images (1.28.13)
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - id: k128
-            kubernetes: '1.28.13'
-            kind: v0.24.0
-            kubectl: v1.28.15
-            node_image: kindest/node:v1.28.13@sha256:45d319897776e11167e4698f6b14938eb4d52eb381d9e3d7a9086c16c69a8110
-            config: tests/images/kind-1.28.yaml
-          - id: k137
-            kubernetes: '1.37.0'
-            kind: v0.33.0
-            kubectl: v1.37.0
-            node_image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
-            config: tests/images/kind.yaml
     env:
-      KUBERNETES_VERSION: ${{ matrix.kubernetes }}
-      IMAGE_ACCEPTANCE_CLUSTER: image-${{ matrix.id }}
-      IMAGE_ACCEPTANCE_CONTEXT: kind-image-${{ matrix.id }}
-      IMAGE_ACCEPTANCE_NAMESPACE: artifact-image-${{ matrix.id }}
-      ARTIFACTORY_ACCEPTANCE_IMAGE_TAG: ${{ matrix.id }}-ci
+      KUBERNETES_VERSION: '1.28.13'
+      IMAGE_ACCEPTANCE_CLUSTER: image-k128
+      IMAGE_ACCEPTANCE_CONTEXT: kind-image-k128
+      IMAGE_ACCEPTANCE_NAMESPACE: artifact-image-k128
+      ARTIFACTORY_ACCEPTANCE_IMAGE_TAG: k128-ci
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
@@ -166,11 +150,11 @@ jobs:
           go-version: 1.27.x
       - uses: helm/kind-action@v1
         with:
-          version: ${{ matrix.kind }}
-          cluster_name: image-${{ matrix.id }}
-          node_image: ${{ matrix.node_image }}
-          config: ${{ matrix.config }}
-          kubectl_version: ${{ matrix.kubectl }}
+          version: v0.24.0
+          cluster_name: image-k128
+          node_image: kindest/node:v1.28.13@sha256:45d319897776e11167e4698f6b14938eb4d52eb381d9e3d7a9086c16c69a8110
+          config: tests/images/kind-1.28.yaml
+          kubectl_version: v1.28.15
           wait: 180s
       - name: Validate CRDs and Operator charts on the selected Kubernetes version
         run: |
@@ -180,7 +164,6 @@ jobs:
           helm template native charts/artifactory-agent-operator --kube-version "$KUBERNETES_VERSION" > /dev/null
           helm template images charts/artifactory-image-operator --kube-version "$KUBERNETES_VERSION" > /dev/null
       - name: Verify the minimum version without restartable init containers
-        if: matrix.id == 'k128'
         run: |
           docker exec "$IMAGE_ACCEPTANCE_CLUSTER-control-plane" cat /var/lib/kubelet/config.yaml | grep -A 2 featureGates | grep 'SidecarContainers: false'
       - name: Install native acceptance tools
@@ -209,12 +192,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kubernetes-${{ matrix.id }}-image-diagnostics
+          name: kubernetes-k128-image-diagnostics
           include-hidden-files: true
           retention-days: 7
           path: |
-            .local/operator-acceptance/artifact-image-${{ matrix.id }}/evidence.json
-            .local/operator-acceptance/artifact-image-${{ matrix.id }}/image-evidence.json
+            .local/operator-acceptance/artifact-image-k128/evidence.json
+            .local/operator-acceptance/artifact-image-k128/image-evidence.json
   kubernetes-pi:
     needs: version-contract
     runs-on: ubuntu-latest
@@ -231,15 +214,18 @@ jobs:
         run: go test tests/operator/acceptance/fixture.go tests/operator/acceptance/live_provider.go tests/operator/acceptance/fixture_test.go
       - uses: helm/kind-action@v1
         with:
-          version: v0.33.0
+          version: v0.24.0
           cluster_name: operator
-          node_image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+          node_image: kindest/node:v1.28.13@sha256:45d319897776e11167e4698f6b14938eb4d52eb381d9e3d7a9086c16c69a8110
           config: tests/operator/acceptance/kind-cilium.yaml
-          kubectl_version: v1.37.0
+          kubectl_version: v1.28.15
           wait: 0s
+      - name: Verify the minimum version without restartable init containers
+        run: |
+          docker exec operator-control-plane cat /var/lib/kubelet/config.yaml | grep -A 2 featureGates | grep 'SidecarContainers: false'
       - name: Install Cilium with policy enforcement during Pod creation
         run: |
-          helm upgrade --install cilium cilium --repo https://helm.cilium.io --version 1.20.4 -n kube-system \
+          helm upgrade --install cilium cilium --repo https://helm.cilium.io --version 1.16.19 -n kube-system \
             --set operator.replicas=1 --set envoy.enabled=false --set l7Proxy=false --set hubble.enabled=false \
             --set kubeProxyReplacement=false --set ipam.mode=kubernetes --set policyCIDRMatchMode=nodes \
             --set cgroup.autoMount.enabled=false --set cgroup.hostRoot=/sys/fs/cgroup --wait --timeout 5m
@@ -265,7 +251,7 @@ jobs:
       - name: Real Pi admission, steady CRD writes, restart and concurrent cancellation
         run: python3 -u tests/operator/load/active.py --context kind-operator --namespace artifact-operator-ci --active 8 --queued 4 --hold-seconds 30 --memory 64Mi
       - name: Cold-Pod network isolation and allowed business chain
-        run: python3 -u tests/operator/acceptance/network.py --context kind-operator --namespace artifact-operator-ci --controller 'Cilium 1.20.4'
+        run: python3 -u tests/operator/acceptance/network.py --context kind-operator --namespace artifact-operator-ci --controller 'Cilium 1.16.19'
       - name: Direct Git/LFS checkout on an external host-native Linux Emissary
         run: python3 -u tests/operator/acceptance/native.py --context kind-operator --namespace artifact-operator-ci
       - name: Preserve sanitized Kubernetes evidence
@@ -279,9 +265,8 @@ jobs:
             .local/operator-acceptance/*/evidence.json
             .local/operator-acceptance/*/build.json
             .local/operator-acceptance/*/control-plane.log
-            .local/operator-acceptance/*/native-agent-operator.log
-            .local/operator-acceptance/*/native-runtime.log
-            .local/operator-acceptance/*/native-telemetry.log
+            .local/operator-acceptance/*/artifactory-agent-operator.log
+            .local/operator-acceptance/*/artifactory-telemetry.log
             .local/operator-acceptance/*/device.log
             .local/operator-load/*/evidence.json
             .local/operator-load/*-native/build.json

@@ -2,7 +2,7 @@
 
 ## 部署边界
 
-Control 为 Linux 模块化服务，支持多副本。后端统一使用 TimescaleDB 2.32+ / PostgreSQL 17，关系表保存队列和业务状态，独立 Rust Telemetry 服务保存时序数据。多副本设备调度使用 PostgreSQL Outbox 与节点行锁，部署、容量与回退见 [Control 多副本](control-ha.md)；Kubernetes Pi 的 Runtime、SourceTask 和 Operator 部署见 [Operator 运维](operator-operations.md)。宿主执行只接受内部可信项目；签名节点应与一般构建节点分池、最小授权、限制网络和服务账户权限。
+Control 为支持多副本的 Linux 服务，内嵌规划 Runtime。后端统一使用 TimescaleDB 2.32+ / PostgreSQL 17，关系表保存队列和业务状态，独立 Rust Telemetry 服务保存时序数据。多副本设备调度使用 PostgreSQL Outbox 与节点行锁，部署、容量与回退见 [Control 多副本](control-ha.md)。Kubernetes 规划和源码任务的部署见 [Operator 运维](operator-operations.md)。宿主执行只接受内部可信项目。签名节点应与一般构建节点分池、最小授权、限制网络和服务账户权限。
 
 生产需可解析的控制台和 Emissary gRPC 域名。Compose 的 Caddy 只负责 80/443 与 ACME，全部应用请求转至 Pingora。Pingora 反向代理控制台、API、内建仓库与制品，S3 没有公开入口。构建 gRPC 使用钉住私有 CA 的 TLS 8443，独立遥测 mTLS 使用同一设备域名的 8444。仅向受信网络开放设备端口；不公开数据库、遥测内部查询、SeaweedFS 管理端口及 filer/master。代理不得缓冲 SSE。
 
@@ -187,7 +187,7 @@ doctor 报告路径、版本命令是否成功、实际 OS/CPU、可发现工具
 
 必须协调备份各 TimescaleDB 数据库、S3 对象、`.deploy/env` 中主密钥及 PKI；只有数据库备份无法解密凭据，也无法恢复制品。备份应离线加密，并独立限制访问。
 
-1. 排空节点、停止新触发、等待在途任务结束，停止 control-plane / web 及独立 Runtime / Telemetry 写入。
+1. 排空节点、停止新触发、等待在途任务结束，停止 Control 和 Telemetry 写入。
 2. `pg_dump` 分别保存实际部署的业务、Runtime、遥测数据库，记录 schema 与 TimescaleDB 扩展版本；同时保存 S3 内容与对象校验清单。分别导出的数据库不自动构成跨库事务快照，必须先停写。
 3. 保存主密钥、S3 密钥、签发 CA、节点授权与镜像版本；不要在普通工单里复制这些秘密。
 4. 在相同 TimescaleDB 版本的隔离环境恢复：各库预装扩展，执行 `timescaledb_pre_restore()`，串行 `pg_restore` 后执行 `timescaledb_post_restore()`。使用相同 master key，检查凭据解密、Release 下载 SHA-256、遥测列存 / 聚合 / 后台策略及最新摘要，再开放流量。

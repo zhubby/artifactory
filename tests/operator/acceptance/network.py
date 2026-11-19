@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""[INPUT]: Pi 策略、Service 地址和新 Pod 网络身份。
+"""[INPUT]: Pi 策略、组件 Service 地址和新 Pod 网络身份。
 [OUTPUT]: 验证首次 TCP 策略，独立记录 DNS 与组件就绪状态。
 [POS]: TCP 使用 Kubernetes 地址快照；完整业务验收仍使用 DNS。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -18,11 +18,12 @@ spec.loader.exec_module(module)
 
 def targets(a):
     values = {}
-    for key, service, port in [('runtime', 'artifactory-runtime', 8091),
+    for key, service, port in [('runtime', 'gateway', 8445),
                                ('business', 'control-plane', 8080),
                                ('gateway', 'gateway', 8080),
                                ('provider', 'upstream', 9443),
-                               ('database', 'postgres', 5432), ('objects', 's3', 8333)]:
+                               ('database', 'artifactory-timescaledb', 5432),
+                               ('objects', 'artifactory-seaweedfs', 8333)]:
         address = json.loads(a.kubectl('get', 'service', service, '-o', 'json'))['spec']['clusterIP']
         values[key] = {'host': service, 'address': address, 'port': port}
     values['provider_ip'] = dict(values['provider'], host=values['provider']['address'])

@@ -76,7 +76,7 @@ helm upgrade --install artifactory charts/artifactory \
 kubectl --kubeconfig "$PRIVATE_KUBECONFIG" -n artifactory \
   port-forward --address 127.0.0.1 service/artifactory-web 38100:80
 kubectl --kubeconfig "$PRIVATE_KUBECONFIG" -n artifactory \
-  port-forward --address 127.0.0.1 service/artifactory-s3 38333:8333
+  port-forward --address 127.0.0.1 service/artifactory-seaweedfs 38333:8333
 ```
 
 控制台为 `http://127.0.0.1:38100`，文档为同域 `/docs`。验收包含每个控制副本的 `/readyz`、实际登录、CSRF、项目读取和文档；未经 Agent 注册及构建 / 下载验证，不得称为设备或完整构建链路验收。

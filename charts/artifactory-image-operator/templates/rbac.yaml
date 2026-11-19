@@ -2,9 +2,10 @@
 # [OUTPUT]: ImageBuild finalizer、状态、Pod、Lease 与只读节点权限。
 # [POS]: 控制器不读取任务 Secret，不修改 Node。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
+{{- $prefix := regexReplaceAll "-+$" (default "artifactory" .Values.fullnameOverride | trunc 46) "" }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
-metadata: {name: {{ .Release.Name }}-image-operator}
+metadata: {name: {{ $prefix }}-image-operator}
 rules:
   - apiGroups: [images.artifactory.dev]
     resources: [builderpools]
@@ -24,14 +25,14 @@ rules:
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
-metadata: {name: {{ .Release.Name }}-image-operator}
+metadata: {name: {{ $prefix }}-image-operator}
 subjects:
-  - {kind: ServiceAccount, name: artifactory-image-operator, namespace: {{ .Release.Namespace }}}
-roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ .Release.Name }}-image-operator}
+  - {kind: ServiceAccount, name: {{ $prefix }}-image-operator, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ $prefix }}-image-operator}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
-metadata: {name: {{ .Release.Namespace }}-{{ .Release.Name }}-image-nodes}
+metadata: {name: {{ .Release.Namespace }}-{{ $prefix }}-image-nodes}
 rules:
   - apiGroups: ['']
     resources: [nodes]
@@ -39,7 +40,7 @@ rules:
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
-metadata: {name: {{ .Release.Namespace }}-{{ .Release.Name }}-image-nodes}
+metadata: {name: {{ .Release.Namespace }}-{{ $prefix }}-image-nodes}
 subjects:
-  - {kind: ServiceAccount, name: artifactory-image-operator, namespace: {{ .Release.Namespace }}}
-roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ .Release.Namespace }}-{{ .Release.Name }}-image-nodes}
+  - {kind: ServiceAccount, name: {{ $prefix }}-image-operator, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ .Release.Namespace }}-{{ $prefix }}-image-nodes}

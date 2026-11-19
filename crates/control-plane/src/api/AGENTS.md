@@ -1,7 +1,7 @@
 # api/
 > L2 | Parent: ../AGENTS.md
 
-mod.rs: 组合 HTTP 路由、会话入口与请求约束。
+mod.rs: 组合业务路由与规划运行时前缀，保持各自的请求约束。
 ai_management.rs: 提供模型配置、澄清、计划和分页对话接口。
 builds.rs: 校验构建权限，提供规划、发布与下载接口。
 build_logs.rs: 提供日志静态分页与终态排空后结束的 SSE。

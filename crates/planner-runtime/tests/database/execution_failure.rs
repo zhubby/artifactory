@@ -118,6 +118,16 @@ async fn failure_reports_fence_every_execution_field_and_preserve_accepted_work(
             .unwrap()["status"],
         "running"
     );
+    assert_eq!(
+        s.store
+            .execution_failed(ExecutionFailure {
+                execution: execution.clone(),
+                reason: ExecutionFailureReason::WorkerExit { exit_code: 75 }
+            })
+            .await
+            .unwrap()["pending"],
+        true
+    );
     let events = s.store.deliveries().await.unwrap();
     assert_eq!(events.len(), 1);
     let proposal = &events[0];
@@ -180,6 +190,16 @@ async fn a_late_failure_cannot_end_a_new_generation_and_canceled_work_stays_canc
     )
     .await
     .unwrap();
+    assert_eq!(
+        s.store
+            .execution_failed(ExecutionFailure {
+                execution: current.clone(),
+                reason: ExecutionFailureReason::WorkerExit { exit_code: 75 }
+            })
+            .await
+            .unwrap()["status"],
+        "canceled"
+    );
     assert_eq!(
         s.store.execution_failed(failure(current)).await.unwrap()["status"],
         "canceled"
@@ -301,6 +321,50 @@ async fn missing_pod_fences_authorization_once_and_retains_the_original_budget()
     );
     let next = s.store.queue("default", 1, 1).await.unwrap();
     assert_eq!(next["runs"][0]["generation"], 2);
+}
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn interrupted_worker_retries_with_fenced_identity_and_original_budget() {
+    let s = state().await;
+    let execution = admitted(&s, Uuid::new_v4()).await;
+    let acquired = s
+        .store
+        .acquire_execution(execution.clone(), "https://runtime.invalid")
+        .await
+        .unwrap();
+    let lease: Lease = serde_json::from_value(acquired["lease"].clone()).unwrap();
+    let current = s.store.read_run(execution.run_id).await.unwrap();
+    let mut life: Lifecycle = serde_json::from_value(current["lifecycle"].clone()).unwrap();
+    life.calls = 1;
+    sql::execute(
+        &mut s.pool.clone(),
+        "UPDATE runtime_runs SET lifecycle=$2 WHERE id=$1",
+        params![execution.run_id, serde_json::to_value(life).unwrap()],
+    )
+    .await
+    .unwrap();
+    let before = s.store.read_run(execution.run_id).await.unwrap();
+    let report = ExecutionFailure {
+        execution: execution.clone(),
+        reason: ExecutionFailureReason::WorkerExit { exit_code: 75 },
+    };
+    let mut foreign = report.clone();
+    foreign.execution.uid = "foreign".into();
+    assert!(s.store.execution_failed(foreign).await.is_err());
+    let result = s.store.execution_failed(report.clone()).await.unwrap();
+    assert_eq!(result["status"], "queued");
+    assert_eq!(result["generation"], 2);
+    let after = s.store.read_run(execution.run_id).await.unwrap();
+    assert_eq!(after["lifecycle"]["calls"], before["lifecycle"]["calls"]);
+    assert_eq!(
+        after["lifecycle"]["deadline_ms"],
+        before["lifecycle"]["deadline_ms"]
+    );
+    assert!(after["execution"].is_null());
+    assert!(server::heartbeat_run(&s, lease).await.is_err());
+    assert!(s.store.execution_failed(report).await.is_err());
+    assert!(s.store.deliveries().await.unwrap().is_empty());
 }
 
 #[tokio::test]

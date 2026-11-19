@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 init 源码清单、Pod 身份和 Runtime。
- * [OUTPUT]: 执行单个规划 generation 并维持租约。
+ * [OUTPUT]: 执行单个规划 generation，区分终态与可恢复中断。
  * [POS]: 唯一 Worker 入口；源码准备完成后获取模型时限。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -30,8 +30,7 @@ try {
   heartbeat = setInterval(() => { void post("/v1/heartbeat", lease as unknown as Record<string, unknown>).catch(() => controller.abort()); }, 10000);
   await runTask(task, runtimeRpc(lease, post, controller.signal), controller.signal);
 } catch (error) {
-  if (!controller.signal.aborted && task && lease) {
-    await reportTerminalFailure(error, task, lease, post, controller.signal);
-  }
-  console.error("Pi Pod exited before confirmed handoff"); process.exitCode = 1;
+  const confirmed = task && lease && await reportTerminalFailure(error, task, lease, post, controller.signal);
+  // EX_TEMPFAIL 仅用于已领取租约的未知结果；Runtime 对旧身份执行围栏和有限重试。
+  console.error("Pi Pod exited before confirmed handoff"); process.exitCode = task && lease && !confirmed ? 75 : 1;
 } finally { if (heartbeat) clearInterval(heartbeat); controller.abort(); }

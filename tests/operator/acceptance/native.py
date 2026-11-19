@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""[INPUT]: 隔离命名空间、精确节点出口策略和主机原生 Rust 工具链。
+"""[INPUT]: 隔离命名空间、TimescaleDB、节点出口策略和主机原生 Rust 工具链。
 [OUTPUT]: 验证主机构建；恢复出口、设备与公告地址后写入成功证据。
 [POS]: 直拉共同可达的 Git NodePort；出口只覆盖本次节点和端口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -271,7 +271,7 @@ def run(args):
         evidence.update({'build_id': build, 'node_id': node['id'], 'source_manifest_id': manifest_id, 'commit': detail['commit_sha'], 'emissary_binary_sha256': hashlib.sha256(agent.read_bytes()).hexdigest(), 'git_origin': git_origin, 'artifact_sha256': detail['artifacts'][0]['sha256'], 'git_lfs_downloaded_directly': True, 'accepted_plans': 1})
         evidence['images'] = a.images()
         if args.live_protocol:
-            a.forward('service/postgres', '38543:5432')
+            a.forward('service/artifactory-timescaledb', '38543:5432')
             values = json.loads(a.kubectl('get','secret','control-plane','-o','json'))['data']
             database = urlsplit(base64.b64decode(values['DATABASE_URL']).decode())
             database = urlunsplit((database.scheme, database.netloc.rsplit('@',1)[0]+'@127.0.0.1:38543',database.path,database.query,''))

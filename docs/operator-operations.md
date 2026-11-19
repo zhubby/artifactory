@@ -1,5 +1,5 @@
 <!--
-[INPUT]: 独立 Operator、Runtime 和一次性源码镜像。
+[INPUT]: 独立 Operator、Control 的规划接口和一次性源码镜像。
 [OUTPUT]: 定义源码、规划和镜像 Pod 的安装及收尾约束。
 [POS]: 最低支持 Kubernetes 1.28 的工作负载运维入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -8,11 +8,11 @@
 
 Agent Operator 是独立 Rust 服务。它协调 `AgentPool`、`AgentRun` 和 `SourceTask`，直接创建临时 Pod。源码任务与规划任务各自按 AgentPool 预算准入，不创建常驻源码服务、源码 PVC 或源码 S3 对象。
 
-Kubernetes 最低支持版本为 1.28。1.28 及以上版本使用同一套 Pod 执行实现。四个 Chart 均声明 `kubeVersion: '>=1.28.0-0'`，不设版本上限。使用同一命名空间部署一套 Runtime 与 Agent Operator。Operator 的两个副本共享 `artifactory-agent-operator` Lease，只有持有 Lease 的副本修改资源。
+Kubernetes 最低支持版本为 1.28。1.28 及以上版本使用同一套 Pod 执行实现。四个 Chart 均声明 `kubeVersion: '>=1.28.0-0'`，不设版本上限。默认将 Agent Operator 与 Control 放在同一命名空间。Operator 的两个副本共享 `artifactory-agent-operator` Lease，只有持有 Lease 的副本修改资源。
 
 ## 安装
 
-先准备业务数据库、Runtime 数据库和服务身份。Runtime Secret 包含 `DATABASE_URL`、`ARTIFACTORY_SERVICE_KEY`、`ARTIFACTORY_SERVICE_TOKEN`。Control 使用相同服务令牌。TLS Secret 包含 `tls.crt`、`tls.key`、`ca.crt`，证书覆盖 Runtime DNS。源码任务仅使用投影的任务身份，不取得业务数据库或 S3 凭据。
+先准备业务数据库、Runtime 数据库和服务身份。Control 的规划 Secret 包含 `ARTIFACTORY_RUNTIME_DATABASE_URL`、`ARTIFACTORY_SERVICE_KEY`、`ARTIFACTORY_SERVICE_TOKEN` 和 `ARTIFACTORY_CONTROL_URL`。Agent Operator 使用相同服务令牌。TLS Secret 包含 `ca.crt`，证书覆盖内部网关 DNS。源码任务仅使用投影的任务身份，不取得业务数据库或 S3 凭据。
 
 ```sh
 kubectl --context YOUR_CONTEXT apply -f operators/agent-operator/config/crd/resources.yaml
@@ -23,7 +23,7 @@ helm upgrade --install native charts/artifactory-agent-operator \
 ```yaml
 runtime:
   secretName: artifactory-runtime
-  url: https://artifactory-runtime:8091
+  url: https://artifactory-gateway-internal:8445/internal/planner
 controlUrl: https://artifactory-gateway-internal:8445
 tls:
   secretName: artifactory-services-tls
@@ -38,7 +38,7 @@ networkPolicy:
   gitPorts: [443, 80, 22]
 ```
 
-私有 Git 使用其他端口时，将端口加入 `networkPolicy.gitPorts`。Control 的 `planning.namespace` 与 `planning.agentPool` 指向此命名空间和池。跨命名空间部署时，Runtime 和 Control 地址须包含命名空间 DNS。Gateway 内部策略只放行主部署及配置的规划、镜像命名空间。`planning.runtimeUrl` 指向 Runtime；`planning.serviceSecretName` 提供服务令牌；`planning.serviceCaSecretName` 提供 `ca.crt`。
+私有 Git 使用其他端口时，将端口加入 `networkPolicy.gitPorts`。Control 的 `planning.namespace` 与 `planning.agentPool` 指向此命名空间和池。跨命名空间部署时，Runtime 和 Control 地址须包含命名空间 DNS。Gateway 内部策略只放行主部署及配置的规划、镜像命名空间。`planning.runtimeUrl` 指向内部网关的 `/internal/planner`；`planning.serviceSecretName` 提供规划数据库和服务身份；`planning.serviceCaSecretName` 提供 `ca.crt`。
 
 ## 源码任务
 
@@ -56,7 +56,7 @@ Operator 在创建 Pod 前，持久化 attempt、唯一 Pod 名和总 deadline�
 
 主容器只读挂载 `/workspace/source` 和 `/workspace/source-manifest.json`，工具在本地读取文件。模型调用、预算、租约和结果仍由 Runtime 控制。AI 对话、日志、计划及明确产出的制品允许持久保存。
 
-源码 init 非零退出、Worker 终止或 Pod 失败时，Operator 向 Runtime `/v1/execution-failed` 提交已登记的完整执行身份。Runtime 以 generation 和 Pod UID 拒绝旧回报，并原子释放规划槽位。失败通过持久 outbox 结束业务构建。Worker 已提交的提案和已有终态不被覆盖。Pod 存在时仍处于源码准备的任务显示 `Provisioning`，主 Worker acquire 后才显示 `Running`。
+源码 init 非零退出、Worker 终止或 Pod 失败时，Operator 向 Runtime `/v1/execution-failed` 提交已登记的完整执行身份。Runtime 以 generation 和 Pod UID 拒绝旧回报。已领取租约的 Worker 以退出码 `75` 报告结果未知，Runtime 使用原预算和截止时间有限重试。其他故障通过持久 outbox 结束业务构建。Worker 已提交的提案和已有终态不被覆盖。源码准备期间任务显示 `Provisioning`，主 Worker acquire 后显示 `Running`。
 
 ## 清理与故障
 

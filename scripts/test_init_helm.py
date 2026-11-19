@@ -1,5 +1,5 @@
 """[INPUT]: Helm 模板与独立 Secret 初始化脚本。
-[OUTPUT]: 验证统一网关、私有入口和不可覆盖的持久凭据。
+[OUTPUT]: 验证资源命名、统一网关、私有入口和持久凭据。
 [POS]: 部署契约回归；不连接 Kubernetes。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -24,6 +25,124 @@ class HelmBootstrapTests(unittest.TestCase):
         self.assertNotIn('all three PVCs', notes)
         self.assertIn('.Values.controlPlane.replicas', notes)
         self.assertIn('task emptyDir', notes)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_resource_names_and_internal_references_follow_the_prefix(self):
+        charts = SCRIPT.parents[1] / 'charts'
+
+        def resource_names(rendered, kind):
+            names = []
+            for document in rendered.split('\n---\n'):
+                if re.search(rf'^kind: {kind}$', document, re.MULTILINE):
+                    name = re.search(r'^metadata:(?: \{ *|\n +)name: ([^\s,}]+)', document, re.MULTILINE)
+                    self.assertIsNotNone(name, document)
+                    names.append(name.group(1))
+            return names
+
+        for prefix in ('artifactory', 'custom'):
+            outputs = {}
+            for chart in ('artifactory', 'artifactory-agent-operator', 'artifactory-image-operator', 'artifactory-registry'):
+                command = ['helm', 'template', 'unrelated-release', str(charts / chart), '--kube-version', '1.28.3']
+                if prefix != 'artifactory':
+                    command += ['--set', 'fullnameOverride=' + prefix]
+                outputs[chart] = subprocess.run(command, check=True, capture_output=True, text=True).stdout
+            main = outputs['artifactory']
+            for name in ('timescaledb', 'seaweedfs'):
+                for kind in ('Deployment', 'Service', 'PersistentVolumeClaim'):
+                    self.assertIn(f'{prefix}-{name}', resource_names(main, kind))
+            self.assertIn('http://' + prefix + '-seaweedfs:8333', main)
+            self.assertIn('http://' + prefix + '-registry:5000', main)
+            agent = outputs['artifactory-agent-operator']
+            self.assertEqual(resource_names(agent, 'Deployment'), [f'{prefix}-agent-operator'])
+            self.assertEqual(resource_names(agent, 'Service'), [])
+            self.assertIn('https://' + prefix + '-gateway-internal:8445/internal/planner', agent)
+            image = outputs['artifactory-image-operator']
+            self.assertEqual(resource_names(image, 'Deployment'), [f'{prefix}-image-operator'])
+            self.assertIn('https://' + prefix + '-gateway-internal:8445', image)
+            registry = outputs['artifactory-registry']
+            self.assertEqual(resource_names(registry, 'Deployment'), [f'{prefix}-registry'])
+            self.assertEqual(resource_names(registry, 'Service'), [f'{prefix}-registry'])
+            self.assertIn('secretName: ' + prefix + '-registry-signing-public', registry)
+            self.assertIn('name: ' + prefix + '-registry-storage', registry)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_stateful_resources_and_selectors_follow_each_release(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        for release in ('first', 'second'):
+            rendered = subprocess.run(
+                ['helm', 'template', release, str(chart), '--kube-version', '1.28.3'],
+                check=True, capture_output=True, text=True).stdout
+            documents = rendered.split('\n---\n')
+            for component in ('timescaledb', 'seaweedfs'):
+                name = 'artifactory-' + component
+                resources = {}
+                for kind in ('PersistentVolumeClaim', 'Service', 'Deployment'):
+                    matches = [doc for doc in documents if f'kind: {kind}\n' in doc
+                               and f'  name: {name}\n' in doc]
+                    self.assertEqual(len(matches), 1, (release, component, kind))
+                    resources[kind] = matches[0]
+                service_selector = resources['Service'].split('\n  selector:\n', 1)[1]
+                deployment = resources['Deployment']
+                match_labels = deployment.split('\n    matchLabels:\n', 1)[1].split('\n  template:', 1)[0]
+                pod_labels = deployment.split('\n    metadata:\n      labels:\n', 1)[1].split('\n    spec:', 1)[0]
+                labels = {line.strip() for line in service_selector.splitlines() if line.strip()}
+                self.assertIn(f'app.kubernetes.io/instance: {release}', labels)
+                self.assertIn(f'app.kubernetes.io/component: {component}', labels)
+                self.assertEqual(labels, {line.strip() for line in match_labels.splitlines()})
+                self.assertTrue(labels <= {line.strip() for line in pod_labels.splitlines()})
+                self.assertIn(f'claimName: {name}', deployment)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_agent_operator_and_telemetry_selectors_are_release_scoped(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory-agent-operator'
+        for release in ('first', 'second'):
+            rendered = subprocess.run(
+                ['helm', 'template', release, str(chart), '--set', 'telemetry.enabled=true'],
+                check=True, capture_output=True, text=True).stdout
+            documents = rendered.split('\n---\n')
+            for name in ('agent-operator', 'telemetry'):
+                deployment = next(doc for doc in documents if 'kind: Deployment\n' in doc
+                                  and f'  name: artifactory-{name}\n' in doc)
+                labels = f'app.kubernetes.io/name: artifactory-{name}, app.kubernetes.io/instance: {release}'
+                self.assertIn(f'matchLabels: {{{labels}}}', deployment)
+                self.assertIn(f'labels: {{{labels}}}', deployment)
+                if name == 'telemetry':
+                    service = next(doc for doc in documents if 'kind: Service\n' in doc
+                                   and '  name: artifactory-telemetry\n' in doc)
+                    self.assertIn(f'selector: {{{labels}}}', service)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_long_prefix_is_truncated_consistently_across_charts(self):
+        charts = SCRIPT.parents[1] / 'charts'
+        chart_settings = (
+            ('artifactory', 'timescaledb', []),
+            ('artifactory-agent-operator', 'agent-operator', ['--set', 'telemetry.enabled=true']),
+            ('artifactory-image-operator', 'image-operator', []),
+            ('artifactory-registry', 'registry', []),
+        )
+        for prefix, truncated in (('a' * 52, 'a' * 46), ('b' * 44 + '--tail', 'b' * 44)):
+            for chart, component, settings in chart_settings:
+                with self.subTest(prefix=prefix, chart=chart):
+                    rendered = subprocess.run(
+                        ['helm', 'template', 'other-release', str(charts / chart),
+                         '--kube-version', '1.28.3', '--set', 'fullnameOverride=' + prefix, *settings],
+                        check=True, capture_output=True, text=True).stdout
+                    self.assertIn('name: ' + truncated + '-' + component, rendered)
+                    services = set()
+                    for document in rendered.split('\n---\n'):
+                        if not re.search(r'^kind: Service$', document, re.MULTILINE):
+                            continue
+                        name = re.search(r'^metadata:(?: \{ *|\n +)name: ([^\s,}]+)',
+                                         document, re.MULTILINE)
+                        self.assertIsNotNone(name, document)
+                        name = name.group(1)
+                        self.assertRegex(name, r'^[a-z][a-z0-9-]{0,61}[a-z0-9]$')
+                        services.add(name)
+                    if chart == 'artifactory':
+                        self.assertIn(truncated + '-gateway-internal', services)
+                        self.assertIn('http://' + truncated + '-seaweedfs:8333', rendered)
+                    if chart in ('artifactory-agent-operator', 'artifactory-image-operator'):
+                        self.assertIn('https://' + truncated + '-gateway-internal:8445', rendered)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_trial_profile_is_replicated_private_and_uses_default_priority(self):
@@ -64,7 +183,7 @@ class HelmBootstrapTests(unittest.TestCase):
     def test_gateway_ports_and_independent_image_services(self):
         chart = SCRIPT.parents[1] / 'charts/artifactory'
         result = subprocess.run(['helm', 'template', 'custom', str(chart), '--set',
-                                 'imageBuilds.enabled=true,ingress.enabled=true'],
+                                 'fullnameOverride=custom,imageBuilds.enabled=true,ingress.enabled=true'],
                                 check=True, capture_output=True, text=True)
         rendered = result.stdout
         self.assertIn('- {port: 8443, targetPort: grpc, name: grpc}', rendered)
@@ -92,11 +211,11 @@ class HelmBootstrapTests(unittest.TestCase):
         self.assertIn('type: ClusterIP', internal)
         self.assertIn('secretKeyRef: {name: custom-gateway, key: token}', rendered)
         self.assertIn('secretName: custom-registry-signing', rendered)
-        self.assertIn('ARTIFACTORY_S3_ENDPOINT: "http://custom-s3:8333"', rendered)
+        self.assertIn('ARTIFACTORY_S3_ENDPOINT: "http://custom-seaweedfs:8333"', rendered)
         self.assertIn('ARTIFACTORY_S3_ALLOW_HTTP: "true"', rendered)
         self.assertNotIn('type: NodePort', rendered)
         ingress = rendered.split('# Source: artifactory/templates/ingress.yaml')[1].split('---')[0]
-        self.assertNotIn('custom-s3', ingress)
+        self.assertNotIn('custom-seaweedfs', ingress)
         image_chart = SCRIPT.parents[1] / 'charts/artifactory-image-operator'
         image = subprocess.run(['helm', 'template', 'images', str(image_chart)],
                                check=True, capture_output=True, text=True).stdout
@@ -105,14 +224,14 @@ class HelmBootstrapTests(unittest.TestCase):
         self.assertNotIn('resources: [secrets]', image)
         agent = subprocess.run(['helm', 'template', 'native', str(SCRIPT.parents[1] / 'charts/artifactory-agent-operator')],
                                check=True, capture_output=True, text=True).stdout
-        self.assertIn('name: native-agent-operator', agent)
+        self.assertIn('name: artifactory-agent-operator', agent)
         self.assertIn('app.kubernetes.io/name: artifactory-agent-operator', agent)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_gateway_nodeports_and_network_sources_preserve_internal_boundary(self):
         chart = SCRIPT.parents[1] / 'charts/artifactory'
         command = ['helm', 'template', 'boundary', str(chart), '--set',
-                   'grpc.service.type=NodePort,grpc.service.nodePort=30843,grpc.service.telemetryNodePort=30844,gateway.internalTlsSecret=service-tls',
+                   'fullnameOverride=boundary,grpc.service.type=NodePort,grpc.service.nodePort=30843,grpc.service.telemetryNodePort=30844,gateway.internalTlsSecret=service-tls',
                    '--set-json', 'gateway.networkPolicy.publicFrom=[{"ipBlock":{"cidr":"10.169.1.0/24"}}]',
                    '--set-json', 'gateway.networkPolicy.deviceFrom=[{"ipBlock":{"cidr":"10.233.0.0/16"}}]']
         rendered = subprocess.run(command, check=True, capture_output=True, text=True).stdout
@@ -158,7 +277,7 @@ class HelmBootstrapTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_telemetry_backend_cannot_publish_a_second_device_entry(self):
         chart = SCRIPT.parents[1] / 'charts/artifactory'
-        command = ['helm', 'template', 'boundary', str(chart)]
+        command = ['helm', 'template', 'boundary', str(chart), '--set', 'fullnameOverride=boundary']
         rendered = subprocess.run(command, check=True, capture_output=True, text=True).stdout
         backend = next(document.split('---')[0] for document in rendered.split('kind: Service\n')[1:]
                        if 'name: boundary-telemetry-grpc\n' in document)
@@ -189,8 +308,8 @@ class HelmBootstrapTests(unittest.TestCase):
         result = subprocess.run(['helm', 'template', 'external', str(chart), '--set',
                                  'postgres.enabled=false,s3.enabled=false,s3.endpoint=https://objects.example.com'],
                                 check=True, capture_output=True, text=True)
-        self.assertNotIn('name: external-postgres\n', result.stdout)
-        self.assertNotIn('name: external-s3\n', result.stdout)
+        self.assertNotIn('name: artifactory-timescaledb\n', result.stdout)
+        self.assertNotIn('name: artifactory-seaweedfs\n', result.stdout)
         self.assertIn('ARTIFACTORY_S3_ENDPOINT: "https://objects.example.com"', result.stdout)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
@@ -210,8 +329,10 @@ class HelmBootstrapTests(unittest.TestCase):
     def test_persistent_secrets_and_certificate_identity(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "private"
+            prefix = 'a' * 52
+            truncated = 'a' * 46
             command = [sys.executable, str(SCRIPT), "--output", str(output),
-                       "--namespace", "test-builds", "--release", "test-kit",
+                       "--namespace", "test-builds", "--release", "different-release", "--resource-prefix", prefix,
                        "--grpc-host", "127.0.0.1", "--grpc-host", "agents.example.com"]
             subprocess.run(command, check=True, capture_output=True)
             before = {str(path): path.read_bytes() for path in output.rglob("*") if path.is_file()}
@@ -219,13 +340,14 @@ class HelmBootstrapTests(unittest.TestCase):
             data = secret["stringData"]
             self.assertEqual(secret["metadata"]["namespace"], "test-builds")
             self.assertEqual(len(base64.b64decode(data["master-key"])), 32)
-            self.assertIn(data["database-password"] + "@test-kit-postgres:5432/", data["database-url"])
+            self.assertIn(data["database-password"] + f"@{truncated}-timescaledb:5432/", data["database-url"])
+            self.assertIn(f'@{truncated}-timescaledb:5432/', data['telemetry-database-url'])
             self.assertEqual(json.loads((output / "access.json").read_text())["password"],
                              data["bootstrap-password"])
             identity = json.loads(data["s3.json"])["identities"][0]["credentials"][0]
             self.assertEqual(identity["secretKey"], data["s3-secret-key"])
             gateway = json.loads((output / 'gateway.json').read_text())
-            self.assertEqual(gateway['metadata']['name'], 'test-kit-gateway')
+            self.assertEqual(gateway['metadata']['name'], f'{truncated}-gateway')
             self.assertGreaterEqual(len(gateway['stringData']['token']), 32)
             signing = json.loads((output / 'registry-signing.json').read_text())['stringData']
             public = json.loads((output / 'registry-signing-public.json').read_text())['stringData']
@@ -238,10 +360,10 @@ class HelmBootstrapTests(unittest.TestCase):
                             "-verify_ip", "127.0.0.1", str(output / "pki/server.pem")],
                            check=True, capture_output=True)
             subprocess.run(["openssl", "verify", "-CAfile", str(output / "pki/ca.pem"),
-                            "-verify_hostname", "test-kit-gateway-internal", str(output / "pki/server.pem")],
+                            "-verify_hostname", f"{truncated}-gateway-internal", str(output / "pki/server.pem")],
                            check=True, capture_output=True)
             subprocess.run(["openssl", "verify", "-CAfile", str(output / "pki/ca.pem"),
-                            "-verify_hostname", "test-kit-gateway-internal", str(output / "pki/server.pem")],
+                            "-verify_hostname", f"{truncated}-telemetry", str(output / "pki/server.pem")],
                            check=True, capture_output=True)
             if os.name != "nt":
                 for path in output.rglob("*"):

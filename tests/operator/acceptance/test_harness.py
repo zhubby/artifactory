@@ -156,8 +156,8 @@ class HarnessTests(unittest.TestCase):
             operator = next(call for call in calls if '-l' in call)
             self.assertIn('app.kubernetes.io/name=artifactory-agent-operator', operator)
             self.assertIn('--prefix=true', operator)
-            self.assertNotIn('deploy/native-agent-operator', operator)
-            self.assertIn('follower', (acceptance.run / 'native-agent-operator.log').read_text())
+            self.assertNotIn('deploy/artifactory-agent-operator', operator)
+            self.assertIn('follower', (acceptance.run / 'artifactory-agent-operator.log').read_text())
 
     def test_changed_origin_login_waits_for_old_control_pod_exit(self):
         state = {'public_url': 'http://gateway:8080', 'desired_url': 'http://gateway:8080',
@@ -242,7 +242,7 @@ class HarnessTests(unittest.TestCase):
         secret, deployment, service = acceptance.gateway('isolated-token-' + 'x' * 32)
         env = secret['stringData']
         self.assertEqual(env['ARTIFACTORY_GATEWAY_CONTROL'], 'http://control-plane:8080')
-        self.assertEqual(env['ARTIFACTORY_S3_ENDPOINT'], 'http://s3:8333')
+        self.assertEqual(env['ARTIFACTORY_S3_ENDPOINT'], 'http://artifactory-seaweedfs:8333')
         self.assertFalse(any(key in env for key in ['ARTIFACTORY_S3_ACCESS_KEY', 'ARTIFACTORY_S3_SECRET_KEY', 'ARTIFACTORY_MASTER_KEY', 'ARTIFACTORY_SERVICE_TOKEN']))
         pod = deployment['spec']['template']['spec']
         self.assertFalse(pod['automountServiceAccountToken'])
@@ -324,7 +324,7 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(binding['subjects'],cluster_binding['subjects'])
 
     def test_service_dockerfiles_copy_only_existing_workspace_paths(self):
-        files = ['Dockerfile', 'crates/emissary/Dockerfile', 'crates/gateway/Dockerfile', 'crates/planner-runtime/Dockerfile', 'crates/source-preparer/Dockerfile', 'operators/agent-operator/Dockerfile']
+        files = ['Dockerfile', 'crates/emissary/Dockerfile', 'crates/gateway/Dockerfile', 'crates/source-preparer/Dockerfile', 'operators/agent-operator/Dockerfile']
         for filename in files:
             for line in (ROOT / filename).read_text().splitlines():
                 fields = shlex.split(line)
@@ -335,7 +335,7 @@ class HarnessTests(unittest.TestCase):
                     self.assertTrue((ROOT / source).exists(), f'{filename}: missing COPY source {source}')
 
     def test_each_service_image_starts_its_own_binary(self):
-        components = {'operators/agent-operator': 'artifactory-agent-operator', 'crates/planner-runtime': 'artifactory-planner-runtime', 'crates/source-preparer': 'artifactory-source-preparer'}
+        components = {'operators/agent-operator': 'artifactory-agent-operator', 'crates/source-preparer': 'artifactory-source-preparer'}
         for directory, binary in components.items():
             dockerfile = (ROOT / directory / 'Dockerfile').read_text()
             self.assertIn(f'ENTRYPOINT ["/usr/local/bin/{binary}"]', dockerfile)

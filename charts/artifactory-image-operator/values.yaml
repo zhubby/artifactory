@@ -2,6 +2,7 @@
 # [OUTPUT]: 独立 Image Operator、临时源码参数与分角色 BuilderPool 预算。
 # [POS]: 不接收构建者提交的任意 Pod 模板。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
+fullnameOverride: ""
 image:
   repository: ghcr.io/zhubby/artifactory-image-operator
   tag: ''
@@ -12,7 +13,7 @@ builderPool:
   workerImage: ghcr.io/zhubby/artifactory-image-worker:0.2.0
   buildkitImage: ghcr.io/zhubby/artifactory-buildkit:0.2.0
   sourcePreparerImage: ghcr.io/zhubby/artifactory-source-preparer:0.2.0
-  controlUrl: https://artifactory-gateway-internal:8445
+  controlUrl: ""
   maxActive: 8
   maxPerProject: 4
   nodeSelector: {}

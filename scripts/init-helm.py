@@ -16,6 +16,10 @@ import secrets
 import subprocess
 
 
+DEFAULT_RESOURCE_PREFIX = "artifactory"
+MAX_RESOURCE_PREFIX_LENGTH = 46  # Keep "<prefix>-gateway-internal" within one DNS label.
+
+
 def dns_label(value):
     if len(value) > 63 or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", value):
         raise argparse.ArgumentTypeError("use a lowercase DNS label, at most 63 characters")
@@ -34,16 +38,24 @@ def san(host):
         return "DNS:" + host
 
 
+def resource_prefix(value):
+    label = dns_label(value)
+    if not label[0].isalpha():
+        raise argparse.ArgumentTypeError("the resource prefix must start with a lowercase letter")
+    return label[:MAX_RESOURCE_PREFIX_LENGTH].rstrip("-")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--namespace", type=dns_label, default="artifactory")
     parser.add_argument("--release", type=dns_label, default="artifactory")
-    parser.add_argument("--resource-prefix", type=dns_label, help="match Helm fullnameOverride, if used")
+    parser.add_argument("--resource-prefix", type=resource_prefix, default=DEFAULT_RESOURCE_PREFIX,
+                        help="match Helm fullnameOverride, if used")
     parser.add_argument("--grpc-host", type=san, action="append", required=True,
                         help="Emissary-visible host, without port; repeat for multiple SANs")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    prefix = (args.resource_prefix or args.release)[:50].rstrip("-")
+    prefix = args.resource_prefix
     output = args.output.expanduser().absolute()
     os.umask(0o077)
     try:
@@ -81,9 +93,9 @@ def main():
     s3_secret = secrets.token_hex(32)
     credentials = {
         "database-password": password,
-        "database-url": f"postgres://artifactory:{password}@{prefix}-postgres:5432/artifactory",
+        "database-url": f"postgres://artifactory:{password}@{prefix}-timescaledb:5432/artifactory",
         "telemetry-database-password": telemetry_password,
-        "telemetry-database-url": f"postgres://artifactory_telemetry:{telemetry_password}@{prefix}-postgres:5432/artifactory_telemetry",
+        "telemetry-database-url": f"postgres://artifactory_telemetry:{telemetry_password}@{prefix}-timescaledb:5432/artifactory_telemetry",
         "telemetry-token": secrets.token_hex(32),
         "master-key": base64.b64encode(secrets.token_bytes(32)).decode(),
         "s3-access-key": s3_access,

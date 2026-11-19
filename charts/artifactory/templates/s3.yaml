@@ -1,8 +1,12 @@
+# [INPUT]: SeaweedFS 镜像、S3 凭据和持久卷。
+# [OUTPUT]: 单副本 SeaweedFS Deployment。
+# [POS]: 为控制平面提供私有 S3 对象存储。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 {{- if .Values.s3.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "artifactory.fullname" . }}-s3
+  name: {{ include "artifactory.fullname" . }}-seaweedfs
   labels:
     {{- include "artifactory.labels" . | nindent 4 }}
 spec:
@@ -11,12 +15,12 @@ spec:
   selector:
     matchLabels:
       {{- include "artifactory.selector" . | nindent 6 }}
-      app.kubernetes.io/component: s3
+      app.kubernetes.io/component: seaweedfs
   template:
     metadata:
       labels:
         {{- include "artifactory.selector" . | nindent 8 }}
-        app.kubernetes.io/component: s3
+        app.kubernetes.io/component: seaweedfs
       {{- with .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
@@ -34,7 +38,7 @@ spec:
         fsGroup: 1000
         seccompProfile: {type: RuntimeDefault}
       containers:
-        - name: s3
+        - name: seaweedfs
           image: "{{ .Values.images.s3.repository }}:{{ .Values.images.s3.tag }}"
           imagePullPolicy: {{ .Values.images.s3.pullPolicy }}
           securityContext:
@@ -60,7 +64,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: {{ include "artifactory.fullname" . }}-s3
+            claimName: {{ include "artifactory.fullname" . }}-seaweedfs
         - name: credentials
           secret:
             secretName: {{ include "artifactory.credentials" . }}

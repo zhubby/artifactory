@@ -6,7 +6,9 @@
 -->
 # Helm / Kubernetes 部署
 
-主 Chart 位于 `charts/artifactory`。它部署 Control、Next.js、双副本 Pingora、TimescaleDB / PostgreSQL 17、私有 SeaweedFS S3 和遥测服务。独立 Chart 交付 Agent Operator、Image Operator 和 Distribution 仓库。平台最低支持 Kubernetes 1.28。完整源码、AI 规划与镜像构建链在 1.28 及以上版本使用同一实现。四个 Chart 的版本约束均为 `>=1.28.0-0`。
+主 Chart 位于 `charts/artifactory`。它部署内嵌规划 Runtime 的 Control、Next.js、双副本 Pingora、TimescaleDB / PostgreSQL 17、私有 SeaweedFS S3 和遥测服务。独立 Chart 交付 Agent Operator、Image Operator 和 Distribution 仓库。主 Chart 提供遥测服务。Agent Chart 的遥测默认关闭，仅供独立验收启用。平台最低支持 Kubernetes 1.28。完整源码、AI 规划与镜像构建链在 1.28 及以上版本使用同一实现。四个 Chart 的版本约束均为 `>=1.28.0-0`。
+
+默认 Deployment 名称为 `artifactory-agent-operator`、`artifactory-image-operator`、`artifactory-registry`、`artifactory-timescaledb` 和 `artifactory-seaweedfs`。Registry、TimescaleDB 和 SeaweedFS 的 Service 与对应 Deployment 同名。TimescaleDB 和 SeaweedFS 的 PVC 也使用该名称。
 
 Control 使用 `emptyDir`。源码解析任务和每个执行 Pod 直接向上游仓库拉取源码。源码目录、Git 对象、LFS 和 BuildKit 状态只存在于任务临时卷。平台只持久化固定 commit、manifest、AI 对话、计划、日志、制品与最终镜像。详见 [Operator 运维](operator-operations.md) 和 [镜像构建](image-builds.md)。
 
@@ -22,7 +24,6 @@ GitHub `release-images` 工作流仅在 **Release published** 时执行，正式
 - `ghcr.io/zhubby/artifactory-web:<release-tag>`
 - `ghcr.io/zhubby/artifactory-agent-worker:<release-tag>`
 - `ghcr.io/zhubby/artifactory-agent-operator:<release-tag>`
-- `ghcr.io/zhubby/artifactory-planner-runtime:<release-tag>`
 - `ghcr.io/zhubby/artifactory-source-preparer:<release-tag>`
 - `ghcr.io/zhubby/artifactory-image-operator:<release-tag>`
 - `ghcr.io/zhubby/artifactory-image-worker:<release-tag>`
@@ -50,9 +51,9 @@ kubectl --context YOUR_CONTEXT apply \
 
 `--output` 必须是新目录；脚本拒绝覆盖。生成目录与私钥只对当前用户开放。`credentials.json` 是 Kubernetes Secret，保存数据库口令、加密主密钥、S3 身份及管理员初始口令；`pki.json` 包含签发 CA、服务器证书及私钥。`access.json` 提供初始登录信息，`pki/ca.pem` 通过可信渠道交给 Agent。均保留在 Git 忽略的 `.deploy/` 中，应离线加密备份。
 
-Chart 引用已有 Secret，**不生成或轮换任何密钥**。默认名称为 `<release>-credentials`、`<release>-pki` 和 `<release>-gateway`，分别通过 `secrets.credentials`、`secrets.pki` 和 `gateway.secretName` 覆盖。使用 `fullnameOverride` 时，初始化脚本的 `--resource-prefix` 必须与之对应。凭据中的数据库 URL 使用同一资源前缀的 PostgreSQL Service。
+Chart 引用已有 Secret。默认资源前缀为 `artifactory`，与 Helm release 名称无关。默认 Secret 为 `artifactory-credentials`、`artifactory-pki` 和 `artifactory-gateway`，可分别通过 `secrets.credentials`、`secrets.pki` 和 `gateway.secretName` 覆盖。自定义前缀时，四个 Chart 的 `fullnameOverride` 与初始化脚本的 `--resource-prefix` 使用相同的 DNS 标签。前缀以小写字母起始，取前 46 个字符并去掉末尾连字符，为 `-gateway-internal` 保留长度。凭据中的数据库 URL 指向同一前缀的 `timescaledb` Service。
 
-脚本同时生成 `registry-signing.json` 和 `registry-signing-public.json`。启用镜像构建前应用这两个 Secret；前者包含独立 RSA 私钥和公开证书，后者只含公开证书。Control 使用 `<release>-registry-signing`；Registry Chart 的 `auth.certificateSecret` 指向对应公开证书。仓库 Bucket 和存储凭据须独立准备，脚本不创建它们。
+脚本同时生成 `registry-signing.json` 和 `registry-signing-public.json`。启用镜像构建前应用这两个 Secret；前者包含独立 RSA 私钥和公开证书，后者只含公开证书。Control 默认使用 `artifactory-registry-signing`；Registry Chart 的 `auth.certificateSecret` 指向对应公开证书。仓库 Bucket 和存储凭据须独立准备，脚本不创建它们。
 
 默认数据库镜像为 `timescale/timescaledb:2.32.0-pg17`。新卷自动初始化独立遥测库与非管理员应用角色；`credentials.json` 另包含 `telemetry-database-password`、`telemetry-database-url` 和 `telemetry-token`。`telemetry.endpoint` 应填写 Emissary 可访问、证书 SAN 覆盖的 HTTPS 8444 地址；8093 只供 Control 内部查询。已有 PostgreSQL 卷不自动转换，部署配置与 TimescaleDB 恢复步骤见 [时序观测](telemetry.md)。
 
@@ -96,7 +97,7 @@ Web Service 指向统一 Pingora 的 8080 端口；它将 `/api/*` 转发给 Con
 
 Web 镜像同时包含由 mdBook 生成的完整静态文档，安装后访问控制台同域名的 `/docs`，无需登录，也不需要额外的 Service、PVC 或 Ingress 路径。文档随 Web 镜像一起升级和回滚；构建与维护说明见[文档站点](operations.md#文档站点)。
 
-gRPC 使用独立的 `<release>-grpc:8443` Service，连接 Pingora 设备网关。它转发至私有 Control Service 8443，保留服务器 TLS 与节点 mTLS。通过受信网络的 TCP LoadBalancer、NodePort 或 TLS passthrough 暴露，确保 Agent 访问的主机名/IP 在证书 SAN 中。不要使用普通 HTTP Ingress 终止这条私有 CA 认证连接，也不要公开数据库或 SeaweedFS 内部管理端口。
+gRPC 使用独立的 `<prefix>-grpc:8443` Service，连接 Pingora 设备网关。它转发至私有 Control Service 8443，保留服务器 TLS 与节点 mTLS。通过受信网络的 TCP LoadBalancer、NodePort 或 TLS passthrough 暴露，确保 Agent 访问的主机名/IP 在证书 SAN 中。不要使用普通 HTTP Ingress 终止这条私有 CA 认证连接，也不要公开数据库或 SeaweedFS 内部管理端口。
 
 ## 本机 kind
 
@@ -157,11 +158,11 @@ Control 多副本直接使用独立临时卷。连接预算和排空配置见 [C
 
 ## 独立 Operator 与仓库
 
-主 Chart 的 `planning.runtimeUrl` 指向独立 Runtime，`planning.namespace` 指向 Agent Operator 所在命名空间，`planning.agentPool` 选择 AgentPool。完整 Secret、TLS 与安装命令见 [Operator 运维](operator-operations.md)。
+主 Chart 的 `planning.runtimeUrl` 指向内部网关的 `/internal/planner`，`planning.namespace` 指向 Agent Operator 所在命名空间，`planning.agentPool` 选择 AgentPool。完整 Secret、TLS 与安装命令见 [Operator 运维](operator-operations.md)。
 
 Agent Operator 协调 `AgentRun` 与 `SourceTask`。`SourceTask` 解析 ref 或查询 refs；AI 规划 Pod 的 init container 准备固定源码。Image Operator 为每个平台创建普通源码 init、Runner 和监督型 BuildKit 两个普通容器，并单独创建 Publisher。它们不创建源码 StatefulSet、Service、PVC 或共享缓存，也不依赖原生 sidecar 功能开关。
 
-公开入口经 `https://build.example.com` 进入 Pingora。内部服务使用 `https://<release>-gateway-internal:8445`。内部 TLS Secret 提供 `ca.pem/server.pem/server.key`，证书 SAN 覆盖内部 Service 名称。Runtime 和源码准备容器信任同一服务 CA。Control 通过 Kubernetes TokenReview 与 Pod→CR 的 UID 链确认任务身份；普通 Worker 不挂载源码凭据和源码专用 token。
+公开入口经 `https://build.example.com` 进入 Pingora。内部服务使用 `https://<prefix>-gateway-internal:8445`。内部 TLS Secret 提供 `ca.pem/server.pem/server.key`，证书 SAN 覆盖内部 Service 名称。Runtime 和源码准备容器信任同一服务 CA。Control 通过 Kubernetes TokenReview 与 Pod→CR 的 UID 链确认任务身份；普通 Worker 不挂载源码凭据和源码专用 token。
 
 内建 Registry 使用独立私有 S3 Bucket。Control 的 RSA 签名身份与设备 CA 分离。配置与推送/拉取验证见 [镜像构建](image-builds.md)。
 

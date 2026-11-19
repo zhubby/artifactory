@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户、项目和业务状态。
-//! [OUTPUT]: 校验镜像启动配置并启动业务与调度服务。
+//! [OUTPUT]: 启动业务、规划运行时与调度服务。
 //! [POS]: 控制平面的业务边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
@@ -74,6 +74,32 @@ async fn main() -> Result<()> {
     };
     scheduler::start(state.clone());
     artifactory_control_plane::images::start(state.clone())?;
+    let runtime = if std::env::var_os("ARTIFACTORY_RUNTIME_URL").is_some() {
+        let database_url =
+            artifactory_runtime_protocol::service::required("ARTIFACTORY_RUNTIME_DATABASE_URL")?;
+        let runtime = artifactory_planner_runtime::server::from_env(&database_url).await?;
+        let background = runtime.clone();
+        let stop = state.coordination.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = stop.stopped() => break,
+                    result = artifactory_planner_runtime::server::maintain(&background) => {
+                        if let Err(error) = result {
+                            tracing::warn!(%error, "runtime reconciliation failed");
+                        }
+                    }
+                }
+                tokio::select! {
+                    _ = stop.stopped() => break,
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
+                }
+            }
+        });
+        Some(runtime)
+    } else {
+        None
+    };
     let lifecycle = state.clone();
     let drain_seconds = settings.control.drain_seconds;
     tokio::spawn(async move {
@@ -109,7 +135,12 @@ async fn main() -> Result<()> {
         });
     let listener = tokio::net::TcpListener::bind(&settings.http_bind).await?;
     tracing::info!(http=%settings.http_bind,grpc=%settings.grpc_bind,"artifactory control plane ready");
-    let http = axum::serve(listener, api::router(state))
+    let mut router = api::router(state);
+    if let Some(runtime) = runtime {
+        let token = artifactory_runtime_protocol::service::required("ARTIFACTORY_SERVICE_TOKEN")?;
+        router = api::mount_planner(router, runtime, token);
+    }
+    let http = axum::serve(listener, router)
         .with_graceful_shutdown(async move { http_stop.stopped().await });
     tokio::try_join!(async { http.await.map_err(anyhow::Error::from) }, async {
         grpc.await.map_err(anyhow::Error::from)

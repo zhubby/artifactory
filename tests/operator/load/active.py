@@ -211,10 +211,10 @@ class Capacity:
             hold_writes = sum(v-before_hold.get(k,0) for k,v in self.evidence['apiserver_mutations_after_hold'].items())
             self.evidence['hold_crd_mutations'] = hold_writes
             assert hold_writes <= 2*self.args.active, 'Steady heartbeats caused excessive CRD writes'
-            (self.directory/'runtime-before-restart.log').write_text(self.a.kubectl('logs','-l','app.kubernetes.io/name=artifactory-runtime','--prefix','--tail=200'))
-            old_services = {p['metadata']['uid'] for p in json.loads(self.a.kubectl('get','pods','-o','json'))['items'] if p['metadata'].get('labels',{}).get('app.kubernetes.io/name') in ['artifactory-runtime','artifactory-agent-operator']}
+            (self.directory/'runtime-before-restart.log').write_text(self.a.kubectl('logs','-l','app=control-plane','--prefix','--tail=200'))
+            old_services = {p['metadata']['uid'] for p in json.loads(self.a.kubectl('get','pods','-o','json'))['items'] if p['metadata'].get('labels',{}).get('app.kubernetes.io/name') in ['artifactory-agent-operator'] or p['metadata'].get('labels',{}).get('app') == 'control-plane'}
             restarted = time.monotonic()
-            for deployment in ['native-runtime','native-agent-operator']:
+            for deployment in ['control-plane','artifactory-agent-operator']:
                 self.a.kubectl('rollout','restart','deployment/'+deployment)
                 self.a.kubectl('rollout','status','deployment/'+deployment,'--timeout=120s')
             self.a.wait(lambda: not old_services.intersection(p['metadata']['uid'] for p in json.loads(self.a.kubectl('get','pods','-o','json'))['items']),120)
@@ -268,9 +268,9 @@ class Capacity:
             self.evidence['failure'] = {'type':type(error).__name__, 'message':str(error)[:300]}
             # Capture the original failure before cancellation adds expected
             # fencing errors, and before a later rollout discards Pod logs.
-            for name, label in [('runtime', 'artifactory-runtime'), ('operator', 'artifactory-agent-operator')]:
+            for name, selector in [('control-plane', 'app=control-plane'), ('operator', 'app.kubernetes.io/name=artifactory-agent-operator')]:
                 try:
-                    log = self.a.kubectl('logs','-l','app.kubernetes.io/name='+label,'--prefix','--tail=1000')
+                    log = self.a.kubectl('logs','-l',selector,'--prefix','--tail=1000')
                     (self.directory/(name+'-failure.log')).write_text(log)
                 except RuntimeError:
                     pass

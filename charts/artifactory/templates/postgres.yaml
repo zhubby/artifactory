@@ -1,8 +1,12 @@
+# [INPUT]: TimescaleDB 镜像、数据库凭据和持久卷。
+# [OUTPUT]: 单副本 TimescaleDB Deployment。
+# [POS]: 为控制平面和遥测服务提供数据库。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 {{- if .Values.postgres.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "artifactory.fullname" . }}-postgres
+  name: {{ include "artifactory.fullname" . }}-timescaledb
   labels:
     {{- include "artifactory.labels" . | nindent 4 }}
 spec:
@@ -11,12 +15,12 @@ spec:
   selector:
     matchLabels:
       {{- include "artifactory.selector" . | nindent 6 }}
-      app.kubernetes.io/component: postgres
+      app.kubernetes.io/component: timescaledb
   template:
     metadata:
       labels:
         {{- include "artifactory.selector" . | nindent 8 }}
-        app.kubernetes.io/component: postgres
+        app.kubernetes.io/component: timescaledb
       {{- with .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
@@ -34,7 +38,7 @@ spec:
         fsGroup: 70
         seccompProfile: {type: RuntimeDefault}
       containers:
-        - name: postgres
+        - name: timescaledb
           image: "{{ .Values.images.postgres.repository }}:{{ .Values.images.postgres.tag }}"
           imagePullPolicy: {{ .Values.images.postgres.pullPolicy }}
           args: [postgres, -c, "max_connections={{ int .Values.postgres.maxConnections }}"]
@@ -74,10 +78,10 @@ spec:
             - {name: shm, mountPath: /dev/shm}
       volumes:
         - name: init
-          configMap: {name: {{ include "artifactory.fullname" . }}-timescale-init}
+          configMap: {name: {{ include "artifactory.fullname" . }}-timescaledb-init}
         - name: data
           persistentVolumeClaim:
-            claimName: {{ include "artifactory.fullname" . }}-postgres
+            claimName: {{ include "artifactory.fullname" . }}-timescaledb
         - {name: run, emptyDir: {sizeLimit: 16Mi}}
         - {name: tmp, emptyDir: {sizeLimit: 128Mi}}
         - {name: shm, emptyDir: {medium: Memory, sizeLimit: 128Mi}}

@@ -1,19 +1,19 @@
 # [INPUT]: 独立服务镜像、HTTP Runtime 地址和池参数。
-# [OUTPUT]: 直接 Pod 控制器、Runtime 与 AgentPool。
-# [POS]: Agent 执行资源与 Runtime 的部署边界。
+# [OUTPUT]: 直接 Pod 控制器与 AgentPool。
+# [POS]: Agent 执行资源连接控制平面的规划接口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
-{{- if and (not .Values.development.insecureHttp) (or (not (hasPrefix "https://" .Values.runtime.url)) (not (hasPrefix "https://" .Values.controlUrl))) }}
+{{- $prefix := regexReplaceAll "-+$" (default "artifactory" .Values.fullnameOverride | trunc 46) "" }}
+{{- $runtimeUrl := default (printf "https://%s-gateway-internal:8445/internal/planner" $prefix) .Values.runtime.url }}
+{{- $controlUrl := default (printf "https://%s-gateway-internal:8445" $prefix) .Values.controlUrl }}
+{{- $runtimeSecret := default (printf "%s-runtime" $prefix) .Values.runtime.secretName }}
+{{- $tlsSecret := default (printf "%s-services-tls" $prefix) .Values.tls.secretName }}
+{{- if and (not .Values.development.insecureHttp) (or (not (hasPrefix "https://" $runtimeUrl)) (not (hasPrefix "https://" $controlUrl))) }}
 {{- fail "Runtime and control plane URLs require HTTPS outside explicit development mode" }}
 {{- end }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: artifactory-agent-operator
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: artifactory-runtime
+  name: {{ $prefix }}-agent-operator
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -24,16 +24,16 @@ automountServiceAccountToken: false
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-agent-operator
+  name: {{ $prefix }}-agent-operator
 spec:
   replicas: {{ .Values.operator.replicas }}
   selector:
-    matchLabels: {app.kubernetes.io/name: artifactory-agent-operator}
+    matchLabels: {app.kubernetes.io/name: artifactory-agent-operator, app.kubernetes.io/instance: {{ .Release.Name }}}
   template:
     metadata:
-      labels: {app.kubernetes.io/name: artifactory-agent-operator}
+      labels: {app.kubernetes.io/name: artifactory-agent-operator, app.kubernetes.io/instance: {{ .Release.Name }}}
     spec:
-      serviceAccountName: artifactory-agent-operator
+      serviceAccountName: {{ $prefix }}-agent-operator
       securityContext: {runAsUser: 10001, runAsNonRoot: true}
       containers:
         - name: operator
@@ -44,10 +44,10 @@ spec:
             - {name: RUST_LOG, value: info}
             - name: ARTIFACTORY_SERVICE_TOKEN
               valueFrom:
-                secretKeyRef: {name: {{ .Values.runtime.secretName }}, key: ARTIFACTORY_SERVICE_TOKEN}
+                secretKeyRef: {name: {{ $runtimeSecret }}, key: ARTIFACTORY_SERVICE_TOKEN}
             - {name: ARTIFACTORY_NAMESPACE, value: {{ .Release.Namespace | quote }}}
             - {name: POD_UID, valueFrom: {fieldRef: {fieldPath: metadata.uid}}}
-            - {name: ARTIFACTORY_RUNTIME_URL, value: {{ .Values.runtime.url | quote }}}
+            - {name: ARTIFACTORY_RUNTIME_URL, value: {{ $runtimeUrl | quote }}}
             - {name: ARTIFACTORY_INSECURE_DEV, value: {{ .Values.development.insecureHttp | toString | quote }}}
             {{- if not .Values.development.insecureHttp }}
             - {name: ARTIFACTORY_SERVICE_CA, value: /run/service-tls/ca.crt}
@@ -59,60 +59,8 @@ spec:
       {{- if not .Values.development.insecureHttp }}
       volumes:
         - name: tls
-          secret: {secretName: {{ .Values.tls.secretName }}, items: [{key: ca.crt, path: ca.crt}]}
+          secret: {secretName: {{ $tlsSecret }}, items: [{key: ca.crt, path: ca.crt}]}
       {{- end }}
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ .Release.Name }}-runtime
-spec:
-  replicas: {{ .Values.runtime.replicas }}
-  selector:
-    matchLabels: {app.kubernetes.io/name: artifactory-runtime}
-  template:
-    metadata:
-      labels: {app.kubernetes.io/name: artifactory-runtime}
-    spec:
-      serviceAccountName: artifactory-runtime
-      securityContext: {runAsUser: 10001, runAsNonRoot: true}
-      containers:
-        - name: runtime
-          image: '{{ .Values.runtime.image.repository }}:{{ .Values.runtime.image.tag | default .Chart.AppVersion }}'
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: []
-          ports: [{name: http, containerPort: 8091}, {name: grpc, containerPort: 8092}]
-          envFrom:
-            - secretRef: {name: {{ .Values.runtime.secretName }}}
-          env:
-            - {name: ARTIFACTORY_RUNTIME_URL, value: {{ .Values.runtime.url | quote }}}
-            - {name: ARTIFACTORY_CONTROL_URL, value: {{ .Values.controlUrl | quote }}}
-            - {name: ARTIFACTORY_INSECURE_DEV, value: {{ .Values.development.insecureHttp | toString | quote }}}
-            {{- if not .Values.development.insecureHttp }}
-            - {name: ARTIFACTORY_SERVICE_TLS_CERT, value: /run/service-tls/tls.crt}
-            - {name: ARTIFACTORY_SERVICE_TLS_KEY, value: /run/service-tls/tls.key}
-            - {name: ARTIFACTORY_SERVICE_CA, value: /run/service-tls/ca.crt}
-            {{- end }}
-          readinessProbe:
-            httpGet: {path: /healthz, port: http, scheme: {{ ternary "HTTP" "HTTPS" .Values.development.insecureHttp }}}
-            initialDelaySeconds: 3
-          resources: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: '2', memory: 1Gi}}
-          {{- if not .Values.development.insecureHttp }}
-          volumeMounts: [{name: tls, mountPath: /run/service-tls, readOnly: true}]
-          {{- end }}
-      {{- if not .Values.development.insecureHttp }}
-      volumes:
-        - name: tls
-          secret: {secretName: {{ .Values.tls.secretName }}}
-      {{- end }}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: artifactory-runtime
-spec:
-  selector: {app.kubernetes.io/name: artifactory-runtime}
-  ports: [{name: http, port: 8091, targetPort: 8091}, {name: grpc, port: 8092, targetPort: 8092}]
 ---
 apiVersion: agents.artifactory.dev/v1alpha1
 kind: AgentPool
@@ -123,10 +71,10 @@ spec:
   maxPerProject: {{ .Values.agentPool.maxPerProject }}
   image: {{ .Values.agentPool.image | quote }}
   imagePullPolicy: {{ .Values.image.pullPolicy }}
-  runtimeUrl: {{ .Values.runtime.url | quote }}
-  controlUrl: {{ .Values.controlUrl | quote }}
+  runtimeUrl: {{ $runtimeUrl | quote }}
+  controlUrl: {{ $controlUrl | quote }}
   sourcePreparerImage: {{ .Values.agentPool.sourcePreparerImage | quote }}
   ephemeralStorage: {{ .Values.agentPool.ephemeralStorage | quote }}
   cpu: {{ .Values.agentPool.cpu | quote }}
   memory: {{ .Values.agentPool.memory | quote }}
-  tlsSecretName: {{ ternary "" .Values.tls.secretName .Values.development.insecureHttp | quote }}
+  tlsSecretName: {{ ternary "" $tlsSecret .Values.development.insecureHttp | quote }}

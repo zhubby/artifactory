@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖 Runtime 授权、源码清单和持久业务状态。
 //! [OUTPUT]: 传递规划意图、源码材料与幂等提交回执。
-//! [POS]: 控制平面和独立规划 Runtime 的业务边界。
+//! [POS]: 控制平面与内嵌规划 Runtime 之间的业务授权边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{crypto, execution_plan::ExecutionPlan, state::AppState};
 use anyhow::{Context, Result, ensure};

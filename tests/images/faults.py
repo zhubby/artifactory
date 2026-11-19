@@ -231,8 +231,8 @@ def inject(a, name, build_id, project_id, node_fault=None, node_name=None):
             a.api('/api/v1/builds/'+build_id+'/cancel',{})
             return {'fault':name,'target':'current-build'}
         if name=='operator-restart':
-            a.kubectl('rollout','restart','deploy/image-build-image-operator')
-            return {'fault':name,'target':'image-build-image-operator','uid_ledger_saved':True}
+            a.kubectl('rollout','restart','deploy/artifactory-image-operator')
+            return {'fault':name,'target':'artifactory-image-operator','uid_ledger_saved':True}
         if name=='pod-deadline':
             return pod_deadline(a,pod)
         container={'runner-kill':'worker','buildkit-kill':'buildkit','supervisor-kill':'buildkit','runner-oom':'worker','supervisor-oom':'buildkit'}[name]

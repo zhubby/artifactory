@@ -8,14 +8,14 @@
 {{- end }}
 {{- end }}
 {{- $components := list "control-plane" "web" "grpc" }}
-{{- if .Values.postgres.enabled }}{{- $components = append $components "postgres" }}{{- end }}
-{{- if .Values.s3.enabled }}{{- $components = append $components "s3" }}{{- end }}
+{{- if .Values.postgres.enabled }}{{- $components = append $components "timescaledb" }}{{- end }}
+{{- if .Values.s3.enabled }}{{- $components = append $components "seaweedfs" }}{{- end }}
 {{- range $component := $components }}
 {{- $settings := dict "type" "ClusterIP" }}
 {{- $port := 5432 }}
 {{- $target := "postgres" }}
 {{- $selector := $component }}
-{{- if eq $component "s3" }}
+{{- if eq $component "seaweedfs" }}
 {{- $settings = dict "type" "ClusterIP" }}
 {{- $port = 8333 }}
 {{- $target = "s3" }}

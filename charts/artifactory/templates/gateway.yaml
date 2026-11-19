@@ -50,7 +50,7 @@ spec:
             - {name: ARTIFACTORY_GATEWAY_WEB, value: "http://{{ include "artifactory.fullname" . }}-web-internal:3000"}
             - {name: ARTIFACTORY_GATEWAY_DEVICE, value: "{{ include "artifactory.fullname" . }}-control-plane:8443"}
             - {name: ARTIFACTORY_GATEWAY_TELEMETRY, value: "{{ include "artifactory.fullname" . }}-telemetry-grpc:8444"}
-            - {name: ARTIFACTORY_GATEWAY_REGISTRY, value: {{ .Values.gateway.registryUrl | quote }}}
+            - {name: ARTIFACTORY_GATEWAY_REGISTRY, value: {{ (default (printf "http://%s-registry:5000" (include "artifactory.fullname" .)) .Values.gateway.registryUrl) | quote }}}
             - {name: ARTIFACTORY_S3_ENDPOINT, value: {{ include "artifactory.s3Endpoint" . | quote }}}
             - {name: ARTIFACTORY_GATEWAY_HTTP_CONNECTIONS, value: {{ .Values.gateway.httpConnections | quote }}}
             - {name: ARTIFACTORY_GATEWAY_DEVICE_CONNECTIONS, value: {{ .Values.gateway.deviceConnections | quote }}}

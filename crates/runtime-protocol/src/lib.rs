@@ -2,9 +2,6 @@
 //! [OUTPUT]: 提供 Runtime 意图、执行故障、丢失围栏和租约契约。
 //! [POS]: 控制平面、Operator 与 Kubernetes Worker 的共享协议。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
-pub mod wire {
-    tonic::include_proto!("artifactory.runtime.v1");
-}
 pub mod crypto;
 pub mod error;
 pub mod metrics;
@@ -92,11 +89,12 @@ pub struct ExecutionLost {
     pub reason: ExecutionLostReason,
 }
 
-/// Pod 消失使旧授权失效；删除运行声明使业务失败。
+/// Pod 消失或 Worker 中断使旧授权失效；删除运行声明使业务失败。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionLostReason {
     PodMissing,
+    WorkerInterrupted,
     ResourceDeleted,
 }
 

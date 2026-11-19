@@ -1,7 +1,8 @@
-# [INPUT]: 独立 Agent、Runtime、源码初始化镜像和持久身份引用。
+# [INPUT]: 独立 Agent、规划接口、源码初始化镜像和持久身份引用。
 # [OUTPUT]: 规划服务、池预算和网络隔离参数。
 # [POS]: 镜像构建使用另一个独立 Operator Chart。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
+fullnameOverride: ""
 image:
   repository: ghcr.io/zhubby/artifactory-agent-operator
   tag: ""
@@ -12,25 +13,21 @@ telemetry:
   image:
     repository: ghcr.io/zhubby/artifactory-control-plane
     tag: ""
-  enabled: true
+  enabled: false # Enable only when the main Chart does not deploy telemetry.
   replicas: 1
   # DATABASE_URL (dedicated telemetry DB), ARTIFACTORY_BUSINESS_DATABASE_URL,
   # ARTIFACTORY_TELEMETRY_TOKEN. Business access should be read-only.
-  secretName: artifactory-telemetry
+  secretName: ""
   # Existing device CA and server identity: ca.pem, server.pem, server.key.
-  pkiSecretName: artifactory-pki
+  pkiSecretName: ""
 runtime:
-  image:
-    repository: ghcr.io/zhubby/artifactory-planner-runtime
-    tag: ""
-  replicas: 1
-  # Contains DATABASE_URL, ARTIFACTORY_SERVICE_KEY and ARTIFACTORY_SERVICE_TOKEN.
-  secretName: artifactory-runtime
-  url: https://artifactory-runtime:8091
-controlUrl: https://artifactory-gateway-internal:8445
+  # Contains ARTIFACTORY_SERVICE_TOKEN shared with the control plane.
+  secretName: ""
+  url: ""
+controlUrl: ""
 tls:
-  # tls.crt, tls.key, ca.crt. SANs cover Runtime endpoints.
-  secretName: artifactory-services-tls
+  # ca.crt trusts the internal gateway certificate.
+  secretName: ""
 development:
   insecureHttp: false
 agentPool:

@@ -85,7 +85,7 @@ impl RuntimeStore {
             let message = if lost.reason == ExecutionLostReason::ResourceDeleted {
                 "Planning resource deleted before Runtime completion"
             } else {
-                "Planning Pod disappeared and retry budget or deadline was exhausted"
+                "Planning execution was interrupted and retry budget or deadline was exhausted"
             };
             enqueue(
                 &mut tx,
@@ -109,6 +109,17 @@ impl RuntimeStore {
     /// # Errors
     /// 身份过期、退出码无效或存储事务失败时返回错误。
     pub async fn execution_failed(&self, failure: ExecutionFailure) -> Result<Value> {
+        // EX_TEMPFAIL 表示已领取租约但未确认结果。沿用丢失执行的完整围栏和预算。
+        if failure.reason == (ExecutionFailureReason::WorkerExit { exit_code: 75 }) {
+            return self
+                .execution_lost(ExecutionLost {
+                    run_id: failure.execution.run_id,
+                    generation: failure.execution.generation,
+                    execution: Some(failure.execution),
+                    reason: ExecutionLostReason::WorkerInterrupted,
+                })
+                .await;
+        }
         let execution = &failure.execution;
         let message = match failure.reason {
             ExecutionFailureReason::SourcePreparation { exit_code } => {

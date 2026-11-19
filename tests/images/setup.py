@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""[INPUT]: 显式隔离 namespace、Acceptance 安装与统一镜像 tag。
+"""[INPUT]: 隔离命名空间、基础验收部署与统一镜像 tag。
 [OUTPUT]: 配置私有 S3、内外仓库和分角色预算的监督型构建池。
 [POS]: 复用公开夹具，等待存储后端端口就绪后再启动转发。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -79,7 +79,7 @@ class ImageAcceptance(base.Acceptance):
 
 
 def create_bucket(a, access, secret, port=38333):
-    a.forward('service/image-s3', f'{port}:8333')
+    a.forward('service/artifactory-seaweedfs-registry', f'{port}:8333')
     def ready():
         with socket.create_connection(('127.0.0.1', port), timeout=2):
             return True
@@ -131,26 +131,26 @@ def install(a, platforms, allow_emulation=False, emulation_selector=None, extern
     identities = {'identities':[
         {'name':'registry-bootstrap','credentials':[{'accessKey':'registry-bootstrap','secretKey':keys['admin']}], 'actions':['Admin','Read','Write','List','Tagging','WriteAcp']},
         {'name':'registry-storage','credentials':[{'accessKey':'registry-storage','secretKey':keys['storage']}], 'actions':[action+':artifactory-registry' for action in ['Read','Write','List','Tagging','WriteAcp']]}]}
-    s3 = a.workload('image-s3',a.registry+'/seaweedfs:4.53',
+    s3 = a.workload('artifactory-seaweedfs-registry',a.registry+'/seaweedfs:4.53',
         ['mini','-dir=/data','-s3.port=8333','-s3.config=/run/s3/s3.json','-s3.iam.readOnly=true','-admin.ui=false','-ip.bind=0.0.0.0'])
     pod = s3['spec']['template']['spec']
     pod['automountServiceAccountToken'] = False
     pod['volumes'] = [{'name':'config','secret':{'secretName':'image-s3-config'}},{'name':'data','emptyDir':{'sizeLimit':'2Gi'}}]
     pod['containers'][0]['volumeMounts'] = [{'name':'config','mountPath':'/run/s3','readOnly':True},{'name':'data','mountPath':'/data'}]
     pod['containers'][0]['readinessProbe'] = {'tcpSocket':{'port':8333},'periodSeconds':1,'failureThreshold':90}
-    a.apply(fixture, a.secret('image-s3-config',{'s3.json':json.dumps(identities)}),s3,a.service('image-s3',[8333]),
+    a.apply(fixture, a.secret('image-s3-config',{'s3.json':json.dumps(identities)}),s3,a.service('artifactory-seaweedfs-registry',[8333]),
             a.secret('image-registry-signing',{'tls.key':key.read_text(),'tls.crt':cert.read_text()}),
             a.secret('image-registry-signing-public',{'tls.crt':cert.read_text()}),
             a.secret('image-registry-storage',{'access-key':'registry-storage','secret-key':keys['storage'],'http-secret':keys['http']}))
-    for name in ['image-s3','upstream']:
+    for name in ['artifactory-seaweedfs-registry','upstream']:
         a.kubectl('rollout','status','deploy/'+name,'--timeout=180s')
     create_bucket(a,'registry-bootstrap',keys['admin'])
-    values = {'image':a.registry+'/distribution:3.0.0','replicas':2,'service':'image-registry',
-        's3':{'bucket':'artifactory-registry','endpoint':'http://image-s3:8333','secretName':'image-registry-storage','secure':False},
+    values = {'image':a.registry+'/distribution:3.0.0','replicas':2,
+        's3':{'bucket':'artifactory-registry','endpoint':'http://artifactory-seaweedfs-registry:8333','secretName':'image-registry-storage','secure':False},
         'auth':{'realm':'http://gateway:8080/api/v1/registry/token','service':'artifactory-registry','issuer':'artifactory','certificateSecret':'image-registry-signing-public'}}
     path = a.run/'registry-values.json'; path.write_text(json.dumps(values))
     a.command(['helm','--kube-context',a.context,'upgrade','--install','image',str(ROOT/'charts/artifactory-registry'),'-n',a.ns,'-f',str(path)])
-    a.kubectl('rollout','status','deploy/image-registry','--timeout=180s')
+    a.kubectl('rollout','status','deploy/artifactory-registry','--timeout=180s')
     role = clean(json.loads(a.kubectl('get','role','artifactory-control','-o','json')))
     role['rules'] += [{'apiGroups':['images.artifactory.dev'],'resources':['imagebuilds'],'verbs':['get','create','patch']},
                       {'apiGroups':[''],'resources':['secrets'],'verbs':['get','create','delete']}]
@@ -159,10 +159,10 @@ def install(a, platforms, allow_emulation=False, emulation_selector=None, extern
     pod['volumes'] = [v for v in pod.get('volumes',[]) if v['name']!='registry-signing'] + [{'name':'registry-signing','secret':{'secretName':'image-registry-signing','defaultMode':0o440}}]
     pod['containers'][0]['volumeMounts'] = [v for v in pod['containers'][0].get('volumeMounts',[]) if v['name']!='registry-signing'] + [{'name':'registry-signing','mountPath':'/run/registry-signing','readOnly':True}]
     environment = {name:base64.b64decode(value).decode() for name,value in json.loads(a.kubectl('get','secret','control-plane','-o','json'))['data'].items()}
-    environment.update(ARTIFACTORY_IMAGE_NAMESPACE=a.ns,ARTIFACTORY_REGISTRY_URL='http://image-registry:5000/',
+    environment.update(ARTIFACTORY_IMAGE_NAMESPACE=a.ns,ARTIFACTORY_REGISTRY_URL='http://artifactory-registry:5000/',
         ARTIFACTORY_IMAGE_CONTROL_URL='https://upstream:9443',ARTIFACTORY_REGISTRY_SIGNING_KEY='/run/registry-signing/tls.key',ARTIFACTORY_REGISTRY_SIGNING_CERT='/run/registry-signing/tls.crt')
     gateway = {name:base64.b64decode(value).decode() for name,value in json.loads(a.kubectl('get','secret','gateway','-o','json'))['data'].items()}
-    gateway['ARTIFACTORY_GATEWAY_REGISTRY']='http://image-registry:5000'
+    gateway['ARTIFACTORY_GATEWAY_REGISTRY']='http://artifactory-registry:5000'
     gateway_workload=clean(json.loads(a.kubectl('get','deploy','gateway','-o','json')))
     gateway_workload['spec']['replicas']=2
     a.apply(role,a.secret('control-plane',environment),a.secret('gateway',gateway),control,gateway_workload)
@@ -170,7 +170,7 @@ def install(a, platforms, allow_emulation=False, emulation_selector=None, extern
         a.kubectl('rollout','restart','deploy/'+name)
         a.kubectl('rollout','status','deploy/'+name,'--timeout=180s')
     a.command(['kubectl','--context',a.context,'apply','-f',str(ROOT/'operators/image-operator/config/crd/resources.yaml')])
-    config = '[worker.oci]\n  snapshotter = "native"\n[registry."image-registry:5000"]\n  http = true\n'
+    config = '[worker.oci]\n  snapshotter = "native"\n[registry."artifactory-registry:5000"]\n  http = true\n'
     a.apply({'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'image-buildkit'},'data':{'buildkitd.toml':config}})
     values = {'image':{'repository':a.registry+'/image-operator','tag':a.image_tag,'pullPolicy':'IfNotPresent'},
         'builderPool':{'workerImage':a.image('image-worker'),'buildkitImage':a.image('buildkit'),'sourcePreparerImage':a.image('source-preparer'),
@@ -184,7 +184,7 @@ def install(a, platforms, allow_emulation=False, emulation_selector=None, extern
             'emulationNodeSelector':emulation_selector or {},'emulationPlatforms':platforms if allow_emulation else []}}
     path = a.run/'image-operator-values.json'; path.write_text(json.dumps(values))
     a.command(['helm','--kube-context',a.context,'upgrade','--install','image-build',str(ROOT/'charts/artifactory-image-operator'),'-n',a.ns,'-f',str(path)])
-    a.kubectl('rollout','status','deploy/image-build-image-operator','--timeout=180s')
+    a.kubectl('rollout','status','deploy/artifactory-image-operator','--timeout=180s')
     if external:
         install_external(a,keys['external'])
     a.stop_forwards()

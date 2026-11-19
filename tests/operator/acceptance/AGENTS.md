@@ -1,7 +1,7 @@
 # acceptance/
 > L2 | Parent: ../AGENTS.md
 
-run.py: 验证直接 Pod 丢失恢复、任务交付和池暂停；收集全副本日志。
+run.py: 部署 TimescaleDB 和 SeaweedFS；经统一网关验证内嵌规划、Pod 恢复和池暂停。
 prepare.py: 构建独立镜像与双架构 RUN；核对 kind 归属后只导入指定平台，不解包证明清单。
 test_prepare.py: 验证单平台导入和外部容器拒绝，覆盖旧 containerd 的证明清单边界。
 Dockerfile: 在 Emissary 镜像中加入模型、Git 与双架构 RUN 夹具。
@@ -14,7 +14,7 @@ network.py: 用地址快照验证冷 Pod 首次 TCP 策略，独立记录 DNS。
 telemetry.py: 预检池准入，验证遥测中断并保存白名单构建与 Pod 执行台账诊断。
 cleanup.py: 按执行台账固定 Pod 名称、UID 和停止证据，验证失联撤权与收尾。
 test_cleanup.py: 离线复跑失联验收，验证直接 Pod 台账与物理停机证据，并拒绝身份替换。
-kind-cilium.yaml: 创建允许安装 Cilium 的隔离 kind 配置。
+kind-cilium.yaml: 创建禁用原生 sidecar 的 Kubernetes 1.28 Cilium 隔离集群。
 test_harness.py: 验证会话、池恢复、全副本日志和设备隔离。
 test_telemetry.py: 验证白名单构建与执行台账诊断、超时收尾和暂停池拒绝。
 test_network.py: 用真实 TCP 与解析故障验证探针不混淆 DNS 和策略。

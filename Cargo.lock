@@ -526,10 +526,7 @@ dependencies = [
  "tempfile",
  "toasty",
  "tokio",
- "tonic",
- "tonic-prost",
  "tracing",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -546,7 +543,6 @@ dependencies = [
  "futures",
  "hex",
  "hyper-util",
- "prost",
  "rand 0.8.8",
  "reqwest",
  "rustls",
@@ -556,9 +552,6 @@ dependencies = [
  "sha2 0.10.9",
  "tokio",
  "tokio-rustls",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
  "tower",
  "uuid",
 ]

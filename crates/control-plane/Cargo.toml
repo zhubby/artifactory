@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+artifactory-planner-runtime = { path = "../planner-runtime" }
 artifactory-image-registry = { path = "../image-registry" }
 jsonwebtoken = "9"
 kube = { version = "=5.0.0", default-features = false, features = ["client", "rustls-tls"] }
@@ -54,6 +55,5 @@ url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]
-artifactory-planner-runtime = { path = "../planner-runtime" }
 rcgen = "0.14"
 tower = { version = "0.5", features = ["util"] }
