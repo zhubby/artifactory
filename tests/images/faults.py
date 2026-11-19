@@ -1,12 +1,13 @@
-"""[INPUT]: 隔离验收客户端、专用 kind 与当前 Pod/Job/CR UID 链。
+"""[INPUT]: 隔离验收客户端、专用 kind 与当前 Pod/CR UID 链。
 [OUTPUT]: 注入实际容器/daemon 退出、取消与 Operator 重启。
-[POS]: 核对完整 cgroup 路径，以 CRI 退出和内核同组 OOM 记录证明故障。
+[POS]: 以 UID 和测试 finalizer 保存终态；以 CRI 和内核记录证明 OOM。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import json
 from pathlib import PurePosixPath
 import re
 import time
+import uuid
 from node_unreachable import NodeUnreachable
 
 
@@ -14,6 +15,64 @@ class FaultFailure(ValueError):
     def __init__(self,code):
         self.reason_code=code
         super().__init__(code)
+
+
+def _deadline_patch(a, name, uid, finalizer, install):
+    for attempt in range(6):
+        raw=a.kubectl('get','pod',name,'--ignore-not-found=true','-o','json')
+        if not raw.strip():
+            if not install:
+                return None
+            raise FaultFailure('deadline-pod-disappeared-before-proof')
+        current=json.loads(raw)
+        metadata=current['metadata']
+        if metadata['uid']!=uid:
+            raise FaultFailure('deadline-pod-uid-changed')
+        finalizers=metadata.get('finalizers',[])
+        if install:
+            if finalizer in finalizers and current.get('spec',{}).get('activeDeadlineSeconds')==1:
+                return current
+            if metadata.get('deletionTimestamp'):
+                raise FaultFailure('deadline-pod-already-deleting')
+            finalizers=[*finalizers,finalizer] if finalizer not in finalizers else finalizers
+        else:
+            if finalizer not in finalizers:
+                return current
+            finalizers=[value for value in finalizers if value!=finalizer]
+        patch={'metadata':{'uid':uid,'resourceVersion':metadata['resourceVersion'],'finalizers':finalizers}}
+        if install:
+            patch['spec']={'activeDeadlineSeconds':1}
+        try:
+            return json.loads(a.kubectl('patch','pod',name,'--type=merge','-p',json.dumps(patch),'-o','json'))
+        except RuntimeError:
+            if attempt==5:
+                raise
+            # Kubernetes 状态更新和 finalizer 写入均推进版本；重读后保留其他写入。
+            time.sleep(0.05)
+
+
+def pod_deadline(a, pod):
+    name=pod['metadata']['name'];uid=pod['metadata']['uid']
+    finalizer='tests.artifactory.dev/deadline-'+uuid.uuid4().hex
+    try:
+        # 同一 CAS 安装保护和 deadline，防止 Operator 在观察终态前回收 Pod。
+        _deadline_patch(a,name,uid,finalizer,True)
+        deadline=time.monotonic()+30
+        while time.monotonic()<deadline:
+            raw=a.kubectl('get','pod',name,'--ignore-not-found=true','-o','json')
+            if not raw.strip():
+                raise FaultFailure('deadline-pod-disappeared-before-proof')
+            current=json.loads(raw)
+            if current['metadata']['uid']!=uid:
+                raise FaultFailure('deadline-pod-uid-changed')
+            if current.get('status',{}).get('phase')=='Failed' and current.get('status',{}).get('reason')=='DeadlineExceeded':
+                return {'fault':'pod-deadline','pod_uid':uid,'deadline_seconds':1,
+                    'observed_reason':'DeadlineExceeded','condition_observed':True}
+            time.sleep(0.2)
+        raise TimeoutError('Kubernetes Pod deadline failure was not observed')
+    finally:
+        # 即使注入或观察失败，也仅撤下本次测试的保护，不改其他 finalizer。
+        _deadline_patch(a,name,uid,finalizer,False)
 
 
 def container_identity(node,a,pod,name,container_id):
@@ -145,56 +204,37 @@ def _confirmed_exit(node,a,pod,container,container_id,daemon_pid,oom_path):
 
 def inject(a, name, build_id, project_id, node_fault=None, node_name=None):
     pods=json.loads(a.kubectl('get','pods','-l','artifactory.dev/project='+project_id,'-o','json'))['items']
-    jobs=json.loads(a.kubectl('get','jobs','-l','artifactory.dev/project='+project_id,'-o','json'))['items']
     builds=json.loads(a.kubectl('get','imagebuilds','-o','json'))['items']
     for pod in pods:
         labels=pod['metadata'].get('labels',{})
         if labels.get('artifactory.dev/platform') not in ['amd64','arm64']:
             continue
-        job=next((j for j in jobs if any(o.get('apiVersion')=='batch/v1' and o.get('kind')=='Job'
-            and o.get('controller') is True and o.get('uid')==j['metadata']['uid'] and o.get('name')==j['metadata']['name']
-            for o in pod['metadata'].get('ownerReferences',[]))),None)
-        if job is None:
-            continue
         build=next((b for b in builds if b['spec']['projectId']==project_id and any(
             o.get('apiVersion')=='images.artifactory.dev/v1alpha1' and o.get('kind')=='ImageBuild' and o.get('controller') is True
             and o.get('uid')==b['metadata']['uid'] and o.get('name')==b['metadata']['name']
-            for o in job['metadata'].get('ownerReferences',[]))),None)
+            for o in pod['metadata'].get('ownerReferences',[]))),None)
         if build is None:
+            continue
+        ledger=build.get('status',{}).get('podOwnership',{})
+        if ledger.get('imageBuildUid')!=build['metadata']['uid'] or not any(
+            record['uid']==pod['metadata']['uid'] and record['name']==pod['metadata']['name']
+            for record in ledger.get('pods',[])):
             continue
         statuses={c['name']:c.get('state',{}) for c in pod.get('status',{}).get('containerStatuses',[])}
         if not all('running' in statuses.get(c,{}) for c in ['worker','buildkit']):
             continue
         if name=='node-unreachable':
-            ledger=build.get('status',{}).get('jobOwnership',{})
-            if ledger.get('imageBuildUid')!=build['metadata']['uid'] or not any(j['uid']==job['metadata']['uid'] for j in ledger.get('jobs',[])):
-                continue
             if node_fault is None or pod['spec']['nodeName']!=node_fault.node:
                 raise ValueError('Node fault does not match the current build node')
-            return node_fault.exercise(build,pod,job,build_id)
+            return node_fault.exercise(build,pod,build_id)
         if name == 'cancel':
             a.api('/api/v1/builds/'+build_id+'/cancel',{})
             return {'fault':name,'target':'current-build'}
         if name=='operator-restart':
-            ledger=build.get('status',{}).get('jobOwnership',{})
-            if ledger.get('imageBuildUid')!=build['metadata']['uid'] or not any(j['uid']==job['metadata']['uid'] for j in ledger.get('jobs',[])):
-                continue
             a.kubectl('rollout','restart','deploy/image-build-image-operator')
             return {'fault':name,'target':'image-build-image-operator','uid_ledger_saved':True}
-        if name=='job-deadline':
-            a.kubectl('patch','job',job['metadata']['name'],'--type=merge','-p',json.dumps({
-                'metadata':{'resourceVersion':job['metadata']['resourceVersion']},'spec':{'activeDeadlineSeconds':1}}))
-            deadline=time.monotonic()+30
-            while time.monotonic()<deadline:
-                current=json.loads(a.kubectl('get','job',job['metadata']['name'],'-o','json'))
-                if current['metadata']['uid']!=job['metadata']['uid']:
-                    raise ValueError('Job was replaced during deadline fault')
-                if any(c['type']=='Failed' and c['status']=='True' and c.get('reason')=='DeadlineExceeded'
-                    for c in current.get('status',{}).get('conditions',[])):
-                    return {'fault':name,'job_uid':job['metadata']['uid'],'deadline_seconds':1,
-                        'observed_reason':'DeadlineExceeded','condition_observed':True}
-                time.sleep(0.2)
-            raise TimeoutError('Kubernetes Job deadline failure was not observed')
+        if name=='pod-deadline':
+            return pod_deadline(a,pod)
         container={'runner-kill':'worker','buildkit-kill':'buildkit','supervisor-kill':'buildkit','runner-oom':'worker','supervisor-oom':'buildkit'}[name]
         observed=terminate(a,node_name,pod,container,name=='buildkit-kill',name in ['runner-oom','supervisor-oom'])
         if observed is None:

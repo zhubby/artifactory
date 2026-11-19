@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖kube CRD、固定执行身份与序列化。
-//! [OUTPUT]: 提供规划运行与临时源码任务 CRD。
+//! [INPUT]: 依赖 kube CRD、不可变项目身份与序列化。
+//! [OUTPUT]: 提供规划运行、源码任务、创建意图和停机台账。
 //! [POS]: Agent Operator 的资源契约。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use kube::{CustomResource, CustomResourceExt};
@@ -9,10 +9,23 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub phase: String,
-    // Explicit null clears obsolete fields when status uses JSON Merge Patch.
+    // JSON Merge Patch 使用显式 null 清除执行台账。
     pub message: Option<String>,
-    pub pod_uid: Option<String>,
+    pub execution: Option<PodExecution>,
     pub observed_generation: i64,
+}
+/// 先预留名称，再记录创建意图和 UID；停机证据先于 finalizer 移除落盘。
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PodExecution {
+    pub name: String,
+    pub uid: Option<String>,
+    pub node_name: Option<String>,
+    pub create_started: bool,
+    #[schemars(range(min = 1, max = 3))]
+    pub attempt: u32,
+    pub deadline_ms: i64,
+    pub stopped: bool,
 }
 #[derive(CustomResource, Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[kube(
@@ -96,6 +109,7 @@ fn source_timeout() -> u32 {
 #[serde(rename_all = "camelCase")]
 pub struct AgentRunSpec {
     pub run_id: String,
+    pub project_id: String,
     #[schemars(range(min = 1))]
     pub generation: i64,
     pub pool: String,

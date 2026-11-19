@@ -5,7 +5,7 @@ Rust 2024 + Toasty 0.11.0 + PostgreSQL 17 + Next.js 16.4.5 + React 19.3.1
 .github/ - 平台验证与不可变镜像交付。
 crates/ - 控制平面、临时源码检出、执行节点与 Pingora 网关。
 operators/ - 独立 Agent 与镜像构建 Operator。
-packages/ - Kubernetes Job 使用的 Node.js AI 规划 Worker。
+packages/ - Kubernetes Pod 使用的 Node.js AI 规划 Worker。
 web/ - 多租户构建控制台。
 proto/ - 设备与运行时通信协议。
 schemas/ - 持久化数据与执行计划契约。
@@ -27,6 +27,7 @@ book.toml - mdBook 文档构建。
 </config>
 
 源码凭据通过凭据引用传入。禁止把密钥放入仓库 URL。
+平台最低支持 Kubernetes 1.28，高版本使用同一执行实现。
 内建 OCI 仓库由 Distribution 提供，使用独立私有 S3 Bucket。
 统一 Pingora 双副本网关反向代理内建仓库与制品。
 公开、内部和设备入口使用独立端口。设备连接透传 mTLS。

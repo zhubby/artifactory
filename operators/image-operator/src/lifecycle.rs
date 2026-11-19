@@ -322,9 +322,12 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("control.sock");
         let listener = UnixListener::bind(&path).unwrap();
+        let (close, may_close) = oneshot::channel();
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             write(&mut stream, Frame::Ready).await.unwrap();
+            // connect 必须先观察 Ready，随后才模拟运行中的 daemon 断开。
+            may_close.await.unwrap();
         });
         let cancel = CancellationToken::new();
         let client = Client::connect(
@@ -334,10 +337,32 @@ mod tests {
         )
         .await
         .unwrap();
+        close.send(()).unwrap();
         timeout(Duration::from_secs(1), cancel.cancelled())
             .await
             .unwrap();
         assert!(client.stop().await.is_err());
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn eof_before_readiness_rejects_startup_and_cancels_runner() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("control.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            drop(stream);
+        });
+        let cancel = CancellationToken::new();
+        let result = Client::connect(
+            &path,
+            Instant::now() + Duration::from_secs(3),
+            cancel.clone(),
+        )
+        .await;
+        assert!(result.is_err(), "EOF before Ready cannot admit a build");
+        assert!(cancel.is_cancelled());
         server.await.unwrap();
     }
 

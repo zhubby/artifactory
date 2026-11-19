@@ -54,7 +54,7 @@ python3 -u scripts/compose_acceptance.py
 
 脚本从当前 Git HEAD 创建私有源码快照（未提交候选需先复制到隔离临时 Git 仓库并提交），构建实际 Control、Gateway 与控制台镜像；以独立项目名、卷、网络和随机 loopback 端口运行开发服务。测试经 Caddy TLS 入口连接 Pingora，覆盖文档、Secure Cookie、CSRF、租户鉴权和 Control 重启后的元数据持久化。CA 只注入测试客户端与独立进程，不修改宿主信任库。默认不加载已有 `.local/env` 或 `.deploy/env`，运行后仅清理本次 run 的容器、网络与卷。
 
-完整构建链使用隔离 Kubernetes 验收：临时 SourceTask 固定提交，规划 Job 的 init container 准备源码，原生 Emissary 拉取同一清单，再通过网关下载制品。入口和故障场景见 [Operator 运维](operator-operations.md)。Compose 验收不创建规划 Worker，也不执行构建。
+完整构建链使用隔离 Kubernetes 验收：临时 SourceTask 固定提交，规划 Pod 的 init container 准备源码，原生 Emissary 拉取同一清单，再通过网关下载制品。入口和故障场景见 [Operator 运维](operator-operations.md)。Compose 验收不创建规划 Worker，也不执行构建。
 
 `--image-prefix` 可指定拉取镜像所用的 registry 镜像源；输入变更、各镜像的实际平台与 ID 随证据记录，不修改默认部署镜像或全局 Docker 配置。可选 `--control-plane-image` / `--web-image` 仅复用 `org.opencontainers.image.revision` 与当前 HEAD、`artifactory.dockerfile.sha256` 与对应 Dockerfile 均匹配的镜像。`--probe-image` 可复用包含 python3、Git、cc、OpenSSL 的 Linux 测试工具镜像；Emissary 二进制仍从本次源码快照重新编译，验收脚本也由本次 run 单独挂载。
 
@@ -199,9 +199,9 @@ doctor 报告路径、版本命令是否成功、实际 OS/CPU、可发现工具
 
 ## 临时规划与源码
 
-模型配置、任务预算、临时源码和审计会话见 [AI 构建运维](ai-builds.md)。AI 规划只使用 Kubernetes Job，不注册常驻 Worker。源码由临时 SourceTask、任务 init container 和原生 attempt 直接访问上游，平台只持久化源码清单与凭据引用。
+模型配置、任务预算、临时源码和审计会话见 [AI 构建运维](ai-builds.md)。AI 规划只使用 Kubernetes Pod，不注册常驻 Worker。源码由临时 SourceTask、任务 init container 和原生 attempt 直接访问上游，平台只持久化源码清单与凭据引用。
 
-任务终态先持久化结果和日志，再删除 Job，确认 Pod 消失。终态 Job 的 TTL 为 300 秒。原生节点确认进程树退出后清理；清理失败闭锁接单。Registry 不保存构建缓存，最终镜像作为制品保留。
+任务终态先持久化结果和日志，再按 UID 删除 Pod。Operator 确认全部容器停止后记录停止证据，移除 Pod finalizer，并等待对象消失。原生节点确认进程树退出后清理；清理失败闭锁接单。Registry 不保存构建缓存，最终镜像作为制品保留。
 
 托管方案支持加密上传与按任务临时下发。
 配置和安全边界参见[应用签名](signing.md)。

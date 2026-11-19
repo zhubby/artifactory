@@ -128,7 +128,7 @@ resources:
     limits: {cpu: "1", memory: 768Mi}
 
 # Runtime are installed by the separate artifactory-agent-operator release.
-# Kubernetes Job is the only planning backend.
+# Kubernetes Pod is the only planning backend.
 planning:
   runtimeUrl: ""
   namespace: ""

@@ -35,13 +35,13 @@
 
 ## 配置与运行
 
-AI 规划只使用 Kubernetes Job。独立 Agent Operator 创建 Pi Job，Runtime 保存模型配置、累计预算、截止时间与审计记录。控制平面校验计划后，向原生 Emissary 或镜像 Operator 派发构建。
+AI 规划只使用 Kubernetes Pod。独立 Agent Operator 创建 Pi Pod，Runtime 保存模型配置、累计预算、截止时间与审计记录。控制平面校验计划后，向原生 Emissary 或镜像 Operator 派发构建。
 
 1. 安装主 Chart、Agent Operator、Runtime 和 Image Operator。配置 AgentPool 的 `sourcePreparerImage`、`controlUrl`、规划镜像和临时存储限制。
 2. 在“访问与安全 → AI 规划”新增模型配置。支持 OpenAI Chat Completions、Responses 和 Anthropic Messages。项目可以覆盖平台默认配置。
 3. 注册并授权原生设备，或配置集群的 amd64/arm64 构建节点。任务通过绑定 Pod 的投影令牌领取材料，无需注册常驻规划 Worker。
 
-模型密钥使用主密钥加密落库。Pi 通过 Runtime 模型代理调用供应商，供应商密钥留在 Runtime。源码凭据只提供给准备进程，不能写入 CR、Job、仓库 URL、主容器或 AI 会话。
+模型密钥使用主密钥加密落库。Pi 通过 Runtime 模型代理调用供应商，供应商密钥留在 Runtime。源码凭据只提供给准备进程，不能写入 CR、Pod、仓库 URL、主容器或 AI 会话。
 
 Compose 供服务开发、控制台和鉴权验证。完整构建链需要 Kubernetes API、任务 ServiceAccount 和 Operator。模型连通性检查应在 Runtime 所在网络执行。
 
@@ -51,7 +51,7 @@ Compose 供服务开发、控制台和鉴权验证。完整构建链需要 Kuber
 
 分支、标签和子模块 URL 在准备后固定。所有规划重试、目标架构和人工重试读取同一 Manifest。上游拒绝获取原对象时明确失败，不能重新跟随分支或替换标签。Manifest 包含路径、上游 URL、commit、标签对象与 LFS OID/大小，摘要按排序后的仓库列表计算，元数据总量最多 4 MiB。
 
-Kubernetes 规划和镜像 Job 使用 init container，将源码拉入任务专属 `emptyDir`。准备进程使用独立凭据卷与投影令牌；主容器只读取准备好的源码。TokenReview、Pod UID 和真实 Pod → Job → CR 所有者链共同确定任务身份，不能仅凭标签领取材料。
+Kubernetes 规划和镜像 Pod 使用 init container，将源码拉入任务专属 `emptyDir`。准备进程使用独立凭据卷与投影令牌；主容器只读取准备好的源码。TokenReview、Pod UID 和真实 Pod → CR 所有者链共同确定任务身份，不能仅凭标签领取材料。
 
 原生 macOS、Windows 和 Linux Emissary 在每次 attempt 创建临时目录，经 mTLS 和有效租约领取材料，并直接从上游拉取。每次任务隔离可写的 HOME、TMP 和包管理器缓存，继续使用预装工具链与 SDK。进程树退出后删除源码与临时凭据；启动时清扫中断任务，清理失败暂停接单。
 

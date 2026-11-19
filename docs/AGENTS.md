@@ -16,10 +16,11 @@ artifactory-rename-2026-11-11.md: 记录产品命名迁移。
 signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。
 configuration.md: 定义任务执行计划的结构与限制。
 design-system.md: 定义中性色、字体、工作台布局和共享控件边界。
+direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、1.28 下限与多版本验证边界。
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。
 frontend-experience.md: 定义语言、主题与动效行为。
-helm.md: 定义 Kubernetes 1.28 新实例安装与临时源码验收。
+helm.md: 定义最低 Kubernetes 1.28 的新实例安装与临时源码验收。
 image-builds.md: 定义普通容器镜像生命周期、交付与网关边界。
 image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像、独立 Operator、网关迁移与空闲连接验收。
 image-builds-kubernetes-128-acceptance-2026-11-18.md: 记录 1.28 生命周期、正式部署与原生设备验收。
@@ -34,6 +35,8 @@ registration-acceptance-2026-11-11.md: 记录用户注册的本地验收。
 runtime-protocol.md: 定义 Runtime 与任务源码准备契约。
 ephemeral-source-acceptance-2026-11-18.md: 记录临时源码验证、存储回收与正式切换。
 substrate-scheduling-assessment-2026-11-12.md: 评估可选调度后端的适用边界。
+tasknotes-application-acceptance-2026-11-18.md: 记录 TaskNotes 真实应用的构建、网关下载、运行证据和环境阻塞。
+tasknotes-platform-fixes-2026-11-18.md: 罗列 TaskNotes 暴露的平台缺陷、修复验证与剩余能力边界。
 telemetry.md: 定义主机与构建的时序观测。
 toasty-acceptance-2026-11-13.md: 记录 Toasty 数据迁移验收。
 versioning.md: 定义统一版本与交付约束。

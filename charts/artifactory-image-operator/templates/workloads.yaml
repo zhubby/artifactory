@@ -1,6 +1,6 @@
 # [INPUT]: 独立 Operator 镜像与管理员 BuilderPool。
 # [OUTPUT]: Image Operator Deployment、ServiceAccount 与 BuilderPool。
-# [POS]: 每个任务单独创建 Job；控制器不读取任务 Secret。
+# [POS]: 每个任务直接创建带收尾 Finalizer 的 Pod；控制器不读取任务 Secret。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 apiVersion: v1
 kind: ServiceAccount

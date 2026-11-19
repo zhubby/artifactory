@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离数据库、候选回执和模拟 Kubernetes。
-//! [OUTPUT]: 验证候选与最终成功分离及执行身份围栏。
+//! [OUTPUT]: 验证候选提交与失败诊断的执行身份围栏。
 //! [POS]: Control 唯一成功写入者的跨边界验收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
@@ -297,6 +297,68 @@ async fn operator_failure_wins_over_previously_acknowledged_candidates() {
         "publish_failed"
     );
     assert_eq!(artifact_count(&db, id).await, 0);
+    db.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn failure_diagnostics_require_current_uid_spec_generation_and_survive_cleanup() {
+    let db = Database::with_tenant().await;
+    let (id, _, _, kubernetes) = dispatched(&db).await;
+    let mut failure = kubernetes.build.lock().unwrap().clone();
+    failure["status"]["phase"] = json!("Failed");
+    failure["status"]["message"] = json!(
+        "CleanupPending: waiting for Pod deletion\nImage failure: platform=linux/amd64 pod=Evicted"
+    );
+    for (path, changed) in [
+        ("/metadata/uid", json!("replacement-uid")),
+        ("/spec/sourceDigest", json!(sha256(b"changed"))),
+        ("/status/observedGeneration", json!(0)),
+        ("/status/observedGeneration", json!(null)),
+        ("/metadata/generation", json!(2)),
+    ] {
+        let mut stale = failure.clone();
+        *stale.pointer_mut(path).unwrap() = changed;
+        *kubernetes.build.lock().unwrap() = stale;
+        kubernetes.tick(&db).await;
+        assert_eq!(
+            db.state.store.image_execution(id).await.unwrap().status,
+            "running",
+            "accepted stale {path}"
+        );
+    }
+    *kubernetes.build.lock().unwrap() = failure;
+    kubernetes.tick(&db).await;
+    assert_eq!(
+        db.state.store.image_execution(id).await.unwrap().status,
+        "failed"
+    );
+    let saved: String = sql::scalar(
+        &mut db.pool.clone(),
+        "SELECT error FROM image_executions WHERE id=$1",
+        params![id],
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved, "Image failure: platform=linux/amd64 pod=Evicted");
+    kubernetes.tick(&db).await;
+    assert!(
+        db.state
+            .store
+            .image_execution(id)
+            .await
+            .unwrap()
+            .task_envelope
+            .is_none()
+    );
+    let after: String = sql::scalar(
+        &mut db.pool.clone(),
+        "SELECT error FROM image_executions WHERE id=$1",
+        params![id],
+    )
+    .await
+    .unwrap();
+    assert_eq!(after, saved);
     db.close().await;
 }
 

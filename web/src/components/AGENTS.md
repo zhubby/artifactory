@@ -5,13 +5,13 @@ account.tsx: 提供当前账户和个人设置。
 ai-settings.tsx: 配置模型与固定推理预算。
 auth-shell.tsx: 渲染认证页面布局。
 brand-mark.tsx: 渲染 Artifactory 品牌标记。
-build-detail.tsx: 订阅活跃构建，展示终态日志与构建制品。
+build-detail.tsx: 订阅活跃构建，展示应用分类、宿主、终态日志与制品。
 build-log-history.tsx: 按 attempt 和步骤分页读取静态日志并保持阅读锚点。
-build-planning.tsx: 展示源码清单、规划、澄清与持久对话入口。
+build-planning.tsx: 展示应用分类、宿主、规划、澄清与持久对话入口。
 planning-conversations.tsx: 按 generation 分页读取审计，重开补读终态消息。
 build-table.tsx: 展示项目构建列表。
 build-wizard.tsx: 组合引用查询、三步构建引导和默认签名身份预览。
-common.tsx: 提供共享字段、状态和制品验签表。
+common.tsx: 提供应用与宿主标签、共享字段、状态和制品验签表。
 command-palette.tsx: 按权限搜索项目与页面，关闭后恢复焦点。
 console.tsx: 组合工作区路由和业务页面。
 emissary-ota.tsx: 配置节点发布与升级目标。

@@ -1,6 +1,6 @@
 # crds/
 > L2 | Parent: ../AGENTS.md
 
-resources.yaml: 由 agent-crdgen 生成 AgentPool、AgentRun 与 SourceTask 契约。
+resources.yaml: 生成项目不可变身份、Pod 创建意图、UID 与停机台账契约。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

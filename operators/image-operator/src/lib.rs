@@ -9,6 +9,8 @@ pub mod api;
 #[cfg(feature = "operator")]
 pub mod controller;
 #[cfg(feature = "operator")]
+mod diagnostics;
+#[cfg(feature = "operator")]
 pub mod leadership;
 #[cfg(feature = "operator")]
 pub mod publisher;

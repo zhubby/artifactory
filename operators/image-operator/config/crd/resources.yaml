@@ -28,9 +28,6 @@ spec:
                 type: string
               controlUrl:
                 type: string
-              cpu:
-                default: '1'
-                type: string
               emulationNodeSelector:
                 additionalProperties:
                   type: string
@@ -41,9 +38,6 @@ spec:
                 items:
                   type: string
                 type: array
-              ephemeralStorage:
-                default: 20Gi
-                type: string
               imagePullPolicy:
                 default: IfNotPresent
                 type: string
@@ -57,13 +51,107 @@ spec:
                 maximum: 1000.0
                 minimum: 1.0
                 type: integer
-              memory:
-                default: 2Gi
-                type: string
               nodeSelector:
                 additionalProperties:
                   type: string
                 default: {}
+                type: object
+              resources:
+                default:
+                  buildkit:
+                    cpu: '1'
+                    ephemeralStorage: 20Gi
+                    memory: 2Gi
+                  publisher:
+                    cpu: 500m
+                    ephemeralStorage: 20Gi
+                    memory: 512Mi
+                  runner:
+                    cpu: 250m
+                    ephemeralStorage: 1Gi
+                    memory: 256Mi
+                  source:
+                    cpu: 250m
+                    ephemeralStorage: 10Gi
+                    memory: 512Mi
+                description: 每种任务角色独立申请资源，避免将编译预算重复分配给辅助容器。
+                properties:
+                  buildkit:
+                    default:
+                      cpu: '1'
+                      ephemeralStorage: 20Gi
+                      memory: 2Gi
+                    description: 容器 CPU/内存与工作卷预算；Runner 另承担保留源码的存储请求。
+                    properties:
+                      cpu:
+                        type: string
+                      ephemeralStorage:
+                        pattern: ^[1-9][0-9]*(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - ephemeralStorage
+                    - memory
+                    type: object
+                  publisher:
+                    default:
+                      cpu: 500m
+                      ephemeralStorage: 20Gi
+                      memory: 512Mi
+                    description: 容器 CPU/内存与工作卷预算；Runner 另承担保留源码的存储请求。
+                    properties:
+                      cpu:
+                        type: string
+                      ephemeralStorage:
+                        pattern: ^[1-9][0-9]*(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - ephemeralStorage
+                    - memory
+                    type: object
+                  runner:
+                    default:
+                      cpu: 250m
+                      ephemeralStorage: 1Gi
+                      memory: 256Mi
+                    description: 容器 CPU/内存与工作卷预算；Runner 另承担保留源码的存储请求。
+                    properties:
+                      cpu:
+                        type: string
+                      ephemeralStorage:
+                        pattern: ^[1-9][0-9]*(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - ephemeralStorage
+                    - memory
+                    type: object
+                  source:
+                    default:
+                      cpu: 250m
+                      ephemeralStorage: 10Gi
+                      memory: 512Mi
+                    description: 容器 CPU/内存与工作卷预算；Runner 另承担保留源码的存储请求。
+                    properties:
+                      cpu:
+                        type: string
+                      ephemeralStorage:
+                        pattern: ^[1-9][0-9]*(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$
+                        type: string
+                      memory:
+                        type: string
+                    required:
+                    - cpu
+                    - ephemeralStorage
+                    - memory
+                    type: object
                 type: object
               sourcePreparerImage:
                 type: string
@@ -80,31 +168,6 @@ spec:
           status:
             nullable: true
             properties:
-              jobOwnership:
-                nullable: true
-                properties:
-                  imageBuildUid:
-                    type: string
-                  jobs:
-                    items:
-                      properties:
-                        name:
-                          type: string
-                        platform:
-                          type: string
-                        uid:
-                          type: string
-                      required:
-                      - name
-                      - platform
-                      - uid
-                      type: object
-                    maxItems: 3
-                    type: array
-                required:
-                - imageBuildUid
-                - jobs
-                type: object
               message:
                 nullable: true
                 type: string
@@ -113,6 +176,37 @@ spec:
                 type: integer
               phase:
                 type: string
+              podOwnership:
+                nullable: true
+                properties:
+                  creating:
+                    nullable: true
+                    type: string
+                  imageBuildUid:
+                    type: string
+                  pods:
+                    items:
+                      properties:
+                        name:
+                          type: string
+                        platform:
+                          type: string
+                        stopped:
+                          type: boolean
+                        uid:
+                          type: string
+                      required:
+                      - name
+                      - platform
+                      - stopped
+                      - uid
+                      type: object
+                    maxItems: 3
+                    type: array
+                required:
+                - imageBuildUid
+                - pods
+                type: object
             required:
             - observedGeneration
             - phase
@@ -226,31 +320,6 @@ spec:
           status:
             nullable: true
             properties:
-              jobOwnership:
-                nullable: true
-                properties:
-                  imageBuildUid:
-                    type: string
-                  jobs:
-                    items:
-                      properties:
-                        name:
-                          type: string
-                        platform:
-                          type: string
-                        uid:
-                          type: string
-                      required:
-                      - name
-                      - platform
-                      - uid
-                      type: object
-                    maxItems: 3
-                    type: array
-                required:
-                - imageBuildUid
-                - jobs
-                type: object
               message:
                 nullable: true
                 type: string
@@ -259,6 +328,37 @@ spec:
                 type: integer
               phase:
                 type: string
+              podOwnership:
+                nullable: true
+                properties:
+                  creating:
+                    nullable: true
+                    type: string
+                  imageBuildUid:
+                    type: string
+                  pods:
+                    items:
+                      properties:
+                        name:
+                          type: string
+                        platform:
+                          type: string
+                        stopped:
+                          type: boolean
+                        uid:
+                          type: string
+                      required:
+                      - name
+                      - platform
+                      - stopped
+                      - uid
+                      type: object
+                    maxItems: 3
+                    type: array
+                required:
+                - imageBuildUid
+                - pods
+                type: object
             required:
             - observedGeneration
             - phase

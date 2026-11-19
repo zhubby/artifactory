@@ -27,7 +27,6 @@ runtime:
   # Contains DATABASE_URL, ARTIFACTORY_SERVICE_KEY and ARTIFACTORY_SERVICE_TOKEN.
   secretName: artifactory-runtime
   url: https://artifactory-runtime:8091
-  grpcUrl: https://artifactory-runtime:8092
 controlUrl: https://artifactory-gateway-internal:8445
 tls:
   # tls.crt, tls.key, ca.crt. SANs cover Runtime endpoints.

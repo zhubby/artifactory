@@ -1,14 +1,14 @@
 <!--
 [INPUT]: 独立 Operator、Runtime 和一次性源码镜像。
-[OUTPUT]: 定义源码、规划和镜像 Job 的安装及收尾约束。
-[POS]: Kubernetes 1.28 工作负载运维入口。
+[OUTPUT]: 定义源码、规划和镜像 Pod 的安装及收尾约束。
+[POS]: 最低支持 Kubernetes 1.28 的工作负载运维入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
 # Kubernetes Agent Operator 运维
 
-Agent Operator 是独立 Rust 服务。它协调 `AgentPool`、`AgentRun` 和 `SourceTask`。源码任务与规划任务各自按 AgentPool 预算准入，均使用临时 Job，不创建常驻源码服务、源码 PVC 或源码 S3 对象。
+Agent Operator 是独立 Rust 服务。它协调 `AgentPool`、`AgentRun` 和 `SourceTask`，直接创建临时 Pod。源码任务与规划任务各自按 AgentPool 预算准入，不创建常驻源码服务、源码 PVC 或源码 S3 对象。
 
-Kubernetes 最低版本为 1.28。使用同一命名空间部署一套 Runtime 与 Agent Operator。Operator 的两个副本共享 `artifactory-agent-operator` Lease，只有持有 Lease 的副本修改资源。
+Kubernetes 最低支持版本为 1.28。1.28 及以上版本使用同一套 Pod 执行实现。四个 Chart 均声明 `kubeVersion: '>=1.28.0-0'`，不设版本上限。使用同一命名空间部署一套 Runtime 与 Agent Operator。Operator 的两个副本共享 `artifactory-agent-operator` Lease，只有持有 Lease 的副本修改资源。
 
 ## 安装
 
@@ -24,7 +24,6 @@ helm upgrade --install native charts/artifactory-agent-operator \
 runtime:
   secretName: artifactory-runtime
   url: https://artifactory-runtime:8091
-  grpcUrl: https://artifactory-runtime:8092
 controlUrl: https://artifactory-gateway-internal:8445
 tls:
   secretName: artifactory-services-tls
@@ -43,33 +42,41 @@ networkPolicy:
 
 ## 源码任务
 
-Control 创建 `SourceTask`，固定 `taskId`、`tenantId`、`projectId`、`purpose`、`pool` 与 `timeoutSeconds`。`purpose=resolve` 解析固定 commit、子模块、tag 和 LFS 元数据，默认总期限 900 秒。`purpose=refs` 查询分支与 tag，由 Control 设置 30 秒总期限。任务取消只能从 false 改为 true。
+Control 创建 `SourceTask`，固定 `taskId`、`tenantId`、`projectId`、`purpose`、`pool` 与 `timeoutSeconds`。Control 在数据库中固定 CR UID，并单调绑定 attempt、Pod 名和 UID。旧 attempt 不能再次领取材料、固定引用或提交结果。`purpose=resolve` 解析固定 commit、子模块、tag 和 LFS 元数据，默认总期限 900 秒。`purpose=refs` 查询分支与 tag，由 Control 设置 30 秒总期限。任务取消只能从 false 改为 true。
 
-Operator 创建 `source-<taskId>` Job。Job 使用 `artifactory-source-preparer` ServiceAccount，投影 audience 为 `artifactory-source-prepare` 的短期 token。源码准备进程向 `/internal/source/prepare` 领取材料。Control 使用 TokenReview 验证 token，再核对 Pod→Job→SourceTask 的 owner UID 和业务任务状态。仓库凭据只进入任务进程与内存卷。
+Operator 在创建 Pod 前，持久化 attempt、唯一 Pod 名和总 deadline。Pod 名包含任务 ID、attempt 与 CR UID 摘要，直接归属 SourceTask，使用 `restartPolicy: Never`。`status.execution` 保存 Pod UID、节点和停止证据。Pod 使用 `artifactory-source-preparer` ServiceAccount，投影 audience 为 `artifactory-source-prepare` 的短期 token。源码准备进程向 `/internal/source/prepare` 领取材料。Control 使用 TokenReview 验证 token，再核对 Pod→SourceTask 的 owner UID、执行台账和业务任务状态。仓库凭据只进入任务进程与内存卷。
 
 解析首次得到的 ref OID 和每个仓库的 tag 集合通过 `/internal/source/prepare/pin` 固定。重试读取首次固定值。准备进程通过 `/internal/source/prepare/commit` 提交元数据。数据库保存固定清单与摘要，不保存 Git 对象、LFS 对象或工作树。
 
 ## 规划任务
 
-`AgentRun` 固定 `runId`、`generation`、`pool`、`sourceManifestId` 和 `sourceDigest`。选机任务没有源码清单，因此不创建源码 init container。
+`AgentRun` 固定 `runId`、`projectId`、`generation`、`pool`、`sourceManifestId` 和 `sourceDigest`。Operator 同时限制池和项目的实际执行数；未知和清理中的旧执行仍计费。选机任务没有源码清单，因此不创建源码 init container。
 
 有源码的规划 Pod 先执行 `artifactory-source-preparer checkout`。init container 通过 Runtime `/v1/prepare` 领取固定源码与凭据，每次从原 Git/LFS 上游重新拉取。`/workspace` 是有大小限额的 emptyDir。init 专属 token、SSH key 和 askpass 材料不挂载给主容器。
 
 主容器只读挂载 `/workspace/source` 和 `/workspace/source-manifest.json`，工具在本地读取文件。模型调用、预算、租约和结果仍由 Runtime 控制。AI 对话、日志、计划及明确产出的制品允许持久保存。
 
+源码 init 非零退出、Worker 终止或 Pod 失败时，Operator 向 Runtime `/v1/execution-failed` 提交已登记的完整执行身份。Runtime 以 generation 和 Pod UID 拒绝旧回报，并原子释放规划槽位。失败通过持久 outbox 结束业务构建。Worker 已提交的提案和已有终态不被覆盖。Pod 存在时仍处于源码准备的任务显示 `Provisioning`，主 Worker acquire 后才显示 `Running`。
+
 ## 清理与故障
 
-镜像平台 Job 使用普通源码 init、Runner 和 BuildKit 两个普通容器。它不需要 `SidecarContainers` 功能开关。BuildKit 镜像必须包含 `artifactory-image-buildkit` 监督入口，不能直接替换成上游镜像。Runner 通过本地 Unix socket 维持租约，构建校验完成后等待 BuildKit 进程树停止，再提交平台结果。
+镜像平台 Pod 使用普通源码 init、Runner 和 BuildKit 两个普通容器。它不需要 `SidecarContainers` 功能开关。BuildKit 镜像必须包含 `artifactory-image-buildkit` 监督入口，不能直接替换成上游镜像。Runner 通过本地 Unix socket 维持租约，构建校验完成后等待 BuildKit 进程树停止，再提交平台结果。
 
-任一应用容器非零退出或 OOM，Image Operator 立即进入失败收尾。Published 回报只保存候选摘要。Control 核对原 ImageBuild UID、完整 Job 成功和任务期限后，才提交业务成功与制品记录。
+任一应用容器非零退出或 OOM，Image Operator 立即进入失败收尾。Published 回报只保存候选摘要。Control 核对原 ImageBuild UID、全部 Pod 成功和任务期限后，才提交业务成功与制品记录。成功要求 Pod 为 Succeeded，且全部声明的 init 和普通容器均以零退出码终止。
 
-ImageBuild 保存所属 Job 的 UID 台账。创建 Job 前，Operator 安装清理 finalizer。直接删除 ImageBuild 也须等待实际任务 Pod 收尾，才能移除该 finalizer。删除 Job 后，Operator 仍按 Pod owner UID 识别残留执行。活动、状态未知或尚未确认停止的 Pod 占用容量。所有容器已终止的 Pod 保留诊断证据，但释放执行槽，允许 Publisher 准入。节点失联时保留 `CleanupPending`，不能以 API 逻辑删除代替实际停止。
+源码 init 失败和 Pod 驱逐也进入失败收尾。ImageBuild 保留白名单 Kubernetes reason、容器名和退出码。清理状态不覆盖失败原因。Runner 和 Publisher 的错误先脱敏再写入镜像专用日志，单次诊断有大小上限。Control 只接受当前 CR UID 与 generation 的失败状态，并把原因写入 execution.error。
 
-Job 不共享仓库或 BuildKit 缓存。源码任务结束、失败或取消后，Operator 按 owner UID 删除 Job，并等待 Pod 消失。删除失败保留 `CleanupPending`，后续继续重试。源码 Job 的 300 秒 TTL 仅在任务终态清理时设置，避免丢失终态观察后重新执行任务。规划 Job 有 300 秒 TTL 兜底，其执行状态以 Runtime 为准。
+ImageBuild 的 `status.podOwnership.pods` 保存 Pod 名、UID、平台和 `stopped` 证据。创建 Pod 前，Operator 安装 CR 清理 finalizer；Pod 自身也带停止确认 finalizer。直接删除 ImageBuild 仍须等待实际任务 Pod 收尾。活动、状态未知或尚未确认停止的 Pod 占用容量。所有容器已终止的 Pod 保留诊断证据，但释放执行槽，允许 Publisher 准入。节点失联时保留 `CleanupPending`，不能以 API 逻辑删除代替实际停止。
 
-源码任务 `backoffLimit=2`，重试共享总截止期限。规划 Job 不在 Kubernetes 内重试，恢复由 Runtime generation 控制。上游固定 commit 被删除或无法拉取时，任务报源码不可用，不切换当前分支。
+Pod 不共享仓库或 BuildKit 缓存。任务结束、失败或取消后，Operator 按 UID 删除 Pod，逐容器确认停止，先将 `stopped=true` 写入 CR，再移除 Pod finalizer。Pod 消失后才完成清理。Agent Operator 发出创建请求前先持久化 `createStarted=true`；Image Operator 先在 `podOwnership.creating` 预留唯一 Pod 名。取消时未看到 Pod，但请求可能已发出，也保留预留台账，持续查询迟到的 Pod。API 对象消失但缺少停止证据时，保留未知执行台账和容量，不自动重建执行。清理依赖 Operator 持续协调，不使用 Job TTL。
 
-Operator 重启后按 CRD、Job owner UID 和 Runtime 状态继续清理。节点失联时，逻辑删除不能证明节点本地磁盘已经回收；待节点恢复后检查 kubelet 回收，退役节点按设备磁盘策略处置。
+源码 Pod 非零退出最多执行三次，重试共享首次记录的总截止期限。只有旧 Pod 已停止且对象已消失，Operator 才创建下一 attempt。准备进程已向 Control 提交业务错误时，业务任务直接失败；Control 随后取消 CR，再次领取不会得到源码凭据。取消写回前仍可能出现下一 attempt，但不会重开业务任务。规划 Pod 不在 Kubernetes 内重试，恢复由 Runtime generation 控制。Pod 丢失先通过 `/v1/execution-lost` 撤销旧授权；未知旧执行仍占容量并阻止同 run 的新 Pod。镜像 Pod 在同一次执行内不自动重建。上游固定 commit 被删除或无法拉取时，任务报源码不可用，不切换当前分支。
+
+缺少停止证据的执行需要保守占槽。恢复节点后让 kubelet 上报退出状态；永久退役节点须先完成隔离和磁盘处置，再由管理员确认执行已停止。不要仅为释放配额而移除 finalizer 或清空执行台账。
+
+任务终态且 Pod 全部清理后，Operator 主动移除 CR 清理 finalizer，保留 CR 审计记录。卸载运行中的实例时，先取消并删除任务 CR，等待 Pod 和清理 finalizer 消失，再卸载 Operator 或删除命名空间。命名空间删除会同时终止 Operator 并删除 Lease，不能代替任务收尾流程。
+
+Operator 重启后按 CRD 执行台账、Pod owner UID 和 Runtime 状态继续清理。节点失联时，逻辑删除不能证明节点本地磁盘已经回收；待节点恢复后检查 kubelet 回收，退役节点按设备磁盘策略处置。
 
 ```sh
 python3 scripts/check_ephemeral_source.py --context YOUR_CONTEXT --namespace artifactory --idle

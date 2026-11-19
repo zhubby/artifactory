@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖固定 Job、租户授权和加密任务材料。
-//! [OUTPUT]: 保存候选与 CR UID，事务确认成功并登记唯一制品。
+//! [INPUT]: 依赖业务构建任务、租户授权和加密任务材料。
+//! [OUTPUT]: 保存候选、失败诊断与 CR UID，事务确认成功并登记唯一制品。
 //! [POS]: Control 是成功写入者；网络校验在事务外完成。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
@@ -290,8 +290,8 @@ impl ControlStore {
                 text,
             } => {
                 ensure!(
-                    !publisher
-                        && execution.spec.platforms.contains(platform)
+                    (publisher && platform == "publish"
+                        || !publisher && execution.spec.platforms.contains(platform))
                         && *sequence > 0
                         && text.len() <= 16384,
                     "invalid log report"
@@ -319,7 +319,13 @@ impl ControlStore {
                 )
                 .await?;
             }
-            Report::Failed { .. } => {
+            Report::Failed { message } => {
+                ensure!(
+                    !message.trim().is_empty()
+                        && message.len() <= 1024
+                        && !message.chars().any(char::is_control),
+                    "invalid failure summary"
+                );
                 let status = if publisher {
                     "publish_failed"
                 } else {
@@ -328,15 +334,7 @@ impl ControlStore {
                 sql::execute(
                     &mut tx,
                     "UPDATE image_executions SET status=$2,error=$3,finished_at=now() WHERE id=$1",
-                    params![
-                        id,
-                        status,
-                        if publisher {
-                            "image publication failed"
-                        } else {
-                            "image build failed"
-                        }
-                    ],
+                    params![id, status, message],
                 )
                 .await?;
                 if execution.destination_credential.is_none() {
@@ -389,7 +387,34 @@ impl ControlStore {
         let mut tx = db.transaction().await?;
         sql::execute(&mut tx,"SELECT b.id FROM builds b JOIN jobs j ON j.build_id=b.id JOIN image_executions e ON e.job_id=j.id WHERE e.id=$1 FOR UPDATE OF b,j",params![id]).await?;
         sql::execute(&mut tx,"UPDATE jobs SET status=$2 WHERE id=(SELECT job_id FROM image_executions WHERE id=$1 AND status IN ('preparing','running') AND destination_credential IS NULL)",params![id,status]).await?;
-        sql::execute(&mut tx,"UPDATE image_executions SET status=CASE WHEN $2='failed' AND jsonb_array_length(results)=jsonb_array_length(spec->'platforms') THEN 'publish_failed' ELSE $2 END,cancel_requested=($2='canceled'),error=$3,finished_at=now() WHERE id=$1 AND status IN ('preparing','running')",params![id,status,if status=="failed"{"image Job failed or timed out"}else{"image execution canceled"}]).await?;
+        sql::execute(&mut tx,"UPDATE image_executions SET status=CASE WHEN $2='failed' AND jsonb_array_length(results)=jsonb_array_length(spec->'platforms') THEN 'publish_failed' ELSE $2 END,cancel_requested=($2='canceled'),error=$3,finished_at=now() WHERE id=$1 AND status IN ('preparing','running')",params![id,status,if status=="failed"{"image Pod failed or timed out"}else{"image execution canceled"}]).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+    /// 只接受当前 CR 的失败观察；清理重放不能替换已保存的执行诊断。
+    pub async fn fail_image_build(&self, id: Uuid, uid: &str, message: &str) -> anyhow::Result<()> {
+        ensure!(
+            !uid.is_empty()
+                && !message.is_empty()
+                && message.len() <= 1024
+                && !message.chars().any(char::is_control),
+            "invalid ImageBuild failure observation"
+        );
+        let mut db = self.pool.clone();
+        let mut tx = db.transaction().await?;
+        sql::execute(&mut tx,"SELECT b.id FROM builds b JOIN jobs j ON j.build_id=b.id JOIN image_executions e ON e.job_id=j.id WHERE e.id=$1 FOR UPDATE OF b,j",params![id]).await?;
+        ensure!(
+            sql::optional_scalar::<Uuid>(
+                &mut tx,
+                &format!("{LIVE} AND e.image_build_uid=$2 FOR UPDATE OF e"),
+                params![id, uid]
+            )
+            .await?
+            .is_some(),
+            "ImageBuild failure is stale or canceled"
+        );
+        sql::execute(&mut tx,"UPDATE jobs SET status='failed' WHERE id=(SELECT job_id FROM image_executions WHERE id=$1 AND destination_credential IS NULL)",params![id]).await?;
+        sql::execute(&mut tx,"UPDATE image_executions SET status=CASE WHEN jsonb_array_length(results)=jsonb_array_length(spec->'platforms') THEN 'publish_failed' ELSE 'failed' END,error=$2,finished_at=now() WHERE id=$1",params![id,message]).await?;
         tx.commit().await?;
         Ok(())
     }

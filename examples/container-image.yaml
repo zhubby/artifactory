@@ -8,6 +8,7 @@ targets:
     os: linux
     arch: amd64
     executor: buildkit
+    application_platform: null
     image:
       name: example
       context: examples/image

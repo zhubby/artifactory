@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖真实 PostgreSQL 和 Runtime 业务提交事务。
-//! [OUTPUT]: 验证重排不改变脚本、资源和已更新版本。
-//! [POS]: 取代已删除 Poll RPC 的 Placement 业务回归。
+//! [OUTPUT]: 验证规划失败回执、取消围栏及重排不变约束。
+//! [POS]: Runtime 事件进入业务构建状态的数据库回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{ControlStore, RuntimeEventCommit};
 use anyhow::Result;
@@ -149,5 +149,73 @@ async fn runtime_placement_commit_preserves_scripts_resources_and_versions() -> 
     )
     .await?;
     assert_eq!(target, after);
+    db.close().await
+}
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn runtime_execution_failure_finishes_the_build_once_and_preserves_cancellation() -> Result<()>
+{
+    let db = Database::new().await?;
+    let project = Uuid::new_v4();
+    sql::execute(&mut db.pool.clone(), "INSERT INTO projects(id,tenant_id,name,repository_url) VALUES($1,'00000000-0000-0000-0000-000000000001','failure','https://example.com/repo.git')", params![project]).await?;
+    for canceled in [false, true] {
+        let build = Uuid::new_v4();
+        let run = Uuid::new_v4();
+        let event = Uuid::new_v4();
+        let build_status = if canceled { "canceled" } else { "planning" };
+        let run_state = if canceled { "canceled" } else { "queued" };
+        sql::execute(&mut db.pool.clone(), "INSERT INTO builds(id,project_id,requested_ref,status,cancel_requested,source_repository_url) VALUES($1,$2,'main',$3,$4,'https://example.com/repo.git')", params![build,project,build_status,canceled]).await?;
+        sql::execute(&mut db.pool.clone(), "INSERT INTO planning_runs(id,build_id,purpose,state,model_config,deadline_at) VALUES($1,$2,'initial',$3,'{}',now()+interval '1 minute')", params![run,build,run_state]).await?;
+        let payload =
+            json!({"generation":1,"error":"source preparation container exited with code 1"});
+        let commit = || {
+            db.store.commit_runtime_event(
+                RuntimeEventCommit {
+                    event,
+                    run,
+                    build,
+                    hash: "fixed-failure-event".into(),
+                    kind: "failed",
+                    payload: &payload,
+                    validation: None,
+                },
+                |_| async { panic!("failure never prepares an executable plan") },
+            )
+        };
+        let (first, replay) = tokio::join!(commit(), commit());
+        let first = first?;
+        assert_eq!(
+            first, replay?,
+            "concurrent duplicate failure must reuse the receipt"
+        );
+        let after: Value = sql::scalar(&mut db.pool.clone(), "SELECT jsonb_build_object('build_status',b.status,'run_state',r.state,'build_finished',b.finished_at IS NOT NULL,'run_finished',r.finished_at IS NOT NULL,'error',b.error) FROM builds b JOIN planning_runs r ON r.build_id=b.id WHERE b.id=$1", params![build]).await?;
+        if canceled {
+            assert!(
+                first.get("error").is_some(),
+                "canceled build rejects failure receipt"
+            );
+            assert_eq!(after["build_status"], "canceled");
+            assert_eq!(after["run_state"], "canceled");
+            assert!(after["error"].is_null());
+        } else {
+            assert_eq!(first["ok"], true);
+            assert_eq!(after["build_status"], "failed");
+            assert_eq!(after["run_state"], "failed");
+            assert_eq!(after["build_finished"], true);
+            assert_eq!(after["run_finished"], true);
+            assert_eq!(after["error"], payload["error"]);
+        }
+        let count: i64 = sql::scalar(
+            &mut db.pool.clone(),
+            "SELECT count(*) FROM runtime_receipts WHERE event_id=$1",
+            params![event],
+        )
+        .await?;
+        assert_eq!(
+            count, 1,
+            "duplicate failure creates exactly one business receipt"
+        );
+    }
     db.close().await
 }

@@ -48,17 +48,29 @@ fn native_architecture_precedes_explicit_emulation() {
 fn kubernetes_128_workers_use_two_regular_containers_and_a_single_source_init() {
     let build = build();
     let pool = pool();
-    let build_job = resources::job(&build, &pool, Some("linux/amd64"), Default::default()).unwrap();
-    assert!(resources::owned(&build, &build_job));
+    let build_pod = resources::pod(&build, &pool, Some("linux/amd64"), Default::default()).unwrap();
+    assert!(resources::owned(&build, &build_pod));
     assert_eq!(
-        build_job.metadata.owner_references.as_ref().unwrap()[0].block_owner_deletion,
+        build_pod.metadata.finalizers.as_ref().unwrap(),
+        &[resources::POD_FINALIZER]
+    );
+    assert_eq!(
+        build_pod.metadata.owner_references.as_ref().unwrap()[0].kind,
+        "ImageBuild"
+    );
+    assert_eq!(
+        build_pod.metadata.owner_references.as_ref().unwrap()[0].block_owner_deletion,
         Some(false)
     );
     let mut impostor = build.clone();
     impostor.metadata.uid = Some("other".into());
-    assert!(!resources::owned(&impostor, &build_job));
-    let value = serde_json::to_value(build_job).unwrap();
-    let pod = &value["spec"]["template"]["spec"];
+    assert!(!resources::owned(&impostor, &build_pod));
+    let value = serde_json::to_value(build_pod).unwrap();
+    let pod = &value["spec"];
+    assert_eq!(value["apiVersion"], "v1");
+    assert_eq!(value["kind"], "Pod");
+    assert_eq!(pod["activeDeadlineSeconds"], 600);
+    assert_eq!(pod["restartPolicy"], "Never");
     assert_eq!(pod["automountServiceAccountToken"], false);
     assert_eq!(pod["volumes"][0]["secret"]["items"][0]["key"], "build.json");
     assert_eq!(pod["initContainers"].as_array().unwrap().len(), 1);
@@ -81,7 +93,7 @@ fn kubernetes_128_workers_use_two_regular_containers_and_a_single_source_init() 
             .is_none()
     );
     assert_eq!(
-        value["spec"]["template"]["metadata"]["annotations"]["container.apparmor.security.beta.kubernetes.io/buildkit"],
+        value["metadata"]["annotations"]["container.apparmor.security.beta.kubernetes.io/buildkit"],
         "unconfined"
     );
     assert_eq!(
@@ -97,9 +109,6 @@ fn kubernetes_128_workers_use_two_regular_containers_and_a_single_source_init() 
         true
     );
     for worker in pod["containers"].as_array().unwrap() {
-        assert_eq!(worker["resources"]["requests"]["cpu"], "1");
-        assert_eq!(worker["resources"]["requests"]["memory"], "2Gi");
-        assert_eq!(worker["resources"]["requests"]["ephemeral-storage"], "20Gi");
         assert!(worker["env"].as_array().unwrap().iter().any(|e| e["name"] == "ARTIFACTORY_BUILDKIT_TIMEOUT_SECONDS" && e["value"] == "600"));
         assert!(
             worker["env"]
@@ -126,13 +135,136 @@ fn kubernetes_128_workers_use_two_regular_containers_and_a_single_source_init() 
         true
     );
     let publisher: Value =
-        serde_json::to_value(resources::job(&build, &pool, None, Default::default()).unwrap())
+        serde_json::to_value(resources::pod(&build, &pool, None, Default::default()).unwrap())
             .unwrap();
-    let pod = &publisher["spec"]["template"]["spec"];
+    let pod = &publisher["spec"];
     assert!(pod["initContainers"].is_null());
     assert_eq!(
         pod["volumes"][0]["secret"]["items"][0]["key"],
         "publish.json"
+    );
+}
+
+#[test]
+fn each_pod_role_receives_only_its_own_resource_budget() {
+    let mut value = serde_json::to_value(pool()).unwrap();
+    value["spec"]["resources"] = json!({
+        "source": {"cpu":"300m","memory":"600Mi","ephemeralStorage":"3Gi"},
+        "runner": {"cpu":"200m","memory":"256Mi","ephemeralStorage":"1Gi"},
+        "buildkit": {"cpu":"2","memory":"4Gi","ephemeralStorage":"30Gi"},
+        "publisher": {"cpu":"500m","memory":"768Mi","ephemeralStorage":"6Gi"}
+    });
+    let pool: BuilderPool = serde_json::from_value(value).unwrap();
+    for platform in [Some("linux/amd64"), None] {
+        let workload = serde_json::to_value(
+            resources::pod(&build(), &pool, platform, Default::default()).unwrap(),
+        )
+        .unwrap();
+        let pod = &workload["spec"];
+        let roles = if platform.is_some() {
+            vec![
+                (&pod["initContainers"][0], "source"),
+                (&pod["containers"][0], "runner"),
+                (&pod["containers"][1], "buildkit"),
+            ]
+        } else {
+            vec![(&pod["containers"][0], "publisher")]
+        };
+        for (container, role) in roles {
+            let budget = serde_json::to_value(&pool.spec.resources).unwrap();
+            for level in ["requests", "limits"] {
+                assert_eq!(
+                    container["resources"][level]["cpu"], budget[role]["cpu"],
+                    "{role} {level}"
+                );
+                assert_eq!(
+                    container["resources"][level]["memory"], budget[role]["memory"],
+                    "{role} {level}"
+                );
+                let expected_storage = match role {
+                    "source" => 3_u64 << 30,
+                    "runner" => 4_u64 << 30,
+                    "buildkit" => 30_u64 << 30,
+                    "publisher" => 6_u64 << 30,
+                    _ => unreachable!(),
+                };
+                assert_eq!(
+                    container["resources"][level]["ephemeral-storage"],
+                    expected_storage.to_string(),
+                    "{role} {level}"
+                );
+            }
+        }
+        let volume_limit = |name| {
+            pod["volumes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|v| v["name"] == name)
+                .unwrap()["emptyDir"]["sizeLimit"]
+                .clone()
+        };
+        if platform.is_some() {
+            assert_eq!(volume_limit("workspace"), "3Gi");
+            assert_eq!(volume_limit("buildkit-state"), "30Gi");
+            assert_eq!(volume_limit("work"), "1Gi");
+        } else {
+            assert_eq!(volume_limit("work"), "6Gi");
+        }
+    }
+}
+
+#[test]
+fn default_buildkit_budget_is_not_duplicated_onto_the_runner() {
+    let workload = serde_json::to_value(
+        resources::pod(&build(), &pool(), Some("linux/amd64"), Default::default()).unwrap(),
+    )
+    .unwrap();
+    let pod = &workload["spec"];
+    assert_eq!(pod["containers"][0]["resources"]["requests"]["cpu"], "250m");
+    assert_eq!(
+        pod["containers"][0]["resources"]["requests"]["memory"],
+        "256Mi"
+    );
+    assert_eq!(pod["containers"][1]["resources"]["requests"]["cpu"], "1");
+    assert_eq!(
+        pod["containers"][1]["resources"]["requests"]["memory"],
+        "2Gi"
+    );
+    let runner_storage = pod["containers"][0]["resources"]["requests"]["ephemeral-storage"]
+        .as_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    let buildkit_storage = pod["containers"][1]["resources"]["requests"]["ephemeral-storage"]
+        .as_str()
+        .unwrap()
+        .parse::<u64>()
+        .unwrap();
+    assert_eq!(buildkit_storage, 20_u64 << 30);
+    assert_eq!(
+        runner_storage + buildkit_storage,
+        31_u64 << 30,
+        "running Pod reserves the retained 10Gi workspace plus 1Gi runner work and 20Gi BuildKit state"
+    );
+}
+
+#[test]
+fn invalid_or_overflowing_storage_budgets_never_create_pods() {
+    for storage in ["0", "-1Gi", "0.5Gi", "1m", "8Ei", "18446744073709551616Gi"] {
+        let mut pool = pool();
+        pool.spec.resources.source.ephemeral_storage = storage.into();
+        assert!(
+            resources::pod(&build(), &pool, Some("linux/amd64"), Default::default()).is_err(),
+            "invalid storage {storage}"
+        );
+    }
+    let mut pool = pool();
+    pool.spec.resources.source.ephemeral_storage = "5Ei".into();
+    pool.spec.resources.runner.ephemeral_storage = "5Ei".into();
+    assert!(
+        resources::pod(&build(), &pool, Some("linux/amd64"), Default::default()).is_err(),
+        "retained workspace addition cannot overflow Kubernetes int64 quantities"
     );
 }
 #[test]
@@ -175,10 +307,10 @@ fn crd_fences_publication_mode_and_cancellation() {
 #[test]
 fn source_init_has_exclusive_auth_and_no_persistent_cache() {
     let value = serde_json::to_value(
-        resources::job(&build(), &pool(), Some("linux/arm64"), Default::default()).unwrap(),
+        resources::pod(&build(), &pool(), Some("linux/arm64"), Default::default()).unwrap(),
     )
     .unwrap();
-    let pod = &value["spec"]["template"]["spec"];
+    let pod = &value["spec"];
     assert_eq!(pod["initContainers"][0]["name"], "source");
     assert_eq!(pod["initContainers"].as_array().unwrap().len(), 1);
     assert_eq!(pod["containers"][1]["name"], "buildkit");
@@ -214,8 +346,8 @@ fn source_init_has_exclusive_auth_and_no_persistent_cache() {
 #[test]
 fn trust_volume_projects_only_public_ca_for_build_and_publish() {
     for platform in [Some("linux/amd64"), None] {
-        let job = resources::job(&build(), &pool(), platform, Default::default()).unwrap();
-        let pod = job.spec.unwrap().template.spec.unwrap();
+        let workload = resources::pod(&build(), &pool(), platform, Default::default()).unwrap();
+        let pod = workload.spec.unwrap();
         let secret = pod
             .volumes
             .unwrap()
@@ -236,16 +368,16 @@ fn trust_volume_projects_only_public_ca_for_build_and_publish() {
 }
 
 #[test]
-fn image_status_owns_a_bounded_job_uid_ledger() {
+fn image_status_owns_a_bounded_pod_uid_ledger() {
     let crds = crate::api::crds();
     let crd = serde_json::to_value(&crds[1]).unwrap();
     let ledger = &crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["status"]["properties"]
-        ["jobOwnership"];
+        ["podOwnership"];
     assert_eq!(ledger["properties"]["imageBuildUid"]["type"], "string");
-    assert_eq!(ledger["properties"]["jobs"]["maxItems"], 3);
-    for field in ["name", "uid", "platform"] {
+    assert_eq!(ledger["properties"]["pods"]["maxItems"], 3);
+    for field in ["name", "uid", "platform", "stopped"] {
         assert!(
-            ledger["properties"]["jobs"]["items"]["properties"]
+            ledger["properties"]["pods"]["items"]["properties"]
                 .get(field)
                 .is_some(),
             "missing {field}"
@@ -255,8 +387,8 @@ fn image_status_owns_a_bounded_job_uid_ledger() {
 
 #[test]
 fn publisher_blob_staging_has_a_writable_disk_volume() {
-    let job = resources::job(&build(), &pool(), None, Default::default()).unwrap();
-    let pod = job.spec.unwrap().template.spec.unwrap();
+    let workload = resources::pod(&build(), &pool(), None, Default::default()).unwrap();
+    let pod = workload.spec.unwrap();
     let worker = &pod.containers[0];
     let staging = worker
         .volume_mounts

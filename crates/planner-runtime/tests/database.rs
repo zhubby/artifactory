@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离 PostgreSQL、Runtime HTTP 和模型桩。
-//! [OUTPUT]: 验证预算、审计、提案幂等和租户边界。
+//! [OUTPUT]: 验证预算、审计、故障终态与租户边界。
 //! [POS]: 新初始化基线的持久状态回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_database::{PoolSettings, connect, with_options};
@@ -16,6 +16,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 #[path = "database/conversation_chunks.rs"]
 mod conversation_chunks;
+#[path = "database/execution_failure.rs"]
+mod execution_failure;
 #[path = "database/source_payload.rs"]
 mod source_payload;
 struct TestRuntime {

@@ -1,5 +1,5 @@
 """[INPUT]: 合成 OCI Blob、隔离身份与模拟 Kubernetes 读接口。
-[OUTPUT]: 验证 namespace、真实 RUN、故障 UID、cgroup 路径与 OOM 事件。
+[OUTPUT]: 验证 namespace、真实 RUN、故障 UID、CAS 终态保护与 OOM 事件。
 [POS]: 端到端脚本的离线回归，不连接任何集群。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from faults import _confirmed_exit, container_cgroup, container_oom_observed, force_oom, inject, terminate
+from faults import _confirmed_exit, container_cgroup, container_oom_observed, force_oom, inject, pod_deadline, terminate
 from registry import registry_graph
 from setup import ImageAcceptance, install, safe_namespace
 from node_unreachable import NodeUnreachable, kind_target
@@ -52,7 +52,87 @@ def graph(marker='executed-linux-amd64\n', machine=62, corrupt_layer=False):
     return read,root['digest']
 
 
+class DeadlineClient:
+    """终态立即触发 Operator 删除；只有测试保护能让观察者读取终态。"""
+    def __init__(self, *, terminal=True, conflicts=None, foreign=False, disappear=False, replace=False):
+        self.pod={'metadata':{'name':'pod','uid':'pod-uid','resourceVersion':'1','finalizers':['operator']},
+            'spec':{'activeDeadlineSeconds':900},'status':{'phase':'Running'}}
+        self.terminal=terminal;self.conflicts=dict(conflicts or {});self.foreign=foreign
+        self.disappear=disappear;self.replace=replace;self.patches=[];self.protected=False
+
+    def kubectl(self,*args):
+        if args[0]=='get':
+            return json.dumps(self.pod) if self.pod else ''
+        patch=json.loads(args[args.index('-p')+1]);self.patches.append(patch)
+        assert self.pod is not None
+        assert patch['metadata']['uid']==self.pod['metadata']['uid']
+        assert patch['metadata']['resourceVersion']==self.pod['metadata']['resourceVersion']
+        operation='install' if 'spec' in patch else 'remove'
+        if self.conflicts.get(operation,0):
+            self.conflicts[operation]-=1
+            if self.foreign:
+                self.pod['metadata']['finalizers'].append('external/'+operation)
+            self.pod['metadata']['resourceVersion']=str(int(self.pod['metadata']['resourceVersion'])+1)
+            raise RuntimeError('synthetic CAS conflict')
+        self.pod['metadata']['finalizers']=patch['metadata']['finalizers']
+        self.pod['metadata']['resourceVersion']=str(int(self.pod['metadata']['resourceVersion'])+1)
+        if operation=='install':
+            self.pod['spec'].update(patch['spec'])
+            if self.terminal:
+                self.pod['status']={'phase':'Failed','reason':'DeadlineExceeded'}
+                self.pod['metadata']['deletionTimestamp']='2026-11-19T00:00:00Z'
+                self.pod['metadata']['finalizers'].remove('operator')
+                self.protected=any(value.startswith('tests.artifactory.dev/deadline-')
+                    for value in self.pod['metadata']['finalizers'])
+        response=json.dumps(self.pod)
+        if operation=='install' and self.replace:
+            self.pod={'metadata':{'name':'pod','uid':'replacement','resourceVersion':'1','finalizers':['foreign']}}
+        elif (operation=='install' and self.disappear) or (
+            self.pod['metadata'].get('deletionTimestamp') and not self.pod['metadata']['finalizers']
+        ):
+            self.pod=None
+        return response
+
+
 class HarnessTests(unittest.TestCase):
+    def test_deadline_retries_cas_conflicts_and_preserves_terminal_before_fast_gc(self):
+        client=DeadlineClient(conflicts={'install':2,'remove':2})
+        original=json.loads(json.dumps(client.pod))
+        with patch('faults.time.sleep'):
+            result=pod_deadline(client,original)
+        self.assertEqual(result['observed_reason'],'DeadlineExceeded')
+        self.assertEqual(result['pod_uid'],'pod-uid')
+        self.assertTrue(client.protected)
+        self.assertIsNone(client.pod)
+        self.assertEqual(len(client.patches),6)
+        self.assertTrue(all(value['metadata']['uid']=='pod-uid' for value in client.patches))
+
+    def test_deadline_cleanup_preserves_finalizers_added_during_cas_conflicts(self):
+        client=DeadlineClient(conflicts={'install':1,'remove':1},foreign=True)
+        with patch('faults.time.sleep'):
+            pod_deadline(client,json.loads(json.dumps(client.pod)))
+        self.assertEqual(client.pod['metadata']['finalizers'],['external/install','external/remove'])
+
+    def test_deadline_missing_pod_never_counts_as_terminal_evidence(self):
+        client=DeadlineClient(disappear=True)
+        with self.assertRaisesRegex(ValueError,'deadline-pod-disappeared-before-proof'):
+            pod_deadline(client,json.loads(json.dumps(client.pod)))
+        self.assertEqual(len(client.patches),1)
+
+    def test_deadline_uid_replacement_is_never_modified_during_cleanup(self):
+        client=DeadlineClient(replace=True)
+        with self.assertRaisesRegex(ValueError,'deadline-pod-uid-changed'):
+            pod_deadline(client,json.loads(json.dumps(client.pod)))
+        self.assertEqual(client.pod['metadata']['finalizers'],['foreign'])
+        self.assertEqual(len(client.patches),1)
+
+    def test_deadline_timeout_still_removes_only_its_test_finalizer(self):
+        client=DeadlineClient(terminal=False)
+        with patch('faults.time.monotonic',side_effect=[0,0,31]),patch('faults.time.sleep'):
+            with self.assertRaises(TimeoutError):
+                pod_deadline(client,json.loads(json.dumps(client.pod)))
+        self.assertEqual(client.pod['metadata']['finalizers'],['operator'])
+
     def test_oom_exit_requires_matching_kernel_event_even_when_cri_reason_lags(self):
         identifier='b'*64
         path='/kubepods/pod1234/'+identifier
@@ -201,7 +281,7 @@ class HarnessTests(unittest.TestCase):
                 read,digest=graph(**args)
                 registry_graph(read,'repository',digest,['linux/amd64'])
 
-    def test_fault_rejects_a_foreign_job_uid_despite_matching_name_and_labels(self):
+    def test_fault_rejects_a_foreign_cr_uid_despite_matching_name_and_labels(self):
         class Client:
             def __init__(self,owner):
                 self.owner=owner;self.mutations=[]
@@ -212,19 +292,16 @@ class HarnessTests(unittest.TestCase):
                 kind=args[1]
                 if kind=='pods':
                     items=[{'metadata':{'name':'pod','uid':'pod-uid','labels':{'artifactory.dev/platform':'amd64'},
-                        'ownerReferences':[{'apiVersion':'batch/v1','kind':'Job','controller':True,'uid':self.owner,'name':'job'}]},
+                        'ownerReferences':[{'apiVersion':'images.artifactory.dev/v1alpha1','kind':'ImageBuild','controller':True,'uid':self.owner,'name':'build'}]},
                         'status':{'containerStatuses':[{'name':name,'state':{'running':{}}} for name in ['worker','buildkit']]}}]
-                elif kind=='jobs':
-                    items=[{'metadata':{'name':'job','uid':'owned-job','ownerReferences':[{'apiVersion':'images.artifactory.dev/v1alpha1',
-                        'kind':'ImageBuild','name':'build','uid':'build-uid','controller':True}]}}]
                 else:
                     items=[{'metadata':{'name':'build','uid':'build-uid'},'spec':{'projectId':'project'},
-                        'status':{'jobOwnership':{'imageBuildUid':'build-uid','jobs':[{'uid':'owned-job'}]}}}]
+                        'status':{'podOwnership':{'imageBuildUid':'build-uid','pods':[{'name':'pod','uid':'pod-uid','stopped':False}]}}}]
                 return json.dumps({'items':items})
-        foreign=Client('foreign-job')
+        foreign=Client('foreign-cr')
         self.assertIsNone(inject(foreign,'runner-kill','build','project'))
         self.assertFalse(foreign.mutations)
-        restart=Client('owned-job')
+        restart=Client('build-uid')
         self.assertTrue(inject(restart,'operator-restart','build','project')['uid_ledger_saved'])
 
     def test_runtime_fault_proves_sandbox_uid_and_actual_nonzero_exit(self):

@@ -1,12 +1,12 @@
 <!--
 [INPUT]: 独立镜像 Operator、监督型 BuildKit、私有仓库与 Pingora。
-[OUTPUT]: 定义 1.28 镜像生命周期、交付和四端口边界。
+[OUTPUT]: 定义最低 Kubernetes 1.28 的镜像生命周期、交付和四端口边界。
 [POS]: 镜像构建与统一网关的部署入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
 # 集群镜像构建、内建仓库与网关
 
-Image Operator 在 Kubernetes 中启动 BuildKit。平台固定源码清单后，为每个平台创建独立 Job。所有平台镜像完成内容校验后，Publisher 生成 OCI Index，再写入最终标签。构建不占用 Emissary 设备 attempt。
+Image Operator 在 Kubernetes 中启动 BuildKit。平台固定源码清单后，为每个平台创建独立 Pod。所有平台镜像完成内容校验后，Publisher 生成 OCI Index，再写入最终标签。构建不占用 Emissary 设备 attempt。
 
 内建仓库使用 Distribution 3.0.0。仓库数据写入独立、私有的 S3 Bucket。外部仓库是发布目的地。Pingora 反向代理内建仓库，不提供上游镜像缓存。
 
@@ -16,7 +16,7 @@ Image Operator 在 Kubernetes 中启动 BuildKit。平台固定源码清单后�
 |---|---|---|
 | Control | 固定源码、执行授权、任务派发、仓库令牌 | 业务 PostgreSQL |
 | Agent Operator | AgentPool、AgentRun 与临时 SourceTask | 独立 Lease，任务 CRD |
-| Image Operator | BuilderPool、ImageBuild 与 BuildKit Job | 独立 Lease，镜像 CRD |
+| Image Operator | BuilderPool、ImageBuild 与 BuildKit Pod | 独立 Lease，镜像 CRD |
 | Distribution | OCI Registry API、上传与内容读取 | 独立私有 S3 Bucket |
 | Pingora HTTP | 控制入口、仓库反向代理、制品票据流转 | 无本地制品副本 |
 | Pingora TCP | 在建连时选择 Control，透传 TLS 字节 | 原有设备 mTLS 会话 |
@@ -107,7 +107,7 @@ Distribution 的 `relativeurls=true` 保持上传 Location 在公开仓库域名
 
 ## 构建节点和私有 CA
 
-BuilderPool 是管理员配置。它固定工作镜像、BuildKit 镜像、节点选择器、资源和并发预算。`maxActive` 限制池内并发 Job；`maxPerProject` 限制单项目并发 Job。每个平台和 Publisher 分别占用一个 Job 配额。
+BuilderPool 是管理员配置。它固定工作镜像、BuildKit 镜像、节点选择器、资源和并发预算。`maxActive` 限制池内并发 Pod；`maxPerProject` 限制单项目并发 Pod。每个平台和 Publisher 分别占用一个 Pod 配额。
 
 ```yaml
 builderPool:
@@ -118,13 +118,24 @@ builderPool:
   controlUrl: https://artifactory-gateway-internal:8445
   maxActive: 8
   maxPerProject: 4
+  resources:
+    source: {cpu: 250m, memory: 512Mi, ephemeralStorage: 10Gi}
+    runner: {cpu: 250m, memory: 256Mi, ephemeralStorage: 1Gi}
+    buildkit: {cpu: '1', memory: 2Gi, ephemeralStorage: 20Gi}
+    publisher: {cpu: 500m, memory: 512Mi, ephemeralStorage: 20Gi}
   nodeSelector:
     artifactory.dev/image-builds: 'true'
   caSecret: build-service-ca
   buildkitConfigMap: buildkit-config
 ```
 
-每个平台 Job 先执行普通源码 init，再并发启动 Runner 和 BuildKit 普通容器。源码位于有大小限额的 emptyDir，Runner 只读挂载。Git 凭据与投影 token 只挂载到 init；推送凭据 Secret 只挂载到 Runner。BuildKit 不挂载这些凭据、源码卷或 Runner 私有工作卷。Publisher 不拉源码，不启动 BuildKit。
+每个平台 Pod 先执行普通源码 init，再并发启动 Runner 和 BuildKit 普通容器。源码位于有大小限额的 emptyDir，Runner 只读挂载。Git 凭据与投影 token 只挂载到 init；推送凭据 Secret 只挂载到 Runner。BuildKit 不挂载这些凭据、源码卷或 Runner 私有工作卷。Publisher 不拉源码，不启动 BuildKit。
+
+`resources` 按角色设置 CPU、内存与临时存储，requests 等于 limits。`source` 是源码 init，`runner` 是 buildctl 与校验进程，`buildkit` 是实际编译进程树，`publisher` 是独立发布 Pod。每种角色覆盖时须同时提供三个字段。池级 `cpu`、`memory`、`ephemeralStorage` 字段已删除。
+
+默认平台 Pod 的普通容器合计申请 1.25 CPU、2304 MiB 内存与 31 GiB 临时存储。Kubernetes 按普通容器合计与最大 init 请求的较大值调度。源码卷在 init 退出后仍占磁盘，因此 Runner 的磁盘请求包含 `source` 与 `runner` 两项预算；CPU 和内存不叠加源码预算。Publisher 仅申请自己的预算。
+
+`source.ephemeralStorage` 限制 workspace，`runner` 或 `publisher` 的该字段限制 work，`buildkit` 的该字段限制 buildkit-state。存储值使用正整数字节或正整数加 SI、二进制后缀，例如 `512Mi`、`20Gi`、`2G`。不接受小数、毫字节和超出 int64 的值。各卷总使用量、容器日志和可写层仍受 Pod 临时存储预算与节点磁盘约束，接近工作卷总上限的任务须额外留出余量。
 
 监督入口作为 BuildKit 容器 PID 1，启动 rootlesskit/buildkitd，并校验容器 PID namespace 与 `/proc`。Runner 等待 daemon 就绪，再调用 buildctl。它在结果与源码校验后请求停止，并等待进程树回收确认。EOF、心跳到期、总期限或信号使监督程序停止 BuildKit。Pod 保留 45 秒终止窗口，本地收尾期限为 15 秒。
 
@@ -158,6 +169,7 @@ targets:
     os: linux
     arch: amd64
     executor: buildkit
+    application_platform: null
     image:
       name: backend
       context: .
@@ -186,7 +198,7 @@ targets:
 
 排空阻止新建构建和新发布。已接受的排队及运行镜像任务继续执行，生命周期操作等待它们完成。LFS 能力只注入原生目标，持久化计划在注入后重新校验。
 
-取消或截止期限使执行令牌和源码授权失效。超时记为失败；所有平台结果完整时记为发布失败，允许重试发布。显式取消与旧计划执行禁止重试。已签发的仓库 JWT 最长保留 60 秒权限。Image Operator 按 owner UID 删除 Job，避免删除同名替换资源。终态任务 Secret 被清理。整次镜像执行完成并确认结果回执后，Operator 给归属 Job 设置 300 秒 TTL，立即按 UID 删除全部 Job，并持续确认 Pod 消失。活跃执行不设置平台 Job TTL，避免快架构 Job 在慢架构完成前消失并触发重复构建。ImageBuild 作为执行审计记录保留；不要将 CRD 终态当作 Registry 内容回收信号。
+取消或截止期限使执行令牌和源码授权失效。超时记为失败；所有平台结果完整时记为发布失败，允许重试发布。显式取消与旧计划执行禁止重试。已签发的仓库 JWT 最长保留 60 秒权限。Image Operator 按 Pod UID 删除，避免删除同名替换资源。终态任务 Secret 被清理。每个 Pod 直接归属 ImageBuild，使用 `restartPolicy: Never`，并带停止确认 finalizer。Operator 将全部容器停止的证据写入 `status.podOwnership.pods[].stopped` 后，才移除 Pod finalizer并等待对象消失。节点失联或 Pod 无故消失且未保存停止证据时，保留 `CleanupPending` 和容量，不在原 execution 中重建 Pod。ImageBuild 作为执行审计记录保留；不要将 CRD 终态当作 Registry 内容回收信号。
 
 日志存入原生制品 Bucket，执行与发布元数据存入业务数据库。最终镜像 manifest 和 blob 存入独立仓库 Bucket。项目删除等待至少五分钟的在途日志写入宽限期，再清理已登记对象及租户、项目作用域的镜像日志前缀。清扫包含拒绝回执留下的孤立对象，并以持久化游标从存储故障中恢复。项目删除不自动删除仓库 blob。当前关闭在线 Registry 删除与自动 GC；按组织保留策略安排停写备份、离线 GC 和容量告警。不能根据业务记录删除数推断 S3 空间已释放。
 

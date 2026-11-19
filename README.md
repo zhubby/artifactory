@@ -13,6 +13,8 @@
 
 面向个人与内部可信团队的跨平台应用构建、签名与内部分发平台。
 
+平台最低支持 **Kubernetes 1.28**。1.28 及以上版本使用同一套 Pod 执行实现。
+
 文档使用 mdBook 按使用、部署、接口、验收与历史设计整理：[文档首页](docs/README.md)。Web 部署后通过同域名 `/docs` 免登录阅读，构建与维护命令见[文档站点](docs/operations.md#文档站点)。
 
 项目于 2026-11-11 统一更名为 **Artifactory**，产品展示名首字母大写，仓库为 [zhubby/artifactory](https://github.com/zhubby/artifactory)。命令、配置与环境变量使用 `artifactory` 标识；设备端现为 Rust `artifactory-emissary`。命名与迁移说明见 [更名记录](docs/artifactory-rename-2026-11-11.md)，后续复审修复及实际部署见[本机 / Mac mini 验收](docs/local-macmini-acceptance-2026-11-11.md)；历史设计和验收记录保留各自提交、运行结果与验收边界。
@@ -73,7 +75,7 @@ target/debug/artifactory-emissary run --config .local/emissary/emissary.json
 
 Kubernetes / 本机 kind 使用 [Helm 部署指南](docs/helm.md)。GitHub Release 发布独立服务的 AMD64、ARM64 镜像和四个 Chart。新 AI 构建前需按 [AI 构建指南](docs/ai-builds.md) 配置模型与任务身份。
 
-Kubernetes Pi 由独立 Rust Operator 创建临时 Job。Runtime 保存预算和会话审计，SourceTask 和各任务的 init container 从上游拉取固定源码。原生设备每次 attempt 独立拉取。平台不保存源码工作目录或 Git/LFS 缓存。部署见 [Operator 运维](docs/operator-operations.md)，契约见 [运行协议](docs/runtime-protocol.md)。
+Kubernetes Pi 由独立 Rust Operator 直接创建临时 Pod。Runtime 保存预算和会话审计，SourceTask 和各任务的 init container 从上游拉取固定源码。原生设备每次 attempt 独立拉取。平台不保存源码工作目录或 Git/LFS 缓存。部署见 [Operator 运维](docs/operator-operations.md)，契约见 [运行协议](docs/runtime-protocol.md)。
 
 ## 验证
 
@@ -112,7 +114,7 @@ python3 scripts/compose_acceptance.py
 |---|---|
 | `crates/control-plane` | 控制平面、SQL 迁移、权限 / 状态 / 数据库测试 |
 | `operators/agent-operator` / `charts/artifactory-agent-operator` | 独立 Agent Operator、AgentRun/SourceTask CRD |
-| `operators/image-operator` / `charts/artifactory-image-operator` | 独立 Image Operator、BuildKit/Publisher Job |
+| `operators/image-operator` / `charts/artifactory-image-operator` | 独立 Image Operator、BuildKit/Publisher Pod |
 | `crates/image-protocol` / `crates/image-registry` | 镜像执行契约、OCI 内容校验与按 digest 复制 |
 | `crates/gateway` / `charts/artifactory-registry` | Pingora 入口与私有 Distribution 仓库 |
 | `crates/planner-runtime` / `crates/runtime-protocol` | Pi 队列、租约/预算、模型代理和幂等交接 |

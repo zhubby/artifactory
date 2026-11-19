@@ -140,7 +140,6 @@ class Acceptance:
     def control_identity(self):
         role = {'apiVersion':'rbac.authorization.k8s.io/v1','kind':'Role','metadata':{'name':'artifactory-control'},'rules':[
             {'apiGroups':['agents.artifactory.dev'],'resources':['sourcetasks','agentruns','agentpools'],'verbs':['get','create','patch']},
-            {'apiGroups':['batch'],'resources':['jobs'],'verbs':['get']},
             {'apiGroups':[''],'resources':['pods'],'verbs':['get']}]}
         binding = {'apiVersion':'rbac.authorization.k8s.io/v1','kind':'RoleBinding','metadata':{'name':'artifactory-control'},'subjects':[{'kind':'ServiceAccount','name':'artifactory-control','namespace':self.ns}],'roleRef':{'apiGroup':'rbac.authorization.k8s.io','kind':'Role','name':'artifactory-control'}}
         cluster = {'apiVersion':'rbac.authorization.k8s.io/v1','kind':'ClusterRole','metadata':{'name':self.ns+'-control-tokenreview'},'rules':[{'apiGroups':['authentication.k8s.io'],'resources':['tokenreviews'],'verbs':['create']}]}
@@ -365,7 +364,7 @@ class Acceptance:
         self.evidence.update(calls=calls,source_manifest_id=manifest_id,source_digest=manifest['digest'],conversation_messages=len(messages))
         self.faults(detail['commit_sha'])
         self.wait(lambda:self.check_temporary_storage(idle=True),120)
-        self.check('terminal tasks leave no Pod, Job, source PVC or task Secret',True)
+        self.check('terminal tasks leave no task Pod, source PVC or task Secret',True)
         print('EVIDENCE',self.run/'evidence.json',flush=True)
 
     def faults(self, commit):
@@ -396,7 +395,6 @@ class Acceptance:
         self.evidence['business_api_during_held_pi']={'samples':len(samples),'p95_ms':round(sorted(samples)[int(len(samples)*.95)-1],3),'scope':'local small-load observation; no production SLO claim'}
         run=before['id'];self.evidence['fault_run_id']=run
         self.kubectl('delete','pod',before['execution']['name'],'--wait=false')
-        self.sql('planner',f"UPDATE runtime_runs SET lifecycle=jsonb_set(lifecycle,'{{lease_until_ms}}',to_jsonb((extract(epoch FROM now())*1000)::bigint-1000)) WHERE id='{run}'")
         def retried():
             value=self.sql('planner',f"SELECT lifecycle FROM runtime_runs WHERE id='{run}'")
             life=json.loads(value)

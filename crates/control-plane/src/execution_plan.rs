@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖配方、源码证据和原生节点 Placement。
-//! [OUTPUT]: 校验并密封 AI 执行计划。
+//! [OUTPUT]: 要求显式应用分类并密封 AI 执行计划。
 //! [POS]: 镜像目标由 Image Operator 排程，禁止节点 Placement。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{crypto, recipe::Recipe};
@@ -40,6 +40,17 @@ impl ExecutionPlan {
             value.to_string().len() <= 384 * 1024,
             "plan exceeds 384 KiB"
         );
+        if let Some(targets) = value
+            .pointer("/recipe/targets")
+            .and_then(serde_json::Value::as_object)
+        {
+            for (name, target) in targets {
+                ensure!(
+                    target.get("application_platform").is_some(),
+                    "target {name} must declare application_platform; use null for a non-application target"
+                );
+            }
+        }
         let mut plan: Self = serde_json::from_value(value)?;
         plan.recipe = Recipe::parse(&serde_yaml::to_string(&plan.recipe)?)?;
         ensure!(
@@ -122,6 +133,42 @@ pub fn validate_path(path: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    fn native_plan(platform: serde_json::Value) -> serde_json::Value {
+        json!({
+            "summary": "build app",
+            "evidence": [{"path": "Package.swift", "reason": "application sources"}],
+            "recipe": {"version": 1, "targets": {"app": {
+                "os": "darwin", "arch": "arm64", "application_platform": platform,
+                "steps": [{"name": "build", "run": "make build"}],
+                "artifacts": ["dist/app.zip"]
+            }}}
+        })
+    }
+
+    #[test]
+    fn application_classification_is_explicit_and_survives_persistence() {
+        for platform in [json!("ios"), json!("macos"), serde_json::Value::Null] {
+            let plan = ExecutionPlan::parse(native_plan(platform.clone())).unwrap();
+            let persisted = serde_json::to_value(&plan).unwrap();
+            assert_eq!(
+                persisted["recipe"]["targets"]["app"]["application_platform"],
+                platform
+            );
+            ExecutionPlan::parse(persisted).unwrap();
+        }
+        let mut missing = native_plan(serde_json::Value::Null);
+        missing["recipe"]["targets"]["app"]
+            .as_object_mut()
+            .unwrap()
+            .remove("application_platform");
+        assert!(ExecutionPlan::parse(missing).is_err());
+        let mut wrong_host = native_plan(json!("ios"));
+        wrong_host["recipe"]["targets"]["app"]["os"] = json!("linux");
+        assert!(ExecutionPlan::parse(wrong_host).is_err());
+    }
+
     #[test]
     fn external_scripts_cannot_escape_task_directory() {
         for name in ["../x", "/x", "a/b", "a\\b", "..", ".env", "x:y"] {

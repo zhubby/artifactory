@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖规划核心与本地 HTTP 模型桩。
- * [OUTPUT]: 验证工具权限、凭据隔离和规划终态。
+ * [OUTPUT]: 验证应用分类、工具权限、凭据隔离和规划终态。
  * [POS]: 规划核心的行为回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -23,6 +23,23 @@ test("worker exposes only read-only analysis and structured completion tools", (
   assert.equal(safeError(new Error("401 secret-value"), "secret-value"), "model authentication rejected; check the platform model profile");
   assert.equal(safeError(new Error('429: organization org-c401 request reached max RPM'), "secret-value"), "model provider quota or rate limit reached");
   assert.equal(safeError(new Error("request with key secret-value failed"), "secret-value").includes("secret-value"), false);
+});
+
+test("plan submission separates application platforms from build hosts", () => {
+  const submit = toolDefinitions.find((tool) => tool.name === "submit_plan");
+  assert.ok(submit);
+  const schema = (value: unknown, ...keys: string[]): unknown => {
+    for (const key of keys) {
+      assert.ok(value && typeof value === "object");
+      value = (value as Record<string, unknown>)[key];
+    }
+    return value;
+  };
+  const target = schema(submit.parameters, "properties", "plan", "properties", "recipe", "properties", "targets", "additionalProperties");
+  assert.deepEqual(schema(target, "properties", "application_platform", "enum"), ["macos", "ios", "android", "linux", "windows", null]);
+  assert.deepEqual(schema(target, "properties", "application_platform", "type"), ["string", "null"]);
+  const required = schema(target, "required");
+  assert.ok(Array.isArray(required) && required.includes("application_platform"));
 });
 
 test("provider timeouts remain distinct from the planning deadline", () => {

@@ -26,7 +26,7 @@ test("a lost submission acknowledgement queries the same proposal without new in
   assert.deepEqual(requests, ["/v1/tool", "/v1/proposal"]);
 });
 
-test("a disconnected Job leaves recovery to Runtime but explicit budget failure is terminal", async () => {
+test("a disconnected Pod leaves recovery to Runtime but explicit budget failure is terminal", async () => {
   const task: Task = { context: {}, model: { api: "openai-completions", base_url: "https://runtime.invalid", model: "test", api_key: "private-grant", parameters: {} }, max_calls: 20, timeout_seconds: 600 };
   const lease = { run_id: "run", generation: 1, uid: "pod", token: "private-grant" };
   const events: Record<string, unknown>[] = [];

@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 kube CRD、Serde 和固定执行身份。
-//! [OUTPUT]: 提供固定清单身份、不可变执行 CRD 与有界 Job UID 台账。
+//! [OUTPUT]: 提供分角色资源预算、不可变执行 CRD 与 Pod 创建意图和 UID 台账。
 //! [POS]: Image Operator 的 Kubernetes 公开契约。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use kube::{CustomResource, CustomResourceExt};
@@ -14,23 +14,25 @@ pub struct Status {
     pub message: Option<String>,
     pub observed_generation: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub job_ownership: Option<JobOwnership>,
+    pub pod_ownership: Option<PodOwnership>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct JobOwnership {
+pub struct PodOwnership {
     pub image_build_uid: String,
+    pub creating: Option<String>,
     #[schemars(length(max = 3))]
-    pub jobs: Vec<OwnedJob>,
+    pub pods: Vec<OwnedPod>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct OwnedJob {
+pub struct OwnedPod {
     pub name: String,
     pub uid: String,
     pub platform: String,
+    pub stopped: bool,
 }
 
 #[derive(CustomResource, Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -59,12 +61,8 @@ pub struct BuilderPoolSpec {
     pub emulation_node_selector: BTreeMap<String, String>,
     #[serde(default)]
     pub emulation_platforms: Vec<String>,
-    #[serde(default = "cpu")]
-    pub cpu: String,
-    #[serde(default = "memory")]
-    pub memory: String,
-    #[serde(default = "disk")]
-    pub ephemeral_storage: String,
+    #[serde(default)]
+    pub resources: WorkloadResources,
     #[serde(default)]
     pub ca_secret: String,
     #[serde(default)]
@@ -73,14 +71,60 @@ pub struct BuilderPoolSpec {
 fn pull_policy() -> String {
     "IfNotPresent".into()
 }
-fn cpu() -> String {
-    "1".into()
+
+/// 每种任务角色独立申请资源，避免将编译预算重复分配给辅助容器。
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkloadResources {
+    #[serde(default = "source_resources")]
+    pub source: ContainerResources,
+    #[serde(default = "runner_resources")]
+    pub runner: ContainerResources,
+    #[serde(default = "buildkit_resources")]
+    pub buildkit: ContainerResources,
+    #[serde(default = "publisher_resources")]
+    pub publisher: ContainerResources,
 }
-fn memory() -> String {
-    "2Gi".into()
+
+impl Default for WorkloadResources {
+    fn default() -> Self {
+        Self {
+            source: source_resources(),
+            runner: runner_resources(),
+            buildkit: buildkit_resources(),
+            publisher: publisher_resources(),
+        }
+    }
 }
-fn disk() -> String {
-    "20Gi".into()
+
+/// 容器 CPU/内存与工作卷预算；Runner 另承担保留源码的存储请求。
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContainerResources {
+    pub cpu: String,
+    pub memory: String,
+    #[schemars(regex(pattern = r"^[1-9][0-9]*(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$"))]
+    pub ephemeral_storage: String,
+}
+
+fn budget(cpu: &str, memory: &str, disk: &str) -> ContainerResources {
+    ContainerResources {
+        cpu: cpu.into(),
+        memory: memory.into(),
+        ephemeral_storage: disk.into(),
+    }
+}
+fn source_resources() -> ContainerResources {
+    budget("250m", "512Mi", "10Gi")
+}
+fn runner_resources() -> ContainerResources {
+    budget("250m", "256Mi", "1Gi")
+}
+fn buildkit_resources() -> ContainerResources {
+    budget("1", "2Gi", "20Gi")
+}
+fn publisher_resources() -> ContainerResources {
+    budget("500m", "512Mi", "20Gi")
 }
 
 #[derive(CustomResource, Clone, Debug, Deserialize, Serialize, JsonSchema)]

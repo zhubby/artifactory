@@ -1,15 +1,16 @@
-//! [INPUT]: Agent CRD、规划 Job 与临时源码任务契约。
+//! [INPUT]: Agent CRD、直接规划 Pod 与源码任务契约。
 //! [OUTPUT]: 验证执行身份、凭据隔离与不可变契约。
 //! [POS]: Agent Operator 的离线资源回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
-use artifactory_agent_operator::{api::*, controller::job};
+use artifactory_agent_operator::{api::*, pods, resources};
 use kube::ResourceExt;
 #[test]
-fn jobs_have_single_attempt_and_bound_pod_identity_without_provider_secrets() {
+fn pods_have_single_attempt_and_bound_identity_without_provider_secrets() {
     let mut run = AgentRun::new(
         "run-a",
         AgentRunSpec {
             run_id: "00000000-0000-0000-0000-000000000001".into(),
+            project_id: "00000000-0000-0000-0000-000000000002".into(),
             generation: 2,
             pool: "default".into(),
             source_manifest_id: Some("manifest".into()),
@@ -31,20 +32,61 @@ fn jobs_have_single_attempt_and_bound_pod_identity_without_provider_secrets() {
             ephemeral_storage: "10Gi".into(),
             cpu: "250m".into(),
             memory: "512Mi".into(),
-            tls_secret_name: String::new(),
+            tls_secret_name: "services-tls".into(),
         },
     );
-    let first = job(&run, &pool).unwrap();
-    let second = job(&run, &pool).unwrap();
+    let execution = pods::reserve(
+        &run.spec.run_id,
+        "cr-uid",
+        "pi",
+        1,
+        chrono::Utc::now().timestamp_millis() + 600_000,
+    )
+    .unwrap();
+    let first = resources::planning_pod(&run, &pool, &execution).unwrap();
+    let second = resources::planning_pod(&run, &pool, &execution).unwrap();
     assert_eq!(first, second);
-    assert!(first.name_any().ends_with("-g2"));
+    assert_eq!(first.name_any(), execution.name);
     let value = serde_json::to_value(first).unwrap();
-    assert_eq!(value["spec"]["backoffLimit"], 0);
-    assert_eq!(
-        value["spec"]["template"]["spec"]["automountServiceAccountToken"],
-        false
-    );
+    assert_eq!(value["kind"], "Pod");
+    assert_eq!(value["spec"]["restartPolicy"], "Never");
+    assert_eq!(value["metadata"]["finalizers"][0], pods::POD_FINALIZER);
+    assert_eq!(value["spec"]["automountServiceAccountToken"], false);
     assert_eq!(value["metadata"]["ownerReferences"][0]["uid"], "cr-uid");
+    assert_eq!(
+        value["metadata"]["labels"]["artifactory.dev/project"],
+        run.spec.project_id
+    );
+    let mounts = value["spec"]["containers"][0]["volumeMounts"]
+        .as_array()
+        .unwrap();
+    assert!(
+        mounts
+            .iter()
+            .all(|mount| mount["name"] != "source-auth" && mount["name"] != "source-identity")
+    );
+    assert!(
+        mounts
+            .iter()
+            .any(|mount| mount["name"] == "source" && mount["readOnly"] == true)
+    );
+    let ca = value["spec"]["volumes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|volume| volume["name"] == "ca")
+        .unwrap();
+    assert_eq!(
+        ca["secret"]["items"],
+        serde_json::json!([{"key":"ca.crt","path":"ca.crt"}])
+    );
+    assert!(
+        value["spec"]["initContainers"][0]["volumeMounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|mount| mount["name"] == "source-auth")
+    );
     assert!(!value.to_string().contains("api_key"));
     assert!(value.to_string().contains("artifactory-runtime"));
 }
@@ -56,6 +98,14 @@ fn immutable_crd_context_is_enforced_by_the_api_server_schema() {
         let value = serde_json::to_value(definition).unwrap();
         let kind = value["spec"]["names"]["kind"].as_str().unwrap();
         if kind == "AgentRun" {
+            let spec =
+                &value["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"];
+            assert!(
+                spec["required"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&serde_json::json!("projectId"))
+            );
             assert_eq!(
                 value["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]["x-kubernetes-validations"]
                     [0]["rule"],
@@ -70,6 +120,14 @@ fn immutable_crd_context_is_enforced_by_the_api_server_schema() {
                 "!oldSelf.cancelRequested || self.cancelRequested"
             );
         }
+        let execution = &value["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["status"]
+            ["properties"]["execution"];
+        assert!(
+            execution["required"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("createStarted"))
+        );
     }
 }
 

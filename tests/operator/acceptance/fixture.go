@@ -218,10 +218,11 @@ func main() {
 			if seconds := buildSeconds.Load(); seconds > 0 {
 				run = fmt.Sprintf("sleep %d; sh build.sh", seconds)
 			}
-			target := map[string]any{"os": targetOS, "arch": arch, "executor": "native", "timeout_seconds": 90, "steps": []any{map[string]any{"name": "build", "run": run, "timeout_seconds": 45}}, "artifacts": []string{"dist/result.txt"}}
+			target := map[string]any{"os": targetOS, "arch": arch, "executor": "native", "application_platform": nil, "timeout_seconds": 90, "steps": []any{map[string]any{"name": "build", "run": run, "timeout_seconds": 45}}, "artifacts": []string{"dist/result.txt"}}
 			key, path, summary := "app", "README.md", "Build the fixed repository on a device Agent"
 			if executor == "buildkit" {
 				target = imageTarget(architecture, platforms, os.Getenv("FIXTURE_ALLOW_EMULATION") == "true", buildSeconds.Load())
+				target["application_platform"] = nil
 				key, path, summary = "image", "Dockerfile", "Build the fixed repository with isolated BuildKit"
 			}
 			if toolCount == 2 {

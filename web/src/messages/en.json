@@ -314,6 +314,8 @@
     "publish": "Publish artifacts",
     "resolving": "Awaiting resolution",
     "targets": "Target matrix",
+    "nonApplication": "Non-application",
+    "hostPlatform": "Host {os}/{arch}",
     "configFailed": "Source resolution or AI planning did not complete. No execution jobs were created.",
     "readingConfig": "Resolving source or generating an AI build plan…",
     "lease": "Lease expires",

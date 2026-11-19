@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Pi 模型接口、节点 MCP 与平台 RPC。
- * [OUTPUT]: 提供规划循环、本地工具、对话审计与脱敏错误。
+ * [OUTPUT]: 提供显式应用分类、规划循环与脱敏审计。
  * [POS]: Kubernetes Runtime 的单任务规划核心。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -50,9 +50,11 @@ Target capabilities and labels must match real authorized nodes. Available
 signing profile names are permissions, never secrets. Signed targets must have
 ordered build, sign and verify phases; never weaken verification to claim success.
 project_context.signing_defaults freezes the managed default identity and version
-for this build. Declare application_platform as macos/android/linux/windows for
-each target; it describes the application, not the host OS. Android can run on
-any authorized host. Never relabel a product to bypass its default. Matching
+for this build. Every target must explicitly declare application_platform:
+macos/ios/android/linux/windows for an application, or null for a CLI, library,
+server or OCI image. It describes the application, not the host OS or artifact
+extension. iOS Simulator applications use ios on a darwin host. Android can run
+on any authorized host. Never relabel a product to bypass its default. Matching
 managed defaults require exactly that signing_profiles entry, literal final
 signing_outputs paths matching every artifact, and ordered build/sign/verify.
 For macOS ZIP/DMG each signing_outputs item also declares bundle: the relative
@@ -101,7 +103,7 @@ const text = { type: "string" };
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object", properties, required, additionalProperties: false });
 const step = object({ name: text, phase: { type: "string", enum: ["build", "sign", "verify"] }, shell: { type: "string", enum: ["bash", "sh", "powershell", "pwsh"] }, run: text, timeout_seconds: { type: "integer", minimum: 1 } }, ["name", "run"]);
 const image = object({name:text,context:text,dockerfile:text,platforms:{type:"array",minItems:1,maxItems:2,uniqueItems:true,items:{type:"string",enum:["linux/amd64","linux/arm64"]}},pool:text,allow_emulation:{type:"boolean"},build_args:{type:"object",additionalProperties:text},secrets:{type:"object",additionalProperties:{type:"string",format:"uuid"}},pull_credentials:{type:"array",items:{type:"string",format:"uuid"}},tags:{type:"array",items:text}},["name"]);
-const target = object({ os: { type: "string", enum: ["linux", "darwin", "windows"] }, arch: { type: "string", enum: ["amd64", "arm64"] }, executor: { type: "string", enum: ["native", "buildkit"] }, image, labels: { type: "object", additionalProperties: text }, capabilities: { type: "array", items: text }, signing_profiles: { type: "array", items: text }, application_platform: { type: "string", enum: ["macos", "android", "linux", "windows"] }, signing_outputs: { type: "array", items: object({ path: text, bundle: text }, ["path"]) }, timeout_seconds: { type: "integer", minimum: 1 }, steps: { type: "array", items: step }, artifacts: { type: "array", items: text } }, ["os", "arch"]);
+const target = object({ os: { type: "string", enum: ["linux", "darwin", "windows"] }, arch: { type: "string", enum: ["amd64", "arm64"] }, executor: { type: "string", enum: ["native", "buildkit"] }, image, labels: { type: "object", additionalProperties: text }, capabilities: { type: "array", items: text }, signing_profiles: { type: "array", items: text }, application_platform: { type: ["string", "null"], enum: ["macos", "ios", "android", "linux", "windows", null], description: "Application platform; null for CLI, library, server or OCI image. Independent from the host OS and artifact extension." }, signing_outputs: { type: "array", items: object({ path: text, bundle: text }, ["path"]) }, timeout_seconds: { type: "integer", minimum: 1 }, steps: { type: "array", items: step }, artifacts: { type: "array", items: text } }, ["os", "arch", "application_platform"]);
 const placement = object({ candidates: { type: "array", minItems: 1, maxItems: 8, items: object({ node_id: {type:"string",format:"uuid"}, metadata_digest: {type:"string",pattern:"^[a-f0-9]{64}$"}, reason: text }, ["node_id","metadata_digest","reason"]) }, resources: object({ min_available_memory_bytes:{type:"integer",minimum:0}, min_build_disk_available_bytes:{type:"integer",minimum:0}, max_cpu_percent:{type:"number",minimum:0,maximum:100} }) }, ["candidates"]);
 const placements = {type:"object",additionalProperties:placement};
 const plan = object({

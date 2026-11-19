@@ -1,6 +1,6 @@
 # [INPUT]: ImageBuild 命名空间和 Control 服务身份。
 # [OUTPUT]: 源码任务身份校验、任务声明及镜像 Secret 权限。
-# [POS]: Control 验证 Pod 所属任务；Operator 只编排临时 Job。
+# [POS]: Control 验证 Pod 直接归属 CR；Operator 编排普通 Pod。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 apiVersion: v1
 kind: ServiceAccount
@@ -23,9 +23,6 @@ rules:
   - apiGroups: [images.artifactory.dev]
     resources: [imagebuilds]
     verbs: [get, create, patch]
-  - apiGroups: [batch]
-    resources: [jobs]
-    verbs: [get]
   - apiGroups: ['']
     resources: [pods]
     verbs: [get]

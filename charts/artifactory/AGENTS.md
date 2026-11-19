@@ -1,7 +1,7 @@
 # charts/artifactory/
 > L2 | Parent: ../../AGENTS.md
 
-Chart.yaml: 声明应用与 Chart 版本。
+Chart.yaml: 声明应用与 Chart 版本，以及 Kubernetes 1.28 最低版本。
 values.yaml: 定义统一网关的端口预算、来源策略与私有存储。
 values-ha.yaml: 定义控制平面多副本参数。
 values-kind.yaml: 定义本机 kind 参数。

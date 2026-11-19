@@ -6,7 +6,7 @@ _helpers.tpl: 定义资源命名和安全上下文。
 config.yaml: 生成非敏感服务配置。
 control-plane.yaml: 部署无状态 Control，使用临时目录和只读持久身份。
 gateway.yaml: 部署双副本统一网关，按端口和来源隔离入口。
-image-dispatch.yaml: 授权 Control 下发任务、校验 Pod 归属和调用 TokenReview。
+image-dispatch.yaml: 授权 Control 下发 CR、校验直接 Pod 归属和调用 TokenReview。
 ingress.yaml: 单域名接入统一 Pingora HTTP 入口。
 persistence.yaml: 只创建数据库和对象存储的 PVC。
 postgres.yaml: 部署 PostgreSQL 和 TimescaleDB。

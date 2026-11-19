@@ -22,7 +22,7 @@ flowchart LR
   G --> S3[(私有对象存储)]
   C -->|限流校验 / 事务外读写| S3
   W[Web 网关] --> C
-  C -->|创建任务| K[Kubernetes Job]
+  C -->|创建任务| K[Kubernetes Pod]
   K -->|每次直接拉取| Git[Git / LFS 上游]
   D -->|独立采样 / 本地缓冲| T[Telemetry 副本]
   T --> TS[(遥测 PostgreSQL)]

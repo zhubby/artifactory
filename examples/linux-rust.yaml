@@ -1,9 +1,14 @@
+# [INPUT]: Linux Rust 可执行程序源码。
+# [OUTPUT]: 构建并验证非应用 CLI 制品。
+# [POS]: Linux 宿主执行非应用目标的配方模板。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 version: 1
 release: {enabled: true}
 targets:
   linux-amd64:
     os: linux
     arch: amd64
+    application_platform: null
     capabilities: [cargo]
     steps:
       - name: build

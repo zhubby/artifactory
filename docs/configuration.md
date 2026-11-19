@@ -1,3 +1,9 @@
+<!--
+[INPUT]: 原生配方、AI 执行计划和签名校验。
+[OUTPUT]: 定义目标分类、宿主与任务步骤约束。
+[POS]: 执行计划字段的配置入口。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # 执行配方 v1 与历史配置
 
 所有新构建使用 [零侵入 AI 构建](ai-builds.md)：平台保存目标和说明，Pi 生成 `ExecutionPlan v1`，其 `recipe` 复用下述校验规则。无需在原仓库创建配置文件。以下 YAML 仅用于理解内部配方和迁移前历史记录，不是新构建入口。
@@ -16,6 +22,7 @@ targets:
   linux-amd64:
     os: linux
     arch: amd64
+    application_platform: null
     executor: native
     labels: {zone: internal}
     capabilities: [cargo]
@@ -33,6 +40,7 @@ targets:
 
 - `os` 是 **Emissary 宿主**，只接受 `linux`、`darwin`、`windows`；Android/iOS 是应用目标名，不是新的 Emissary OS。
 - `arch` 为宿主 `amd64` / `arm64`。需要特定产物架构时由节点标签、能力和项目命令明确约束，不能从宿主架构推断制品兼容性。
+- `application_platform` 显式描述应用平台：`macos`、`ios`、`android`、`linux`、`windows`。CLI、库、服务端和 OCI 镜像使用 `null`。AI 计划的每个目标必须填写；独立配方省略时按非应用处理。平台不根据宿主、目标名称或扩展名推断应用类别。iOS 使用 `ios` 和 `os: darwin`，不套用 macOS 默认签名。
 - `executor` 支持 `native` 和 `buildkit`。`buildkit` 目标必须包含 `image`，使用 Dockerfile 和 BuilderPool，不填写原生 steps/artifacts、设备标签或签名字段。完整双架构示例见 [集群镜像构建](image-builds.md#目标与凭据)。
 - `capabilities` 是工具版本 / 帮助命令可执行性探测的约束，失败的占位程序不进入能力集合；仍不证明 SDK 完整、授权有效或真实构建成功。默认额外要求 Git 和每一步所用 shell 可用。
 - Unix 默认 `bash`，Windows 默认 `powershell`；允许显式 `sh`、`bash`、`pwsh`、`powershell`。工具链需要预装，Emissary 不自动安装。
@@ -48,7 +56,7 @@ targets:
 
 单个文件大小范围 1 byte 到 20 GiB。Emissary 用同一打开描述符计算摘要并上传；服务端再次检查字节数与 SHA-256，把验证过的字节写到只读下载的独立 final key。旧 staging PUT 地址不能覆盖已发布内容。临时校验文件使用控制平面数据目录，需要足够磁盘空间。
 
-原生制品不提供内容去重或构建缓存。镜像构建使用 Registry 缓存，镜像 blob 位于独立 Bucket。当前不自动回收对象；运维不能随意清除已被 Release 引用的对象。
+原生制品不提供内容去重或构建缓存。镜像构建缓存只在本次 Pod 有效，不跨任务共享。镜像 blob 位于独立 Bucket。当前不自动回收对象；运维不能随意清除已被 Release 引用的对象。
 
 ## 签名与发布
 

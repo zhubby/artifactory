@@ -1,13 +1,13 @@
 //! [INPUT]: 依赖 Kubernetes Pod 身份、业务授权与 Runtime 存储。
-//! [OUTPUT]: 提供源码准备，区分资格拒绝与可重试存储故障。
-//! [POS]: 只允许固定 Pod 准备源码；首次 acquire 才启动模型时限。
+//! [OUTPUT]: 提供源码准备与 Operator 故障上报。
+//! [POS]: 校验服务和 Pod 身份；首次 acquire 启动模型时限。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::store::{
     ModelReservation, PreparationState, RuntimeMetrics, RuntimeStore, ToolDisposition,
 };
 use anyhow::{Context, Result, ensure};
 use artifactory_runtime_protocol::{
-    Execution, Lease, RunIntent, crypto,
+    Execution, ExecutionFailure, ExecutionLost, Lease, RunIntent, crypto,
     service::{self, Client},
 };
 use axum::{
@@ -50,6 +50,8 @@ pub fn router(state: Runtime, token: String) -> Router {
         .route("/metrics", get(metrics))
         .route("/v1/intent", post(intent))
         .route("/v1/register", post(register))
+        .route("/v1/execution-failed", post(execution_failed))
+        .route("/v1/execution-lost", post(execution_lost))
         .route("/v1/get", post(get_run))
         .route("/v1/conversations", post(conversations))
         .route("/v1/conversation/messages", post(conversation_messages))
@@ -161,6 +163,18 @@ pub async fn register_execution(s: &Runtime, execution: Execution) -> Result<Val
 }
 async fn register(State(s): State<Runtime>, Json(v): Json<Execution>) -> ApiResult<Value> {
     Ok(Json(register_execution(&s, v).await?))
+}
+async fn execution_failed(
+    State(s): State<Runtime>,
+    Json(v): Json<ExecutionFailure>,
+) -> ApiResult<Value> {
+    Ok(Json(s.store.execution_failed(v).await?))
+}
+async fn execution_lost(
+    State(s): State<Runtime>,
+    Json(v): Json<ExecutionLost>,
+) -> ApiResult<Value> {
+    Ok(Json(s.store.execution_lost(v).await?))
 }
 
 async fn token_review(execution: &Execution, token: &str) -> Result<String> {

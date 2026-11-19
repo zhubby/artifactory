@@ -314,6 +314,8 @@
     "publish": "发布制品",
     "resolving": "等待解析",
     "targets": "目标矩阵",
+    "nonApplication": "非应用目标",
+    "hostPlatform": "宿主 {os}/{arch}",
     "configFailed": "源码解析或 AI 规划未完成，尚未创建执行任务。",
     "readingConfig": "正在解析源码或生成 AI 构建计划…",
     "lease": "租约截止",

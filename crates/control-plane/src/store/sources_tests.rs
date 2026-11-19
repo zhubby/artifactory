@@ -1,19 +1,146 @@
 //! [INPUT]: 隔离 PostgreSQL、新初始化基线和真实源码事务。
-//! [OUTPUT]: 验证固定对象、幂等提交及锁等待后的任务授权。
+//! [OUTPUT]: 验证 CR UID、固定对象及锁等待后的任务授权。
 //! [POS]: 源码元数据存储的并发与权限回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
-use super::ControlStore;
+use super::{ControlStore, sources::SourceTaskExecution};
 use anyhow::{Context, Result, ensure};
 use artifactory_database::{PoolSettings, connect, params, sql, with_options};
 use artifactory_source_checkout::{GitCredential, SourceManifest, SourceRepository};
 use serde_json::json;
 use uuid::Uuid;
 
+fn execution() -> SourceTaskExecution {
+    SourceTaskExecution {
+        cr_uid: "source-current".into(),
+        name: "source-attempt-1".into(),
+        uid: "source-pod-1".into(),
+        attempt: 1,
+    }
+}
+
 struct Database {
     admin: toasty::Db,
     pool: toasty::Db,
     schema: String,
     store: ControlStore,
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL; verifies first-writer CR UID binding"]
+async fn source_task_cr_uid_is_pinned_once_even_with_concurrent_dispatch() -> Result<()> {
+    let db = Database::new().await?;
+    let outcome = async {
+        let (id, _) = db.unbound_task().await?;
+        let (first, second) = tokio::join!(
+            db.store.bind_source_task(id, "first-cr"),
+            db.store.bind_source_task(id, "second-cr")
+        );
+        ensure!(
+            first.is_ok() != second.is_ok(),
+            "two CRs acquired one source task"
+        );
+        let current = db.store.source_task_context(id).await?;
+        let uid = current["source_task_uid"]
+            .as_str()
+            .context("CR UID missing")?;
+        db.store.bind_source_task(id, uid).await?;
+        ensure!(
+            db.store
+                .bind_source_task(id, "replacement-cr")
+                .await
+                .is_err(),
+            "same-name replacement acquired source task"
+        );
+        ensure!(
+            db.store.bind_source_task(id, "").await.is_err(),
+            "empty CR UID accepted"
+        );
+        Ok(())
+    }
+    .await;
+    db.close().await?;
+    outcome
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL; verifies monotonic source attempt fencing"]
+async fn source_attempt_binding_cannot_regress_or_accept_another_pod_uid() -> Result<()> {
+    let db = Database::new().await?;
+    let outcome = async {
+        let (id, manifest) = db.task().await?;
+        db.pin(id).await?;
+        let first = execution();
+        let second = SourceTaskExecution {
+            name: "source-attempt-2".into(),
+            uid: "source-pod-2".into(),
+            attempt: 2,
+            ..first.clone()
+        };
+        let third = SourceTaskExecution {
+            name: "source-attempt-3".into(),
+            uid: "source-pod-3".into(),
+            attempt: 3,
+            ..first.clone()
+        };
+        let (_, third_result) = tokio::join!(
+            db.store.source_task_material(&[7; 32], id, &second),
+            db.store.source_task_material(&[7; 32], id, &third),
+        );
+        third_result?;
+        let current = db.store.source_task_context(id).await?;
+        ensure!(
+            current["source_execution"] == serde_json::to_value(&third)?,
+            "source attempt moved backwards"
+        );
+        ensure!(
+            current["pinned_ref_oid"] == "a".repeat(40),
+            "retry changed fixed source"
+        );
+        ensure!(
+            db.store
+                .source_task_material(&[7; 32], id, &first)
+                .await
+                .is_err(),
+            "old attempt acquired materials"
+        );
+        let replaced = SourceTaskExecution {
+            uid: "same-attempt-other-pod".into(),
+            ..third.clone()
+        };
+        ensure!(
+            db.store
+                .source_task_material(&[7; 32], id, &replaced)
+                .await
+                .is_err(),
+            "same attempt accepted another Pod"
+        );
+        ensure!(
+            db.store
+                .pin_source(id, &first, &json!({"kind":"ref","oid":"b".repeat(40)}))
+                .await
+                .is_err(),
+            "old attempt pinned source"
+        );
+        let result = json!({"manifest":manifest});
+        ensure!(
+            db.store
+                .commit_source_task(id, &first, &result)
+                .await
+                .is_err(),
+            "old attempt committed source"
+        );
+        db.store.commit_source_task(id, &third, &result).await?;
+        db.store.commit_source_task(id, &first, &result).await?;
+        let receipt = db.store.source_task_material(&[7; 32], id, &first).await?;
+        ensure!(
+            receipt.completed_result == Some(result) && receipt.credentials.is_empty(),
+            "completed retry reissued credentials"
+        );
+        Ok(())
+    }
+    .await;
+    db.close().await?;
+    outcome
 }
 
 impl Database {
@@ -41,7 +168,7 @@ impl Database {
             store,
         })
     }
-    async fn task(&self) -> Result<(Uuid, SourceManifest)> {
+    async fn unbound_task(&self) -> Result<(Uuid, SourceManifest)> {
         let project = Uuid::new_v4();
         let build = Uuid::new_v4();
         sql::execute(&mut self.pool.clone(),"INSERT INTO projects(id,tenant_id,name,repository_url) VALUES($1,'00000000-0000-0000-0000-000000000001','source-test','https://example.invalid/source.git')",params![project]).await?;
@@ -59,12 +186,30 @@ impl Database {
         )?;
         Ok((build, manifest))
     }
-    async fn pin(&self, id: Uuid) -> Result<()> {
+    async fn task(&self) -> Result<(Uuid, SourceManifest)> {
+        let task = self.unbound_task().await?;
         self.store
-            .pin_source(id, &json!({"kind":"ref","oid":"a".repeat(40)}))
+            .bind_source_task(task.0, "source-current")
             .await?;
         self.store
-            .pin_source(id, &json!({"kind":"tags","path":"","tags":{}}))
+            .source_task_material(&[7; 32], task.0, &execution())
+            .await?;
+        Ok(task)
+    }
+    async fn pin(&self, id: Uuid) -> Result<()> {
+        self.store
+            .pin_source(
+                id,
+                &execution(),
+                &json!({"kind":"ref","oid":"a".repeat(40)}),
+            )
+            .await?;
+        self.store
+            .pin_source(
+                id,
+                &execution(),
+                &json!({"kind":"tags","path":"","tags":{}}),
+            )
             .await?;
         Ok(())
     }
@@ -85,7 +230,7 @@ impl Database {
         let (build, manifest) = self.task().await?;
         self.pin(build).await?;
         self.store
-            .commit_source_task(build, &json!({"manifest":manifest}))
+            .commit_source_task(build, &execution(), &json!({"manifest":manifest}))
             .await?;
         let node = Uuid::new_v4();
         let job = Uuid::new_v4();
@@ -145,7 +290,7 @@ async fn image_source_material_rechecks_lock_waits() -> Result<()> {
         for change in ["deadline", "cancel", "terminal"] {
             let (build, manifest) = db.task().await?;
             db.pin(build).await?;
-            db.store.commit_source_task(build, &json!({"manifest":manifest})).await?;
+            db.store.commit_source_task(build, &execution(), &json!({"manifest":manifest})).await?;
             let job = Uuid::new_v4();
             let execution = Uuid::new_v4();
             sql::execute(&mut db.pool.clone(), "INSERT INTO jobs(id,build_id,target,target_config,status) VALUES($1,$2,'image','{}','running')", params![job,build]).await?;
@@ -197,18 +342,26 @@ async fn large_source_material_keeps_one_manifest_copy() -> Result<()> {
             "fixture does not exercise the transport boundary"
         );
         db.store
-            .pin_source(build, &json!({"kind":"ref","oid":"a".repeat(40)}))
+            .pin_source(
+                build,
+                &execution(),
+                &json!({"kind":"ref","oid":"a".repeat(40)}),
+            )
             .await?;
         db.store
             .pin_source(
                 build,
+                &execution(),
                 &json!({"kind":"tags","path":"","tags":manifest.repositories[0].tags}),
             )
             .await?;
         db.store
-            .commit_source_task(build, &json!({"manifest":manifest}))
+            .commit_source_task(build, &execution(), &json!({"manifest":manifest}))
             .await?;
-        let receipt = db.store.source_task_material(&[7; 32], build).await?;
+        let receipt = db
+            .store
+            .source_task_material(&[7; 32], build, &execution())
+            .await?;
         ensure!(
             receipt
                 .completed_result
@@ -246,8 +399,8 @@ async fn completed_source_material_does_not_reissue_credentials() -> Result<()> 
     let db = Database::new().await?;
     let result=async {
         let (build,manifest)=db.task().await?;db.pin(build).await?;
-        db.store.commit_source_task(build,&json!({"manifest":manifest})).await?;
-        let material=db.store.source_task_material(&[7;32],build).await?;
+        db.store.commit_source_task(build, &execution(),&json!({"manifest":manifest})).await?;
+        let material=db.store.source_task_material(&[7;32],build,&execution()).await?;
         ensure!(material.credentials.is_empty() && material.completed_result.is_some(),"completed task reissued credentials instead of a receipt");
         let unused=Uuid::new_v4();
         sql::execute(&mut db.pool.clone(),"INSERT INTO credentials(id,tenant_id,name,kind,ciphertext) VALUES($1,'00000000-0000-0000-0000-000000000001','unused','https','deliberately not decryptable')",params![unused]).await?;
@@ -268,7 +421,11 @@ async fn source_pins_and_commit_are_idempotent() -> Result<()> {
         let (id, mut manifest) = db.task().await?;
         let a = json!({"kind":"ref","oid":"a".repeat(40)});
         let b = json!({"kind":"ref","oid":"b".repeat(40)});
-        let (a, b) = tokio::join!(db.store.pin_source(id, &a), db.store.pin_source(id, &b));
+        let identity = execution();
+        let (a, b) = tokio::join!(
+            db.store.pin_source(id, &identity, &a),
+            db.store.pin_source(id, &identity, &b)
+        );
         let pinned = a?;
         ensure!(
             pinned == b?,
@@ -279,20 +436,25 @@ async fn source_pins_and_commit_are_idempotent() -> Result<()> {
         manifest = SourceManifest::new(id, manifest.repositories)?;
         let first = db
             .store
-            .pin_source(id, &json!({"kind":"tags","path":"","tags":{}}))
+            .pin_source(
+                id,
+                &execution(),
+                &json!({"kind":"tags","path":"","tags":{}}),
+            )
             .await?;
         let second = db
             .store
             .pin_source(
                 id,
+                &execution(),
                 &json!({"kind":"tags","path":"","tags":{"new":"b".repeat(40)}}),
             )
             .await?;
         ensure!(first == second, "a retry followed moving tags");
         let result = json!({"manifest":manifest});
         let (a, b) = tokio::join!(
-            db.store.commit_source_task(id, &result),
-            db.store.commit_source_task(id, &result)
+            db.store.commit_source_task(id, &identity, &result),
+            db.store.commit_source_task(id, &identity, &result)
         );
         a?;
         b?;
@@ -306,7 +468,7 @@ async fn source_pins_and_commit_are_idempotent() -> Result<()> {
         );
         ensure!(
             db.store
-                .commit_source_task(id, &json!({"manifest":{}}))
+                .commit_source_task(id, &execution(), &json!({"manifest":{}}))
                 .await
                 .is_err(),
             "completed result was replaced"
@@ -331,9 +493,9 @@ async fn rejected_source_results_do_not_admit_planning() -> Result<()> {
                 "expired"=>{sql::execute(&mut db.pool.clone(),"UPDATE source_tasks SET deadline_at=clock_timestamp()-interval '1 second' WHERE id=$1",params![id]).await?;},
                 _=>{sql::execute(&mut db.pool.clone(),"UPDATE projects SET status='archived' WHERE id=(SELECT project_id FROM builds WHERE id=$1)",params![id]).await?;},
             }
-            ensure!(db.store.commit_source_task(id,&json!({"manifest":manifest})).await.is_err(),"{change} source result was accepted");
+            ensure!(db.store.commit_source_task(id, &execution(),&json!({"manifest":manifest})).await.is_err(),"{change} source result was accepted");
             ensure!(db.counts(id).await?==(0,0),"{change} result partially committed");
-            if change!="digest" {ensure!(db.store.pin_source(id,&json!({"kind":"ref","oid":"c".repeat(40)})).await.is_err(),"{change} source pin was accepted");}
+            if change!="digest" {ensure!(db.store.pin_source(id, &execution(),&json!({"kind":"ref","oid":"c".repeat(40)})).await.is_err(),"{change} source pin was accepted");}
         }
         Ok(())
     }.await;
@@ -351,7 +513,7 @@ async fn source_commit_rechecks_cancellation_after_build_lock() -> Result<()> {
         let pid:i32=sql::scalar(&mut holder,"SELECT pg_backend_pid()",params![]).await?;
         sql::execute(&mut holder,"SELECT id FROM builds WHERE id=$1 FOR UPDATE",params![id]).await?;
         let store=db.store.clone();
-        let submit=tokio::spawn(async move{store.commit_source_task(id,&json!({"manifest":manifest})).await});
+        let submit=tokio::spawn(async move{store.commit_source_task(id, &execution(),&json!({"manifest":manifest})).await});
         let waiting=tokio::time::timeout(std::time::Duration::from_secs(5),async {
             loop {
                 let blocked:bool=sql::scalar(&mut db.pool.clone(),"SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))",params![pid]).await?;

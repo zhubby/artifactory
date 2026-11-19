@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖构建 API、事件订阅和共享控件。
- * [OUTPUT]: 提供 BuildDetail 构建详情。
+ * [OUTPUT]: 提供含应用分类与宿主的构建详情。
  * [POS]: 活跃构建订阅事件；终态展示静态分页日志。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -34,6 +34,7 @@ import {
   SectionTitle,
   Status,
   StepIcon,
+  TargetPlatformLabel,
 } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -257,7 +258,7 @@ export function BuildDetail({
                   <div className="min-w-0 flex-1">
                     <div className="font-mono text-xs">{target.target}</div>
                     <div className="mt-1.5 font-mono text-[10px] text-muted-foreground">
-                      {target.target_config.os} / {target.target_config.arch}
+                      <TargetPlatformLabel target={target.target_config} />
                     </div>
                   </div>
                   <Status small value={target.status} />

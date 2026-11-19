@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供领域类型、签名元数据和镜像发布来源快照。
+ * [OUTPUT]: 提供应用分类、领域类型与镜像发布来源快照。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -142,6 +142,12 @@ export interface Attempt {
   finished_at: string | null;
   steps: StepRun[];
 }
+export type ApplicationPlatform = "macos" | "ios" | "android" | "linux" | "windows";
+export interface TargetPlatform {
+  os: string;
+  arch: string;
+  application_platform: ApplicationPlatform | null;
+}
 export interface Job {
   blocked_reason?: string | null;
   placement?: {
@@ -153,9 +159,7 @@ export interface Job {
   id: string;
   target: string;
   status: string;
-  target_config: {
-    os: string;
-    arch: string;
+  target_config: TargetPlatform & {
     steps: { name: string; phase: string }[];
   };
   attempts: Attempt[];
@@ -460,9 +464,7 @@ export interface PlanRevision {
     recipe: {
       targets: Record<
         string,
-        {
-          os: string;
-          arch: string;
+        TargetPlatform & {
           steps: { name: string; phase: string; run: string }[];
         }
       >;

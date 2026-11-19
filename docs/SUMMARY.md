@@ -15,6 +15,8 @@
 
 # 部署与运维
 
+- [直接 Pod 执行记录](direct-pod-execution-2026-11-19.md)
+
 - [部署与运维](operations.md)
 - [Helm / Kubernetes 部署](helm.md)
 - [统一版本与发布](versioning.md)
@@ -34,6 +36,8 @@
 # 验收记录
 
 - [实施与验收总览](acceptance.md)
+- [TaskNotes 真实多平台应用 · 2026-11-18](tasknotes-application-acceptance-2026-11-18.md)
+- [TaskNotes 平台问题与修复 · 2026-11-18](tasknotes-platform-fixes-2026-11-18.md)
 - [临时源码执行 · 2026-11-18](ephemeral-source-acceptance-2026-11-18.md)
 - [Kubernetes 1.28 镜像构建 · 2026-11-18](image-builds-kubernetes-128-acceptance-2026-11-18.md)
 - [集群镜像构建与独立 Operator · 2026-11-17](image-builds-kubernetes-acceptance-2026-11-17.md)

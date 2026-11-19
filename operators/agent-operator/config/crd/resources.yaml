@@ -62,6 +62,37 @@ spec:
           status:
             nullable: true
             properties:
+              execution:
+                description: 先预留名称，再记录创建意图和 UID；停机证据先于 finalizer 移除落盘。
+                nullable: true
+                properties:
+                  attempt:
+                    format: uint32
+                    maximum: 3.0
+                    minimum: 1.0
+                    type: integer
+                  createStarted:
+                    type: boolean
+                  deadlineMs:
+                    format: int64
+                    type: integer
+                  name:
+                    type: string
+                  nodeName:
+                    nullable: true
+                    type: string
+                  stopped:
+                    type: boolean
+                  uid:
+                    nullable: true
+                    type: string
+                required:
+                - attempt
+                - createStarted
+                - deadlineMs
+                - name
+                - stopped
+                type: object
               message:
                 nullable: true
                 type: string
@@ -69,9 +100,6 @@ spec:
                 format: int64
                 type: integer
               phase:
-                type: string
-              podUid:
-                nullable: true
                 type: string
             required:
             - observedGeneration
@@ -142,6 +170,37 @@ spec:
           status:
             nullable: true
             properties:
+              execution:
+                description: 先预留名称，再记录创建意图和 UID；停机证据先于 finalizer 移除落盘。
+                nullable: true
+                properties:
+                  attempt:
+                    format: uint32
+                    maximum: 3.0
+                    minimum: 1.0
+                    type: integer
+                  createStarted:
+                    type: boolean
+                  deadlineMs:
+                    format: int64
+                    type: integer
+                  name:
+                    type: string
+                  nodeName:
+                    nullable: true
+                    type: string
+                  stopped:
+                    type: boolean
+                  uid:
+                    nullable: true
+                    type: string
+                required:
+                - attempt
+                - createStarted
+                - deadlineMs
+                - name
+                - stopped
+                type: object
               message:
                 nullable: true
                 type: string
@@ -149,9 +208,6 @@ spec:
                 format: int64
                 type: integer
               phase:
-                type: string
-              podUid:
-                nullable: true
                 type: string
             required:
             - observedGeneration
@@ -191,6 +247,8 @@ spec:
                 type: integer
               pool:
                 type: string
+              projectId:
+                type: string
               runId:
                 type: string
               sourceDigest:
@@ -202,6 +260,7 @@ spec:
             required:
             - generation
             - pool
+            - projectId
             - runId
             type: object
             x-kubernetes-validations:
@@ -210,6 +269,37 @@ spec:
           status:
             nullable: true
             properties:
+              execution:
+                description: 先预留名称，再记录创建意图和 UID；停机证据先于 finalizer 移除落盘。
+                nullable: true
+                properties:
+                  attempt:
+                    format: uint32
+                    maximum: 3.0
+                    minimum: 1.0
+                    type: integer
+                  createStarted:
+                    type: boolean
+                  deadlineMs:
+                    format: int64
+                    type: integer
+                  name:
+                    type: string
+                  nodeName:
+                    nullable: true
+                    type: string
+                  stopped:
+                    type: boolean
+                  uid:
+                    nullable: true
+                    type: string
+                required:
+                - attempt
+                - createStarted
+                - deadlineMs
+                - name
+                - stopped
+                type: object
               message:
                 nullable: true
                 type: string
@@ -217,9 +307,6 @@ spec:
                 format: int64
                 type: integer
               phase:
-                type: string
-              podUid:
-                nullable: true
                 type: string
             required:
             - observedGeneration

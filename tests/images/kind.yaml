@@ -1,0 +1,8 @@
+# [INPUT]: CI 指定的 Kubernetes 节点镜像与默认 kind CNI。
+# [OUTPUT]: 使用版本默认功能开关的隔离单节点集群。
+# [POS]: 高于最低支持版本的镜像验收；与 1.28 下限验收共用执行实现。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane

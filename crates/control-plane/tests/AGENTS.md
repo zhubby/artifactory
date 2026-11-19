@@ -1,7 +1,7 @@
 # crates/control-plane/tests/
 > L2 | Parent: ../AGENTS.md
 
-config.rs: 验证执行配方和阶段限制。
+config.rs: 验证应用平台、执行配方和阶段限制。
 crypto.rs: 验证凭据加密上下文。
 database.rs: 组合隔离数据库夹具及业务验收。
 database/: 保存分模块数据库与 HTTP 验收。

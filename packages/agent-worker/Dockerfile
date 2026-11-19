@@ -13,4 +13,4 @@ COPY --from=builder /app/packages/agent-worker/package.json ./
 COPY --from=builder /app/packages/agent-worker/node_modules ./node_modules
 COPY --from=builder /app/packages/agent-worker/dist ./dist
 USER 10001:10001
-ENTRYPOINT ["node", "dist/job-main.js"]
+ENTRYPOINT ["node", "dist/pod-main.js"]

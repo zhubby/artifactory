@@ -13,8 +13,10 @@ except ModuleNotFoundError:
 def pod(volumes=None, mounts=None):
     return {
         "kind": "Pod",
-        "metadata": {"name": "image-test", "labels": {"app.kubernetes.io/name": "artifactory-image-worker"}},
+        "metadata": {"name": "image-test", "labels": {"app.kubernetes.io/name": "artifactory-image-worker"},
+                     "ownerReferences": [{"apiVersion": "images.artifactory.dev/v1alpha1", "kind": "ImageBuild", "name": "build", "uid": "build-uid", "controller": True}]},
         "spec": {
+            "restartPolicy": "Never",
             "automountServiceAccountToken": False,
             "volumes": volumes or [{"name": "workspace", "emptyDir": {}}],
             "initContainers": [{"name": "source", "volumeMounts": [{"name": "source-auth"}, {"name": "source-identity"}]}],
@@ -27,6 +29,16 @@ def pod(volumes=None, mounts=None):
 
 
 class EphemeralSourceChecks(unittest.TestCase):
+    def test_task_requires_direct_cr_owner_and_never_restarts(self):
+        task=pod()
+        task["metadata"]["ownerReferences"][0]["kind"]="Job"
+        self.assertTrue(violations([task]))
+        task=pod()
+        task["spec"]["restartPolicy"]="OnFailure"
+        self.assertTrue(violations([task]))
+        task=pod()
+        self.assertTrue(violations([{"kind":"Job", "metadata":task["metadata"], "spec":{"template":task}}]))
+
     def test_task_source_is_temporary_and_main_container_cannot_write_it(self):
         self.assertEqual(violations([pod()]), [])
         self.assertTrue(violations([pod(mounts=[{"name": "workspace"}])]))

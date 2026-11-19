@@ -7,13 +7,13 @@
     "node": ">=24 <25"
   },
   "bin": {
-    "artifactory-agent-worker": "dist/job-main.js"
+    "artifactory-agent-worker": "dist/pod-main.js"
   },
   "scripts": {
     "build": "tsc",
     "check": "tsc --noEmit",
     "test": "npm run build && node --test dist/*.test.js",
-    "start": "node dist/job-main.js",
+    "start": "node dist/pod-main.js",
     "prebuild": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {

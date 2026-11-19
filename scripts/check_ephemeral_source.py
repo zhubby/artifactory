@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # [INPUT]: Kubernetes 任务、卷和 Secret 名称。
-# [OUTPUT]: 检查任务临时卷、1.28 双容器隔离与空闲清理。
+# [OUTPUT]: 检查直接 Pod 归属、临时卷与 1.28 容器隔离。
 # [POS]: 只读验收入口，不删除资源或读取 Secret 内容。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 """Verify ephemeral source storage in one Kubernetes namespace."""
@@ -69,11 +69,24 @@ def violations(resources, secret_names=(), *, idle=False):
             continue
         spec = item.get("spec", {})
         if kind == "Job":
-            template = spec.get("template", {})
-            app = template.get("metadata", {}).get("labels", {}).get("app.kubernetes.io/name")
-            spec = template.get("spec", {})
-        if app not in TASK_APPS or kind not in {"Pod", "Job"}:
+            app = spec.get("template", {}).get("metadata", {}).get("labels", {}).get("app.kubernetes.io/name", app)
+            if app in TASK_APPS:
+                failures.append(f"{kind}/{name}: task must use a directly owned Pod")
             continue
+        if app not in TASK_APPS or kind != "Pod":
+            continue
+        owners = metadata.get("ownerReferences", [])
+        expected = {
+            "artifactory-source-task": ("agents.artifactory.dev/v1alpha1", "SourceTask"),
+            "artifactory-pi": ("agents.artifactory.dev/v1alpha1", "AgentRun"),
+            "artifactory-image-worker": ("images.artifactory.dev/v1alpha1", "ImageBuild"),
+        }[app]
+        if not any(owner.get("apiVersion") == expected[0] and owner.get("kind") == expected[1]
+                   and owner.get("controller") is True and owner.get("uid") and owner.get("name")
+                   for owner in owners):
+            failures.append(f"{kind}/{name}: task Pod lacks its direct CR owner")
+        if spec.get("restartPolicy") != "Never":
+            failures.append(f"{kind}/{name}: task Pod must not restart containers")
         if app == "artifactory-image-worker":
             failures.extend(image_violations(spec, f"{kind}/{name}"))
         if idle:

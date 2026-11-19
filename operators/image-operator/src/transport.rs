@@ -1,9 +1,10 @@
 //! [INPUT]: 依赖任务专属令牌、控制资源 URL 与服务 CA。
-//! [OUTPUT]: 提供有界报告、发布材料读取和心跳。
+//! [OUTPUT]: 提供有界报告、脱敏失败日志、发布材料读取和心跳。
 //! [POS]: 工作 Pod 到控制平面的认证边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
 use artifactory_image_protocol::Report;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
@@ -61,6 +62,36 @@ impl Control {
             }
         }
         unreachable!()
+    }
+    pub(crate) async fn failure(
+        &self,
+        platform: &str,
+        error: &anyhow::Error,
+        secrets: artifactory_emissary::signing::redact::Secrets,
+        sequence: &AtomicI64,
+    ) -> String {
+        let text = crate::diagnostics::error_text(error, secrets)
+            .await
+            .unwrap_or_else(|_| "failure diagnostic unavailable".into());
+        let stage = if platform == "publish" {
+            "publication"
+        } else {
+            "build"
+        };
+        let message = crate::diagnostics::summary(stage, &text);
+        let _ = self
+            .report(&Report::Log {
+                platform: platform.into(),
+                sequence: sequence.fetch_add(1, Ordering::Relaxed) + 1,
+                text,
+            })
+            .await;
+        let _ = self
+            .report(&Report::Failed {
+                message: message.clone(),
+            })
+            .await;
+        message
     }
     pub async fn publication(&self) -> Result<Vec<artifactory_image_protocol::PlatformResult>> {
         let response = self

@@ -1,5 +1,5 @@
 # [INPUT]: 管理员选择的镜像、节点与并发预算。
-# [OUTPUT]: 独立 Image Operator、临时源码参数与 BuilderPool 参数。
+# [OUTPUT]: 独立 Image Operator、临时源码参数与分角色 BuilderPool 预算。
 # [POS]: 不接收构建者提交的任意 Pod 模板。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 image:
@@ -18,9 +18,11 @@ builderPool:
   nodeSelector: {}
   emulationNodeSelector: {}
   emulationPlatforms: []
-  cpu: '1'
-  memory: 2Gi
-  ephemeralStorage: 20Gi
+  resources:
+    source: {cpu: 250m, memory: 512Mi, ephemeralStorage: 10Gi}
+    runner: {cpu: 250m, memory: 256Mi, ephemeralStorage: 1Gi}
+    buildkit: {cpu: '1', memory: 2Gi, ephemeralStorage: 20Gi}
+    publisher: {cpu: 500m, memory: 512Mi, ephemeralStorage: 20Gi}
   caSecret: ''
   # Contains buildkitd.toml. Configure private CAs and explicit HTTP here.
   buildkitConfigMap: ''

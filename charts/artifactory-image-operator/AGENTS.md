@@ -2,8 +2,8 @@
 > L2 | Parent: ../../AGENTS.md
 
 Chart.yaml: 定义独立交付包、版本与 Kubernetes 1.28 下限。
-values.yaml: 声明源码准备镜像、监督型 BuildKit 镜像与预建 Secret。
-templates/: 渲染服务和最小 RBAC。
+values.yaml: 声明源码准备镜像、监督型 BuildKit 镜像、分角色预算与预建 Secret。
+templates/: 渲染控制器和仅含 Pod 编排的最小 RBAC。
 crds/: 保存 Image CRD。
 .helmignore: 排除模块地图，避免被当作 Kubernetes 资源。
 

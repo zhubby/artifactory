@@ -33,5 +33,5 @@ try {
   if (!controller.signal.aborted && task && lease) {
     await reportTerminalFailure(error, task, lease, post, controller.signal);
   }
-  console.error("Pi Job exited before confirmed handoff"); process.exitCode = 1;
+  console.error("Pi Pod exited before confirmed handoff"); process.exitCode = 1;
 } finally { if (heartbeat) clearInterval(heartbeat); controller.abort(); }

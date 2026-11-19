@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖原生与 BuildKit 配方解析器。
-//! [OUTPUT]: 验证平台、路径和执行器契约。
-//! [POS]: 控制平面配方兼容性回归入口。
+//! [OUTPUT]: 验证应用平台、路径和执行器契约。
+//! [POS]: 控制平面配方回归入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_control_plane::recipe::Recipe;
 
@@ -21,6 +21,30 @@ fn parses_native_recipe() {
     let recipe = Recipe::parse(VALID).unwrap();
     assert_eq!(recipe.targets["linux"].executor, "native");
     assert_eq!(recipe.targets["linux"].timeout_seconds, 7200);
+}
+
+#[test]
+fn application_platform_does_not_come_from_host_or_artifact_name() {
+    let darwin = VALID.replace("os: linux", "os: darwin");
+    assert_eq!(
+        Recipe::parse(&darwin).unwrap().targets["linux"].application_platform,
+        None
+    );
+    let ios = darwin.replace("arch: amd64", "arch: arm64\n    application_platform: ios");
+    assert_eq!(
+        Recipe::parse(&ios).unwrap().targets["linux"]
+            .application_platform
+            .as_deref(),
+        Some("ios")
+    );
+    assert!(Recipe::parse(&ios.replace("os: darwin", "os: linux")).is_err());
+    assert!(
+        Recipe::parse(&ios.replace(
+            "application_platform: ios",
+            "application_platform: simulator"
+        ))
+        .is_err()
+    );
 }
 
 #[test]
@@ -100,6 +124,13 @@ targets:
       allow_emulation: true
 "#;
     assert!(artifactory_control_plane::recipe::Recipe::parse(yaml).is_ok());
+    assert!(
+        Recipe::parse(&yaml.replace(
+            "executor: buildkit",
+            "executor: buildkit\n    application_platform: linux"
+        ))
+        .is_err()
+    );
 }
 
 #[test]

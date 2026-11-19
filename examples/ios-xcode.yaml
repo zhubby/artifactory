@@ -1,9 +1,14 @@
+# [INPUT]: iOS Xcode 工程与本机导出身份。
+# [OUTPUT]: 构建、导出和验证 iOS IPA。
+# [POS]: Darwin 宿主执行 iOS 目标的配方模板。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 version: 1
 release: {enabled: true}
 targets:
   ios-ipa:
     os: darwin
     arch: arm64
+    application_platform: ios
     capabilities: [xcodebuild, codesign, security]
     signing_profiles: [ios-internal]
     steps:

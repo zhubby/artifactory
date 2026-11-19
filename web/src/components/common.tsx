@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户下载 API、UI 词条和带验签证据的制品类型。
- * [OUTPUT]: 提供状态、字段反馈及展示签名证据的制品表。
+ * [OUTPUT]: 提供应用与宿主标签、状态反馈和制品验签表。
  * [POS]: 业务页面复用的展示与反馈边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -25,9 +25,18 @@ import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Artifact } from "@/lib/types";
+import type { Artifact, ApplicationPlatform, TargetPlatform } from "@/lib/types";
 import { bytes, short } from "@/lib/utils";
 import { LocalizedError, asError } from "@/lib/errors";
+
+export function TargetPlatformLabel({ target }: { target: TargetPlatform }) {
+  const { t } = useUI();
+  const platforms: Record<ApplicationPlatform, string> = {
+    macos: "macOS", ios: "iOS", android: "Android", linux: "Linux", windows: "Windows",
+  };
+  const application = target.application_platform ? platforms[target.application_platform] : t("builds.nonApplication");
+  return <span>{application} · {t("builds.hostPlatform", { os: target.os, arch: target.arch })}</span>;
+}
 
 export function Status({
   value,

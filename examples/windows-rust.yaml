@@ -1,9 +1,14 @@
+# [INPUT]: Windows Rust 程序与本机证书库身份。
+# [OUTPUT]: 构建、签名和验证非应用可执行程序。
+# [POS]: Windows 宿主执行非应用目标的配方模板。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 version: 1
 release: {enabled: true}
 targets:
   windows-amd64:
     os: windows
     arch: amd64
+    application_platform: null
     capabilities: [cargo, signtool]
     signing_profiles: [windows-release]
     steps:

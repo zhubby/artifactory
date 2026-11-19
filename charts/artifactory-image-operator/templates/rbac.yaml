@@ -1,5 +1,5 @@
 # [INPUT]: 独立 Image Operator 服务身份。
-# [OUTPUT]: ImageBuild finalizer、状态、Job、Lease 与只读节点权限。
+# [OUTPUT]: ImageBuild finalizer、状态、Pod、Lease 与只读节点权限。
 # [POS]: 控制器不读取任务 Secret，不修改 Node。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 apiVersion: rbac.authorization.k8s.io/v1
@@ -15,12 +15,9 @@ rules:
   - apiGroups: [images.artifactory.dev]
     resources: [imagebuilds/status]
     verbs: [get, patch, update]
-  - apiGroups: [batch]
-    resources: [jobs]
-    verbs: [get, list, watch, create, patch, delete]
   - apiGroups: ['']
     resources: [pods]
-    verbs: [get, list, watch]
+    verbs: [get, list, watch, create, patch, delete]
   - apiGroups: [coordination.k8s.io]
     resources: [leases]
     verbs: [get, create, update]

@@ -1,8 +1,9 @@
 //! [INPUT]: 依赖固定运行意图、数据库事务和执行身份。
-//! [OUTPUT]: 持久化生命周期，区分源码准备资格与存储故障。
+//! [OUTPUT]: 持久化生命周期与故障，提供项目准入身份和源码准备资格。
 //! [POS]: Runtime 操作状态边界；审计记录不用于恢复会话。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod conversations;
+mod execution_failures;
 mod model_requests;
 mod rows;
 use rows::{locked, run_fields};
@@ -585,7 +586,7 @@ impl RuntimeStore {
                 params![run],
             )
             .await?;
-            admitted.push(json!({"run_id":run,"generation":life.generation,"pool":pool,"source_manifest_id":row.decode::<Option<Uuid>>("source_manifest_id")?,"source_digest":row.decode::<Option<String>>("source_digest")?}));
+            admitted.push(json!({"run_id":run,"project_id":project,"generation":life.generation,"pool":pool,"source_manifest_id":row.decode::<Option<Uuid>>("source_manifest_id")?,"source_digest":row.decode::<Option<String>>("source_digest")?}));
         }
         // Lost create acknowledgements are recovered by returning all admitted descriptors.
         let active = sql::records(
@@ -599,7 +600,7 @@ impl RuntimeStore {
         for row in active {
             let intent = config(self, &row)?;
             let lifecycle: Lifecycle = serde_json::from_value(row.decode("lifecycle")?)?;
-            rows.push(json!({"run_id":intent.run_id,"generation":lifecycle.generation,"pool":intent.pool,"source_manifest_id":intent.source_manifest_id,"source_digest":intent.source_digest}));
+            rows.push(json!({"run_id":intent.run_id,"project_id":intent.project_id,"generation":lifecycle.generation,"pool":intent.pool,"source_manifest_id":intent.source_manifest_id,"source_digest":intent.source_digest}));
         }
         tx.commit().await?;
         let queued: i64 = sql::scalar(

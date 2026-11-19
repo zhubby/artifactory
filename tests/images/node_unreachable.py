@@ -50,7 +50,7 @@ class NodeUnreachable:
         response=self.docker('curl','--config','-',data=('\n'.join(config)+'\n').encode())
         return json.loads(response.stdout)
 
-    def exercise(self,build,pod,job,build_id):
+    def exercise(self,build,pod,build_id):
         self.validate()
         a=self.a
         self.build_name=build['metadata']['name']
@@ -91,32 +91,31 @@ class NodeUnreachable:
                 time.sleep(5)
             def pending():
                 current=json.loads(a.kubectl('get','imagebuild',self.build_name,'-o','json'))
-                jobs=json.loads(a.kubectl('get','jobs','-l','artifactory.dev/image-build='+self.build_name,'-o','json'))['items']
                 status=current.get('status',{})
-                return current if not jobs and status.get('phase')=='Canceled' and status.get('message','').startswith('CleanupPending:') else None
+                return current if status.get('phase')=='Canceled' and status.get('message','').startswith('CleanupPending:') else None
             current=a.wait(pending,45)
-            ledger=current['status']['jobOwnership']
-            if ledger['imageBuildUid']!=build['metadata']['uid'] or not any(r['uid']==job['metadata']['uid'] for r in ledger['jobs']):
-                raise AssertionError('Job UID ledger was lost after Job disappearance')
+            ledger=current['status']['podOwnership']
+            if ledger['imageBuildUid']!=build['metadata']['uid'] or not any(r['uid']==pod['metadata']['uid'] for r in ledger['pods']):
+                raise AssertionError('Pod UID ledger was lost during node failure')
             physical=json.loads(a.kubectl('get','pod',pod['metadata']['name'],'-o','json'))
             if physical['metadata']['uid']!=pod['metadata']['uid'] or not physical['metadata'].get('deletionTimestamp'):
                 raise AssertionError('Canceled Pod identity was lost during node failure')
             candidate=json.loads(a.kubectl('get','imagebuild',self.probe,'-o','json'))
-            admitted=json.loads(a.kubectl('get','jobs,pods','-l','artifactory.dev/image-build='+self.probe,'-o','json'))['items']
+            admitted=json.loads(a.kubectl('get','pods','-l','artifactory.dev/image-build='+self.probe,'-o','json'))['items']
             if admitted:
                 raise AssertionError('Orphaned live Pod released execution capacity')
             state=self.docker('cat','/proc/'+str(pid)+'/stat').stdout.decode().split(') ',1)[1].split()[0]
             if state!='T':
                 raise AssertionError('Runner is no longer physically stopped in the isolated node')
             samples.append({'seconds':round(time.monotonic()-started,3),'phase':current['status']['phase'],
-                'cleanup_pending':True,'job_absent':True,'pod_uid':physical['metadata']['uid'],
-                'ledger_job_uid':job['metadata']['uid'],'runner_state':state,'probe_phase':candidate.get('status',{}).get('phase'),
-                'probe_jobs':0})
+                'cleanup_pending':True,'pod_deleting':True,'pod_uid':physical['metadata']['uid'],
+                'ledger_pod_uid':pod['metadata']['uid'],'runner_state':state,'probe_phase':candidate.get('status',{}).get('phase'),
+                'probe_pods':0})
         if not any(s['probe_phase']=='Building' for s in samples):
             raise AssertionError('Capacity probe was not reconciled during node failure')
         self.restore()
         def cleaned():
-            resources=json.loads(a.kubectl('get','jobs,pods','-l','artifactory.dev/image-build='+self.build_name,'-o','json'))['items']
+            resources=json.loads(a.kubectl('get','pods','-l','artifactory.dev/image-build='+self.build_name,'-o','json'))['items']
             status=json.loads(a.kubectl('get','imagebuild',self.build_name,'-o','json')).get('status',{})
             return not resources and status.get('phase')=='Canceled' and not status.get('message')
         a.wait(cleaned,120)

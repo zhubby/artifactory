@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖服务认证、运行身份与固定源码清单。
-//! [OUTPUT]: 提供 Runtime 意图、模型配置和租约契约。
+//! [OUTPUT]: 提供 Runtime 意图、执行故障、丢失围栏和租约契约。
 //! [POS]: 控制平面、Operator 与 Kubernetes Worker 的共享协议。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub mod wire {
@@ -63,6 +63,41 @@ pub struct Execution {
     pub uid: String,
     pub name: String,
     pub namespace: String,
+}
+
+/// Operator 观察到的执行终止；不传递容器日志或 Kubernetes message。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionFailure {
+    pub execution: Execution,
+    pub reason: ExecutionFailureReason,
+}
+
+/// 固定诊断类别使初始化凭据与源码内容无法进入错误文本。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ExecutionFailureReason {
+    SourcePreparation { exit_code: i32 },
+    WorkerExit { exit_code: i32 },
+    PodFailed,
+}
+
+/// Operator 报告资源消失；未创建 Pod 的删除不伪造执行身份。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionLost {
+    pub run_id: Uuid,
+    pub generation: i64,
+    pub execution: Option<Execution>,
+    pub reason: ExecutionLostReason,
+}
+
+/// Pod 消失使旧授权失效；删除运行声明使业务失败。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionLostReason {
+    PodMissing,
+    ResourceDeleted,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

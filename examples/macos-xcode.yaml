@@ -1,9 +1,14 @@
+# [INPUT]: macOS Xcode 工程与本机签名引用。
+# [OUTPUT]: 构建、签名和验证 macOS 应用包。
+# [POS]: 显式应用分类的原生配方模板。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 version: 1
 release: {enabled: true}
 targets:
   macos-arm64:
     os: darwin
     arch: arm64
+    application_platform: macos
     capabilities: [xcodebuild, codesign]
     signing_profiles: [apple-release]
     steps:

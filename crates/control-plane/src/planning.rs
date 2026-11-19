@@ -231,7 +231,7 @@ mod tests {
     use super::*;
     #[test]
     fn lfs_capabilities_keep_mixed_plans_valid_after_persistence() {
-        let value = json!({"summary":"mixed plan","evidence":[{"path":"Dockerfile","reason":"build context"}],"recipe":{"version":1,"targets":{"image":{"os":"linux","arch":"amd64","executor":"buildkit","image":{"name":"app"}},"native":{"os":"linux","arch":"amd64","artifacts":["dist/*"],"steps":[{"name":"build","run":"echo ok"}]}}}});
+        let value = json!({"summary":"mixed plan","evidence":[{"path":"Dockerfile","reason":"build context"}],"recipe":{"version":1,"targets":{"image":{"os":"linux","arch":"amd64","application_platform":null,"executor":"buildkit","image":{"name":"app"}},"native":{"os":"linux","arch":"amd64","application_platform":null,"artifacts":["dist/*"],"steps":[{"name":"build","run":"echo ok"}]}}}});
         let mut plan = ExecutionPlan::parse(value).unwrap();
         let source = artifactory_source_checkout::SourceManifest::new(
             Uuid::new_v4(),

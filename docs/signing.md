@@ -1,3 +1,9 @@
+<!--
+[INPUT]: 显式应用平台、固定签名绑定与原生验签证据。
+[OUTPUT]: 定义托管材料、默认方案和验签边界。
+[POS]: macOS 与 Android 托管签名的配置入口。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # 托管应用签名
 
 Artifactory 支持加密托管 macOS 和 Android 签名材料。
@@ -121,8 +127,15 @@ macOS 使用随机密码的临时 Keychain，并显式指定 Keychain 路径。
 ## 计划与环境变量
 
 `application_platform` 表示应用平台，取值为
-`macos`、`android`、`linux`、`windows`。
+`macos`、`ios`、`android`、`linux`、`windows`。
 `os` 和 `arch` 仍表示执行宿主。
+CLI、库、服务端和 OCI 目标使用 `null`。
+AI 计划必须显式填写，不能省略。
+默认方案仅匹配显式应用平台。
+Darwin 宿主同时支持 macOS、iOS 和非应用目标。
+iOS 分类不提供 iOS 托管签名。
+计划与脚本属于可信项目输入，应用分类不是制品类型鉴定。
+平台不通过宿主或扩展名识别伪报类别。
 匹配默认方案时，计划必须使用固定方案并包含 sign、verify 阶段。
 `signing_outputs` 为最终制品的显式相对路径，不接受 glob。
 每个托管制品都必须声明验签输出。

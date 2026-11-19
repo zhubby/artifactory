@@ -283,7 +283,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tokio",
- "tonic",
  "tracing",
  "tracing-subscriber",
  "uuid",

@@ -1,13 +1,15 @@
 //! [INPUT]: 依赖发布专属 Secret、OCI 客户端与 /work 临时磁盘卷。
-//! [OUTPUT]: 发布完整 OCI Index 或复制到外部仓库。
+//! [OUTPUT]: 发布完整 OCI Index，失败时保存脱敏日志和摘要。
 //! [POS]: 镜像构建与最终标签之间的独立发布进程，不写源码卷。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::transport::Control;
 use anyhow::{Result, ensure};
+use artifactory_emissary::signing::redact;
 use artifactory_image_protocol::{PublishTask, Report, index, sha256};
+use std::sync::atomic::AtomicI64;
 use tokio_util::sync::CancellationToken;
 
-/// Blob 校验的临时目录必须落在 Job 的可写磁盘卷。
+/// Blob 校验的临时目录必须落在 Pod 的可写磁盘卷。
 pub(crate) const TEMPORARY_DIRECTORY: &str = "/work";
 
 pub async fn run() -> Result<()> {
@@ -52,13 +54,18 @@ pub async fn run() -> Result<()> {
             .await?;
         control.report(&Report::Published { digest }).await
     };
-    let result = tokio::select! { result=operation=>result, _=cancel.cancelled()=>Err(anyhow::anyhow!("publication canceled")) };
-    if result.is_err() {
-        let _ = control
-            .report(&Report::Failed {
-                message: "image publication failed; retry publication without rebuilding".into(),
-            })
+    let mut result = tokio::select! { result=operation=>result, _=cancel.cancelled()=>Err(anyhow::anyhow!("publication canceled")) };
+    if let Err(error) = &result {
+        let mut secrets = redact::Secrets::default();
+        secrets.add(&task.token);
+        crate::diagnostics::registry_secrets(&mut secrets, &task.registry);
+        if let Some(destination) = &task.destination {
+            crate::diagnostics::registry_secrets(&mut secrets, destination);
+        }
+        let message = control
+            .failure("publish", error, secrets, &AtomicI64::new(0))
             .await;
+        result = Err(anyhow::anyhow!(message));
     }
     cancel.cancel();
     heartbeat.abort();

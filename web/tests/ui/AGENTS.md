@@ -1,7 +1,7 @@
 # web/tests/ui/
 > L2 | Parent: ../AGENTS.md
 
-ai-builds.spec.ts: 验证规划、澄清、分页和打开及重开终态补读，保存响应式截图。
+ai-builds.spec.ts: 验证应用与宿主分类、规划、澄清和重开终态补读。
 accessibility.spec.ts: 验证共享页面的 WCAG 自动检查。
 browser-audit.spec.ts: 验证快捷导航、偏好面板和日志保持。
 build-source-edge.spec.ts: 验证源码选择边界。
@@ -10,7 +10,7 @@ build-wizard.spec.ts: 验证构建向导与提交数据。
 console-visual.spec.ts: 验证工作台视觉与布局。
 emissary-ota.spec.ts: 验证节点升级配置。
 errors.spec.ts: 验证错误状态和本地化。
-fixtures.ts: 提供租户业务数据、默认签名预览与 HTTP 夹具。
+fixtures.ts: 提供显式应用分类、租户数据、默认签名预览与 HTTP 夹具。
 interaction-visual.spec.ts: 验证短视口导航和设置分组交互。
 images.spec.ts: 验证完整外部引用复制、摘要 Release、双架构发布与凭据清空。
 monochrome-workspace.spec.ts: 验证中性色工作台、项目切换和导航状态。

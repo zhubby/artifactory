@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖执行目标、构建固定的签名绑定与安全路径规则。
-//! [OUTPUT]: 校验默认签名不可省略，输出覆盖及应用平台匹配。
+//! [OUTPUT]: 按显式应用平台校验默认签名及输出覆盖。
 //! [POS]: Kubernetes 提交计划使用的签名授权约束。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -9,36 +9,6 @@ use crate::{
 use anyhow::{Result, ensure};
 
 pub fn validate(target: &Target, bindings: &[Binding]) -> Result<()> {
-    if !bindings.is_empty() {
-        ensure!(
-            target.application_platform.is_some(),
-            "application_platform is required when project signing defaults exist"
-        );
-    }
-    if bindings.iter().any(|b| b.platform == "macos")
-        && target.os == "darwin"
-        && !(target.application_platform.as_deref() == Some("android")
-            && target
-                .artifacts
-                .iter()
-                .all(|p| p.ends_with(".apk") || p.ends_with(".aab")))
-    {
-        ensure!(
-            target.application_platform.as_deref() == Some("macos"),
-            "darwin target must use its macOS signing default"
-        );
-    }
-    if bindings.iter().any(|b| b.platform == "android")
-        && target
-            .artifacts
-            .iter()
-            .any(|p| p.ends_with(".apk") || p.ends_with(".aab"))
-    {
-        ensure!(
-            target.application_platform.as_deref() == Some("android"),
-            "Android artifact must use its Android signing default"
-        );
-    }
     let binding = bindings
         .iter()
         .find(|b| Some(b.platform.as_str()) == target.application_platform.as_deref());
@@ -117,8 +87,8 @@ mod tests {
         signing::{AndroidPurpose, Metadata},
     };
     #[test]
-    fn default_signing_cannot_be_omitted_or_disguised_as_a_host_platform() {
-        let recipe=Recipe::parse("version: 1\ntargets:\n  android:\n    os: linux\n    arch: amd64\n    steps: [{name: build, run: ./gradlew assembleRelease}]\n    artifacts: [dist/app.apk]\n").unwrap();
+    fn matching_application_default_requires_signing_and_verification() {
+        let recipe=Recipe::parse("version: 1\ntargets:\n  android:\n    os: linux\n    arch: amd64\n    application_platform: android\n    steps: [{name: build, run: ./gradlew assembleRelease}]\n    artifacts: [dist/app.apk]\n").unwrap();
         let mut target = recipe.targets["android"].clone();
         let bindings = vec![Binding {
             profile: "managed:android".into(),
@@ -138,8 +108,6 @@ mod tests {
                 notarization_available: false,
             },
         }];
-        assert!(validate(&target, &bindings).is_err());
-        target.application_platform = Some("android".into());
         assert!(validate(&target, &bindings).is_err());
         target.signing_profiles = vec!["managed:android".into()];
         target.signing_outputs = vec![crate::signing::Output {
@@ -162,6 +130,53 @@ mod tests {
         });
         validate(&target, &bindings).unwrap();
         target.signing_outputs[0].path = "dist/*.apk".into();
+        assert!(validate(&target, &bindings).is_err());
+    }
+
+    #[test]
+    fn macos_defaults_do_not_reclassify_ios_or_cli_on_the_same_host() {
+        let recipe = Recipe::parse("version: 1\ntargets:\n  app:\n    os: darwin\n    arch: arm64\n    steps: [{name: build, run: make build}]\n    artifacts: [dist/app.zip]\n").unwrap();
+        let mut target = recipe.targets["app"].clone();
+        let bindings = vec![Binding {
+            profile: "managed:macos".into(),
+            platform: "macos".into(),
+            credential_id: "c".into(),
+            version_id: "v".into(),
+            notarize: false,
+            metadata: Metadata {
+                subject: "test".into(),
+                fingerprint_sha256: "0".repeat(64),
+                not_before: 0,
+                not_after: i64::MAX,
+                identity: "test".into(),
+                team_id: None,
+                alias: None,
+                purpose: None,
+                notarization_available: false,
+            },
+        }];
+        for platform in [None, Some("ios"), Some("android")] {
+            target.application_platform = platform.map(str::to_owned);
+            validate(&target, &bindings).unwrap();
+        }
+        target.application_platform = Some("macos".into());
+        assert!(validate(&target, &bindings).is_err());
+        target.signing_profiles = vec!["managed:macos".into()];
+        target.signing_outputs = vec![crate::signing::Output {
+            path: "dist/app.zip".into(),
+            bundle: Some("TaskNotes.app".into()),
+        }];
+        for phase in ["sign", "verify"] {
+            target.steps.push(crate::recipe::Step {
+                name: phase.into(),
+                phase: phase.into(),
+                run: "codesign".into(),
+                shell: None,
+                timeout_seconds: 10,
+            });
+        }
+        validate(&target, &bindings).unwrap();
+        target.steps.pop();
         assert!(validate(&target, &bindings).is_err());
     }
 }

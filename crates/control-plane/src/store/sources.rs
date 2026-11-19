@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖源码清单、任务身份和项目凭据引用。
-//! [OUTPUT]: 固定源码元数据并提供短期拉取材料。
+//! [OUTPUT]: 固定 CR UID 与递增执行身份，锁内核验源码事务。
 //! [POS]: 临时源码任务和持久构建之间的事务边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
@@ -10,6 +10,38 @@ use artifactory_source_checkout::{
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SourceTaskExecution {
+    pub cr_uid: String,
+    pub name: String,
+    pub uid: String,
+    pub attempt: u32,
+}
+
+fn source_execution(task: &Value, execution: &SourceTaskExecution) -> Result<()> {
+    ensure!(
+        (1..=3).contains(&execution.attempt)
+            && !execution.name.is_empty()
+            && !execution.uid.is_empty(),
+        "invalid source execution identity"
+    );
+    ensure!(
+        task["source_task_uid"].as_str() == Some(execution.cr_uid.as_str()),
+        "SourceTask UID changed"
+    );
+    Ok(())
+}
+
+fn current_source_execution(task: &Value, execution: &SourceTaskExecution) -> Result<()> {
+    source_execution(task, execution)?;
+    ensure!(
+        task["source_execution"] == serde_json::to_value(execution)?,
+        "source execution superseded"
+    );
+    Ok(())
+}
 
 impl ControlStore {
     pub(crate) async fn enqueue_source_resolutions(&self) -> Result<()> {
@@ -26,6 +58,13 @@ impl ControlStore {
 
     pub(crate) async fn source_task_dispatched(&self, id: Uuid, cleanup: bool) -> Result<()> {
         sql::execute(&mut self.pool.clone(), "UPDATE source_tasks SET status=CASE WHEN status='queued' THEN 'running' ELSE status END,cleanup_requested=cleanup_requested OR $2 WHERE id=$1", params![id,cleanup]).await?;
+        Ok(())
+    }
+
+    pub(crate) async fn bind_source_task(&self, id: Uuid, uid: &str) -> Result<()> {
+        ensure!(!uid.is_empty(), "SourceTask UID required");
+        let count = sql::execute(&mut self.pool.clone(), "UPDATE source_tasks SET source_task_uid=$2 WHERE id=$1 AND (source_task_uid IS NULL OR source_task_uid=$2)", params![id,uid]).await?;
+        ensure!(count == 1, "SourceTask UID changed");
         Ok(())
     }
 
@@ -49,10 +88,16 @@ impl ControlStore {
         Ok(sql::scalar(&mut self.pool.clone(), "SELECT to_jsonb(s) FROM source_tasks s JOIN projects p ON p.id=s.project_id JOIN tenants t ON t.id=s.tenant_id WHERE s.id=$1 AND p.status IN ('active','draining') AND t.status IN ('active','draining') AND (s.status='succeeded' OR (s.status IN ('queued','running') AND s.deadline_at>clock_timestamp() AND NOT EXISTS(SELECT 1 FROM builds b WHERE b.id=s.build_id AND (b.cancel_requested OR b.status<>'resolving'))))", params![id]).await?)
     }
 
-    pub(crate) async fn pin_source(&self, id: Uuid, pin: &Value) -> Result<Value> {
+    pub(crate) async fn pin_source(
+        &self,
+        id: Uuid,
+        execution: &SourceTaskExecution,
+        pin: &Value,
+    ) -> Result<Value> {
         let mut db = self.pool.clone();
         let mut tx = db.transaction().await?;
         let current = lock_source_task(&mut tx, id).await?;
+        current_source_execution(&current, execution)?;
         ensure_live_source_task(&mut tx, id, &current).await?;
         ensure!(
             current["purpose"] == "resolve",
@@ -101,15 +146,22 @@ impl ControlStore {
         Ok(result)
     }
 
-    pub(crate) async fn commit_source_task(&self, id: Uuid, result: &Value) -> Result<()> {
+    pub(crate) async fn commit_source_task(
+        &self,
+        id: Uuid,
+        execution: &SourceTaskExecution,
+        result: &Value,
+    ) -> Result<()> {
         let mut db = self.pool.clone();
         let mut tx = db.transaction().await?;
         let task = lock_source_task(&mut tx, id).await?;
+        source_execution(&task, execution)?;
         if task["status"] == "succeeded" {
             ensure!(task["result"] == *result, "source result changed");
             tx.commit().await?;
             return Ok(());
         }
+        current_source_execution(&task, execution)?;
         ensure_live_source_task(&mut tx, id, &task).await?;
         if let Some(error) = result["error"].as_str() {
             ensure!(error.len() <= 2000, "source error exceeds limit");
@@ -193,10 +245,12 @@ impl ControlStore {
         &self,
         master: &[u8; 32],
         task_id: Uuid,
+        execution: &SourceTaskExecution,
     ) -> Result<PrepareResponse> {
         let mut db = self.pool.clone();
         let mut tx = db.transaction().await?;
         let task = lock_source_task(&mut tx, task_id).await?;
+        source_execution(&task, execution)?;
         let repository = task["repository_url"]
             .as_str()
             .context("repository missing")?;
@@ -205,6 +259,20 @@ impl ControlStore {
             Vec::new()
         } else {
             ensure_live_source_task(&mut tx, task_id, &task).await?;
+            if !task["source_execution"].is_null() {
+                let current: SourceTaskExecution =
+                    serde_json::from_value(task["source_execution"].clone())?;
+                ensure!(
+                    current == *execution || current.attempt < execution.attempt,
+                    "source execution superseded"
+                );
+            }
+            sql::execute(
+                &mut tx,
+                "UPDATE source_tasks SET source_execution=$2 WHERE id=$1",
+                params![task_id, serde_json::to_value(execution)?],
+            )
+            .await?;
             let tenant = task["tenant_id"]
                 .as_str()
                 .context("tenant missing")?

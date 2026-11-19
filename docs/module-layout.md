@@ -12,16 +12,16 @@
 | `crates/source-checkout` | `artifactory-source-checkout` | 固定源码清单、直接 Git/LFS 拉取与核验 |
 | `crates/source-preparer` | `artifactory-source-preparer` | 任务 Pod 的源码解析及 init container 入口 |
 | `crates/planner-runtime` | `artifactory-planner-runtime` | AI 预算、租约、模型请求与规划恢复 |
-| `packages/agent-worker` | `artifactory-agent-worker` | 每个规划 Job 的本地只读源码工具与 AI 循环 |
-| `operators/agent-operator` | `artifactory-agent-operator` | SourceTask 与 AgentRun 临时 Job |
-| `operators/image-operator` | `artifactory-image-operator` | 每个平台的临时 BuildKit 与 Publisher Job |
+| `packages/agent-worker` | `artifactory-agent-worker` | 每个规划 Pod 的本地只读源码工具与 AI 循环 |
+| `operators/agent-operator` | `artifactory-agent-operator` | SourceTask 与 AgentRun 临时 Pod |
+| `operators/image-operator` | `artifactory-image-operator` | 每个平台的临时 BuildKit 与 Publisher Pod |
 | `crates/image-protocol` | `artifactory-image-protocol` | 镜像目标与执行材料契约 |
 | `crates/image-registry` | `artifactory-image-registry` | OCI 图校验与镜像发布 |
 | `crates/gateway` | `artifactory-gateway` | 统一反向代理和设备 TLS 透传 |
 | `crates/emissary` | `artifactory-emissary` | 原生设备任务、临时 checkout 与制品上传 |
 | `web` | `artifactory-console` | Next.js 多租户控制台 |
 
-两个 Operator 是独立 crate 和 Deployment，均位于 `operators/`。共享服务与库位于 `crates/`。Node.js 规划主容器只通过 Runtime 领取任务，每次 Job 的 init container 提供本次源码。
+两个 Operator 是独立 crate 和 Deployment，均位于 `operators/`。共享服务与库位于 `crates/`。Node.js 规划主容器只通过 Runtime 领取任务，每次 Pod 的 init container 提供本次源码。
 
 Control 只保存仓库身份、commit、子模块、tag 和 LFS 摘要。制品与日志进入制品 Bucket，OCI 镜像进入独立 Registry Bucket。源码工作树、Git 对象与构建中间缓存只存在于任务临时目录。
 

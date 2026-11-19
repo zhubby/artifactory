@@ -1,9 +1,14 @@
+# [INPUT]: 应用版本与 Kubernetes 最低支持版本 1.28。
+# [OUTPUT]: 声明控制平面、网关和存储的 Helm 交付包。
+# [POS]: 主部署入口；版本下限与独立 Operator 保持一致。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 apiVersion: v2
 name: artifactory
 description: Artifactory with replicated control plane, PostgreSQL and private S3 storage
 type: application
 version: 0.2.0
 appVersion: "0.2.0"
+kubeVersion: '>=1.28.0-0'
 home: https://github.com/zhubby/artifactory
 sources:
   - https://github.com/zhubby/artifactory

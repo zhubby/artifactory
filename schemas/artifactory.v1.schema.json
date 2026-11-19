@@ -60,9 +60,10 @@
             "ios",
             "android",
             "linux",
-            "windows"
+            "windows",
+            null
           ],
-          "description": "Application platform, independent from the build host OS"
+          "description": "应用平台，独立于宿主 OS 和制品扩展名。CLI、库、服务端和 OCI 镜像使用 null；AI 执行计划必须显式声明此字段。"
         },
         "signing_outputs": {
           "type": "array",

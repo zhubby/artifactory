@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 显式隔离 namespace、Acceptance 安装与统一镜像 tag。
-[OUTPUT]: 配置独立私有 S3、内建仓库、外部仓库和监督型构建池。
+[OUTPUT]: 配置私有 S3、内外仓库和分角色预算的监督型构建池。
 [POS]: 复用公开夹具，等待存储后端端口就绪后再启动转发。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -175,7 +175,12 @@ def install(a, platforms, allow_emulation=False, emulation_selector=None, extern
     values = {'image':{'repository':a.registry+'/image-operator','tag':a.image_tag,'pullPolicy':'IfNotPresent'},
         'builderPool':{'workerImage':a.image('image-worker'),'buildkitImage':a.image('buildkit'),'sourcePreparerImage':a.image('source-preparer'),
             'imagePullPolicy':'IfNotPresent','controlUrl':'https://upstream:9443','maxActive':2,'maxPerProject':2,
-            'cpu':'1','memory':'1Gi','ephemeralStorage':'2Gi','caSecret':'service-tls','buildkitConfigMap':'image-buildkit',
+            'resources':{
+                'source':{'cpu':'250m','memory':'512Mi','ephemeralStorage':'2Gi'},
+                'runner':{'cpu':'250m','memory':'256Mi','ephemeralStorage':'1Gi'},
+                'buildkit':{'cpu':'1','memory':'1Gi','ephemeralStorage':'2Gi'},
+                'publisher':{'cpu':'500m','memory':'512Mi','ephemeralStorage':'2Gi'}},
+            'caSecret':'service-tls','buildkitConfigMap':'image-buildkit',
             'emulationNodeSelector':emulation_selector or {},'emulationPlatforms':platforms if allow_emulation else []}}
     path = a.run/'image-operator-values.json'; path.write_text(json.dumps(values))
     a.command(['helm','--kube-context',a.context,'upgrade','--install','image-build',str(ROOT/'charts/artifactory-image-operator'),'-n',a.ns,'-f',str(path)])

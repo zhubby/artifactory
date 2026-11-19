@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证规划、分页与折叠终态补读，保存响应式截图。
+ * [OUTPUT]: 验证应用分类、规划与折叠终态补读。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -43,6 +43,7 @@ for (const locale of ["zh-CN", "en"] as const) {
             native: {
               os: "darwin",
               arch: "arm64",
+              application_platform: "macos",
               artifacts: ["dist/app"],
               steps: [
                 {
@@ -120,6 +121,7 @@ for (const locale of ["zh-CN", "en"] as const) {
       page.getByText("cc src/main.c -o dist/app", { exact: true }),
     ).toBeVisible();
     await expect(page.getByText("verify.sh", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: `native · macOS · ${locale === "en" ? "Host" : "宿主"} darwin/arm64`, exact: true })).toBeVisible();
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth + 1,
@@ -188,6 +190,35 @@ for (const locale of ["zh-CN", "en"] as const) {
     ).toBeTruthy();
   });
 }
+
+test("application platform labels distinguish iOS from a CLI on the same host", async ({ page }, info) => {
+  await fixtureAPI(page);
+  await page.context().addCookies([{ name: "artifactory-locale", value: "en", url: "http://127.0.0.1:3100" }]);
+  const targets = {
+    ios: { os: "darwin", arch: "arm64", application_platform: "ios", steps: [{ name: "Build", phase: "build", run: "make simulator" }] },
+    cli: { os: "darwin", arch: "arm64", application_platform: null, steps: [{ name: "Build", phase: "build", run: "make cli" }] },
+  };
+  const baseJob = build.jobs?.[0];
+  if (!baseJob) throw new Error("build fixture must include a job");
+  const item = {
+    ...build, goal: "Build the iOS simulator application and CLI", status: "succeeded",
+    jobs: Object.entries(targets).map(([name, target_config]) => ({ ...baseJob, id: name, target: name, target_config, attempts: [] })),
+  };
+  await page.route("**/api/v1/projects/by-slug/desktop-client/builds/128", route => route.fulfill({ json: item }));
+  await page.route("**/api/v1/builds/build-main/plans", route => route.fulfill({ json: {
+    plans: [{ id: "plan-platforms", revision: 1, created_at: build.created_at, contents: {
+      summary: "Build two products", evidence: [], scripts: [], recipe: { targets },
+    } }], runs: [], events: [],
+  } }));
+  await page.goto(tenantURL("/projects/desktop-client/builds/128"));
+  await expect(page.getByRole("button", { name: /^ios iOS · Host darwin\/arm64/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^cli Non-application · Host darwin\/arm64/ })).toBeVisible();
+  await page.getByRole("tab", { name: "Plan", exact: true }).click();
+  await page.getByText("Execution steps and external scripts", { exact: true }).click();
+  await expect(page.getByRole("heading", { name: "ios · iOS · Host darwin/arm64", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "cli · Non-application · Host darwin/arm64", exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath("application-platforms.png"), fullPage: true });
+});
 
 
 test("planning conversations load on demand and paginate completed messages",async({page},info)=>{

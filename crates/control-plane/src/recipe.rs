@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 Serde、镜像目标、签名输出与阶段校验。
-//! [OUTPUT]: 提供原生和 BuildKit 目标的严格解析及环境参数。
+//! [OUTPUT]: 提供显式应用分类、目标解析及环境参数。
 //! [POS]: 设备执行与 Kubernetes 镜像执行共用的计划契约。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use std::collections::BTreeMap;
@@ -31,7 +31,7 @@ pub struct ReleaseRule {
 pub struct Target {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<artifactory_image_protocol::ImageSpec>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub application_platform: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub signing_outputs: Vec<artifactory_emissary_protocol::signing::Output>,
@@ -127,6 +127,7 @@ impl Recipe {
                 ensure!(
                     target.steps.is_empty()
                         && target.artifacts.is_empty()
+                        && target.application_platform.is_none()
                         && target.signing_profiles.is_empty()
                         && target.signing_outputs.is_empty()
                         && target.labels.is_empty()

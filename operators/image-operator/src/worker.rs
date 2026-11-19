@@ -1,7 +1,7 @@
 //! ```text
 //! [INPUT]: 依赖清单身份与推送 Secret、init 清单、只读源码和 BuildKit。
-//! [OUTPUT]: 构建并校验平台镜像，收尾 BuildKit 后提交候选结果和脱敏日志。
-//! [POS]: BuildKit Job 的隔离执行进程。
+//! [OUTPUT]: 构建并校验平台镜像，收尾后提交候选或脱敏失败诊断。
+//! [POS]: BuildKit Pod 的隔离执行进程。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! ```
 use crate::{lifecycle, transport::Control};
@@ -121,11 +121,7 @@ fn log_secrets(task: &BuildTask) -> redact::Secrets {
     use base64::Engine;
     let mut secrets = redact::Secrets::default();
     secrets.add(&task.token);
-    secrets.add(&task.registry.password);
-    secrets.add(&base64::engine::general_purpose::STANDARD.encode(format!(
-        "{}:{}",
-        task.registry.username, task.registry.password
-    )));
+    crate::diagnostics::registry_secrets(&mut secrets, &task.registry);
     if let Some(auths) = task.docker_auth["auths"].as_object() {
         for auth in auths.values() {
             for key in ["password", "identitytoken", "registrytoken"] {
@@ -362,7 +358,7 @@ pub async fn run() -> Result<()> {
     let log_sequence = Arc::new(AtomicI64::new(0));
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
-    let result = async {
+    let mut result = async {
         let client = tokio::select! {
             result = lifecycle::Client::connect_recording(Path::new(lifecycle::SOCKET), deadline, cancel.clone(), diagnostics.clone()) => result?,
             _ = term.recv() => { cancel.cancel(); anyhow::bail!("image execution interrupted before BuildKit readiness"); },
@@ -388,17 +384,17 @@ pub async fn run() -> Result<()> {
             .context("platform result acknowledgement timed out")??;
         Ok(())
     }.await;
-    if result.is_err() {
+    if let Err(error) = &result {
         let _ = tokio::time::timeout(
             Duration::from_secs(5),
             report_diagnostics(&control, &platform, &task, &diagnostics, &log_sequence),
         )
         .await;
-        let _ = control
-            .report(&Report::Failed {
-                message: "image build failed; inspect platform logs".into(),
-            })
+        let message = control
+            .failure(&platform, error, log_secrets(&task), &log_sequence)
             .await;
+        // main 的错误输出也必须使用脱敏摘要。
+        result = Err(anyhow::anyhow!(message));
     }
     cancel.cancel();
     heartbeat.abort();

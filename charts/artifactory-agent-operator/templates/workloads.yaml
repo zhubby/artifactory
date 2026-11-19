@@ -1,8 +1,8 @@
-# [INPUT]: 独立服务镜像、既有身份与池参数。
-# [OUTPUT]: Agent Operator、Runtime 和现有 Agent/Source 池。
-# [POS]: Agent 控制器保留既有 CRD 与持久数据身份。
+# [INPUT]: 独立服务镜像、HTTP Runtime 地址和池参数。
+# [OUTPUT]: 直接 Pod 控制器、Runtime 与 AgentPool。
+# [POS]: Agent 执行资源与 Runtime 的部署边界。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
-{{- if and (not .Values.development.insecureHttp) (or (not (hasPrefix "https://" .Values.runtime.url)) (not (hasPrefix "https://" .Values.runtime.grpcUrl)) (not (hasPrefix "https://" .Values.controlUrl))) }}
+{{- if and (not .Values.development.insecureHttp) (or (not (hasPrefix "https://" .Values.runtime.url)) (not (hasPrefix "https://" .Values.controlUrl))) }}
 {{- fail "Runtime and control plane URLs require HTTPS outside explicit development mode" }}
 {{- end }}
 apiVersion: v1
@@ -48,7 +48,6 @@ spec:
             - {name: ARTIFACTORY_NAMESPACE, value: {{ .Release.Namespace | quote }}}
             - {name: POD_UID, valueFrom: {fieldRef: {fieldPath: metadata.uid}}}
             - {name: ARTIFACTORY_RUNTIME_URL, value: {{ .Values.runtime.url | quote }}}
-            - {name: ARTIFACTORY_RUNTIME_GRPC_URL, value: {{ .Values.runtime.grpcUrl | quote }}}
             - {name: ARTIFACTORY_INSECURE_DEV, value: {{ .Values.development.insecureHttp | toString | quote }}}
             {{- if not .Values.development.insecureHttp }}
             - {name: ARTIFACTORY_SERVICE_CA, value: /run/service-tls/ca.crt}

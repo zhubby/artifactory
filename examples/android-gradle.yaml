@@ -1,9 +1,14 @@
+# [INPUT]: Android Gradle 工程与本机签名引用。
+# [OUTPUT]: 构建、签名和验证 Android APK。
+# [POS]: 显式 Android 分类的原生配方模板。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 version: 1
 release: {enabled: true}
 targets:
   android-apk:
     os: linux
     arch: amd64
+    application_platform: android
     capabilities: [java, apksigner]
     signing_profiles: [android-release]
     steps:

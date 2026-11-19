@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖镜像持久化认领、固定源码引用、加密材料与 Kubernetes API。
-//! [OUTPUT]: 固定 CR UID，核对当前 spec 与 Operator 成功后提交候选。
+//! [OUTPUT]: 固定 CR UID，复核当前成功或失败观察后保存候选与诊断。
 //! [POS]: 多副本可重放的控制平面到 Operator 交付边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{Config, tasks};
@@ -145,27 +145,96 @@ async fn deliver(
         Err(e) => return Err(e.into()),
     }
     if build.data["status"]["phase"] == "Failed" {
-        state.store.finish_image(e.id, "failed").await?;
+        let current = api.get(&name).await?;
+        verify_terminal(&current, &desired_build, &uid, "Failed")?;
+        let message = failure_summary(&current);
+        state.store.fail_image_build(e.id, &uid, &message).await?;
     } else if build.data["status"]["phase"] == "Succeeded" {
         let current = api.get(&name).await?;
-        verify_build(&current, &desired_build)?;
-        ensure!(
-            current.uid().as_deref() == Some(&uid),
-            "ImageBuild UID changed"
-        );
-        ensure!(
-            current.data["status"]["phase"] == "Succeeded"
-                && current
-                    .metadata
-                    .generation
-                    .is_some_and(|generation| generation > 0
-                        && current.data["status"]["observedGeneration"].as_i64()
-                            == Some(generation)),
-            "ImageBuild success observation is stale"
-        );
+        verify_terminal(&current, &desired_build, &uid, "Succeeded")?;
         state.store.complete_image(e.id, &uid).await?;
     }
     Ok(())
+}
+fn verify_terminal(
+    build: &DynamicObject,
+    desired: &DynamicObject,
+    uid: &str,
+    phase: &str,
+) -> Result<()> {
+    verify_build(build, desired)?;
+    ensure!(
+        build.uid().as_deref() == Some(uid),
+        "ImageBuild UID changed"
+    );
+    ensure!(
+        build.data["status"]["phase"] == phase
+            && build
+                .metadata
+                .generation
+                .is_some_and(|generation| generation > 0
+                    && build.data["status"]["observedGeneration"].as_i64() == Some(generation)),
+        "ImageBuild terminal observation is stale"
+    );
+    Ok(())
+}
+fn failure_summary(build: &DynamicObject) -> String {
+    build.data["status"]["message"]
+        .as_str()
+        .and_then(|message| {
+            message
+                .lines()
+                .find(|line| line.starts_with("Image failure: "))
+        })
+        .filter(|line| valid_failure_summary(line))
+        .unwrap_or("image Pod failed; inspect build logs")
+        .to_owned()
+}
+fn valid_failure_summary(line: &str) -> bool {
+    if line == "Image failure: reason=Unknown" {
+        return true;
+    }
+    let Some((platform, detail)) = line
+        .strip_prefix("Image failure: platform=")
+        .and_then(|line| line.split_once(' '))
+    else {
+        return false;
+    };
+    if !["linux/amd64", "linux/arm64", "publish", "unknown"].contains(&platform) {
+        return false;
+    }
+    let known = |reason: &str| {
+        [
+            "Evicted",
+            "OOMKilled",
+            "DeadlineExceeded",
+            "NodeLost",
+            "Shutdown",
+            "Error",
+            "ContainerCannotRun",
+            "StartError",
+            "Missing",
+            "IdentityChanged",
+            "Deleting",
+            "Failed",
+        ]
+        .contains(&reason)
+    };
+    if let Some(reason) = detail.strip_prefix("pod=") {
+        return known(reason);
+    }
+    let Some((container, detail)) = detail
+        .strip_prefix("container=")
+        .and_then(|line| line.split_once(" reason="))
+    else {
+        return false;
+    };
+    let Some((reason, code)) = detail.split_once(" exit=") else {
+        return false;
+    };
+    ["source", "worker", "buildkit", "unknown"].contains(&container)
+        && known(reason)
+        && code.parse::<i32>().is_ok()
 }
 fn verify_build(build: &DynamicObject, desired: &DynamicObject) -> Result<()> {
     ensure!(
@@ -224,6 +293,30 @@ pub async fn tick(state: &AppState, config: &Config, client: &Client) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failure_summary_accepts_only_structured_operator_fields() {
+        let mut build: DynamicObject = serde_json::from_value(json!({"apiVersion":"images.artifactory.dev/v1alpha1","kind":"ImageBuild","metadata":{"name":"build"}})).unwrap();
+        for message in [
+            "Image failure: platform=linux/amd64 pod=Evicted",
+            "Image failure: platform=linux/arm64 container=buildkit reason=OOMKilled exit=137",
+            "Image failure: platform=publish pod=DeadlineExceeded",
+        ] {
+            build.data["status"] = json!({"message":format!("CleanupPending: waiting\n{message}")});
+            assert_eq!(failure_summary(&build), message);
+        }
+        for message in [
+            "Image failure: private-token",
+            "Image failure: platform=linux/amd64 pod=Evicted secret=private-token",
+            "Image failure: platform=linux/amd64 container=secret reason=Error exit=1",
+            "Image failure: platform=linux/amd64 pod=https://private.invalid?token=secret",
+        ] {
+            build.data["status"] = json!({"message":message});
+            assert_eq!(
+                failure_summary(&build),
+                "image Pod failed; inspect build logs"
+            );
+        }
+    }
     #[test]
     fn reused_crd_must_keep_the_complete_execution_context() {
         let desired: DynamicObject = serde_json::from_value(json!({"apiVersion":"images.artifactory.dev/v1alpha1","kind":"ImageBuild","metadata":{"name":"test","labels":{"artifactory.dev/execution":"execution"}},"spec":{"executionId":"execution","taskSecret":"task","platforms":["linux/amd64"],"timeoutSeconds":1200,"cancelRequested":false}})).unwrap();

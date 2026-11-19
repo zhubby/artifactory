@@ -21,8 +21,8 @@ planning_management.rs: 写入模型方案、澄清及对话查询上下文。
 placements.rs: 保存节点候选并校验分配条件。
 replication.rs: 协调副本归属和持久化唤醒。
 runtime_bridge.rs: 转换 Runtime 规划意图与业务状态。
-sources.rs: 以 CAS 固定源码元数据并授权任务拉取材料。
-sources_tests.rs: 验证源码事务幂等、取消、截止时间及凭据范围。
+sources.rs: 固定源码 CR UID 和递增执行身份，锁内校验材料、pin 和 commit。
+sources_tests.rs: 验证 CR UID、执行代次围栏、事务幂等和锁后授权。
 lookups.rs: 读取调度、构建和授权对象。
 node_metadata.rs: 记录启动元数据和能力摘要。
 node_queries.rs: 执行项目范围内的节点查询。
@@ -31,8 +31,8 @@ ota_management.rs: 写入节点发布及升级目标。
 performance.rs: 验证存储查询预算和响应规模。
 execution_fences.rs: 以真实事件、心跳与取消事务验证节点锁等待及权限租约拒绝。
 
-images.rs: 保存候选与 CR UID，锁内复核取消和截止时间后提交成功。
+images.rs: 保存候选、脱敏失败与 CR UID，锁内复核取消和截止时间后提交终态。
 
-runtime_bridge_tests.rs: 在新数据库验证重排脚本、资源和版本不可变约束。
+runtime_bridge_tests.rs: 在隔离数据库验证规划失败幂等、取消围栏及重排脚本、资源和版本不变约束。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

@@ -152,7 +152,7 @@ def verify(a, args, platforms):
             if value['status'] in ['succeeded','failed','canceled','lost','needs_input']:
                 break
             time.sleep(1)
-        expected='canceled' if args.fault in ['cancel','node-unreachable'] else ('failed' if args.fault in ['runner-kill','buildkit-kill','supervisor-kill','runner-oom','supervisor-oom','source-init','job-deadline'] else 'succeeded')
+        expected='canceled' if args.fault in ['cancel','node-unreachable'] else ('failed' if args.fault in ['runner-kill','buildkit-kill','supervisor-kill','runner-oom','supervisor-oom','source-init','pod-deadline'] else 'succeeded')
         assert value['status']==expected,'unexpected terminal build status'
         if args.fault:
             assert evidence.get('fault'),'fault was not injected'
@@ -161,7 +161,7 @@ def verify(a, args, platforms):
             assert all(e['status']!='succeeded' for e in value.get('image_executions',[]))
             deadline=time.monotonic()+90
             while time.monotonic()<deadline:
-                remaining=a.kubectl('get','jobs,pods','-l','artifactory.dev/project='+project_id,'-o','name').splitlines()
+                remaining=a.kubectl('get','pods','-l','artifactory.dev/project='+project_id,'-o','name').splitlines()
                 for item in value.get('image_executions',[]):
                     remaining+=a.kubectl('get','secrets','-l','artifactory.dev/execution='+item['id'],'-o','name').splitlines()
                 if not remaining:
@@ -218,7 +218,7 @@ def verify(a, args, platforms):
             remaining=[]
             for item in detail()['image_executions']:
                 selector='artifactory.dev/image-build=image-'+item['id'].replace('-','')
-                remaining+=a.kubectl('get','jobs,pods','-l',selector,'-o','name').splitlines()
+                remaining+=a.kubectl('get','pods','-l',selector,'-o','name').splitlines()
                 remaining+=a.kubectl('get','secrets','-l','artifactory.dev/execution='+item['id'],'-o','name').splitlines()
             if not remaining:
                 break
@@ -274,7 +274,7 @@ def main():
     parser.add_argument('--allow-emulation',action='store_true')
     parser.add_argument('--emulation-selector',action='append',default=[],metavar='KEY=VALUE')
     parser.add_argument('--external-http',action='store_true',help='Explicitly enable a separate HTTP registry fixture')
-    parser.add_argument('--fault',choices=['runner-kill','buildkit-kill','supervisor-kill','runner-oom','supervisor-oom','source-init','job-deadline','cancel','operator-restart','node-unreachable'])
+    parser.add_argument('--fault',choices=['runner-kill','buildkit-kill','supervisor-kill','runner-oom','supervisor-oom','source-init','pod-deadline','cancel','operator-restart','node-unreachable'])
     parser.add_argument('--node-container',help='Explicit dedicated single-node kind container for runtime/node faults')
     parser.add_argument('--timeout',type=int,default=900)
     parser.add_argument('--build-delay',type=int,choices=range(0,31),default=5)

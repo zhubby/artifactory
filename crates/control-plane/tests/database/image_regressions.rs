@@ -1,8 +1,81 @@
 //! [INPUT]: 依赖隔离数据库、镜像夹具与工作区租约。
-//! [OUTPUT]: 验证成功材料回收、终止分类、排空和发布快照。
+//! [OUTPUT]: 验证材料回收、失败诊断、日志角色隔离和发布快照。
 //! [POS]: 镜像审查问题的跨边界回归验收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn image_failure_preserves_safe_summary_and_separates_publisher_logs() {
+    let db = Database::with_tenant().await;
+    let (_, _, job, _) = image(&db).await;
+    let id = Uuid::new_v4();
+    let store = &db.state.store;
+    store
+        .claim_image(job, id, "build", "publish")
+        .await
+        .unwrap();
+    store.save_image_task(id, "sealed").await.unwrap();
+    for (publisher, platform, allowed) in [
+        (true, "publish", true),
+        (true, "linux/amd64", false),
+        (false, "publish", false),
+        (false, "linux/amd64", true),
+    ] {
+        let report = Report::Log {
+            platform: platform.into(),
+            sequence: 1,
+            text: "safe diagnostics".into(),
+        };
+        assert_eq!(
+            store
+                .image_report(
+                    id,
+                    publisher,
+                    &report,
+                    Some(("fixture-log", "fixture-hash"))
+                )
+                .await
+                .is_ok(),
+            allowed,
+            "publisher={publisher}, platform={platform}"
+        );
+    }
+    for message in ["x".repeat(1025), "contains\ncontrol".into(), "".into()] {
+        assert!(
+            store
+                .image_report(id, true, &Report::Failed { message }, None)
+                .await
+                .is_err()
+        );
+    }
+    let summary = "image publication failed: registry returned HTTP 407; [REDACTED]";
+    store
+        .image_report(
+            id,
+            true,
+            &Report::Failed {
+                message: summary.into(),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        store.image_execution(id).await.unwrap().status,
+        "publish_failed"
+    );
+    store.finish_image(id, "failed").await.unwrap();
+    let saved: String = sql::scalar(
+        &mut db.pool.clone(),
+        "SELECT error FROM image_executions WHERE id=$1",
+        params![id],
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved, summary);
+    db.close().await;
+}
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
@@ -106,7 +179,7 @@ async fn failed_or_canceled_execution_stops_an_active_imagebuild_before_cleanup(
                     id,
                     status == "publish_failed",
                     &Report::Failed {
-                        message: "fixture failure before Kubernetes Job termination".into(),
+                        message: "fixture failure before Kubernetes Pod termination".into(),
                     },
                     None,
                 )

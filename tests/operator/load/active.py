@@ -92,7 +92,7 @@ class Capacity:
 
     def watch_pods(self):
         # Watch transitions so short-lived failed Pods remain diagnosable after
-        # the Operator removes a superseded Job. Never record Pod env or tokens.
+        # the Operator removes a superseded Pod. Never record Pod env or tokens.
         decoder, buffer = json.JSONDecoder(), ''
         captured = set()
         with (self.directory/'pod-events.jsonl').open('w') as events, (self.directory/'pod-watch.log').open('w') as errors:
