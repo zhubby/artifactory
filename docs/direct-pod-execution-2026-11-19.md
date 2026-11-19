@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 直接 Pod Operator、Runtime 执行围栏和最低 Kubernetes 1.28。
-[OUTPUT]: 记录任务编排变更、验证证据和验收边界。
+[OUTPUT]: 记录任务编排变更、启动状态等待、验证证据和验收边界。
 [POS]: 一次性任务直接 Pod 实施记录；当前操作契约见 Operator 运维。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -55,6 +55,8 @@ SourceTask 在业务数据库固定 CR UID。材料领取按任务行锁单调�
 生命周期验收入口按版本下限校验，不再限定 `v1.28.*`。离线回归覆盖 1.28、高版本及带发行版后缀的版本，并拒绝低于 1.28 或格式错误的版本。
 
 完整 CI 以 Kubernetes 1.28.13 为基线，执行源码、规划、镜像、故障与双架构验收。集群配置明确关闭 `SidecarContainers`。完整业务链的验收结果以对应提交的 GitHub CI 记录为准。
+
+基线 CI `44458636619` 暴露清理夹具的启动竞态。Runtime 已记录首次模型调用时，Kubernetes 仍返回没有 `containerID` 的容器状态。`cleanup.py` 现在按台账 UID 重新读取 Pod，等待名为 `pi` 的容器进入 `running` 并发布 CRI ID，再核对节点侧物理身份。等待期间 UID 替换立即中止；启动超时执行测试资源恢复。清理夹具六项与验收夹具全部 31 项离线回归通过，覆盖状态缺失、容器等待、旁车排序、身份替换与启动超时。本次修复未重跑真实节点故障注入。
 
 ## Kubernetes 1.28 下限实测
 

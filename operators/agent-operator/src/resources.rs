@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖不可变 CR、AgentPool 与预留执行台账。
+//! [INPUT]: 依赖不可变 CR、AgentPool 代理与预留执行台账。
 //! [OUTPUT]: 创建直接归属 CR 的规划和源码普通 Pod。
 //! [POS]: Kubernetes 1.28 资源边界；凭据只进入 init 或源码容器。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -78,6 +78,7 @@ pub fn planning_pod(run: &AgentRun, pool: &AgentPool, execution: &PodExecution) 
     }
     value["spec"]["activeDeadlineSeconds"] = json!(pods::remaining_seconds(execution));
     value["spec"]["terminationGracePeriodSeconds"] = json!(30);
+    pool_proxy(&mut value, pool)?;
     Ok(serde_json::from_value(value)?)
 }
 pub fn source_pod(task: &SourceTask, pool: &AgentPool, execution: &PodExecution) -> Result<Pod> {
@@ -116,5 +117,33 @@ pub fn source_pod(task: &SourceTask, pool: &AgentPool, execution: &PodExecution)
     }
     value["spec"]["activeDeadlineSeconds"] = json!(pods::remaining_seconds(execution));
     value["spec"]["terminationGracePeriodSeconds"] = json!(30);
+    pool_proxy(&mut value, pool)?;
     Ok(serde_json::from_value(value)?)
+}
+
+fn pool_proxy(value: &mut serde_json::Value, pool: &AgentPool) -> Result<()> {
+    let Some(proxy) = &pool.spec.proxy else {
+        return Ok(());
+    };
+    let api_host = std::env::var("KUBERNETES_SERVICE_HOST").ok();
+    let environment: Vec<_> = proxy
+        .environment(
+            &[&pool.spec.control_url, &pool.spec.runtime_url],
+            api_host.as_deref(),
+        )?
+        .into_iter()
+        .map(|(name, value)| json!({"name":name,"value":value}))
+        .collect();
+    for group in ["containers", "initContainers"] {
+        for container in value["spec"][group].as_array_mut().into_iter().flatten() {
+            if container["name"] == "pi" {
+                continue;
+            }
+            container["env"]
+                .as_array_mut()
+                .expect("environment array")
+                .extend(environment.clone());
+        }
+    }
+    Ok(())
 }

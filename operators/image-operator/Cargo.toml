@@ -8,6 +8,7 @@ default-run = "artifactory-image-operator"
 [features]
 default = ["operator"]
 operator = [
+    "dep:artifactory-runtime-protocol",
     "dep:artifactory-source-checkout",
     "dep:artifactory-image-registry",
     "dep:artifactory-image-protocol",
@@ -33,6 +34,7 @@ operator = [
 ]
 
 [dependencies]
+artifactory-runtime-protocol = { path = "../../crates/runtime-protocol", optional = true }
 artifactory-source-checkout = { path = "../../crates/source-checkout", optional = true }
 artifactory-image-registry = { path = "../../crates/image-registry", optional = true }
 anyhow = "1"

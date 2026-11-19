@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""[INPUT]: 独立 kind 节点、已保存的命名空间与私有 PKI。
-[OUTPUT]: 按直接 Pod 台账验证失联撤权、身份保留和物理停机。
-[POS]: 创建私有证据目录；确认执行身份后暂停 Pi，最终恢复 Pi 与 kubelet。
+"""[INPUT]: 独立 kind 节点、异步 Pod 状态、已保存的命名空间与私有 PKI。
+[OUTPUT]: 等待同一 UID 的 Pi 启动，按直接 Pod 台账验证失联撤权和物理停机。
+[POS]: 创建私有证据目录；确认运行容器身份后暂停 Pi，最终恢复 Pi 与 kubelet。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
@@ -110,12 +110,22 @@ def run(args):
         run_name = 'run-' + run_id + '-g' + str(before['life']['generation'])
         # Verify the independent Runtime path before disabling Kubernetes exec.
         assert request('artifactory-runtime', '/v1/get', {'run_id': run_id})['status'] == 'running'
-        pod = json.loads(a.kubectl('get', 'pod', before['execution']['name'], '-o', 'json'))
+
+        def started_execution():
+            pod = json.loads(a.kubectl('get', 'pod', before['execution']['name'], '-o', 'json'))
+            assert pod['metadata']['uid'] == before['execution']['uid'], 'Planning Pod identity changed before fault injection'
+            for container in (pod.get('status') or {}).get('containerStatuses') or []:
+                if container.get('name') != 'pi' or 'running' not in (container.get('state') or {}):
+                    continue
+                container_id = (container.get('containerID') or '').partition('://')[2]
+                if container_id:
+                    return pod, container_id
+            return None
+
+        pod, container_id = a.wait(started_execution, 60)
         pod_uid = pod['metadata']['uid']
-        assert pod_uid == before['execution']['uid']
         evidence.update({'run_id': run_id, 'pod_uid': pod_uid, 'before': before})
         a.wait(lambda: retained_execution(json.loads(a.kubectl('get', 'agentrun', run_name, '-o', 'json')).get('status', {}), pod), 30)
-        container_id = pod['status']['containerStatuses'][0]['containerID'].split('://', 1)[1]
         inspected = json.loads(docker(args.node_container, 'crictl', 'inspect', container_id).stdout)
         container = inspected['status']
         assert (container['id'] == container_id and container['state'] == 'CONTAINER_RUNNING'

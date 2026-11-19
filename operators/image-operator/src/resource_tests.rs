@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖声明式资源生成器和模拟节点能力。
-//! [OUTPUT]: 验证 1.28 双容器、公开 CA 投影、资源预算与归属 CRD。
+//! [OUTPUT]: 验证 1.28 双容器、池代理、公开 CA 投影、预算与归属 CRD。
 //! [POS]: 不连接集群的工作负载契约回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -12,6 +12,72 @@ fn build() -> ImageBuild {
 }
 fn pool() -> BuilderPool {
     serde_json::from_value(json!({"metadata":{"name":"default"},"spec":{"workerImage":"worker:1","buildkitImage":"buildkit:1","sourcePreparerImage":"preparer:1","controlUrl":"https://control","maxActive":4,"maxPerProject":2,"emulationNodeSelector":{"build.example.com/binfmt":"ready"},"emulationPlatforms":["linux/arm64"],"buildkitConfigMap":"buildkit-config","caSecret":"ca"}})).unwrap()
+}
+
+#[test]
+fn pool_proxy_reaches_source_runner_buildkit_and_publisher() {
+    let mut pool = pool();
+    pool.spec.proxy = Some(
+        serde_json::from_value(json!({
+            "httpProxy":"http://egress:18443","httpsProxy":"http://egress:18443",
+            "noProxy":"localhost,127.0.0.1,.svc,control,registry"
+        }))
+        .unwrap(),
+    );
+    for platform in [Some("linux/amd64"), None] {
+        let pod = resources::pod(&build(), &pool, platform, Default::default())
+            .unwrap()
+            .spec
+            .unwrap();
+        for container in pod
+            .containers
+            .iter()
+            .chain(pod.init_containers.iter().flatten())
+        {
+            let environment = container.env.as_ref().unwrap();
+            for name in ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"] {
+                assert_eq!(
+                    environment
+                        .iter()
+                        .find(|entry| entry.name == name)
+                        .unwrap()
+                        .value
+                        .as_deref(),
+                    Some("http://egress:18443"),
+                    "container {} requires {name}",
+                    container.name
+                );
+            }
+            let no_proxy = environment
+                .iter()
+                .find(|entry| entry.name == "NO_PROXY")
+                .unwrap()
+                .value
+                .as_ref()
+                .unwrap();
+            assert!(
+                !no_proxy.contains("external-registry.example"),
+                "external registries retain the proxy route"
+            );
+            if container.name == "worker" {
+                assert!(
+                    environment
+                        .iter()
+                        .any(|entry| entry.name == "ARTIFACTORY_POOL_PROXY"
+                            && entry.value.as_deref() == Some("1"))
+                );
+            }
+        }
+    }
+    pool.spec.proxy.as_mut().unwrap().http_proxy = Some("http://egress:18443\0hidden".into());
+    assert!(resources::pod(&build(), &pool, Some("linux/amd64"), Default::default()).is_err());
+    pool.spec.proxy = None;
+    let pod = resources::pod(&build(), &pool, Some("linux/amd64"), Default::default()).unwrap();
+    assert!(
+        !serde_json::to_string(&pod)
+            .unwrap()
+            .contains("ARTIFACTORY_POOL_PROXY")
+    );
 }
 fn node(arch: &str) -> k8s_openapi::api::core::v1::Node {
     serde_json::from_value(json!({"metadata":{"labels":{"kubernetes.io/os":"linux","kubernetes.io/arch":arch,"build.example.com/binfmt":"ready"}},"status":{"conditions":[{"type":"Ready","status":"True"}]}})).unwrap()

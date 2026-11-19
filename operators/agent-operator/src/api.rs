@@ -1,7 +1,8 @@
 //! [INPUT]: 依赖 kube CRD、不可变项目身份与序列化。
-//! [OUTPUT]: 提供规划运行、源码任务、创建意图和停机台账。
+//! [OUTPUT]: 提供规划运行、池级代理、源码任务与执行台账。
 //! [POS]: Agent Operator 的资源契约。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
+use artifactory_runtime_protocol::proxy::ProxyConfig;
 use kube::{CustomResource, CustomResourceExt};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -55,6 +56,8 @@ pub struct AgentPoolSpec {
     pub memory: String,
     #[serde(default)]
     pub tls_secret_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<ProxyConfig>,
 }
 fn cpu() -> String {
     "250m".into()

@@ -1,6 +1,6 @@
 <!--
-[INPUT]: 独立 Operator、Control 的规划接口和一次性源码镜像。
-[OUTPUT]: 定义源码、规划和镜像 Pod 的安装及收尾约束。
+[INPUT]: 独立 Operator、池级出口代理和一次性源码镜像。
+[OUTPUT]: 定义执行 Pod 的安装、内部直连和收尾约束。
 [POS]: 最低支持 Kubernetes 1.28 的工作负载运维入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -39,6 +39,26 @@ networkPolicy:
 ```
 
 私有 Git 使用其他端口时，将端口加入 `networkPolicy.gitPorts`。Control 的 `planning.namespace` 与 `planning.agentPool` 指向此命名空间和池。跨命名空间部署时，Runtime 和 Control 地址须包含命名空间 DNS。Gateway 内部策略只放行主部署及配置的规划、镜像命名空间。`planning.runtimeUrl` 指向内部网关的 `/internal/planner`；`planning.serviceSecretName` 提供规划数据库和服务身份；`planning.serviceCaSecretName` 提供 `ca.crt`。
+
+## 池级出口代理
+
+外部 Git 或 LFS 需要指定出口时，管理员配置 `agentPool.proxy`。直接创建 CR 时，对应字段为 `AgentPool.spec.proxy`。该对象只接受 `httpProxy`、`httpsProxy`、`noProxy`，不接受任意环境变量或 Pod 模板。至少提供一个 HTTP(S) 代理 origin，禁止路径、查询串、片段、空白和控制字符。代理 origin 支持 URL 编码的认证信息。
+
+```yaml
+agentPool:
+  proxy:
+    httpProxy: http://artifactory-egress:18443
+    httpsProxy: http://artifactory-egress:18443
+    noProxy: localhost,127.0.0.1,.svc,.cluster.local,artifactory-gateway-internal,artifactory-registry,kubernetes.default.svc,10.233.0.1
+```
+
+`noProxy` 必须由管理员显式提供。将 Control、Runtime、内建 Registry、内建仓库认证 realm 和 Kubernetes API 的主机加入清单。短服务名与外部发布域名不会被 `.svc` 后缀覆盖，须逐项加入。API Service IP 使用实际 `KUBERNETES_SERVICE_HOST`，示例中的 `10.233.0.1` 只代表一个集群。校验使用不带端口的主机名、IP 和前导点 DNS 后缀；API IP 显式列出，不以 CIDR 代替。不同客户端对 `*.svc` 的解释不同，配置拒绝该语法；使用 `.svc`。
+
+Operator 在创建 Pod 前校验 Control、Runtime、`kubernetes.default.svc` 和注入的 API Service IP 已直连。内建 Registry 与认证 realm 地址由任务材料提供，因此其直连覆盖由池管理员保证；外部目标仓库保留代理路由。代理不自动修改 `noProxy`。
+
+代理环境同时使用大小写标准变量，传入源码解析 Pod 与规划源码 init。Git 的隔离进程环境保留这些变量。规划 Worker 只访问内网 Runtime，保持原有环境。Agent Chart 自动将已配置代理的 TCP 端口加入出站策略；上层 NetworkPolicy、DNS、代理可达性仍须由部署环境放行。未配置代理的池保持原有网络行为。
+
+镜像构建池使用同结构的 `builderPool.proxy`，详见[镜像构建](image-builds.md)。代理地址不进入 AI 执行计划或业务构建日志；含认证信息的 values 文件按部署凭据保护。
 
 ## 源码任务
 

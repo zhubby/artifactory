@@ -1,10 +1,11 @@
 //! [INPUT]: 依赖服务认证、运行身份与固定源码清单。
-//! [OUTPUT]: 提供 Runtime 意图、执行故障、丢失围栏和租约契约。
+//! [OUTPUT]: 提供 Runtime 意图、执行故障、租约与池级出口代理契约。
 //! [POS]: 控制平面、Operator 与 Kubernetes Worker 的共享协议。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub mod crypto;
 pub mod error;
 pub mod metrics;
+pub mod proxy;
 pub mod service;
 
 use serde::{Deserialize, Serialize};

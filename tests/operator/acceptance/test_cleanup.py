@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""[INPUT]: 直接 Pod 台账、模拟 Kubernetes API 和节点进程。
-[OUTPUT]: 验证失联撤权、身份保留、物理停机和测试资源恢复。
+"""[INPUT]: 直接 Pod 台账、异步容器状态、模拟 Kubernetes API 和节点进程。
+[OUTPUT]: 验证启动等待、失联撤权、身份保留、物理停机和测试资源恢复。
 [POS]: 离线执行 cleanup 验收流程，不连接真实集群。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -17,15 +17,18 @@ import cleanup
 
 
 class CleanupTests(unittest.TestCase):
-    def exercise(self, directory, *, wrong_initial_uid=False, stopped_while_isolated=False):
+    def exercise(self, directory, *, wrong_initial_uid=False, stopped_while_isolated=False,
+                 pod_statuses=None, replace_pod_during_startup=False):
         state = {'canceled': False, 'isolated': False, 'restored': False,
-                 'signals': [], 'pool_capacities': [], 'helpers_stopped': False}
+                 'signals': [], 'signal_targets': [], 'pod_reads': 0,
+                 'pool_capacities': [], 'helpers_stopped': False}
         self.latest_state = state
         life = {'generation': 1, 'calls': 1, 'deadline_ms': 123456}
         execution = {'name': 'pi-pod', 'uid': 'pi-uid'}
         before = {'id': 'planning-run', 'life': life, 'execution': execution}
         pod = {'metadata': {'name': 'pi-pod', 'uid': 'pi-uid'}, 'status': {
-            'containerStatuses': [{'containerID': 'containerd://pi-container'}]}}
+            'containerStatuses': [{'name': 'pi', 'containerID': 'containerd://pi-container',
+                                   'state': {'running': {'startedAt': '2026-11-19T00:00:00Z'}}}]}}
         ready = lambda: {'metadata': {'name': 'operator-control-plane'}, 'status': {
             'conditions': [{'type': 'Ready', 'status': 'Unknown' if state['isolated'] else 'True'}]}}
         workloads = [{'metadata': {'name': role, 'namespace': 'artifact-cleanup', 'labels': labels},
@@ -50,7 +53,15 @@ class CleanupTests(unittest.TestCase):
             if args[:2] == ('get', 'pods'):
                 return json.dumps({'items': [] if state['restored'] else workloads})
             if args[:2] == ('get', 'pod'):
+                state['pod_reads'] += 1
                 current = json.loads(json.dumps(pod))
+                if pod_statuses:
+                    status = pod_statuses[min(state['pod_reads'] - 1, len(pod_statuses) - 1)]
+                    current.pop('status')
+                    if status is not None:
+                        current['status'] = status
+                if replace_pod_during_startup and state['pod_reads'] > 1:
+                    current['metadata']['uid'] = 'replacement-uid'
                 if state['canceled']:
                     current['metadata']['deletionTimestamp'] = '2026-11-19T00:00:00Z'
                 return json.dumps(current)
@@ -75,10 +86,11 @@ class CleanupTests(unittest.TestCase):
             raise AssertionError('Unexpected API call: ' + path)
 
         def wait(callback, _seconds):
-            value = callback()
-            if not value:
-                raise TimeoutError('fixture condition did not converge')
-            return value
+            for _ in range(16):
+                value = callback()
+                if value:
+                    return value
+            raise TimeoutError('fixture condition did not converge')
 
         def docker(_node, *args, data=None, check=True):
             output, code = b'', 0
@@ -94,6 +106,7 @@ class CleanupTests(unittest.TestCase):
                                'labels': {'io.kubernetes.pod.uid': 'pi-uid'}}}).encode()
             elif args[0] == 'kill':
                 state['signals'].append(args[1])
+                state['signal_targets'].append(args[2])
             elif args[0] == 'cat':
                 output = b'200 (pi) T 1 1 1'
             elif args[0] == 'test':
@@ -147,6 +160,43 @@ class CleanupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(TimeoutError):
                 self.exercise(directory, wrong_initial_uid=True)
+        self.assertEqual(self.latest_state['signals'], [])
+        self.assertTrue(self.latest_state['helpers_stopped'])
+        self.assertEqual(self.latest_state['pool_capacities'], [1, 8])
+
+    def test_waits_for_pi_container_startup_before_fault_injection(self):
+        statuses = [None, {}, {'containerStatuses': []},
+                    {'containerStatuses': [{'name': 'pi', 'state': {
+                        'waiting': {'reason': 'ContainerCreating'}}}]},
+                    {'containerStatuses': [{'name': 'pi', 'state': {'running': {}}}]},
+                    {'containerStatuses': [{'name': 'pi', 'containerID': 'containerd://old-container',
+                                            'state': {'waiting': {'reason': 'ContainerCreating'}}}]},
+                    {'containerStatuses': [
+                        {'name': 'sidecar', 'containerID': 'containerd://sidecar',
+                         'state': {'running': {}}},
+                        {'name': 'pi', 'containerID': 'containerd://pi-container',
+                         'state': {'running': {}}}]}]
+        with tempfile.TemporaryDirectory() as directory:
+            state, evidence = self.exercise(directory, pod_statuses=statuses)
+        self.assertTrue(evidence['passed'])
+        self.assertEqual(state['signal_targets'], ['200', '200'])
+
+    def test_pod_replacement_during_startup_is_rejected_before_fault_injection(self):
+        statuses = [{'containerStatuses': [{'name': 'pi', 'state': {
+                        'waiting': {'reason': 'ContainerCreating'}}}]}]
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(AssertionError, 'Pod identity changed'):
+                self.exercise(directory, pod_statuses=statuses, replace_pod_during_startup=True)
+        self.assertEqual(self.latest_state['signals'], [])
+        self.assertTrue(self.latest_state['helpers_stopped'])
+        self.assertEqual(self.latest_state['pool_capacities'], [1, 8])
+
+    def test_unstarted_container_times_out_without_fault_injection(self):
+        statuses = [{'containerStatuses': [{'name': 'pi', 'state': {
+                        'waiting': {'reason': 'ImagePullBackOff'}}}]}]
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(TimeoutError):
+                self.exercise(directory, pod_statuses=statuses)
         self.assertEqual(self.latest_state['signals'], [])
         self.assertTrue(self.latest_state['helpers_stopped'])
         self.assertEqual(self.latest_state['pool_capacities'], [1, 8])

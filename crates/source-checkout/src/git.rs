@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖短期凭据、私有临时目录与受控进程树。
+//! [INPUT]: 依赖短期凭据、标准代理环境、私有临时目录和受控进程树。
 //! [OUTPUT]: 隔离 Git 环境、认证文件、验证索引和取消边界。
 //! [POS]: 检出引擎的唯一 Git 进程入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -77,9 +77,13 @@ pub fn build_environment() -> BTreeMap<OsString, OsString> {
         "CXX",
         "PKG_CONFIG_PATH",
         "HTTP_PROXY",
+        "http_proxy",
         "HTTPS_PROXY",
+        "https_proxy",
         "ALL_PROXY",
+        "all_proxy",
         "NO_PROXY",
+        "no_proxy",
         "SSL_CERT_FILE",
         "SSL_CERT_DIR",
         "NODE_EXTRA_CA_CERTS",

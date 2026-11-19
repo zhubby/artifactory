@@ -1,5 +1,5 @@
 # [INPUT]: 管理员选择的镜像、节点与并发预算。
-# [OUTPUT]: 独立 Image Operator、临时源码参数与分角色 BuilderPool 预算。
+# [OUTPUT]: 独立 Image Operator、池代理、源码参数与分角色 BuilderPool 预算。
 # [POS]: 不接收构建者提交的任意 Pod 模板。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 fullnameOverride: ""
@@ -27,6 +27,12 @@ builderPool:
   caSecret: ''
   # Contains buildkitd.toml. Configure private CAs and explicit HTTP here.
   buildkitConfigMap: ''
+  # Optional HTTP(S) origins. noProxy must include internal Control/Registry/auth and API IP.
+  # proxy:
+  #   httpProxy: http://egress.example:18443
+  #   httpsProxy: http://egress.example:18443
+  #   noProxy: localhost,127.0.0.1,.svc,.cluster.local,artifactory-gateway-internal,artifactory-registry,kubernetes.default.svc,10.96.0.1
+  proxy: null
 resources:
   requests: {cpu: 100m, memory: 128Mi}
   limits: {cpu: '1', memory: 512Mi}

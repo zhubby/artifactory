@@ -1,5 +1,5 @@
 //! ```text
-//! [INPUT]: 依赖清单身份与推送 Secret、init 清单、只读源码和 BuildKit。
+//! [INPUT]: 依赖清单身份、池代理、推送 Secret、只读源码和 BuildKit。
 //! [OUTPUT]: 构建并校验平台镜像，收尾后提交候选或脱敏失败诊断。
 //! [POS]: BuildKit Pod 的隔离执行进程。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -15,6 +15,8 @@ use artifactory_emissary::{
 };
 use artifactory_image_protocol::{BuildTask, PlatformResult, Report};
 use std::{
+    collections::BTreeMap,
+    ffi::OsString,
     path::Path,
     process::Stdio,
     sync::{
@@ -117,9 +119,44 @@ fn buildctl(docker: &Path, registry: &str, ca: Option<&Path>) -> Command {
     command
 }
 
+fn build_arguments(
+    command: &mut Command,
+    recipe: &BTreeMap<String, String>,
+    proxy_environment: Option<&BTreeMap<OsString, OsString>>,
+) -> Result<()> {
+    let mut arguments = recipe.clone();
+    if let Some(environment) = proxy_environment {
+        // 标准代理参数由 Dockerfile frontend 特殊处理，默认不写入镜像历史或缓存键。
+        for name in [
+            "HTTP_PROXY",
+            "http_proxy",
+            "HTTPS_PROXY",
+            "https_proxy",
+            "NO_PROXY",
+            "no_proxy",
+        ] {
+            if let Some(value) = environment.get(std::ffi::OsStr::new(name)) {
+                let value = value
+                    .to_str()
+                    .context("pool proxy environment must be UTF-8")?;
+                if !value.is_empty() {
+                    arguments.insert(name.into(), value.into());
+                }
+            }
+        }
+    }
+    for (name, value) in arguments {
+        command
+            .arg("--opt")
+            .arg(format!("build-arg:{name}={value}"));
+    }
+    Ok(())
+}
+
 fn log_secrets(task: &BuildTask) -> redact::Secrets {
     use base64::Engine;
     let mut secrets = redact::Secrets::default();
+    crate::diagnostics::proxy_secrets(&mut secrets);
     secrets.add(&task.token);
     crate::diagnostics::registry_secrets(&mut secrets, &task.registry);
     if let Some(auths) = task.docker_auth["auths"].as_object() {
@@ -282,11 +319,13 @@ async fn build(
                     ""
                 }
             ));
-        for (name, value) in &task.image.build_args {
-            command
-                .arg("--opt")
-                .arg(format!("build-arg:{name}={value}"));
-        }
+        let proxy_environment = (std::env::var("ARTIFACTORY_POOL_PROXY").as_deref() == Ok("1"))
+            .then(source::build_environment);
+        build_arguments(
+            &mut command,
+            &task.image.build_args,
+            proxy_environment.as_ref(),
+        )?;
         let secrets = log_secrets(task);
         for (name, value) in &task.secrets {
             let path = root.join(format!("secret-{name}"));
@@ -404,6 +443,73 @@ pub async fn run() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pool_proxy_build_arguments_are_present_only_when_configured_and_nonempty() {
+        let recipe = BTreeMap::from([
+            ("HTTP_PROXY".into(), "http://recipe-proxy:8080".into()),
+            ("RELEASE".into(), "1.2.3".into()),
+        ]);
+        let proxy = BTreeMap::from([
+            (
+                OsString::from("HTTP_PROXY"),
+                OsString::from("http://pool-proxy:18443"),
+            ),
+            (
+                OsString::from("http_proxy"),
+                OsString::from("http://pool-proxy:18443"),
+            ),
+            (
+                OsString::from("HTTPS_PROXY"),
+                OsString::from("http://pool-proxy:18443"),
+            ),
+            (
+                OsString::from("NO_PROXY"),
+                OsString::from("control,registry,.svc"),
+            ),
+            (
+                OsString::from("no_proxy"),
+                OsString::from("control,registry,.svc"),
+            ),
+        ]);
+        let arguments = |environment| {
+            let mut command = Command::new("buildctl");
+            build_arguments(&mut command, &recipe, environment).unwrap();
+            command
+                .as_std()
+                .get_args()
+                .map(|argument| argument.to_str().unwrap().to_owned())
+                .collect::<Vec<_>>()
+        };
+        let without = arguments(None);
+        assert!(without.contains(&"build-arg:HTTP_PROXY=http://recipe-proxy:8080".to_owned()));
+        assert!(
+            !without
+                .iter()
+                .any(|argument| argument.contains("pool-proxy"))
+        );
+        let with = arguments(Some(&proxy));
+        for expected in [
+            "build-arg:HTTP_PROXY=http://pool-proxy:18443",
+            "build-arg:http_proxy=http://pool-proxy:18443",
+            "build-arg:HTTPS_PROXY=http://pool-proxy:18443",
+            "build-arg:NO_PROXY=control,registry,.svc",
+            "build-arg:no_proxy=control,registry,.svc",
+            "build-arg:RELEASE=1.2.3",
+        ] {
+            assert!(with.contains(&expected.to_owned()), "missing {expected}");
+        }
+        assert!(
+            !with
+                .iter()
+                .any(|argument| argument.contains("recipe-proxy"))
+        );
+        let empty = BTreeMap::from([(OsString::from("HTTP_PROXY"), OsString::new())]);
+        assert_eq!(
+            arguments(Some(&empty)),
+            without,
+            "empty pool values do not erase recipe arguments"
+        );
+    }
     #[tokio::test]
     async fn daemon_diagnostics_redact_secrets_and_hide_cut_secret_suffixes() {
         let mut secrets = redact::Secrets::default();

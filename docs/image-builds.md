@@ -1,6 +1,6 @@
 <!--
-[INPUT]: 独立镜像 Operator、监督型 BuildKit、私有仓库与 Pingora。
-[OUTPUT]: 定义最低 Kubernetes 1.28 的镜像生命周期、交付和四端口边界。
+[INPUT]: 独立镜像 Operator、池代理、监督型 BuildKit 与私有仓库。
+[OUTPUT]: 定义最低 Kubernetes 1.28 的镜像生命周期、出口和交付边界。
 [POS]: 镜像构建与统一网关的部署入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -127,6 +127,22 @@ builderPool:
   caSecret: build-service-ca
   buildkitConfigMap: buildkit-config
 ```
+
+需要通过指定出口访问 GitHub、ECR 或其他外部仓库时，在 `builderPool.proxy` 配置 `httpProxy`、`httpsProxy` 和显式 `noProxy`。直接创建 CR 时，对应字段为 `BuilderPool.spec.proxy`。配置格式与[Agent 池代理](operator-operations.md#池级出口代理)相同，不提供任意 Pod 环境入口。
+
+```yaml
+builderPool:
+  proxy:
+    httpProxy: http://artifactory-egress:18443
+    httpsProxy: http://artifactory-egress:18443
+    noProxy: localhost,127.0.0.1,.svc,.cluster.local,artifactory-gateway-internal,artifactory-registry,kubernetes.default.svc,10.233.0.1
+```
+
+代理仅接受 HTTP(S) origin，拒绝空白和控制字符。管理员须在 `noProxy` 覆盖内部 Control、Registry、Registry 认证 realm、Kubernetes API DNS 与实际 API Service IP；短主机名和认证域名逐项列出。Operator 创建 Pod 前校验池中已知的内部地址。它不强制外部发布目标直连。部署环境的 NetworkPolicy 须放行代理的实际 TCP 端口。
+
+源码 init、Runner、BuildKit daemon 和 Publisher 同时接收大小写代理环境。Runner 仅在池已配置代理时，将非空标准代理变量传为 Dockerfile frontend 的 `build-arg`。这样基础镜像拉取、令牌请求、Dockerfile `RUN` 和镜像发布均能使用出口。已配置的池代理优先于同名配方参数；池未配置或对应代理值缺省时，保留配方参数。
+
+标准代理 build args 默认不进入镜像历史或构建缓存键。Dockerfile 不声明同名 `ARG` 或 `ENV`，以保持该默认行为。代理配置不进入执行计划，构建输出和 daemon 诊断会清除代理 URL、原始及 URL 编码密码和 Basic 凭据。未配置代理时不增加代理参数；不需要包装正式工作镜像。
 
 每个平台 Pod 先执行普通源码 init，再并发启动 Runner 和 BuildKit 普通容器。源码位于有大小限额的 emptyDir，Runner 只读挂载。Git 凭据与投影 token 只挂载到 init；推送凭据 Secret 只挂载到 Runner。BuildKit 不挂载这些凭据、源码卷或 Runner 私有工作卷。Publisher 不拉源码，不启动 BuildKit。
 

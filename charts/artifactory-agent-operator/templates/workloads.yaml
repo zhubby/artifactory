@@ -1,4 +1,4 @@
-# [INPUT]: 独立服务镜像、HTTP Runtime 地址和池参数。
+# [INPUT]: 独立服务镜像、Runtime 地址和具名池代理。
 # [OUTPUT]: 直接 Pod 控制器与 AgentPool。
 # [POS]: Agent 执行资源连接控制平面的规划接口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -78,3 +78,6 @@ spec:
   cpu: {{ .Values.agentPool.cpu | quote }}
   memory: {{ .Values.agentPool.memory | quote }}
   tlsSecretName: {{ ternary "" $tlsSecret .Values.development.insecureHttp | quote }}
+  {{- with .Values.agentPool.proxy }}
+  proxy: {{ toYaml . | nindent 4 }}
+  {{- end }}

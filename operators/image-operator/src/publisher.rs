@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖发布专属 Secret、OCI 客户端与 /work 临时磁盘卷。
+//! [INPUT]: 依赖发布专属 Secret、池代理、OCI 客户端和临时卷。
 //! [OUTPUT]: 发布完整 OCI Index，失败时保存脱敏日志和摘要。
 //! [POS]: 镜像构建与最终标签之间的独立发布进程，不写源码卷。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -57,6 +57,7 @@ pub async fn run() -> Result<()> {
     let mut result = tokio::select! { result=operation=>result, _=cancel.cancelled()=>Err(anyhow::anyhow!("publication canceled")) };
     if let Err(error) = &result {
         let mut secrets = redact::Secrets::default();
+        crate::diagnostics::proxy_secrets(&mut secrets);
         secrets.add(&task.token);
         crate::diagnostics::registry_secrets(&mut secrets, &task.registry);
         if let Some(destination) = &task.destination {

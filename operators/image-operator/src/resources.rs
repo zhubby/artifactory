@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖固定 ImageBuild、管理员 BuilderPool 和可用节点。
+//! [INPUT]: 依赖固定 ImageBuild、管理员池级代理和可用节点。
 //! [OUTPUT]: 按角色预算创建源码 init、Runner、BuildKit 和 Publisher Pod。
 //! [POS]: 声明 1.28 身份与进程隔离；信任卷只投影公开 CA。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -192,6 +192,28 @@ pub fn pod(
     if !publisher {
         value["metadata"]["annotations"] =
             json!({"container.apparmor.security.beta.kubernetes.io/buildkit":"unconfined"});
+    }
+    if let Some(proxy) = &pool.spec.proxy {
+        let api_host = std::env::var("KUBERNETES_SERVICE_HOST").ok();
+        let environment: Vec<_> = proxy
+            .environment(&[&pool.spec.control_url], api_host.as_deref())?
+            .into_iter()
+            .map(|(name, value)| json!({"name":name,"value":value}))
+            .collect();
+        for group in ["containers", "initContainers"] {
+            for container in value["spec"][group].as_array_mut().into_iter().flatten() {
+                container["env"]
+                    .as_array_mut()
+                    .expect("environment array")
+                    .extend(environment.clone());
+                if container["name"] == "worker" {
+                    container["env"]
+                        .as_array_mut()
+                        .expect("environment array")
+                        .push(json!({"name":"ARTIFACTORY_POOL_PROXY","value":"1"}));
+                }
+            }
+        }
     }
     Ok(serde_json::from_value(value)?)
 }

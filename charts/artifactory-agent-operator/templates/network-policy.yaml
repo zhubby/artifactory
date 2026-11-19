@@ -1,4 +1,4 @@
-# [INPUT]: Pi Pod 标签和命名空间内规划服务端口。
+# [INPUT]: Pi Pod 标签、规划服务端口和池代理 origin。
 # [OUTPUT]: 拒绝入站并限制 Pi 出站目的地的 NetworkPolicy。
 # [POS]: 规划与源码任务访问 Git 及认证入口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -21,6 +21,15 @@ spec:
         - {port: 8445, protocol: TCP}
         {{- range .Values.networkPolicy.gitPorts }}
         - {port: {{ . }}, protocol: TCP}
+        {{- end }}
+        {{- with .Values.agentPool.proxy }}
+        {{- range list .httpProxy .httpsProxy }}
+        {{- if . }}
+        {{- $url := urlParse . }}
+        {{- $port := trimPrefix ":" (regexFind ":[0-9]+$" $url.host) }}
+        - {port: {{ default (ternary "443" "80" (eq $url.scheme "https")) $port | int }}, protocol: TCP}
+        {{- end }}
+        {{- end }}
         {{- end }}
     - to:
         - namespaceSelector:

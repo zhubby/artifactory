@@ -1,5 +1,5 @@
 """[INPUT]: Helm 模板与独立 Secret 初始化脚本。
-[OUTPUT]: 验证资源命名、统一网关、私有入口和持久凭据。
+[OUTPUT]: 验证资源命名、池代理端口、统一网关和持久凭据。
 [POS]: 部署契约回归；不连接 Kubernetes。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -19,6 +19,34 @@ SCRIPT = Path(__file__).with_name("init-helm.py")
 
 
 class HelmBootstrapTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_pool_proxy_is_optional_and_adds_only_explicit_proxy_ports(self):
+        charts = SCRIPT.parents[1] / 'charts'
+        proxy = {
+            'httpProxy': 'http://egress.example:18443',
+            'httpsProxy': 'https://egress.example:19443',
+            'noProxy': 'localhost,127.0.0.1,.svc,artifactory-gateway-internal,artifactory-registry,10.96.0.1',
+        }
+        for chart, pool in [('artifactory-agent-operator', 'agentPool'),
+                            ('artifactory-image-operator', 'builderPool')]:
+            command = ['helm', 'template', 'proxy-test', str(charts / chart), '--kube-version', '1.28.3']
+            default = subprocess.run(command, check=True, capture_output=True, text=True).stdout
+            self.assertNotRegex(default, r'^  proxy:', 'unconfigured pools do not emit an empty proxy')
+            with tempfile.TemporaryDirectory() as directory:
+                values = Path(directory) / 'values.json'
+                values.write_text(json.dumps({pool: {'proxy': proxy}}))
+                rendered = subprocess.run(command + ['-f', str(values)], check=True,
+                                          capture_output=True, text=True).stdout
+            self.assertIn('  proxy:', rendered)
+            for key, value in proxy.items():
+                self.assertIn(f'{key}: {value}', rendered)
+            if pool == 'agentPool':
+                policy = next(document for document in rendered.split('---')
+                              if 'kind: NetworkPolicy' in document)
+                self.assertIn('{port: 18443, protocol: TCP}', policy)
+                self.assertIn('{port: 19443, protocol: TCP}', policy)
+                self.assertNotIn('egress: [{}]', policy)
+
     def test_rollout_notes_do_not_contradict_replicated_control_or_variable_pvc_counts(self):
         notes = (SCRIPT.parents[1] / 'charts/artifactory/templates/NOTES.txt').read_text()
         self.assertNotIn('do not scale its Deployment above one replica', notes)

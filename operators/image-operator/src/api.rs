@@ -1,7 +1,8 @@
 //! [INPUT]: 依赖 kube CRD、Serde 和固定执行身份。
-//! [OUTPUT]: 提供分角色资源预算、不可变执行 CRD 与 Pod 创建意图和 UID 台账。
+//! [OUTPUT]: 提供池级代理、角色预算、不可变执行 CRD 与 Pod UID 台账。
 //! [POS]: Image Operator 的 Kubernetes 公开契约。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
+use artifactory_runtime_protocol::proxy::ProxyConfig;
 use kube::{CustomResource, CustomResourceExt};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -67,6 +68,8 @@ pub struct BuilderPoolSpec {
     pub ca_secret: String,
     #[serde(default)]
     pub buildkit_config_map: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<ProxyConfig>,
 }
 fn pull_policy() -> String {
     "IfNotPresent".into()

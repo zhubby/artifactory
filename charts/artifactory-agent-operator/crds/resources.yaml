@@ -44,6 +44,26 @@ spec:
               memory:
                 default: 512Mi
                 type: string
+              proxy:
+                description: 管理员为执行池指定出口；内部服务必须显式列入直连清单。
+                nullable: true
+                properties:
+                  httpProxy:
+                    nullable: true
+                    pattern: ^https?://[^\s\x00-\x1f\x7f]+$
+                    type: string
+                  httpsProxy:
+                    nullable: true
+                    pattern: ^https?://[^\s\x00-\x1f\x7f]+$
+                    type: string
+                  noProxy:
+                    maxLength: 8192
+                    minLength: 1
+                    pattern: ^[^\x00-\x1f\x7f]+$
+                    type: string
+                required:
+                - noProxy
+                type: object
               runtimeUrl:
                 type: string
               sourcePreparerImage:

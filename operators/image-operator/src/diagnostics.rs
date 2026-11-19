@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖任务秘密、错误链和现有流式脱敏器。
+//! [INPUT]: 依赖任务秘密、代理凭据、错误链和现有流式脱敏器。
 //! [OUTPUT]: 先清除诊断 URL，再替换任务秘密，提供有界日志与摘要。
 //! [POS]: Runner 与 Publisher 共用的错误持久化边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -9,6 +9,39 @@ use base64::Engine;
 
 pub(crate) const LOG_LIMIT: usize = 16384;
 pub(crate) const SUMMARY_LIMIT: usize = 1024;
+
+pub(crate) fn proxy_secrets(secrets: &mut redact::Secrets) {
+    for name in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"] {
+        if let Ok(value) = std::env::var(name) {
+            proxy_value_secrets(secrets, &value);
+        }
+    }
+}
+
+fn proxy_value_secrets(secrets: &mut redact::Secrets, value: &str) {
+    secrets.add(value);
+    if let Ok(url) = url::Url::parse(value) {
+        let decode = |value: &str| {
+            let encoded = format!("value={}", value.replace('+', "%2B"));
+            url::form_urlencoded::parse(encoded.as_bytes())
+                .next()
+                .map(|(_, value)| value.into_owned())
+                .unwrap_or_default()
+        };
+        let username = decode(url.username());
+        secrets.add(url.username());
+        secrets.add(&username);
+        if !url.username().is_empty() || url.password().is_some() {
+            let password = url.password().unwrap_or_default();
+            secrets.add(password);
+            let password = decode(password);
+            secrets.add(&password);
+            let credentials = format!("{username}:{password}");
+            secrets.add(&credentials);
+            secrets.add(&base64::engine::general_purpose::STANDARD.encode(credentials));
+        }
+    }
+}
 
 pub(crate) fn registry_secrets(secrets: &mut redact::Secrets, login: &RegistryLogin) {
     secrets.add(&login.password);
@@ -87,6 +120,57 @@ pub(crate) fn summary(stage: &str, text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn build_output_redacts_proxy_url_decoded_password_and_basic_authorization() {
+        let mut secrets = redact::Secrets::default();
+        proxy_value_secrets(
+            &mut secrets,
+            "http://proxy-user:private%2Bpassword@egress:18443",
+        );
+        let credentials =
+            base64::engine::general_purpose::STANDARD.encode("proxy-user:private+password");
+        let raw = format!(
+            "http://proxy-user:private%2Bpassword@egress:18443 private+password private%2Bpassword {credentials} HTTP 407"
+        );
+        let (emit, mut events) = Emitter::channel();
+        redact::read_log(raw.as_bytes(), "buildkit", emit, secrets)
+            .await
+            .unwrap();
+        let mut text = String::new();
+        while let Some(event) = events.recv().await {
+            text.push_str(&String::from_utf8_lossy(&event.data));
+        }
+        assert!(text.contains("HTTP 407"));
+        assert!(text.contains("[REDACTED]"));
+        for private in [
+            "proxy-user",
+            "private+password",
+            "private%2Bpassword",
+            &credentials,
+        ] {
+            assert!(!text.contains(private), "proxy credential leaked");
+        }
+    }
+
+    #[tokio::test]
+    async fn proxy_username_only_basic_authorization_is_redacted() {
+        let mut secrets = redact::Secrets::default();
+        proxy_value_secrets(&mut secrets, "http://private-user@egress:18443");
+        let encoded = base64::engine::general_purpose::STANDARD.encode("private-user:");
+        let raw = format!("Proxy-Authorization: Basic {encoded}; HTTP 407");
+        let (emit, mut events) = Emitter::channel();
+        redact::read_log(raw.as_bytes(), "buildkit", emit, secrets)
+            .await
+            .unwrap();
+        let mut text = String::new();
+        while let Some(event) = events.recv().await {
+            text.push_str(&String::from_utf8_lossy(&event.data));
+        }
+        assert!(text.contains("Basic [REDACTED]"));
+        assert!(text.contains("HTTP 407"));
+        assert!(!text.contains(&encoded));
+    }
 
     #[tokio::test]
     async fn redacts_error_chains_before_utf8_safe_bounds() {

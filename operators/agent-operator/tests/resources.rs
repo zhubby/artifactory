@@ -1,5 +1,5 @@
 //! [INPUT]: Agent CRD、直接规划 Pod 与源码任务契约。
-//! [OUTPUT]: 验证执行身份、凭据隔离与不可变契约。
+//! [OUTPUT]: 验证执行身份、池代理、凭据隔离与不可变契约。
 //! [POS]: Agent Operator 的离线资源回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_agent_operator::{api::*, pods, resources};
@@ -33,6 +33,7 @@ fn pods_have_single_attempt_and_bound_identity_without_provider_secrets() {
             cpu: "250m".into(),
             memory: "512Mi".into(),
             tls_secret_name: "services-tls".into(),
+            proxy: None,
         },
     );
     let execution = pods::reserve(
@@ -144,4 +145,100 @@ fn source_task_contract_accepts_only_current_fields() {
     assert!(!spec.cancel_requested);
     value["snapshotId"] = serde_json::json!("obsolete");
     assert!(serde_json::from_value::<SourceTaskSpec>(value).is_err());
+}
+
+#[test]
+fn configured_pool_proxies_source_and_planning_without_arbitrary_environment() {
+    let mut pool: AgentPool = serde_json::from_value(serde_json::json!({
+        "metadata":{"name":"default"},"spec":{
+            "maxActive":4,"maxPerProject":2,"image":"worker:1",
+            "runtimeUrl":"https://runtime/internal/planner","controlUrl":"https://control:8445",
+            "sourcePreparerImage":"source:1","proxy":{
+                "httpProxy":"http://egress:18443","httpsProxy":"http://egress:18443",
+                "noProxy":"localhost,127.0.0.1,.svc,control,runtime,registry"
+            }
+        }
+    }))
+    .unwrap();
+    let run: AgentRun = serde_json::from_value(serde_json::json!({
+        "metadata":{"name":"run","namespace":"test","uid":"run-uid"},"spec":{
+            "runId":"00000000-0000-0000-0000-000000000001",
+            "projectId":"project","generation":1,"pool":"default",
+            "sourceManifestId":"manifest","sourceDigest":"a".repeat(64)
+        }
+    }))
+    .unwrap();
+    let task: SourceTask = serde_json::from_value(serde_json::json!({
+        "metadata":{"name":"source","namespace":"test","uid":"task-uid"},"spec":{
+            "taskId":"00000000-0000-0000-0000-000000000002",
+            "tenantId":"tenant","projectId":"project","purpose":"resolve","pool":"default"
+        }
+    }))
+    .unwrap();
+    let execution = pods::reserve(
+        &run.spec.run_id,
+        "run-uid",
+        "pi",
+        1,
+        chrono::Utc::now().timestamp_millis() + 600_000,
+    )
+    .unwrap();
+    for pod in [
+        resources::planning_pod(&run, &pool, &execution).unwrap(),
+        resources::source_pod(&task, &pool, &execution).unwrap(),
+    ] {
+        let spec = pod.spec.unwrap();
+        for container in spec
+            .containers
+            .iter()
+            .chain(spec.init_containers.iter().flatten())
+        {
+            let environment = container.env.as_ref().unwrap();
+            if container.name == "pi" {
+                assert!(!environment.iter().any(|entry| entry.name == "HTTP_PROXY"));
+                continue;
+            }
+            for name in ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"] {
+                assert_eq!(
+                    environment
+                        .iter()
+                        .find(|entry| entry.name == name)
+                        .unwrap()
+                        .value
+                        .as_deref(),
+                    Some("http://egress:18443"),
+                    "container {} requires {name}",
+                    container.name
+                );
+            }
+            assert_eq!(
+                environment
+                    .iter()
+                    .find(|entry| entry.name == "NO_PROXY")
+                    .unwrap()
+                    .value,
+                environment
+                    .iter()
+                    .find(|entry| entry.name == "no_proxy")
+                    .unwrap()
+                    .value
+            );
+        }
+    }
+    pool.spec.proxy.as_mut().unwrap().no_proxy = ".svc,control".into();
+    assert!(
+        resources::planning_pod(&run, &pool, &execution).is_err(),
+        "runtime must bypass the proxy"
+    );
+    pool.spec.proxy = None;
+    let pod = resources::planning_pod(&run, &pool, &execution).unwrap();
+    assert!(!serde_json::to_string(&pod).unwrap().contains("HTTP_PROXY"));
+    assert!(
+        serde_json::from_value::<artifactory_runtime_protocol::proxy::ProxyConfig>(
+            serde_json::json!({
+                "httpProxy":"http://egress:18443","noProxy":".svc","env":{"UNTRUSTED":"value"}
+            })
+        )
+        .is_err()
+    );
 }
