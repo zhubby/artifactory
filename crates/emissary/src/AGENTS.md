@@ -11,7 +11,7 @@ signing/: 临时领取材料、清理闭锁并原生校验最终副本。
 source.rs: 领取源码材料，隔离 JVM/Maven 等任务缓存并在删除前回收会话。
 process.rs: 约束进程组与 Worker 会话，回收孤儿进程并读取日志。
 artifacts.rs: 在工作目录内收集、读取与校验制品。
-doctor.rs: 探测原生工具与节点资源，以独立工具集合验证能力准入。
+doctor.rs: 八路并发探测原生工具，按名称固定首连能力快照，并保留每工具超时。
 ota.rs: 校验签名更新、激活并回滚节点二进制。
 service.rs: 安装并控制原生服务。
 service/: Windows SCM 服务实现。
