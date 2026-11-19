@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""[INPUT]: 直接 Pod 台账、异步容器状态、模拟 Kubernetes API 和节点进程。
-[OUTPUT]: 验证启动等待、失联撤权、身份保留、物理停机和测试资源恢复。
+"""[INPUT]: 直接 Pod 台账、异步容器状态、模拟服务端点和节点进程。
+[OUTPUT]: 验证启动等待、失联撤权、物理停机和数据库及 DNS 服务恢复。
 [POS]: 离线执行 cleanup 验收流程，不连接真实集群。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -18,10 +18,16 @@ import cleanup
 
 class CleanupTests(unittest.TestCase):
     def exercise(self, directory, *, wrong_initial_uid=False, stopped_while_isolated=False,
-                 pod_statuses=None, replace_pod_during_startup=False):
+                 pod_statuses=None, replace_pod_during_startup=False,
+                 initial_publish_unready=None, initial_dns_publish_unready=None,
+                 fail_while_isolated=False, fail_kubelet_restore=False,
+                 fail_service_protection=False):
         state = {'canceled': False, 'isolated': False, 'restored': False,
                  'signals': [], 'signal_targets': [], 'pod_reads': 0,
-                 'pool_capacities': [], 'helpers_stopped': False}
+                 'pool_capacities': [], 'helpers_stopped': False,
+                 'services': {('artifact-cleanup', 'artifactory-timescaledb'): initial_publish_unready,
+                              ('kube-system', 'kube-dns'): initial_dns_publish_unready},
+                 'service_policies': []}
         self.latest_state = state
         life = {'generation': 1, 'calls': 1, 'deadline_ms': 123456}
         execution = {'name': 'pi-pod', 'uid': 'pi-uid'}
@@ -38,13 +44,35 @@ class CleanupTests(unittest.TestCase):
                                           ('upstream', {'app': 'upstream'})]]
 
         def command(args):
+            if 'service' in args:
+                namespace = args[args.index('-n') + 1]
+                action = args.index('get' if 'get' in args else 'patch')
+                return service(namespace, args[action:])
             if 'nodes' in args:
                 return json.dumps({'items': [ready()]})
             if 'node' in args and 'get' in args:
                 return json.dumps(ready())
             return json.dumps({'items': workloads})
 
+        def service(namespace, args):
+            args = tuple(args)
+            key = (namespace, args[2])
+            if args[:2] == ('get', 'service'):
+                spec = {} if state['services'][key] is None else {
+                    'publishNotReadyAddresses': state['services'][key]}
+                return json.dumps({'metadata': {'name': args[2]}, 'spec': spec})
+            if args[:2] == ('patch', 'service'):
+                state['services'][key] = json.loads(args[-1])['spec']['publishNotReadyAddresses']
+                state['service_policies'].append((*key, state['services'][key]))
+                if (fail_service_protection and key == ('kube-system', 'kube-dns')
+                        and state['services'][key] is True):
+                    raise RuntimeError('DNS Service patch result unknown')
+                return ''
+            raise AssertionError('Unexpected Service call: ' + str(args))
+
         def kubectl(*args):
+            if args[:2] in [('get', 'service'), ('patch', 'service')]:
+                return service('artifact-cleanup', args)
             if args[:2] == ('get', 'agentpool'):
                 return json.dumps({'spec': {'maxActive': 8}})
             if args[:2] == ('patch', 'agentpool'):
@@ -99,6 +127,8 @@ class CleanupTests(unittest.TestCase):
             elif args[:2] == ('systemctl', 'stop'):
                 state['isolated'] = True
             elif args[:2] == ('systemctl', 'start'):
+                if fail_kubelet_restore:
+                    raise RuntimeError('kubelet restart failed')
                 state.update(isolated=False, restored=True)
             elif args[:2] == ('crictl', 'inspect'):
                 output = json.dumps({'info': {'pid': 200 if args[2] == 'pi-container' else 100},
@@ -120,6 +150,10 @@ class CleanupTests(unittest.TestCase):
                 if url.endswith('/healthz'):
                     value = {'status': 'ok'}
                 elif url.endswith('/api/v1/builds/build'):
+                    if state['isolated'] and fail_while_isolated:
+                        raise RuntimeError('independent API read failed during isolation')
+                    if state['isolated'] and any(value is not True for value in state['services'].values()):
+                        raise RuntimeError('Database or DNS Service has no ready endpoints on Unknown node')
                     value = {'jobs': []}
                 output = json.dumps(value).encode()
             else:
@@ -155,6 +189,63 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(state['signals'], ['-STOP', '-CONT'])
         self.assertEqual(state['pool_capacities'], [1, 8])
         self.assertTrue(state['helpers_stopped'])
+
+    def test_database_and_dns_survive_unknown_node_and_restore_absent_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state, evidence = self.exercise(directory)
+        self.assertTrue(evidence['logical_cancellation_no_device_jobs'])
+        self.assertEqual(evidence['isolated_node_ready'], 'Unknown')
+        self.assertEqual(state['service_policies'], [
+            ('artifact-cleanup', 'artifactory-timescaledb', True),
+            ('kube-system', 'kube-dns', True),
+            ('kube-system', 'kube-dns', None),
+            ('artifact-cleanup', 'artifactory-timescaledb', None)])
+        self.assertTrue(all(value is None for value in state['services'].values()))
+
+    def test_services_restore_their_own_policy_after_fault_read_failure(self):
+        for original in [False, True]:
+            with self.subTest(original=original), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(RuntimeError, 'read failed during isolation'):
+                    self.exercise(directory, fail_while_isolated=True,
+                                  initial_publish_unready=original,
+                                  initial_dns_publish_unready=not original)
+                self.assertEqual(self.latest_state['services'], {
+                    ('artifact-cleanup', 'artifactory-timescaledb'): original,
+                    ('kube-system', 'kube-dns'): not original})
+                self.assertTrue(self.latest_state['restored'])
+                self.assertTrue(self.latest_state['helpers_stopped'])
+                self.assertEqual(self.latest_state['pool_capacities'], [1, 8])
+
+    def test_curl_failure_reports_only_exit_and_http_status(self):
+        result = subprocess.CompletedProcess([], 22, b'private-response-body',
+            b'curl: (22) The requested URL returned error: 503 http://private:password@host')
+        with patch.object(cleanup.subprocess, 'run', return_value=result):
+            with self.assertRaises(RuntimeError) as raised:
+                cleanup.docker('node', 'curl', '--config', '-', data=b'private-headers')
+        message = str(raised.exception)
+        self.assertIn('exit=22', message)
+        self.assertIn('HTTP=503', message)
+        for private in ['private', 'password', 'host']:
+            self.assertNotIn(private, message)
+
+    def test_services_restore_after_kubelet_recovery_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, 'kubelet restart failed'):
+                self.exercise(directory, fail_kubelet_restore=True)
+        self.assertTrue(all(value is None for value in self.latest_state['services'].values()))
+        self.assertEqual(self.latest_state['signals'], ['-STOP', '-CONT'])
+        self.assertTrue(self.latest_state['helpers_stopped'])
+        self.assertEqual(self.latest_state['pool_capacities'], [1, 8])
+
+    def test_partial_service_patch_is_restored_before_fault_injection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, 'DNS Service patch result unknown'):
+                self.exercise(directory, fail_service_protection=True)
+        self.assertTrue(all(value is None for value in self.latest_state['services'].values()))
+        self.assertNotIn('-STOP', self.latest_state['signals'])
+        self.assertFalse(self.latest_state['isolated'])
+        self.assertTrue(self.latest_state['helpers_stopped'])
+        self.assertEqual(self.latest_state['pool_capacities'], [1, 8])
 
     def test_wrong_pod_uid_is_rejected_before_fault_injection(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""[INPUT]: 独立 kind 节点、异步 Pod 状态、已保存的命名空间与私有 PKI。
-[OUTPUT]: 等待同一 UID 的 Pi 启动，按直接 Pod 台账验证失联撤权和物理停机。
-[POS]: 创建私有证据目录；确认运行容器身份后暂停 Pi，最终恢复 Pi 与 kubelet。
+"""[INPUT]: 独立 kind 节点、异步 Pod 状态、数据库及 DNS 服务与私有 PKI。
+[OUTPUT]: 验证失联撤权和物理停机，只记录命令退出码与 HTTP 状态。
+[POS]: 保留故障节点的数据库及 DNS 端点，最终恢复 Pi、kubelet 和服务原值。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
+from contextlib import ExitStack
 import json
+import re
 import subprocess
 import time
 import uuid
@@ -24,7 +26,13 @@ def docker(node, *args, data=None, check=True):
     result = subprocess.run(['docker', 'exec', '-i', node, *args], input=data,
                             capture_output=True, timeout=30)
     if check and result.returncode:
-        raise RuntimeError('Dedicated node management command failed: ' + args[0])
+        status = None
+        if args[0] == 'curl':
+            status = re.search(rb'\breturned error:\s*(\d{3})\b', result.stderr or b'', re.I)
+        detail = f'exit={result.returncode}'
+        if status:
+            detail += ', HTTP=' + status.group(1).decode('ascii')
+        raise RuntimeError('Dedicated node management command failed: ' + args[0] + ' (' + detail + ')')
     return result
 
 
@@ -39,6 +47,7 @@ def run(args):
     build = None
     request = None
     original_pool = None
+    service_restores = ExitStack()
     canceled = False
     try:
         # A kind name alone is insufficient: check Docker ownership and workloads.
@@ -132,6 +141,20 @@ def run(args):
                 and container.get('labels', {}).get('io.kubernetes.pod.uid') == pod_uid), 'CRI identity differs from the live planning Pod'
         frozen_pid = inspected['info']['pid']
         assert isinstance(frozen_pid, int) and frozen_pid > 1, 'Invalid planning container PID'
+
+        def service_command(namespace, *arguments):
+            return a.command(['kubectl', '--context', a.context, '-n', namespace, *arguments])
+
+        evidence['protected_services'] = []
+        for namespace, name in [(a.ns, 'artifactory-timescaledb'), ('kube-system', 'kube-dns')]:
+            service = json.loads(service_command(namespace, 'get', 'service', name, '-o', 'json'))
+            original = service['spec'].get('publishNotReadyAddresses')
+            service_restores.callback(service_command, namespace, 'patch', 'service', name,
+                '--type=merge', '-p', json.dumps({'spec': {'publishNotReadyAddresses': original}}))
+            service_command(namespace, 'patch', 'service', name, '--type=merge', '-p',
+                            json.dumps({'spec': {'publishNotReadyAddresses': True}}))
+            evidence['protected_services'].append({'namespace': namespace, 'name': name,
+                                                   'original_publish_not_ready': original})
         docker(args.node_container, 'kill', '-STOP', str(frozen_pid))
         # Mark first so a partially successful systemctl command still triggers recovery.
         kubelet_stopped = True
@@ -167,24 +190,31 @@ def run(args):
         assert not request('control-plane', '/api/v1/builds/' + build)['jobs'], 'Cancel created device jobs'
         evidence['logical_cancellation_no_device_jobs'] = True
     finally:
-        if frozen_pid is not None:
-            docker(args.node_container, 'kill', '-CONT', str(frozen_pid), check=False)
-        if kubelet_stopped:
-            docker(args.node_container, 'systemctl', 'start', 'kubelet')
-            a.command(['kubectl', '--context', a.context, 'wait', 'node/' + args.node_container,
-                       '--for=condition=Ready', '--timeout=120s'])
-            evidence['kubelet_restored'] = True
         try:
-            if request is not None:
-                if build and not canceled:
-                    request('control-plane', '/api/v1/builds/' + build + '/cancel', {})
-                request('upstream', '/test/mode', {})
+            if frozen_pid is not None:
+                docker(args.node_container, 'kill', '-CONT', str(frozen_pid), check=False)
+            if kubelet_stopped:
+                docker(args.node_container, 'systemctl', 'start', 'kubelet')
+                a.command(['kubectl', '--context', a.context, 'wait', 'node/' + args.node_container,
+                           '--for=condition=Ready', '--timeout=120s'])
+                evidence['kubelet_restored'] = True
         finally:
-            for process in a.processes:
-                process.terminate()
-            if original_pool is not None:
-                a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': original_pool}))
-            (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
+            try:
+                if request is not None:
+                    if build and not canceled:
+                        request('control-plane', '/api/v1/builds/' + build + '/cancel', {})
+                    request('upstream', '/test/mode', {})
+            finally:
+                for process in a.processes:
+                    process.terminate()
+                try:
+                    service_restores.close()
+                    if evidence.get('protected_services'):
+                        evidence['service_policies_restored'] = True
+                finally:
+                    if original_pool is not None:
+                        a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': original_pool}))
+                    (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
     a.wait(lambda: not json.loads(a.kubectl('get', 'pods', '-l', 'artifactory.dev/run=' + run_id, '-o', 'json'))['items'], 120)
     a.wait(lambda: (s := json.loads(a.kubectl('get', 'agentrun', run_name, '-o', 'json')).get('status', {})).get('phase') == 'canceled' and s.get('execution') is None and not s.get('message'), 90)
     after = request('artifactory-runtime', '/v1/get', {'run_id': run_id})

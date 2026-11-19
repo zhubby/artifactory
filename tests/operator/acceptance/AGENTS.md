@@ -12,8 +12,8 @@ provider.py: 验证真实模型预算、取消和供应商故障。
 native.py: 临时放行单节点 Git NodePort；双端确认 refs 就绪，验证原生构建后撤销出口。
 network.py: 用地址快照验证冷 Pod 首次 TCP 策略，独立记录 DNS。
 telemetry.py: 预检池准入，验证遥测中断并保存白名单构建与 Pod 执行台账诊断。
-cleanup.py: 按台账 UID 轮询 Pi 运行容器和 CRI ID，固定物理身份后验证失联撤权与收尾。
-test_cleanup.py: 离线复跑启动状态过渡与失联验收，验证超时恢复、物理停机并拒绝身份替换。
+cleanup.py: 按台账 UID 等待 Pi 启动，临时保留数据库和 DNS 端点，验证失联撤权并恢复服务原值。
+test_cleanup.py: 离线验证启动、Node Unknown 数据库和 DNS、字段原值恢复与命令诊断脱敏。
 kind-cilium.yaml: 创建禁用原生 sidecar 的 Kubernetes 1.28 Cilium 隔离集群。
 test_harness.py: 验证会话、池恢复、全副本日志和设备隔离。
 test_telemetry.py: 验证白名单构建与执行台账诊断、超时收尾和暂停池拒绝。

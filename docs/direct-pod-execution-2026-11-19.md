@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 直接 Pod Operator、Runtime 执行围栏和最低 Kubernetes 1.28。
-[OUTPUT]: 记录任务编排变更、启动状态等待、验证证据和验收边界。
+[OUTPUT]: 记录任务编排、启动等待、故障依赖隔离和验收边界。
 [POS]: 一次性任务直接 Pod 实施记录；当前操作契约见 Operator 运维。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -57,6 +57,10 @@ SourceTask 在业务数据库固定 CR UID。材料领取按任务行锁单调�
 完整 CI 以 Kubernetes 1.28.13 为基线，执行源码、规划、镜像、故障与双架构验收。集群配置明确关闭 `SidecarContainers`。完整业务链的验收结果以对应提交的 GitHub CI 记录为准。
 
 基线 CI `44458636619` 暴露清理夹具的启动竞态。Runtime 已记录首次模型调用时，Kubernetes 仍返回没有 `containerID` 的容器状态。`cleanup.py` 现在按台账 UID 重新读取 Pod，等待名为 `pi` 的容器进入 `running` 并发布 CRI ID，再核对节点侧物理身份。等待期间 UID 替换立即中止；启动超时执行测试资源恢复。清理夹具六项与验收夹具全部 31 项离线回归通过，覆盖状态缺失、容器等待、旁车排序、身份替换与启动超时。本次修复未重跑真实节点故障注入。
+
+提交 `4ea4fe7` 的 CI `44471864883` 有十个作业通过。唯一失败为失联取消夹具。证据确认约 1.177 秒完成撤权，八次采样均保留原 Pod UID、`CleanupPending` 与暂停的 Pi；节点随后为 `Unknown`，kubelet 已恢复。失败发生在最终构建详情查询的 curl 请求。当时未记录 HTTP 状态，无法追溯具体响应。该查询仍通过 PostgreSQL Service 访问数据库，数据库重连同时依赖 CoreDNS；节点失联会撤下这些 Service 的就绪端点。
+
+夹具现在只在专属单节点 kind 故障窗口，为验收命名空间的 `artifactory-timescaledb` 和 `kube-system/kube-dns` 临时开启 `publishNotReadyAddresses`。每次修改前登记恢复动作，窗口结束后按各自原值恢复，原先缺省的字段恢复为缺省。API 读取失败、kubelet 恢复失败和部分配置失败均执行恢复。生产 Chart 和策略保持原有就绪约束。curl 失败诊断只输出退出码与已解析的 HTTP 状态，不输出原始响应、URL 或请求头。清理夹具十一项与全部 36 项离线验收回归通过；真实故障窗口仍待后续 CI 重验。
 
 ## Kubernetes 1.28 下限实测
 
