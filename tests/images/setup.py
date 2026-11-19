@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 隔离命名空间、基础验收部署与统一镜像 tag。
-[OUTPUT]: 配置私有 S3、内外仓库和分角色预算的监督型构建池。
+[OUTPUT]: 配置私有 S3、Gateway 仓库入口和 Release 发布权限。
 [POS]: 复用公开夹具，等待存储后端端口就绪后再启动转发。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -147,19 +147,20 @@ def install(a, platforms, allow_emulation=False, emulation_selector=None, extern
     create_bucket(a,'registry-bootstrap',keys['admin'])
     values = {'image':a.registry+'/distribution:3.0.0','replicas':2,
         's3':{'bucket':'artifactory-registry','endpoint':'http://artifactory-seaweedfs-registry:8333','secretName':'image-registry-storage','secure':False},
-        'auth':{'realm':'http://gateway:8080/api/v1/registry/token','service':'artifactory-registry','issuer':'artifactory','certificateSecret':'image-registry-signing-public'}}
+        'auth':{'realm':'http://gateway:8080/api/v1/registry/token','service':'artifactory-registry','issuer':'artifactory','certificateSecret':'image-registry-signing-public'},
+        'networkPolicy':{'gatewaySelector':{'app':'gateway'}}}
     path = a.run/'registry-values.json'; path.write_text(json.dumps(values))
     a.command(['helm','--kube-context',a.context,'upgrade','--install','image',str(ROOT/'charts/artifactory-registry'),'-n',a.ns,'-f',str(path)])
     a.kubectl('rollout','status','deploy/artifactory-registry','--timeout=180s')
     role = clean(json.loads(a.kubectl('get','role','artifactory-control','-o','json')))
-    role['rules'] += [{'apiGroups':['images.artifactory.dev'],'resources':['imagebuilds'],'verbs':['get','create','patch']},
+    role['rules'] += [{'apiGroups':['images.artifactory.dev'],'resources':['imagebuilds'],'verbs':['get','list','create','patch']},
                       {'apiGroups':[''],'resources':['secrets'],'verbs':['get','create','delete']}]
     control = clean(json.loads(a.kubectl('get','deploy','control-plane','-o','json')))
     pod = control['spec']['template']['spec']
     pod['volumes'] = [v for v in pod.get('volumes',[]) if v['name']!='registry-signing'] + [{'name':'registry-signing','secret':{'secretName':'image-registry-signing','defaultMode':0o440}}]
     pod['containers'][0]['volumeMounts'] = [v for v in pod['containers'][0].get('volumeMounts',[]) if v['name']!='registry-signing'] + [{'name':'registry-signing','mountPath':'/run/registry-signing','readOnly':True}]
     environment = {name:base64.b64decode(value).decode() for name,value in json.loads(a.kubectl('get','secret','control-plane','-o','json'))['data'].items()}
-    environment.update(ARTIFACTORY_IMAGE_NAMESPACE=a.ns,ARTIFACTORY_REGISTRY_URL='http://artifactory-registry:5000/',
+    environment.update(ARTIFACTORY_IMAGE_NAMESPACE=a.ns,ARTIFACTORY_REGISTRY_URL='http://gateway:8080/',
         ARTIFACTORY_IMAGE_CONTROL_URL='https://upstream:9443',ARTIFACTORY_REGISTRY_SIGNING_KEY='/run/registry-signing/tls.key',ARTIFACTORY_REGISTRY_SIGNING_CERT='/run/registry-signing/tls.crt')
     gateway = {name:base64.b64decode(value).decode() for name,value in json.loads(a.kubectl('get','secret','gateway','-o','json'))['data'].items()}
     gateway['ARTIFACTORY_GATEWAY_REGISTRY']='http://artifactory-registry:5000'
@@ -170,7 +171,7 @@ def install(a, platforms, allow_emulation=False, emulation_selector=None, extern
         a.kubectl('rollout','restart','deploy/'+name)
         a.kubectl('rollout','status','deploy/'+name,'--timeout=180s')
     a.command(['kubectl','--context',a.context,'apply','-f',str(ROOT/'operators/image-operator/config/crd/resources.yaml')])
-    config = '[worker.oci]\n  snapshotter = "native"\n[registry."artifactory-registry:5000"]\n  http = true\n'
+    config = '[worker.oci]\n  snapshotter = "native"\n[registry."gateway:8080"]\n  http = true\n'
     a.apply({'apiVersion':'v1','kind':'ConfigMap','metadata':{'name':'image-buildkit'},'data':{'buildkitd.toml':config}})
     values = {'image':{'repository':a.registry+'/image-operator','tag':a.image_tag,'pullPolicy':'IfNotPresent'},
         'builderPool':{'workerImage':a.image('image-worker'),'buildkitImage':a.image('buildkit'),'sourcePreparerImage':a.image('source-preparer'),

@@ -1,9 +1,9 @@
-//! [INPUT]: 依赖任务秘密、代理凭据、错误链和现有流式脱敏器。
+//! [INPUT]: 依赖任务秘密、代理凭据、错误链和共享流式脱敏器。
 //! [OUTPUT]: 先清除诊断 URL，再替换任务秘密，提供有界日志与摘要。
 //! [POS]: Runner 与 Publisher 共用的错误持久化边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::Result;
-use artifactory_emissary::{signing::redact, worker::Emitter};
+use artifactory_execution_support::{events::Emitter, redact};
 use artifactory_image_protocol::RegistryLogin;
 use base64::Engine;
 

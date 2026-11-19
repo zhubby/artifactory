@@ -65,7 +65,7 @@ SIGTERM 先令 `/readyz` 返回 503，停止新会话和本地调度，并以每
 | `ARTIFACTORY_TELEMETRY_READ_CONNECTIONS` | 4 | 每遥测副本 2–128，可配置只读数据库地址 |
 | `ARTIFACTORY_TELEMETRY_AUTH_CONNECTIONS` | 4 | 每遥测副本读取业务授权库的连接数，2–128 |
 
-连接预算按同一 PostgreSQL 实例合计。示例滚动更新最多 4 个 Control、2 个 Telemetry：业务连接为 `4×40+2×4=168`，遥测连接为 `2×(12+4)=32`，另加 Runtime 和运维连接。终止中的 Pod 也占用连接。`values-ha.yaml` 提供 Control 40 条连接与数据库 450 条连接的示例；应以实际池等待、工作集与续租延迟调整。
+连接预算按同一 PostgreSQL 实例合计。示例滚动更新最多 4 个 Control、2 个 Telemetry：业务连接为 `4×40+2×4=168`，遥测连接为 `2×(12+4)=32`，另加规划协调器和运维连接。终止中的 Pod 也占用连接。`values-ha.yaml` 提供 Control 40 条连接与数据库 450 条连接的示例；应以实际池等待、工作集与续租延迟调整。
 
 生产使用外部 HA PostgreSQL，将遥测放到独立实例以隔离 WAL 与 I/O。`DATABASE_URL` 应直连 PostgreSQL 或使用支持会话语义的 session pooling。LISTEN 不支持 transaction pooling。
 
@@ -75,11 +75,11 @@ Control 的 `temporaryStorage` 默认 10Gi，实际应大于“校验并发 × �
 
 Control 每个副本使用独立 emptyDir，数据库和对象存储保存共享业务状态。源码由临时任务直接拉取，不依赖 Control PVC 或独立 Source。主 Chart 默认一个 Control，合并 `values-ha.yaml` 后部署三个副本。Deployment 使用 RollingUpdate、PDB 和反亲和性。
 
-新安装初始化当前数据库基线。原型切换采用业务数据库重置，不提供旧数据库迁移或旧二进制回退。主密钥、设备 PKI、Registry 身份和允许保留的制品按运维方案保留。
+本版只支持新实例，业务与规划数据库基线分别为 `2026112001` 和 `2026111901`。程序拒绝旧库，不提供旧数据库迁移或旧二进制回退。安装不会重置旧库，也不清理旧实例的主密钥、设备 PKI、Registry 身份或制品；旧实例由管理员独立备份和退役。
 
 外部 HA 存储设置 `postgres.enabled=false`、`s3.enabled=false`，凭据 Secret 指向目标服务，并填写私有 `s3.endpoint`。外部 HTTP 必须显式设置 `s3.allowHttp=true`。
 
-Control 副本只解决 Control 进程故障。完整平台 HA 还取决于 Web、Runtime、数据库、对象存储与入口的故障域。
+Control 副本只解决 Control 进程故障。完整平台 HA 还取决于 Web、规划协调器、数据库、对象存储与入口的故障域。
 
 ## 查询契约
 

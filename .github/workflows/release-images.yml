@@ -52,8 +52,8 @@ jobs:
         image:
           - {name: control-plane, context: ., file: Dockerfile}
           - {name: web, context: ., file: web/Dockerfile}
-          - {name: agent-worker, context: ., file: packages/agent-worker/Dockerfile}
-          - {name: agent-operator, context: ., file: operators/agent-operator/Dockerfile}
+          - {name: planning-worker, context: ., file: packages/planning-worker/Dockerfile}
+          - {name: planning-operator, context: ., file: operators/planning-operator/Dockerfile}
           - {name: source-preparer, context: ., file: crates/source-preparer/Dockerfile}
           - {name: image-operator, context: ., file: operators/image-operator/Dockerfile}
           - {name: image-worker, context: ., file: operators/image-operator/Dockerfile.worker}
@@ -119,7 +119,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        component: [control-plane, web, agent-worker, agent-operator, source-preparer, image-operator, image-worker, buildkit, gateway, emissary]
+        component: [control-plane, web, planning-worker, planning-operator, source-preparer, image-operator, image-worker, buildkit, gateway, emissary]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -197,9 +197,9 @@ jobs:
           set -euo pipefail
           mkdir -p .local/release
           helm lint charts/artifactory --strict
-          helm lint charts/artifactory-agent-operator --strict
+          helm lint charts/artifactory-planning-operator --strict
           helm package charts/artifactory --destination .local/release
-          helm package charts/artifactory-agent-operator --destination .local/release
+          helm package charts/artifactory-planning-operator --destination .local/release
           helm lint charts/artifactory-image-operator --strict
           helm lint charts/artifactory-registry --strict
           helm package charts/artifactory-image-operator --destination .local/release

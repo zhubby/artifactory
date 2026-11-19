@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖公开 JSON 字段和数据库解码。
-//! [OUTPUT]: 提供项目默认方案及制品验签证据投影。
+//! [OUTPUT]: 提供 Release 修订、构建归属及正式制品名称投影。
 //! [POS]: HTTP 响应的数据边界；不包含秘密信封。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Explicit API projections. These types never contain ORM models or database handles.
@@ -223,7 +223,9 @@ response! { BuildSummary {
     selected_targets: Vec<String>,
     status: String,
     error: Option<String>,
-    release_version: Option<String>,
+    release_id: Uuid,
+    spec_revision: i32,
+    release_version: String,
     publish_status: String,
     publish_error: Option<String>,
     cancel_requested: bool,
@@ -256,7 +258,9 @@ response! { BuildEnvelope {
     selected_targets: Vec<String>,
     status: String,
     error: Option<String>,
-    release_version: Option<String>,
+    release_id: Uuid,
+    spec_revision: i32,
+    release_version: String,
     publish_status: String,
     publish_error: Option<String>,
     cancel_requested: bool,
@@ -318,6 +322,8 @@ response! { Job {
 }}
 
 response! { BuildArtifact {
+    release_id: Uuid,
+    release_version: String,
     id: Uuid,
     attempt_id: Uuid,
     path: String,
@@ -349,6 +355,9 @@ pub struct BuildDetail {
 }
 
 response! { ArtifactSummary {
+    delivery_filename: Option<String>,
+    release_id: Uuid,
+    release_version: String,
     id: Uuid,
     attempt_id: Uuid,
     path: String,
@@ -365,32 +374,54 @@ response! { ArtifactSummary {
 response! { ReleaseSummary {
     id: Uuid,
     project_id: Uuid,
-    build_id: Uuid,
-    version: String,
-    idempotency_key: String,
-    commit_sha: String,
-    created_at: String,
+    project_slug: String,
     project_name: String,
+    version: String,
+    status: String,
+    requested_ref: String,
+    goal: String,
+    target_requirements: Value,
+    targets: Vec<String>,
+    spec_revision: i32,
+    source_manifest_id: Option<Uuid>,
+    commit_sha: Option<String>,
+    created_at: String,
+    build_count: i64,
+    selected_build_id: Option<Uuid>,
+    delivery_manifest: Option<Value>,
+    publish_error: Option<String>,
     artifact_count: i64,
 }}
 
 response! { Release {
     id: Uuid,
     project_id: Uuid,
-    build_id: Uuid,
-    build_number: i64,
     project_slug: String,
-    version: String,
-    idempotency_key: String,
-    commit_sha: String,
-    created_at: String,
     project_name: String,
+    version: String,
+    status: String,
+    requested_ref: String,
+    goal: String,
+    target_requirements: Value,
+    targets: Vec<String>,
+    spec_revision: i32,
+    source_manifest_id: Option<Uuid>,
+    commit_sha: Option<String>,
+    created_at: String,
+    build_count: i64,
+    selected_build_id: Option<Uuid>,
+    delivery_manifest: Option<Value>,
+    publish_error: Option<String>,
+    artifact_count: i64,
 }}
 
 response! { ReleaseArtifact {
     id: Uuid,
     attempt_id: Uuid,
     path: String,
+    delivery_filename: String,
+    release_id: Uuid,
+    release_version: String,
     size: i64,
     sha256: String,
     created_at: String,

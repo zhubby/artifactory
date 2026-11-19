@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖私有 S3、主密钥和网关公共入口。
-//! [OUTPUT]: 提供对象校验、私有签名和有时限的网关票据。
+//! [OUTPUT]: 提供对象校验、私有签名和绑定交付文件名的网关票据。
 //! [POS]: 所有客户端对象流量通过网关，内部校验直连 S3。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::settings::Settings;
@@ -17,6 +17,22 @@ pub struct Storage {
     client: reqwest::Client,
     temporary_dir: std::path::PathBuf,
     verifications: tokio::sync::Semaphore,
+}
+
+#[derive(serde::Serialize)]
+pub struct ResolvedArtifact {
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+}
+
+fn valid_delivery_filename(filename: &str) -> bool {
+    !filename.is_empty()
+        && filename.len() <= 255
+        && filename.as_bytes()[0].is_ascii_alphanumeric()
+        && filename
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
 }
 
 impl Storage {
@@ -107,8 +123,21 @@ impl Storage {
     }
 
     fn ticket(&self, key: &str, method: &str, seconds: i64) -> Result<String> {
+        self.named_ticket(key, method, seconds, None)
+    }
+    fn named_ticket(
+        &self,
+        key: &str,
+        method: &str,
+        seconds: i64,
+        filename: Option<&str>,
+    ) -> Result<String> {
+        ensure!(
+            filename.is_none_or(|name| method == "GET" && valid_delivery_filename(name)),
+            "invalid delivery filename"
+        );
         let bytes = serde_json::to_vec(
-            &serde_json::json!({"key":key,"method":method,"expires":chrono::Utc::now().timestamp()+seconds}),
+            &serde_json::json!({"key":key,"method":method,"filename":filename,"expires":chrono::Utc::now().timestamp()+seconds}),
         )?;
         let sealed = crate::crypto::seal_context(&self.ticket_key, &bytes, b"artifact-gateway/v1")?;
         let mut url = url::Url::parse(&format!(
@@ -124,10 +153,16 @@ impl Storage {
     pub fn download_url(&self, key: &str) -> Result<String> {
         self.ticket(key, "GET", 60)
     }
+    pub fn delivery_download_url(&self, key: &str, filename: &str) -> Result<String> {
+        self.named_ticket(key, "GET", 60, Some(filename))
+    }
     pub fn emissary_download_url(&self, key: &str) -> Result<String> {
         self.ticket(key, "GET", 900)
     }
     pub fn resolve_ticket(&self, ticket: &str, method: &str) -> Result<String> {
+        Ok(self.resolve_object_ticket(ticket, method)?.url)
+    }
+    pub fn resolve_object_ticket(&self, ticket: &str, method: &str) -> Result<ResolvedArtifact> {
         ensure!(ticket.len() <= 8192, "invalid artifact ticket");
         let bytes = crate::crypto::open_context(&self.ticket_key, ticket, b"artifact-gateway/v1")?;
         let value: serde_json::Value = serde_json::from_slice(&bytes)?;
@@ -142,8 +177,17 @@ impl Storage {
         let key = value["key"]
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("invalid artifact key"))?;
+        let filename = match value.get("filename") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(serde_json::Value::String(filename))
+                if expected == "GET" && valid_delivery_filename(filename) =>
+            {
+                Some(filename.clone())
+            }
+            _ => anyhow::bail!("invalid delivery filename"),
+        };
         let duration = Duration::from_secs(remaining as u64);
-        Ok(match method {
+        let url = match method {
             "PUT" => self
                 .bucket
                 .put_object(Some(&self.credentials), key)
@@ -158,7 +202,8 @@ impl Storage {
                 .sign(duration),
             _ => anyhow::bail!("artifact method not authorized"),
         }
-        .to_string())
+        .to_string();
+        Ok(ResolvedArtifact { url, filename })
     }
 
     pub async fn put(&self, key: &str, body: Vec<u8>) -> Result<()> {
@@ -309,6 +354,55 @@ mod tests {
         assert!(storage.resolve_ticket(&upload, "PUT").is_ok());
         assert!(storage.resolve_ticket(&upload, "GET").is_err());
         assert!(storage.resolve_ticket(&upload, "DELETE").is_err());
+    }
+    #[tokio::test]
+    async fn delivery_tickets_bind_the_filename_for_get_and_head() {
+        let storage = storage();
+        let filename = "sample-server-1.2.3-rc.1-linux-amd64.tar.gz";
+        let token = ticket(
+            &storage
+                .delivery_download_url("objects/signed", filename)
+                .unwrap(),
+        );
+        for method in ["GET", "HEAD"] {
+            let resolved = storage.resolve_object_ticket(&token, method).unwrap();
+            assert_eq!(resolved.filename.as_deref(), Some(filename));
+            assert_eq!(
+                url::Url::parse(&resolved.url).unwrap().path(),
+                "/artifacts/objects/signed"
+            );
+        }
+        assert!(storage.resolve_object_ticket(&token, "PUT").is_err());
+        for invalid in [
+            "",
+            "../object",
+            "a/b",
+            "a\\b",
+            "a\r\nX:bad",
+            "a\"b",
+            "中文.zip",
+        ] {
+            assert!(
+                storage
+                    .delivery_download_url("objects/signed", invalid)
+                    .is_err()
+            );
+        }
+        assert!(
+            storage
+                .delivery_download_url("object", &"a".repeat(255))
+                .is_ok()
+        );
+        assert!(
+            storage
+                .delivery_download_url("object", &"a".repeat(256))
+                .is_err()
+        );
+        assert!(
+            storage
+                .named_ticket("object", "PUT", 60, Some(filename))
+                .is_err()
+        );
     }
     #[tokio::test]
     async fn gateway_tickets_reject_expiry_tampering_and_other_keys() {

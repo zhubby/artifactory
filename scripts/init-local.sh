@@ -1,6 +1,6 @@
 #!/bin/sh
 # [INPUT]: 本机工作区与已有私有环境。
-# [OUTPUT]: 初始化开发 PKI、对象凭据和网关入口。
+# [OUTPUT]: 初始化固定初始账号、开发 PKI 和随机私有凭据。
 # [POS]: 已有环境保持原样，新环境通过 Pingora 访问控制台。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 set -eu
@@ -41,7 +41,7 @@ ARTIFACTORY_S3_REGION=us-east-1
 ARTIFACTORY_S3_ACCESS_KEY=artifactory-local
 ARTIFACTORY_S3_SECRET_KEY=$(openssl rand -hex 24)
 ARTIFACTORY_BOOTSTRAP_USERNAME=admin
-ARTIFACTORY_BOOTSTRAP_PASSWORD=$(openssl rand -hex 16)
+ARTIFACTORY_BOOTSTRAP_PASSWORD=123456
 EOF
 fi
-printf '%s\n' 'Development PKI and private environment prepared under .local/.' 'Read .local/env for the one-time bootstrap password; never commit this directory.'
+printf '%s\n' 'Development PKI and private environment prepared under .local/.' 'New installations use the initial account admin / 123456. Existing environments are preserved.'

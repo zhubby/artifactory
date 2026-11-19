@@ -8,5 +8,7 @@
 2026-11-15-workspace-hierarchy-kubernetes.md: 记录工作台、账号生命周期和持久资源验收。
 2026-11-15-monochrome-console-kubernetes.md: 记录重构 UI 的历史快照部署与页面验收。
 2026-11-16-managed-signing-kubernetes.md: 记录签名审查修复、密钥环、迁移恢复和现场验收。
+2026-11-19-module-boundaries-kubernetes.md: 记录模块改名后的独立实例、初始账号修正、验证与网络限制。
+2026-11-20-release-delivery-kubernetes.md: 记录 Release 实现、固定镜像与真实交付验收边界。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

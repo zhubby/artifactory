@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖含 Release 归属的构建列表。
+ * [OUTPUT]: 提供版本、目标修订与构建状态表。
+ * [POS]: 版本工作台与项目聚合共用的构建入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import { useUI } from "@/components/providers";
@@ -21,7 +27,7 @@ export function BuildTable({ builds }: { builds: Build[] }) {
             <th>{t("builds.project")}</th>
             <th>{t("builds.source")}</th>
             <th>{t("builds.buildStatus")}</th>
-            <th>{t("builds.publishStatus")}</th>
+            <th>{t("releaseFlow.contract")}</th>
             <th>{t("builds.duration")}</th>
             <th>{t("common.createdAt")}</th>
             <th />
@@ -32,7 +38,7 @@ export function BuildTable({ builds }: { builds: Build[] }) {
             <tr key={build.id}>
               <td>
                 <Link
-                  href={buildPath(build.project_slug, build.number)}
+                  href={buildPath(build.project_slug, build.number, build.release_id)}
                   className="font-medium hover:text-primary"
                 >
                   {build.project_name}
@@ -60,7 +66,7 @@ export function BuildTable({ builds }: { builds: Build[] }) {
                 <Status value={build.status} />
               </td>
               <td>
-                <Status value={build.publish_status} />
+                <span className="text-xs">{t("releaseFlow.revision", {number:build.spec_revision})}</span>
               </td>
               <td className="font-mono text-xs text-muted-foreground">
                 {elapsed(build.created_at, build.finished_at)}
@@ -71,7 +77,7 @@ export function BuildTable({ builds }: { builds: Build[] }) {
               <td>
                 <Link
                   className="inline-flex rounded p-1 text-muted-foreground hover:text-primary"
-                  href={buildPath(build.project_slug, build.number)}
+                  href={buildPath(build.project_slug, build.number, build.release_id)}
                   aria-label={t("builds.view", { id: build.number })}
                 >
                   <ArrowUpRight size={16} />

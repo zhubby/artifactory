@@ -38,12 +38,12 @@ pub fn start(state: AppState) {
             tokio::select! { _=notifications.coordination.stop.cancelled()=>break, _=tokio::time::sleep(Duration::from_secs(1))=>{} }
         }
     });
-    if std::env::var("ARTIFACTORY_RUNTIME_URL").is_ok() {
+    if std::env::var("ARTIFACTORY_PLANNING_URL").is_ok() {
         let bridge = state.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(error) = crate::runtime_bridge::deliver_intents(&bridge).await {
-                    tracing::warn!(%error,"runtime intent delivery deferred");
+                if let Err(error) = crate::planning_bridge::deliver_intents(&bridge).await {
+                    tracing::warn!(%error,"planning intent delivery deferred");
                 }
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
@@ -260,6 +260,14 @@ pub(crate) async fn assignment(state: &AppState, job: Uuid, attempt: Uuid) -> Re
     environment.insert("ARTIFACTORY_COMMIT_SHA".into(), context.commit_sha.clone());
     environment.insert("ARTIFACTORY_TARGET".into(), context.target.clone());
     environment.insert("ARTIFACTORY_BUILD_ID".into(), context.id.to_string());
+    environment.insert(
+        "ARTIFACTORY_RELEASE_ID".into(),
+        context.release_id.to_string(),
+    );
+    environment.insert(
+        "ARTIFACTORY_RELEASE_VERSION".into(),
+        context.release_version.clone(),
+    );
     let source = state
         .store
         .source_manifest(
@@ -310,9 +318,12 @@ pub async fn queue_revisions(state: &AppState) -> Result<()> {
 }
 
 pub async fn publish_build(state: &AppState, id: Uuid) -> Result<Uuid> {
-    let result = state.store.publish_transaction(id).await;
-    match &result {
-        Ok(release) => {
+    let release = state.store.build_release(id).await?;
+    crate::images::release_stopped(state, release).await?;
+    let release = state.store.publish_transaction(id).await?;
+    match crate::images::publish_release(state, release).await {
+        Ok(false) => Ok(release),
+        Ok(true) => {
             state
                 .audit(
                     "publisher",
@@ -321,13 +332,8 @@ pub async fn publish_build(state: &AppState, id: Uuid) -> Result<Uuid> {
                     json!({"build_id":id}),
                 )
                 .await?;
+            Ok(release)
         }
-        Err(error) => {
-            state
-                .store
-                .publication_failed(id, &error.to_string())
-                .await?;
-        }
+        Err(error) => Err(error),
     }
-    result
 }

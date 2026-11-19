@@ -6,7 +6,7 @@ use super::{BusinessAuthorizationRepository, TelemetryStore};
 use crate::Service;
 use anyhow::{Context, Result};
 use artifactory_database::{PoolSettings, connect as database, with_options};
-use artifactory_runtime_protocol::service;
+use artifactory_service_transport::service;
 use std::{env, time::Duration};
 
 // Share Control's version contract without granting this connection migration rights.

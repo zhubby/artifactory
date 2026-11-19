@@ -1,6 +1,9 @@
-//! Queries are bounded by time and row count and use an independent read pool.
+//! [INPUT]: 依赖服务认证、节点身份和独立遥测只读池。
+//! [OUTPUT]: 提供带时间范围与行数上限的遥测查询。
+//! [POS]: 遥测 HTTP 查询边界；写入路径使用独立连接池。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::Service;
-use artifactory_runtime_protocol::{
+use artifactory_service_transport::{
     error::{ApiError, Result},
     service,
 };
@@ -86,7 +89,7 @@ async fn purge(State(s): State<Service>, Json(v): Json<Purge>) -> Result<Json<Va
 
 async fn resources(
     State(s): State<Service>,
-    Json(nodes): Json<Vec<artifactory_telemetry_model::nodes::ResourceIdentity>>,
+    Json(nodes): Json<Vec<artifactory_emissary_protocol::nodes::ResourceIdentity>>,
 ) -> Result<Json<Value>> {
     if nodes.len() > 512 {
         return Err(ApiError::BadRequest(

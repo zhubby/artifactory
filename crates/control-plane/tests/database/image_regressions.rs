@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离数据库、镜像夹具与工作区租约。
-//! [OUTPUT]: 验证材料回收、失败诊断、日志角色隔离和发布快照。
+//! [OUTPUT]: 验证材料回收、失败诊断、日志隔离和 Release 分发快照。
 //! [POS]: 镜像审查问题的跨边界回归验收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
@@ -496,6 +496,7 @@ async fn external_history_keeps_public_registry_origin_after_revocation() {
         .await
         .unwrap();
     confirm_image(&store, id).await;
+    freeze_published_image(&db, build, id).await;
     let credential = Uuid::new_v4();
     sql::execute(&mut db.pool.clone(),"INSERT INTO image_credentials(id,tenant_id,project_id,name,kind,envelope,registry_origin) VALUES($1,'00000000-0000-0000-0000-000000000001',$2,'destination','registry','private-envelope','https://external.example.com:5443')",params![credential,project]).await.unwrap();
     let external = Uuid::new_v4();
@@ -568,10 +569,13 @@ async fn dispatch_deadline_keeps_complete_platforms_retryable() {
     let execution = store.image_execution(id).await.unwrap();
     assert_eq!(execution.status, "publish_failed");
     assert!(!execution.cancel_requested);
-    store
-        .request_image_publication(id, Uuid::new_v4(), None, None, &[], "retry")
-        .await
-        .unwrap();
+    assert!(
+        store
+            .request_image_publication(id, Uuid::new_v4(), None, None, &[], "retry")
+            .await
+            .is_err()
+    );
+    assert_eq!(execution.results.len(), 2);
     db.close().await;
 }
 
@@ -661,10 +665,18 @@ async fn draining_preserves_accepted_images_and_rejects_new_work() {
                 .await
                 .is_err()
         );
-        let input = serde_json::from_value(json!({"ref":"main"})).unwrap();
+        let input = serde_json::from_value(json!({"parameters":{}})).unwrap();
+        let release: Uuid = sql::scalar(
+            &mut db.pool.clone(),
+            "SELECT release_id FROM builds WHERE id=$1",
+            params![build],
+        )
+        .await
+        .unwrap();
         assert!(
             store
-                .create_build(project, owner, &input, "new build".into())
+                .for_auth(&auth)
+                .create_release_build(release, owner, &input)
                 .await
                 .is_err()
         );

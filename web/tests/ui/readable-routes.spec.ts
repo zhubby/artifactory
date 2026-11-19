@@ -1,12 +1,18 @@
+/**
+ * [INPUT]: 依赖 Playwright、slug 路由和租户 HTTP 夹具。
+ * [OUTPUT]: 验证可读路由、浏览历史及租户请求隔离。
+ * [POS]: 约束作用域导航与异步租户解析的回归入口。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { expect, test } from "@playwright/test";
-import { build, fixtureAPI, project, tenantId } from "./fixtures";
+import { build, fixtureAPI, project, release, tenantId } from "./fixtures";
 
 const tenantSlug = "build-team";
 const projectSlug = "desktop-client";
 const buildNumber = 128;
 const home = `/tenants/${tenantSlug}`;
 const projectURL = `${home}/projects/${projectSlug}`;
-const buildURL = `${projectURL}/builds/${buildNumber}`;
+const buildURL = `${projectURL}/releases/${release.id}/builds/${buildNumber}`;
 const tenant = {
   id: tenantId,
   slug: tenantSlug,
@@ -91,6 +97,7 @@ test("obsolete and malformed page routes return 404 without redirects", async ({
     `/t/${tenantId}`,
     "/builds/build-main",
     `${home}/builds/build-main`,
+    `${projectURL}/builds/new`,
     `${projectURL}/builds/0`,
     `${projectURL}/builds/01`,
     `${projectURL}/builds/-1`,
@@ -159,7 +166,7 @@ test("a delayed tenant lookup cannot send requests after switching tenants", asy
   const finished = page.waitForResponse(`**/api/v1/tenants/${tenantSlug}`);
   release();
   await finished;
-  // Give the released fetch time to consume its body and attempt dependent requests.
+  // 等待旧响应读取完成并触发后续请求。
   await page.waitForTimeout(150);
   await expect(page).toHaveURL(/\/tenants\/beta-team$/);
   expect(sent.length).toBeGreaterThan(0);

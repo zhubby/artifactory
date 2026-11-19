@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖服务端语言、系统动效偏好、主题和账户 Provider。
+ * [OUTPUT]: 提供本地化、主题及默认开启的动画状态。
+ * [POS]: 根布局的客户端上下文边界；动效仅适配系统设置，不读取浏览器动效开关。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import { NextIntlClientProvider, useLocale, useTranslations } from "next-intl";
@@ -13,7 +19,6 @@ import {
 import zh from "@/messages/zh-CN.json";
 import en from "@/messages/en.json";
 import {
-  effectsStorage,
   localeCookie,
   themeStorage,
   type Locale,
@@ -24,11 +29,8 @@ import { AccountProvider } from "@/components/account";
 const PreferencesContext = createContext<{
   locale: Locale;
   setLocale: (value: Locale) => void;
-  effects: boolean;
-  setEffects: (value: boolean) => void;
   motion: boolean;
   ready: boolean;
-  reduced: boolean;
 } | null>(null);
 
 function subscribeReduced(callback: () => void) {
@@ -45,7 +47,6 @@ export function Providers({
   children: ReactNode;
 }) {
   const [locale, updateLocale] = useState(initialLocale);
-  const [effects, updateEffects] = useState(true);
   const [ready, setReady] = useState(false);
   const reduced = useSyncExternalStore(
     subscribeReduced,
@@ -53,17 +54,7 @@ export function Providers({
     () => true,
   );
   useEffect(() => {
-    try {
-      updateEffects(localStorage.getItem(effectsStorage) !== "off");
-    } catch {
-      /* Preferences still work when persistence is unavailable. */
-    }
     setReady(true);
-    const sync = (event: StorageEvent) => {
-      if (event.key === effectsStorage) updateEffects(event.newValue !== "off");
-    };
-    window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
   }, []);
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -72,7 +63,7 @@ export function Providers({
         ? "Artifactory · Build console"
         : "Artifactory · 构建控制台";
   }, [locale]);
-  const motion = ready && effects && !reduced;
+  const motion = ready && !reduced;
   useEffect(() => {
     document.documentElement.dataset.motion = motion ? "on" : "off";
   }, [motion]);
@@ -82,14 +73,6 @@ export function Providers({
       document.cookie = `${localeCookie}=${value}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === "https:" ? "; Secure" : ""}`;
     } catch {
       /* Keep the in-memory locale if cookie access is restricted. */
-    }
-  }
-  function setEffects(value: boolean) {
-    updateEffects(value);
-    try {
-      localStorage.setItem(effectsStorage, value ? "on" : "off");
-    } catch {
-      /* Keep the in-memory choice. */
     }
   }
   return (
@@ -104,11 +87,8 @@ export function Providers({
         value={{
           locale,
           setLocale,
-          effects,
-          setEffects,
           motion,
           ready,
-          reduced,
         }}
       >
         <NextIntlClientProvider

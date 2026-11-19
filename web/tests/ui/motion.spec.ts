@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证弹窗入场、布局位置和减少动效设置。
+ * [OUTPUT]: 验证默认动效、系统减少动态适配及无动效开关的偏好界面。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -104,20 +104,23 @@ test("enabling reduced motion during an entrance leaves the dialog centered and 
   await expect(trigger).toBeFocused();
 });
 
-test("reduced motion and the saved manual preference disable interface transitions", async ({ page }) => {
+test("legacy manual preferences are ignored while system reduced motion preserves drawer layout", async ({ page }) => {
   await fixtureAPI(page);
   await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.addInitScript(() => localStorage.setItem("artifactory-effects", "off"));
   await page.goto(tenantURL("/"));
   await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
   await expect(page.locator("canvas,.atmosphere,.spotlight-card")).toHaveCount(0);
+  await openPreferences(page);
+  await expect(page.getByRole("button", { name: /界面动效|Turn (on|off) animations/ })).toHaveCount(0);
+  await expect(page.getByText(/减少动态效果|reduced motion/i)).toHaveCount(0);
+  await closePreferences(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
   await expect(page.locator(".nav-item").first()).toHaveCSS("transition-duration", "1e-05s");
-  await page.emulateMedia({ reducedMotion: "no-preference" });
   await openPreferences(page);
-  await page.getByRole("button", { name: "关闭界面动效", exact: true }).click();
+  await expect(page.getByText(/减少动态效果|reduced motion/i)).toHaveCount(0);
   await closePreferences(page);
-  await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
   await page.goto(tenantURL("/nodes"));
   await page.getByRole("button", { name: "查看 Mac Studio 的详情", exact: true }).click();
   const drawer = page.locator(".drawer-panel");
@@ -128,10 +131,10 @@ test("reduced motion and the saved manual preference disable interface transitio
   expect(geometry.animation).toBe("none");
   expect(Math.abs(geometry.right - geometry.viewport)).toBeLessThanOrEqual(1);
   await page.keyboard.press("Escape");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
   await page.reload();
-  await openPreferences(page);
-  await expect(page.getByRole("button", { name: "开启界面动效", exact: true })).toHaveAttribute("aria-pressed", "false");
-  await closePreferences(page);
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
   await expect(page.locator("canvas")).toHaveCount(0);
 });
 
@@ -141,11 +144,18 @@ test("the login form works without graphics contexts and retains its draft acros
   await page.addInitScript(() => {
     HTMLCanvasElement.prototype.getContext = (() => { throw new Error("Graphics are unavailable"); }) as typeof HTMLCanvasElement.prototype.getContext;
   });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/login");
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
   await expect(page.locator("canvas,.atmosphere")).toHaveCount(0);
   await page.getByRole("textbox", { name: "用户名", exact: true }).fill("retained-draft");
   await openPreferences(page);
+  await expect(page.getByRole("button", { name: /界面动效|Turn (on|off) animations/ })).toHaveCount(0);
   await page.getByRole("combobox", { name: "界面语言", exact: true }).selectOption("en");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
+  await expect(page.getByRole("button", { name: /界面动效|Turn (on|off) animations/ })).toHaveCount(0);
+  await expect(page.getByText(/减少动态效果|reduced motion/i)).toHaveCount(0);
   await closePreferences(page);
   await expect(page.getByRole("textbox", { name: "Username", exact: true })).toHaveValue("retained-draft");
   expect(failures).toEqual([]);

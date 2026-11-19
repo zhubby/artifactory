@@ -118,7 +118,7 @@ impl Fixture {
         )
         .await
         .unwrap();
-        sql::execute(&mut self.db.pool.clone(),"INSERT INTO builds(id,project_id,requested_ref,source_repository_url,status) VALUES($1,$2,'main','https://example.com/repo','running')",params![build,self.project]).await.unwrap();
+        sql::execute(&mut self.db.pool.clone(),"WITH fixture_release AS (INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets,source_resolution_id) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-',''),'main','test','[]','{}',$1) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,source_repository_url,status,release_id,spec_revision,release_version) VALUES($1,$2,'main','https://example.com/repo','running', (SELECT id FROM fixture_release),1,(SELECT version FROM fixture_release))",params![build,self.project]).await.unwrap();
         sql::execute(&mut self.db.pool.clone(),"INSERT INTO jobs(id,build_id,target,status,target_config) VALUES($1,$2,'android','running',$3)",params![job,build,json!({"os":"linux","arch":"amd64","application_platform":"android","signing_profiles":["managed:release"],"signing_outputs":[{"path":"dist/app.apk"}],"steps":[{"name":"build","phase":"build","run":"build"},{"name":"sign","phase":"sign","run":"sign"},{"name":"verify","phase":"verify","run":"verify"}],"artifacts":["dist/app.apk"]})]).await.unwrap();
         sql::execute(&mut self.db.pool.clone(),"INSERT INTO attempts(id,job_id,node_id,lease_token,lease_expires_at,status,command_id) VALUES($1,$2,$3,'lease',now()+interval '90 seconds','running',$4)",params![attempt,job,node,Uuid::new_v4()]).await.unwrap();
         let session = sql::scalar(

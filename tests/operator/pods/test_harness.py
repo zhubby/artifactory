@@ -1,4 +1,4 @@
-"""[INPUT]: 专用 kind 目标与 Runtime 替身契约。
+"""[INPUT]: 专用 kind 目标与 规划协调器替身契约。
 [OUTPUT]: 验证版本下限、故障围栏和原始执行身份。
 [POS]: 生命周期 harness 的离线安全与身份测试。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -8,7 +8,7 @@ from pathlib import Path
 import tempfile
 from unittest.mock import Mock
 from run import Harness, kind_target, namespace_name, require_kubernetes_minimum
-from runtime import Runtime
+from coordinator import Coordinator
 
 
 class HarnessTests(unittest.TestCase):
@@ -37,9 +37,9 @@ class HarnessTests(unittest.TestCase):
     def test_failed_node_restoration_still_stops_helpers_and_writes_evidence(self):
         harness = object.__new__(Harness)
         harness.restore_node = Mock(side_effect=RuntimeError('node unavailable'))
-        harness.runtime = Mock()
-        harness.runtime.snapshot.return_value = []
-        harness.processes = {'agent': Mock(), 'image': Mock()}
+        harness.coordinator = Mock()
+        harness.coordinator.snapshot.return_value = []
+        harness.processes = {'planning': Mock(), 'image': Mock()}
         harness.stop = Mock(side_effect=[RuntimeError('agent stop failed'), None])
         harness.logs = [Mock()]
         harness.node, harness.frozen_pid, harness.kubelet_stopped = 'fixture-control-plane', 42, True
@@ -50,7 +50,7 @@ class HarnessTests(unittest.TestCase):
                 harness.finish()
             self.assertIn('node unavailable', (harness.out / 'evidence.json').read_text())
             self.assertEqual(harness.stop.call_count, 2)
-            harness.runtime.close.assert_called_once()
+            harness.coordinator.close.assert_called_once()
             harness.logs[0].close.assert_called_once()
             self.assertEqual(harness.evidence['recovery_identity']['frozen_pid'], 42)
 
@@ -80,62 +80,62 @@ class HarnessTests(unittest.TestCase):
                 kind_target(*args)
 
     def test_failure_requires_registered_execution_identity(self):
-        runtime = Runtime()
+        coordinator = Coordinator()
         try:
-            runtime.add('run')
+            coordinator.add('run')
             execution = {'run_id': 'run', 'generation': 1, 'uid': 'pod-uid', 'name': 'pod', 'namespace': 'test'}
-            runtime.request('/v1/register', execution)
+            coordinator.request('/v1/register', execution)
             with self.assertRaises(ValueError):
-                runtime.request('/v1/execution-failed', {'execution': dict(execution, uid='replacement')})
-            response = runtime.request('/v1/execution-failed', {'execution': execution, 'reason': {'kind': 'pod_failed'}})
+                coordinator.request('/v1/execution-failed', {'execution': dict(execution, uid='replacement')})
+            response = coordinator.request('/v1/execution-failed', {'execution': execution, 'reason': {'kind': 'pod_failed'}})
             self.assertEqual(response, {'status': 'failed', 'pending': False})
-            self.assertEqual(runtime.snapshot()[-1]['body']['execution'], execution)
+            self.assertEqual(coordinator.snapshot()[-1]['body']['execution'], execution)
         finally:
-            runtime.close()
+            coordinator.close()
 
     def test_runtime_fences_generation_and_preserves_terminal_or_pending(self):
-        runtime = Runtime()
+        coordinator = Coordinator()
         try:
-            runtime.add('run')
+            coordinator.add('run')
             execution = {'run_id': 'run', 'generation': 1, 'uid': 'pod', 'name': 'pod', 'namespace': 'fixture'}
             with self.assertRaises(ValueError):
-                runtime.request('/v1/register', dict(execution, generation=999))
+                coordinator.request('/v1/register', dict(execution, generation=999))
             with self.assertRaises(ValueError):
-                runtime.request('/v1/register', {'run_id': 'run', 'generation': 1})
-            runtime.request('/v1/register', execution)
-            runtime.runs['run']['status'] = 'running'
-            runtime.runs['run']['lifecycle']['pending'] = True
-            response = runtime.request('/v1/execution-failed', {'execution': execution, 'reason': {'kind': 'worker_exit', 'exit_code': 23}})
+                coordinator.request('/v1/register', {'run_id': 'run', 'generation': 1})
+            coordinator.request('/v1/register', execution)
+            coordinator.runs['run']['status'] = 'running'
+            coordinator.runs['run']['lifecycle']['pending'] = True
+            response = coordinator.request('/v1/execution-failed', {'execution': execution, 'reason': {'kind': 'worker_exit', 'exit_code': 23}})
             self.assertEqual(response['status'], 'running')
             self.assertTrue(response['pending'])
-            runtime.cancel('run')
-            response = runtime.request('/v1/execution-lost', {'run_id': 'run', 'generation': 1,
+            coordinator.cancel('run')
+            response = coordinator.request('/v1/execution-lost', {'run_id': 'run', 'generation': 1,
                                         'execution': execution, 'reason': 'resource_deleted'})
             self.assertEqual(response['status'], 'canceled')
-            self.assertFalse(any(e['path'] == '/v1/execution-failed' for e in runtime.snapshot()))
+            self.assertFalse(any(e['path'] == '/v1/execution-failed' for e in coordinator.snapshot()))
         finally:
-            runtime.close()
+            coordinator.close()
 
     def test_runtime_retries_missing_pod_and_fails_deleted_resource(self):
-        runtime = Runtime()
+        coordinator = Coordinator()
         try:
-            runtime.add('run')
+            coordinator.add('run')
             execution = {'run_id': 'run', 'generation': 1, 'uid': 'pod', 'name': 'pod', 'namespace': 'fixture'}
-            runtime.request('/v1/register', execution)
-            response = runtime.request('/v1/execution-lost', {'run_id': 'run', 'generation': 1,
+            coordinator.request('/v1/register', execution)
+            response = coordinator.request('/v1/execution-lost', {'run_id': 'run', 'generation': 1,
                                         'execution': execution, 'reason': 'pod_missing'})
             self.assertEqual(response, {'status': 'queued', 'pending': False, 'generation': 2})
-            self.assertNotIn('execution', runtime.runs['run'])
+            self.assertNotIn('execution', coordinator.runs['run'])
             with self.assertRaises(ValueError):
-                runtime.request('/v1/register', execution)
+                coordinator.request('/v1/register', execution)
             with self.assertRaises(ValueError):
-                runtime.request('/v1/execution-failed', {'execution': execution, 'reason': {'kind': 'pod_failed'}})
-            runtime.runs['run']['status'] = 'provisioning'
-            response = runtime.request('/v1/execution-lost', {'run_id': 'run', 'generation': 2,
+                coordinator.request('/v1/execution-failed', {'execution': execution, 'reason': {'kind': 'pod_failed'}})
+            coordinator.runs['run']['status'] = 'provisioning'
+            response = coordinator.request('/v1/execution-lost', {'run_id': 'run', 'generation': 2,
                                         'execution': None, 'reason': 'resource_deleted'})
             self.assertEqual(response['status'], 'failed')
         finally:
-            runtime.close()
+            coordinator.close()
 
 
 if __name__ == '__main__':

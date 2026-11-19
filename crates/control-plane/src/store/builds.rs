@@ -1,7 +1,7 @@
 //! ```text
 //! [INPUT]: 依赖租户构建、镜像准入和执行结果索引。
-//! [OUTPUT]: 保存构建准入快照并提供原生与镜像 Release。
-//! [POS]: 构建创建与结果查询边界；对象正文由接口层读取。
+//! [OUTPUT]: 读取 Release 构建快照、正式交付名与执行结果。
+//! [POS]: 构建结果查询与失败任务重试边界；对象正文由接口层读取。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! ```
 use super::ControlStore;
@@ -12,12 +12,13 @@ use crate::{
 };
 use artifactory_database::{params, sql};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use toasty::stmt::Type;
 
 use uuid::Uuid;
 
 pub struct ArtifactDownload {
+    pub delivery_filename: Option<String>,
     pub object_key: String,
     pub project_id: Uuid,
 }
@@ -27,27 +28,6 @@ pub struct LogChunk {
     pub attempt_id: Uuid,
     pub step: String,
     pub object_key: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BuildInput {
-    #[serde(rename = "ref")]
-    pub(crate) reference: String,
-    #[serde(default = "empty_object")]
-    pub(crate) parameters: Value,
-    #[serde(default)]
-    pub(crate) targets: Vec<String>,
-    pub(crate) release_version: Option<String>,
-    pub(crate) goal: Option<String>,
-    #[serde(default = "empty_array")]
-    pub(crate) target_requirements: Value,
-}
-fn empty_array() -> Value {
-    json!([])
-}
-fn empty_object() -> Value {
-    json!({})
 }
 
 impl ControlStore {
@@ -65,29 +45,6 @@ impl ControlStore {
         Ok(sql::scalar(&mut self.pool.clone(), "SELECT jsonb_build_object('id',b.id,'number',b.number,'project_slug',p.slug) FROM builds b JOIN projects p ON p.id=b.project_id WHERE b.id=$1 AND b.tenant_id=$2", params![id,self.tenant()?]).await?)
     }
 
-    pub async fn create_build(
-        &self,
-        project: Uuid,
-        actor: Uuid,
-        input: &BuildInput,
-        goal: String,
-    ) -> Result<Uuid> {
-        let project_row=sql::record(&mut self.pool.clone(), "SELECT tenant_id,model_profile_id,pool_ids,signing_profiles,build_context,source_credentials FROM projects WHERE id=$1", params![project], &[("tenant_id",Type::Uuid),("model_profile_id", Type::Uuid),("pool_ids", Type::List(Box::new(Type::Uuid))),("signing_profiles", Type::List(Box::new(Type::String))),("build_context", Type::String),("source_credentials", Type::String)]).await?;
-        let model = self
-            .model_snapshot(
-                project_row.decode("model_profile_id")?,
-                project_row.decode("tenant_id")?,
-            )
-            .await?;
-        let context = json!({"image_builds_enabled":crate::images::enabled(),"placement_version":if std::env::var("ARTIFACTORY_AI_PLACEMENT").is_ok_and(|v|v=="1" || v=="true") {1}else{0},"pool_ids":project_row.decode::<Vec<Uuid>>("pool_ids")?,"signing_profiles":project_row.decode::<Vec<String>>("signing_profiles")?,"build_context":project_row.decode::<String>("build_context")?,"source_credentials":project_row.decode::<Value>("source_credentials")?});
-        let id = Uuid::new_v4();
-        let created=sql::execute(&mut self.pool.clone(), "INSERT INTO builds(id,project_id,requested_ref,parameters,selected_targets,release_version,publish_status,requested_by,source_repository_url,source_credential_id,goal,target_requirements,planning_context,model_config_snapshot) SELECT $1,id,$3,$4,$5,$6,$7,$8,repository_url,credential_id,$9,$10,$11,$12 FROM projects WHERE id=$2", params![id, project, &input.reference, &input.parameters, &input.targets, &input.release_version, if input.release_version.is_some(){"pending"}else{"not_requested"}, actor, goal, &input.target_requirements, context, model]).await?;
-        if created != 1 {
-            return Err(ApiError::NotFound);
-        }
-        Ok(id)
-    }
-
     pub async fn builds(
         &self,
         project: Option<Uuid>,
@@ -101,15 +58,7 @@ impl ControlStore {
         project: Option<Uuid>,
         visible: Option<Vec<Uuid>>,
     ) -> Result<Vec<dto::ArtifactSummary>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(ar)-'object_key') || jsonb_build_object('target',j.target,'build_id',b.id,'project_name',p.name,'project_id',p.id) FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=b.project_id WHERE ($1::uuid IS NULL OR p.id=$1) AND ($2::uuid[] IS NULL OR p.id=ANY($2)) ORDER BY ar.created_at DESC LIMIT 100", params![project, visible]).await?)
-    }
-
-    pub async fn releases(
-        &self,
-        project: Option<Uuid>,
-        visible: Option<Vec<Uuid>>,
-    ) -> Result<Vec<dto::ReleaseSummary>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(r) || jsonb_build_object('project_name',p.name,'artifact_count',(SELECT count(*) FROM release_artifacts ra WHERE ra.release_id=r.id)+(SELECT count(*) FROM release_images ri WHERE ri.release_id=r.id)) FROM releases r JOIN projects p ON p.id=r.project_id WHERE ($1::uuid IS NULL OR p.id=$1) AND ($2::uuid[] IS NULL OR p.id=ANY($2)) ORDER BY r.created_at DESC LIMIT 100", params![project, visible]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(ar)-'object_key') || jsonb_build_object('target',j.target,'build_id',b.id,'project_name',p.name,'project_id',p.id,'release_id',b.release_id,'release_version',b.release_version,'delivery_filename',(SELECT ra.delivery_filename FROM release_artifacts ra JOIN releases r ON r.id=ra.release_id WHERE ra.artifact_id=ar.id AND r.status='published' LIMIT 1)) FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=b.project_id WHERE ($1::uuid IS NULL OR p.id=$1) AND ($2::uuid[] IS NULL OR p.id=ANY($2)) ORDER BY ar.created_at DESC LIMIT 100", params![project, visible]).await?)
     }
 
     pub async fn build_project(&self, id: Uuid) -> Result<Uuid> {
@@ -124,7 +73,7 @@ impl ControlStore {
     pub async fn build_detail(&self, id: Uuid) -> Result<dto::BuildDetail> {
         let build:dto::BuildEnvelope=sql::scalar(&mut self.pool.clone(), "SELECT (to_jsonb(b)-'model_config_snapshot') || jsonb_build_object('project_name',p.name,'project_slug',p.slug) FROM builds b JOIN projects p ON p.id=b.project_id WHERE b.id=$1", params![id]).await?;
         let jobs:Vec<dto::Job>=sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(j) || jsonb_build_object('placement',(SELECT to_jsonb(p)-'job_id' FROM job_placements p WHERE p.job_id=j.id),'attempts',(SELECT coalesce(jsonb_agg((to_jsonb(a)-'lease_token'-'command_id') || jsonb_build_object('node_name',n.name,'steps',(SELECT coalesce(jsonb_agg(to_jsonb(s) ORDER BY s.step_index),'[]') FROM step_runs s WHERE s.attempt_id=a.id)) ORDER BY a.created_at),'[]') FROM attempts a JOIN nodes n ON n.id=a.node_id WHERE a.job_id=j.id)) FROM jobs j WHERE j.build_id=$1 ORDER BY j.target", params![id]).await?;
-        let artifacts:Vec<dto::BuildArtifact>=sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(ar)-'object_key') || jsonb_build_object('target',j.target,'attempt_status',a.status) FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id WHERE j.build_id=$1 ORDER BY ar.created_at", params![id]).await?;
+        let artifacts:Vec<dto::BuildArtifact>=sql::scalars(&mut self.pool.clone(), "SELECT (to_jsonb(ar)-'object_key') || jsonb_build_object('target',j.target,'attempt_status',a.status,'release_id',b.release_id,'release_version',b.release_version) FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE j.build_id=$1 ORDER BY ar.created_at", params![id]).await?;
         let publish_attempts = sql::scalars::<dto::PublishAttempt>(
             &mut self.pool.clone(),
             "SELECT to_jsonb(p) FROM publish_attempts p WHERE build_id=$1 ORDER BY created_at DESC",
@@ -181,12 +130,24 @@ impl ControlStore {
     pub async fn retry_job(&self, id: Uuid, auth: &Auth) -> Result<()> {
         let mut transaction_db = self.pool.clone();
         let mut transaction = transaction_db.transaction().await?;
-        sql::execute(&mut transaction,"SELECT require_active_project(b.project_id) FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1",params![id]).await?;
-        let row=sql::record(&mut transaction, "SELECT j.status,j.target_config->>'executor' AS executor,b.status AS build_status,b.id,b.project_id,b.release_version,EXISTS(SELECT 1 FROM releases r WHERE r.build_id=b.id) AS published FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1 FOR UPDATE OF j,b", params![id], &[("status", Type::String),("executor", Type::String),("build_status", Type::String),("id", Type::Uuid),("project_id", Type::Uuid),("release_version", Type::String),("published", Type::Bool)]).await?;
-        auth.project(row.decode("project_id")?, "build")?;
-        if row.decode::<Option<String>>("release_version")?.is_some() {
-            auth.project(row.decode("project_id")?, "release")?;
+        let release: Uuid = sql::scalar(
+            &mut transaction,
+            "SELECT b.release_id FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1",
+            params![id],
+        )
+        .await?;
+        let draft: Option<Uuid> = sql::optional_scalar(
+            &mut transaction,
+            "SELECT id FROM releases WHERE id=$1 AND status='draft' FOR UPDATE",
+            params![release],
+        )
+        .await?;
+        if draft.is_none() {
+            return Err(ApiError::Conflict("release is sealed".into()));
         }
+        sql::execute(&mut transaction,"SELECT require_active_project(b.project_id) FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1",params![id]).await?;
+        let row=sql::record(&mut transaction, "SELECT j.status,j.target_config->>'executor' AS executor,b.status AS build_status,b.id,b.project_id,b.release_version,EXISTS(SELECT 1 FROM releases r WHERE r.id=b.release_id AND (r.status<>'draft' OR r.spec_revision<>b.spec_revision)) AS published FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1 FOR UPDATE OF j,b", params![id], &[("status", Type::String),("executor", Type::String),("build_status", Type::String),("id", Type::Uuid),("project_id", Type::Uuid),("release_version", Type::String),("published", Type::Bool)]).await?;
+        auth.project(row.decode("project_id")?, "build")?;
         if row.decode::<Option<String>>("executor")?.as_deref() == Some("buildkit")
             && !crate::images::enabled()
         {
@@ -207,72 +168,26 @@ impl ControlStore {
             params![id],
         )
         .await?;
-        sql::execute(&mut transaction, "UPDATE builds SET status='queued',cancel_requested=false,finished_at=NULL,publish_status=CASE WHEN release_version IS NULL THEN 'not_requested' ELSE 'pending' END,publish_error=NULL WHERE id=$1", params![row.decode::<Uuid>("id")?]).await?;
-        transaction.commit().await?;
-        Ok(())
-    }
-
-    pub async fn request_publication(&self, id: Uuid, version: Option<String>) -> Result<()> {
-        let mut transaction_db = self.pool.clone();
-        let mut transaction = transaction_db.transaction().await?;
-        sql::execute(
-            &mut transaction,
-            "SELECT require_active_project(project_id) FROM builds WHERE id=$1",
-            params![id],
-        )
-        .await?;
-        let row = sql::record(
-            &mut transaction,
-            "SELECT status,release_version FROM builds WHERE id=$1 FOR UPDATE",
-            params![id],
-            &[("status", Type::String), ("release_version", Type::String)],
-        )
-        .await?;
-        if row.decode::<String>("status")? != "succeeded" {
-            return Err(ApiError::Conflict(
-                "build must succeed before publication".into(),
-            ));
-        }
-        let current: Option<String> = row.decode("release_version")?;
-        if let Some(version) = version {
-            crate::build::validate_release_version(&version)?;
-            if current.as_ref().is_some_and(|current| current != &version) {
-                return Err(ApiError::Conflict(
-                    "release version is immutable for this build".into(),
-                ));
-            }
-            sql::execute(
-                &mut transaction,
-                "UPDATE builds SET release_version=$2 WHERE id=$1",
-                params![id, version],
-            )
-            .await?;
-        } else if current.is_none() {
-            return Err(ApiError::BadRequest("version is required".into()));
-        }
+        sql::execute(&mut transaction, "UPDATE builds SET status='queued',cancel_requested=false,finished_at=NULL,publish_status='not_requested',publish_error=NULL WHERE id=$1", params![row.decode::<Uuid>("id")?]).await?;
         transaction.commit().await?;
         Ok(())
     }
 
     pub async fn artifact_download(&self, id: Uuid) -> Result<ArtifactDownload> {
-        let row=sql::record(&mut self.pool.clone(), "SELECT ar.object_key,b.project_id FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE ar.id=$1", params![id], &[("object_key", Type::String),("project_id", Type::Uuid)]).await?;
+        let row=sql::record(&mut self.pool.clone(), "SELECT ar.object_key,b.project_id,(SELECT ra.delivery_filename FROM release_artifacts ra JOIN releases r ON r.id=ra.release_id WHERE ra.artifact_id=ar.id AND r.status='published' LIMIT 1) AS delivery_filename FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE ar.id=$1", params![id], &[("object_key", Type::String),("project_id", Type::Uuid),("delivery_filename",Type::String)]).await?;
         Ok(ArtifactDownload {
+            delivery_filename: row.decode("delivery_filename")?,
             object_key: row.decode("object_key")?,
             project_id: row.decode("project_id")?,
         })
     }
 
-    pub async fn release(&self, id: Uuid) -> Result<dto::Release> {
-        let release:dto::Release=sql::scalar(&mut self.pool.clone(), "SELECT to_jsonb(r) || jsonb_build_object('project_name',p.name,'project_slug',p.slug,'build_number',b.number) FROM releases r JOIN projects p ON p.id=r.project_id JOIN builds b ON b.id=r.build_id WHERE r.id=$1", params![id]).await?;
-        Ok(release)
-    }
-
     pub async fn release_artifacts(&self, id: Uuid) -> Result<Vec<dto::ReleaseArtifact>> {
-        Ok(sql::scalars::<dto::ReleaseArtifact>(&mut self.pool.clone(), "SELECT (to_jsonb(ar)-'object_key') || jsonb_build_object('target',j.target) FROM release_artifacts ra JOIN artifacts ar ON ar.id=ra.artifact_id JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id WHERE ra.release_id=$1 ORDER BY j.target,ar.path", params![id]).await?)
+        Ok(sql::scalars::<dto::ReleaseArtifact>(&mut self.pool.clone(), "SELECT (to_jsonb(ar)-'object_key') || jsonb_build_object('target',j.target,'delivery_filename',ra.delivery_filename,'release_id',ra.release_id,'release_version',r.version) FROM release_artifacts ra JOIN releases r ON r.id=ra.release_id JOIN artifacts ar ON ar.id=ra.artifact_id JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id WHERE ra.release_id=$1 ORDER BY j.target,ar.path", params![id]).await?)
     }
 
     pub async fn release_images(&self, id: Uuid) -> Result<Vec<Value>> {
-        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(i) || jsonb_build_object('target',j.target,'name',e.spec->>'name') FROM release_images r JOIN image_artifacts i ON i.id=r.image_id JOIN jobs j ON j.id=i.job_id JOIN image_executions e ON e.id=i.execution_id WHERE r.release_id=$1 ORDER BY j.target", params![id]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT to_jsonb(i) || jsonb_build_object('target',j.target,'name',e.spec->>'name','execution_id',e.id,'repository',r.repository,'version',r.version,'release_id',r.release_id,'release_version',r.version,'digest',r.root_digest,'root_digest',r.root_digest,'manifest_digests',r.manifest_digests) FROM release_images r JOIN image_artifacts i ON i.id=r.image_id JOIN jobs j ON j.id=i.job_id JOIN image_executions e ON e.id=i.execution_id WHERE r.release_id=$1 ORDER BY j.target", params![id]).await?)
     }
 
     pub async fn log_chunks(&self, id: Uuid, cursor: i64) -> Result<Vec<LogChunk>> {

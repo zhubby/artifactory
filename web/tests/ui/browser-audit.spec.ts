@@ -1,11 +1,11 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证browser-audit页面行为。
+ * [OUTPUT]: 验证侧栏设置切换的草稿保护与退出重试。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { expect, test } from "@playwright/test";
-import { fixtureAPI, project, tenantURL } from "./fixtures";
+import { fixtureAPI, project, tenantURL, openNavigation } from "./fixtures";
 
 test("cancelling project configuration restores the saved fields and clears the leave warning", async ({ page }) => {
   await fixtureAPI(page);
@@ -26,6 +26,7 @@ test("cancelling project configuration restores the saved fields and clears the 
     warnings += 1;
     await dialog.dismiss();
   });
+  await openNavigation(page);
   await page.getByRole("link", { name: "成员与邀请", exact: true }).click();
   await expect(page).toHaveURL(tenantURL(`/projects/${project.slug}/settings/members`));
   expect(warnings).toBe(0);
@@ -45,21 +46,29 @@ test("submodule credential additions and removals protect unsaved edits during n
     await dialog.dismiss();
   };
   page.on("dialog", reject);
+  await openNavigation(page);
   await page.getByRole("link", { name: "基本信息", exact: true }).click();
   await expect.poll(() => warnings).toBe(1);
   await expect(page).toHaveURL(resources);
+  if (await page.getByRole("dialog", { name: "主导航", exact: true }).isVisible())
+    await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "移除", exact: true })).toHaveCount(0);
   page.off("dialog", reject);
   page.once("dialog", dialog => dialog.accept());
+  await openNavigation(page);
   await page.getByRole("link", { name: "基本信息", exact: true }).click();
   await expect(page).toHaveURL(tenantURL(`/projects/${project.slug}/settings/general`));
-  await page.getByRole("link", { name: "共享资源", exact: true }).click();
+  await openNavigation(page);
+  await page.getByRole("link", { name: "资源与凭据", exact: true }).click();
   await expect(page.getByRole("button", { name: "移除", exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: "添加关联", exact: true }).click();
   page.on("dialog", reject);
+  await openNavigation(page);
   await page.getByRole("link", { name: "基本信息", exact: true }).click();
   await expect.poll(() => warnings).toBe(2);
   await expect(page).toHaveURL(resources);
+  if (await page.getByRole("dialog", { name: "主导航", exact: true }).isVisible())
+    await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "移除", exact: true })).toHaveCount(2);
 });
 

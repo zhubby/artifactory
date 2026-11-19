@@ -30,10 +30,10 @@ jobs:
           helm lint charts/artifactory --strict -f charts/artifactory/values-kind.yaml
           helm lint charts/artifactory --strict -f charts/artifactory/values-ha.yaml
           helm lint charts/artifactory --strict -f charts/artifactory/values-trial.yaml
-          helm lint charts/artifactory-agent-operator --strict
+          helm lint charts/artifactory-planning-operator --strict
           helm lint charts/artifactory-image-operator --strict
           helm lint charts/artifactory-registry --strict
-          helm template native charts/artifactory-agent-operator > /dev/null
+          helm template native charts/artifactory-planning-operator > /dev/null
           helm template images charts/artifactory-image-operator > /dev/null
           helm template registry charts/artifactory-registry > /dev/null
           helm template images charts/artifactory --set imageBuilds.enabled=true,ingress.enabled=true > /dev/null
@@ -69,7 +69,7 @@ jobs:
           } >> "$GITHUB_ENV"
       - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler openssh-server postgresql-client rclone git-lfs cmake pkg-config && sudo mkdir -p /run/sshd
       - run: npm ci && npm run check && npm test
-        working-directory: packages/agent-worker
+        working-directory: packages/planning-worker
       - run: rustup toolchain install 1.95.0 --profile minimal --component rustfmt,clippy && rustup default 1.95.0
       - name: Install pinned documentation tools
         run: |
@@ -77,6 +77,7 @@ jobs:
           cargo install --locked --version 0.14.0 mdbook-mermaid
       - run: sh scripts/local-services.sh
       - run: python3 scripts/check_data_access.py --dependencies
+      - run: python3 scripts/check_module_boundaries.py
       - run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
       - run: python3 -m unittest discover -s tests/operator/acceptance -p 'test_*.py' -v
       - run: python3 -m unittest discover -s tests/operator/pods -p 'test_*.py' -v
@@ -93,9 +94,9 @@ jobs:
           cargo test --locked --workspace --all-targets -- --include-ignored --skip live_emissary_protocol --skip native_service_lifecycle --skip device_fleet_load
       - name: Generated CRDs match independent Operator charts
         run: |
-          cargo run --locked -q -p artifactory-agent-operator --bin artifactory-agent-crdgen > /tmp/artifactory-crds.yaml
-          diff -u operators/agent-operator/config/crd/resources.yaml /tmp/artifactory-crds.yaml
-          diff -u charts/artifactory-agent-operator/crds/resources.yaml /tmp/artifactory-crds.yaml
+          cargo run --locked -q -p artifactory-planning-operator --bin artifactory-planning-crdgen > /tmp/artifactory-crds.yaml
+          diff -u operators/planning-operator/config/crd/resources.yaml /tmp/artifactory-crds.yaml
+          diff -u charts/artifactory-planning-operator/crds/resources.yaml /tmp/artifactory-crds.yaml
           cargo run --locked -q -p artifactory-image-operator --bin artifactory-image-crdgen > /tmp/artifactory-image-crds.yaml
           diff -u operators/image-operator/config/crd/resources.yaml /tmp/artifactory-image-crds.yaml
           diff -u charts/artifactory-image-operator/crds/resources.yaml /tmp/artifactory-image-crds.yaml
@@ -159,9 +160,9 @@ jobs:
       - name: Validate CRDs and Operator charts on the selected Kubernetes version
         run: |
           kubectl version -o json
-          kubectl apply --dry-run=server -f operators/agent-operator/config/crd/resources.yaml
+          kubectl apply --dry-run=server -f operators/planning-operator/config/crd/resources.yaml
           kubectl apply --dry-run=server -f operators/image-operator/config/crd/resources.yaml
-          helm template native charts/artifactory-agent-operator --kube-version "$KUBERNETES_VERSION" > /dev/null
+          helm template native charts/artifactory-planning-operator --kube-version "$KUBERNETES_VERSION" > /dev/null
           helm template images charts/artifactory-image-operator --kube-version "$KUBERNETES_VERSION" > /dev/null
       - name: Verify the minimum version without restartable init containers
         run: |
@@ -198,7 +199,7 @@ jobs:
           path: |
             .local/operator-acceptance/artifact-image-k128/evidence.json
             .local/operator-acceptance/artifact-image-k128/image-evidence.json
-  kubernetes-pi:
+  kubernetes-planning:
     needs: version-contract
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -232,7 +233,7 @@ jobs:
           kubectl wait nodes --all --for=condition=Ready --timeout=180s
       - name: Validate both Operator CRDs against Kubernetes
         run: |
-          kubectl apply --dry-run=server -f operators/agent-operator/config/crd/resources.yaml
+          kubectl apply --dry-run=server -f operators/planning-operator/config/crd/resources.yaml
           kubectl apply --dry-run=server -f operators/image-operator/config/crd/resources.yaml
       - name: Native build dependencies and PostgreSQL 17 restore tools
         run: |
@@ -258,14 +259,14 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kubernetes-pi-diagnostics
+          name: kubernetes-planning-diagnostics
           include-hidden-files: true
           retention-days: 7
           path: |
             .local/operator-acceptance/*/evidence.json
             .local/operator-acceptance/*/build.json
             .local/operator-acceptance/*/control-plane.log
-            .local/operator-acceptance/*/artifactory-agent-operator.log
+            .local/operator-acceptance/*/artifactory-planning-operator.log
             .local/operator-acceptance/*/artifactory-telemetry.log
             .local/operator-acceptance/*/device.log
             .local/operator-load/*/evidence.json
@@ -304,8 +305,8 @@ jobs:
           if [ "$RUNNER_OS" = Linux ]; then sudo apt-get update && sudo apt-get install -y protobuf-compiler; fi
           if [ "$RUNNER_OS" = macOS ]; then brew install protobuf; fi
           if [ "$RUNNER_OS" = Windows ]; then choco install protoc --no-progress -y; fi
-          cargo test --locked -p artifactory-emissary --all-targets
-          cargo clippy --locked -p artifactory-emissary --all-targets -- -D warnings
+          cargo test --locked -p artifactory-emissary -p artifactory-execution-support --all-targets
+          cargo clippy --locked -p artifactory-emissary -p artifactory-execution-support --all-targets -- -D warnings
       - name: Disposable native service lifecycle under a dedicated account
         shell: bash
         env:

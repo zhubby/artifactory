@@ -11,7 +11,7 @@ import re
 import subprocess
 import sys
 
-TASK_APPS = {"artifactory-source-task", "artifactory-pi", "artifactory-image-worker"}
+TASK_APPS = {"artifactory-source-task", "artifactory-planning-worker", "artifactory-image-worker"}
 OLD_APPS = {"artifactory-source", "artifactory-local-source", "artifactory-source-service"}
 TASK_SECRET = re.compile(r"image-[a-f0-9]{32}-task$")
 APPARMOR_ANNOTATION = "container.apparmor.security.beta.kubernetes.io/"
@@ -93,8 +93,8 @@ def violations(resources, secret_names=(), *, idle=False):
             continue
         owners = metadata.get("ownerReferences", [])
         expected = {
-            "artifactory-source-task": ("agents.artifactory.dev/v1alpha1", "SourceTask"),
-            "artifactory-pi": ("agents.artifactory.dev/v1alpha1", "AgentRun"),
+            "artifactory-source-task": ("planning.artifactory.dev/v1alpha1", "SourceTask"),
+            "artifactory-planning-worker": ("planning.artifactory.dev/v1alpha1", "PlanningRun"),
             "artifactory-image-worker": ("images.artifactory.dev/v1alpha1", "ImageBuild"),
         }[app]
         if not any(owner.get("apiVersion") == expected[0] and owner.get("kind") == expected[1]

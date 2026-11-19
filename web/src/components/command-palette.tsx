@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖授权项目、租户路由和 Modal。
+ * [INPUT]: 依赖统一工作区导航、授权项目与 Modal。
  * [OUTPUT]: 提供 CommandPalette 快捷导航面板。
- * [POS]: 按权限搜索项目和页面并恢复触发焦点。
+ * [POS]: 按当前作用域搜索业务与设置，保留项目切换。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -11,12 +11,13 @@ import { Search, CornerDownLeft } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useRouter } from "@/lib/tenant";
 import { projectPath, projectSwitchPath } from "@/lib/routes";
+import { settingsNavigation, workspaceNavigation } from "@/lib/workspace-navigation";
 import { useUI } from "@/components/providers";
 import { Modal } from "@/components/ui/dialog";
 import type { Project, User } from "@/lib/types";
 
-export function CommandPalette({ projects, project, user, readOnly }: {
-  projects: Project[]; project?: Project; user: User; readOnly: boolean;
+export function CommandPalette({ projects, project, user, readOnly, tenantName }: {
+  projects: Project[]; project?: Project; user: User; readOnly: boolean; tenantName?: string;
 }) {
   const { t } = useUI();
   const router = useRouter();
@@ -43,18 +44,22 @@ export function CommandPalette({ projects, project, user, readOnly }: {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
+  const navigationContext = { project, tenantAdmin: user.role === "admin" };
+  const navigation = workspaceNavigation(navigationContext);
+  const settingsItems = settingsNavigation(navigationContext).flatMap(group => group.items);
+  const scope = project?.name || tenantName || t("workspace.tenant");
   const items = [
-    { path: "/", label: t("workspace.allProjects"), group: t("redesign.navigation") },
+    ...navigation.primary.map(item => ({ path: item.path, label: t(item.label), group: scope })),
+    ...(navigation.settings && !settingsItems.some(item => item.label === navigation.settings?.label)
+      ? [{ path: navigation.settings.path, label: t(navigation.settings.label), group: scope }] : []),
+    ...settingsItems.map(item => ({
+      path: item.path, label: t(item.label), group: scope,
+    })),
     ...projects.map(item => ({ path: projectSwitchPath(pathname, item.slug), label: item.name, group: t("workspace.project") })),
-    ...(project ? ["overview", "builds", "artifacts", "releases"].map(section => ({
-      path: projectPath(project.slug) + (section === "overview" ? "" : "/" + section),
-      label: t("navigation." + section), group: project.name,
-    })) : []),
     ...(project && !readOnly && project.effective_role !== "viewer" ? [{
-      path: projectPath(project.slug) + "/builds/new", label: t("builds.start"), group: project.name,
+      path: projectPath(project.slug) + "/releases/new", label: t("releaseFlow.create"), group: project.name,
     }] : []),
-    { path: "/nodes", label: t("workspace.sharedDevices"), group: t("workspace.tenant") },
-    ...(user.role === "admin" ? [{ path: "/settings", label: t("workspace.manageTenant"), group: t("redesign.navigation") }] : []),
+    ...(project ? [{ path: "/", label: t("workspace.returnTenant"), group: tenantName || t("workspace.tenant") }] : []),
     { path: "/docs", label: t("navigation.docs"), group: "Artifactory" },
   ].filter(item => (item.label + " " + item.group).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   const selected = Math.min(active, Math.max(0, items.length - 1));

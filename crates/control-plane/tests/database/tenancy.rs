@@ -238,8 +238,8 @@ async fn tenant_and_project_permissions_cover_direct_ids_lists_and_references() 
         &reader,
         Some(a),
         "POST",
-        &format!("/projects/{pa}/builds"),
-        json!({"ref":"main"}),
+        &db.release_build_path(pa).await,
+        json!({}),
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -433,7 +433,7 @@ async fn shared_devices_intersect_frozen_grants_and_serialize_three_replicas() {
         );
         let build = Uuid::new_v4();
         let job = Uuid::new_v4();
-        sql::execute(&mut db.pool.clone(),"INSERT INTO builds(id,project_id,requested_ref,source_repository_url,status) VALUES($1,$2,'main','https://example.com/app.git','queued')",params![build,p]).await.unwrap();
+        sql::execute(&mut db.pool.clone(),"WITH fixture_release AS (INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets,source_resolution_id) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-',''),'main','test','[]','{}',$1) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,source_repository_url,status,release_id,spec_revision,release_version) VALUES($1,$2,'main','https://example.com/app.git','queued', (SELECT id FROM fixture_release),1,(SELECT version FROM fixture_release))",params![build,p]).await.unwrap();
         sql::execute(
             &mut db.pool.clone(),
             "INSERT INTO jobs(id,build_id,target,target_config) VALUES($1,$2,'app',$3)",
@@ -646,13 +646,14 @@ async fn project_administrators_cannot_expand_resources_and_role_changes_revoke_
     .await;
     assert_eq!(status, StatusCode::OK, "{token}");
     let bearer = token["token"].as_str().unwrap();
+    let release_build_path = db.release_build_path(p).await;
     let token_request = || {
         Request::builder()
             .method("POST")
-            .uri(format!("/api/v1/projects/{p}/builds"))
+            .uri(format!("/api/v1{release_build_path}"))
             .header("authorization", format!("Bearer {bearer}"))
             .header("content-type", "application/json")
-            .body(Body::from(json!({"ref":"main"}).to_string()))
+            .body(Body::from(json!({}).to_string()))
             .unwrap()
     };
     assert_eq!(
@@ -846,7 +847,7 @@ async fn cross_tenant_history_artifacts_streams_and_operations_are_rejected() {
     let attempt = Uuid::new_v4();
     let artifact = Uuid::new_v4();
     let release = Uuid::new_v4();
-    sql::execute(&mut db.pool.clone(),"INSERT INTO builds(id,project_id,requested_ref,source_repository_url,status) VALUES($1,$2,'main','https://example.com/app.git','succeeded')",params![build,p]).await.unwrap();
+    sql::execute(&mut db.pool.clone(),"WITH fixture_release AS (INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets,source_resolution_id) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-',''),'main','test','[]','{}',$1) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,source_repository_url,status,release_id,spec_revision,release_version) VALUES($1,$2,'main','https://example.com/app.git','succeeded', (SELECT id FROM fixture_release),1,(SELECT version FROM fixture_release))",params![build,p]).await.unwrap();
     sql::execute(
         &mut db.pool.clone(),
         "INSERT INTO jobs(id,build_id,target,target_config) VALUES($1,$2,'app','{}')",
@@ -857,7 +858,7 @@ async fn cross_tenant_history_artifacts_streams_and_operations_are_rejected() {
     sql::execute(&mut db.pool.clone(),"INSERT INTO attempts(id,job_id,node_id,lease_token,lease_expires_at,status,command_id) VALUES($1,$2,$3,'private-lease',now(),'succeeded',$4)",params![attempt,job,node,Uuid::new_v4()]).await.unwrap();
     sql::execute(&mut db.pool.clone(),"INSERT INTO uploads(id,attempt_id,path,object_key,expected_size,expected_sha256,expires_at) VALUES($1,$2,'app','private/app',1,'hash',now())",params![artifact,attempt]).await.unwrap();
     sql::execute(&mut db.pool.clone(),"INSERT INTO artifacts(id,attempt_id,path,object_key,size,sha256) VALUES($1,$2,'app','private/app',1,'hash')",params![artifact,attempt]).await.unwrap();
-    sql::execute(&mut db.pool.clone(),"INSERT INTO releases(id,project_id,build_id,version,commit_sha,idempotency_key) VALUES($1,$2,$3,'v1','private-commit','test-private-release')",params![release,p,build]).await.unwrap();
+    sql::execute(&mut db.pool.clone(),"INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets) VALUES($1,$2,'1.0.0','main','private','[]','{}')",params![release,p]).await.unwrap();
     for path in [
         format!("/builds/{build}"),
         format!("/builds/{build}/plans"),
@@ -950,7 +951,7 @@ async fn source_and_plan_references_cannot_cross_tenant_boundaries() {
     assert!(sql::execute(&mut db.pool.clone(),"INSERT INTO source_manifests(id,tenant_id,project_id,commit_sha,manifest,digest) VALUES($1,$2,$3,$4,'{}',$5)",params![manifest,b,pa,"0".repeat(40),"a".repeat(64)]).await.is_err());
     db.source(pb, manifest).await;
     let build = Uuid::new_v4();
-    sql::execute(&mut db.pool.clone(), "INSERT INTO builds(id,project_id,requested_ref,source_repository_url) VALUES($1,$2,'main','https://example.com/repo.git')", params![build,pa]).await.unwrap();
+    sql::execute(&mut db.pool.clone(), "WITH fixture_release AS (INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets,source_resolution_id) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-',''),'main','test','[]','{}',$1) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,source_repository_url,release_id,spec_revision,release_version) VALUES($1,$2,'main','https://example.com/repo.git', (SELECT id FROM fixture_release),1,(SELECT version FROM fixture_release))", params![build,pa]).await.unwrap();
     assert!(
         sql::execute(
             &mut db.pool.clone(),

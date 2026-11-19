@@ -61,9 +61,13 @@ pub use ota_management::Target;
 
 mod builds;
 pub mod images;
-pub use builds::{ArtifactDownload, BuildInput, LogChunk};
+pub use builds::{ArtifactDownload, LogChunk};
 
+pub(crate) mod registry_guard;
+mod release_publication;
+mod releases;
 mod scheduling;
+pub use releases::{ReleaseBuildInput, ReleaseInput, ReleaseUpdate};
 
 mod executions;
 pub(crate) use executions::{
@@ -76,8 +80,8 @@ mod ota;
 mod planning;
 pub(crate) use planning::SubmissionContext;
 
-mod runtime_bridge;
-pub(crate) use runtime_bridge::RuntimeEventCommit;
+mod planning_bridge;
+pub(crate) use planning_bridge::PlanningEventCommit;
 
 mod node_metadata;
 mod node_queries;
@@ -135,6 +139,8 @@ mod errors;
 mod execution_fences;
 #[cfg(test)]
 mod performance;
+#[cfg(test)]
+mod releases_tests;
 #[cfg(test)]
 mod sources_tests;
 

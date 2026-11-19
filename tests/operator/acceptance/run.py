@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 独立镜像、命名统一的中间件与确定性模型夹具。
-[OUTPUT]: 验证任务交付、恢复暂停池，并收集全副本日志。
+[OUTPUT]: 经 Release 创建构建，验证任务交付和池恢复。
 [POS]: 仅修改指定验收命名空间；私密证据保存在 .local/。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -91,22 +91,22 @@ class Acceptance:
         print('PASS', name, flush=True)
 
     def verify_pool_pause(self):
-        original = json.loads(self.kubectl('get', 'agentpool', 'default', '-o', 'json'))['spec']['maxActive']
+        original = json.loads(self.kubectl('get', 'planningpool', 'default', '-o', 'json'))['spec']['maxActive']
         if original <= 0:
-            raise AssertionError('Pause acceptance requires an admitting AgentPool')
+            raise AssertionError('Pause acceptance requires an admitting PlanningPool')
 
         def phase_ready(expected):
-            pool = json.loads(self.kubectl('get', 'agentpool', 'default', '-o', 'json'))
+            pool = json.loads(self.kubectl('get', 'planningpool', 'default', '-o', 'json'))
             status = pool.get('status', {})
             return (status.get('phase') == expected and
                     status.get('observedGeneration') == pool['metadata']['generation'])
 
         try:
-            self.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': {'maxActive': 0}}))
+            self.kubectl('patch', 'planningpool', 'default', '--type=merge', '-p', json.dumps({'spec': {'maxActive': 0}}))
             self.wait(lambda: phase_ready('Paused'), 30)
             self.check('pool can pause new admission', True)
         finally:
-            self.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': {'maxActive': original}}))
+            self.kubectl('patch', 'planningpool', 'default', '--type=merge', '-p', json.dumps({'spec': {'maxActive': original}}))
             self.wait(lambda: phase_ready('Ready'), 30)
 
     def api(self, path, body=None, method=None):
@@ -114,6 +114,16 @@ class Acceptance:
         request = urllib.request.Request(self.base + path, data=data, method=method, headers={'Content-Type': 'application/json', 'Origin': self.origin, 'x-artifactory-csrf': '1'})
         with self.http.open(request, timeout=30) as response:
             return json.load(response)
+
+    def create_build(self, project, goal, *, ref='v-fixture', target_requirements=None, parameters=None):
+        requirements = target_requirements if target_requirements is not None else [
+            {'kind': 'native', 'key': 'app', 'os': 'linux', 'arch': self.arch}]
+        release = self.api('/api/v1/projects/' + project + '/releases', {
+            'version': '0.0.0-acceptance.r' + uuid.uuid4().hex, 'ref': ref, 'goal': goal,
+            'target_requirements': requirements, 'targets': [item['key'] for item in requirements]})
+        build = self.api('/api/v1/releases/' + release['id'] + '/builds', {
+            'parameters': parameters if parameters is not None else {}})
+        return dict(build, release_id=release['id'], release_version=release['version'])
 
     def workload(self, name, image, args, env=None, secret=None, pki=False):
         container = {'name': name, 'image': image, 'args': args, 'imagePullPolicy': self.pull_policy}
@@ -139,8 +149,8 @@ class Acceptance:
 
     def control_identity(self):
         role = {'apiVersion':'rbac.authorization.k8s.io/v1','kind':'Role','metadata':{'name':'artifactory-control'},'rules':[
-            {'apiGroups':['agents.artifactory.dev'],'resources':['sourcetasks','agentruns','agentpools'],'verbs':['get','create','patch']},
-            {'apiGroups':[''],'resources':['pods'],'verbs':['get']}]}
+            {'apiGroups':['planning.artifactory.dev'],'resources':['sourcetasks','planningruns','planningpools'],'verbs':['get','list','create','patch']},
+            {'apiGroups':[''],'resources':['pods'],'verbs':['get','list']}]}
         binding = {'apiVersion':'rbac.authorization.k8s.io/v1','kind':'RoleBinding','metadata':{'name':'artifactory-control'},'subjects':[{'kind':'ServiceAccount','name':'artifactory-control','namespace':self.ns}],'roleRef':{'apiGroup':'rbac.authorization.k8s.io','kind':'Role','name':'artifactory-control'}}
         cluster = {'apiVersion':'rbac.authorization.k8s.io/v1','kind':'ClusterRole','metadata':{'name':self.ns+'-control-tokenreview'},'rules':[{'apiGroups':['authentication.k8s.io'],'resources':['tokenreviews'],'verbs':['create']}]}
         cluster_binding = {'apiVersion':'rbac.authorization.k8s.io/v1','kind':'ClusterRoleBinding','metadata':{'name':self.ns+'-control-tokenreview'},'subjects':binding['subjects'],'roleRef':{'apiGroup':'rbac.authorization.k8s.io','kind':'ClusterRole','name':cluster['metadata']['name']}}
@@ -181,7 +191,7 @@ class Acceptance:
         password = secrets.token_hex(20); token = secrets.token_hex(32); admin = secrets.token_hex(20); gateway_token = secrets.token_hex(32)
         self.token=token
         self.tls=ssl.create_default_context(cafile=str(pki/'ca.pem'))
-        databases = "\n".join(f"CREATE USER {role} PASSWORD '{password}'; CREATE DATABASE {role} OWNER {role};\n\\connect {role}\nCREATE EXTENSION IF NOT EXISTS timescaledb;\n\\connect postgres" for role in ['business','planner','telemetry'])
+        databases = "\n".join(f"CREATE USER {role} PASSWORD '{password}'; CREATE DATABASE {role} OWNER {role};\n\\connect {role}\nCREATE EXTENSION IF NOT EXISTS timescaledb;\n\\connect postgres" for role in ['business','planning','telemetry'])
         postgres = self.workload('artifactory-timescaledb', self.registry+'/timescaledb:2.32.0-pg17', [], {'POSTGRES_USER': 'admin', 'POSTGRES_PASSWORD': password, 'TIMESCALEDB_TELEMETRY':'off'})
         postgres['spec']['template']['spec']['containers'][0]['volumeMounts'] = [{'name': 'init', 'mountPath': '/docker-entrypoint-initdb.d'}]
         postgres['spec']['template']['spec']['volumes'] = [{'name': 'init', 'configMap': {'name': 'init-databases'}}]
@@ -193,22 +203,22 @@ class Acceptance:
         self.apply(self.secret('s3-config',{'s3.json':json.dumps(s3config)}),s3,self.service('artifactory-seaweedfs',[8333]))
         shared={'ARTIFACTORY_SERVICE_TOKEN':token,'ARTIFACTORY_S3_ENDPOINT':'http://artifactory-seaweedfs:8333','ARTIFACTORY_S3_BUCKET':'operator-acceptance','ARTIFACTORY_S3_ACCESS_KEY':'acceptance','ARTIFACTORY_S3_SECRET_KEY':password}
         shared['RUST_LOG']='info'
-        runtime=dict(shared,ARTIFACTORY_RUNTIME_DATABASE_URL=f'postgres://planner:{password}@artifactory-timescaledb:5432/planner',ARTIFACTORY_SERVICE_KEY=base64.b64encode(secrets.token_bytes(32)).decode())
+        runtime=dict(shared,ARTIFACTORY_PLANNING_DATABASE_URL=f'postgres://planning:{password}@artifactory-timescaledb:5432/planning',ARTIFACTORY_SERVICE_KEY=base64.b64encode(secrets.token_bytes(32)).decode())
         control=dict(shared,DATABASE_URL=f'postgres://business:{password}@artifactory-timescaledb:5432/business',ARTIFACTORY_MASTER_KEY=base64.b64encode(secrets.token_bytes(32)).decode(),ARTIFACTORY_BOOTSTRAP_USERNAME='operator-admin',ARTIFACTORY_BOOTSTRAP_PASSWORD=admin,
-                     ARTIFACTORY_RUNTIME_URL='https://gateway:8445/internal/planner',ARTIFACTORY_KUBERNETES_NAMESPACE=self.ns,ARTIFACTORY_AGENT_POOL='default',ARTIFACTORY_SERVICE_CA='/run/pki/ca.pem',ARTIFACTORY_PUBLIC_URL=self.base,ARTIFACTORY_INSECURE_DEV='true',ARTIFACTORY_HTTP_BIND='0.0.0.0:8080',ARTIFACTORY_GRPC_BIND='0.0.0.0:8443',ARTIFACTORY_PKI_DIR='/run/pki',ARTIFACTORY_DATA_DIR='/tmp/control')
-        control.update(ARTIFACTORY_RUNTIME_DATABASE_URL=runtime['ARTIFACTORY_RUNTIME_DATABASE_URL'], ARTIFACTORY_SERVICE_KEY=runtime['ARTIFACTORY_SERVICE_KEY'], ARTIFACTORY_CONTROL_URL='https://upstream:9443')
+                     ARTIFACTORY_PLANNING_URL='https://gateway:8445/internal/planning',ARTIFACTORY_KUBERNETES_NAMESPACE=self.ns,ARTIFACTORY_PLANNING_POOL='default',ARTIFACTORY_SERVICE_CA='/run/pki/ca.pem',ARTIFACTORY_PUBLIC_URL=self.base,ARTIFACTORY_INSECURE_DEV='true',ARTIFACTORY_HTTP_BIND='0.0.0.0:8080',ARTIFACTORY_GRPC_BIND='0.0.0.0:8443',ARTIFACTORY_PKI_DIR='/run/pki',ARTIFACTORY_DATA_DIR='/tmp/control')
+        control.update(ARTIFACTORY_PLANNING_DATABASE_URL=runtime['ARTIFACTORY_PLANNING_DATABASE_URL'], ARTIFACTORY_SERVICE_KEY=runtime['ARTIFACTORY_SERVICE_KEY'], ARTIFACTORY_CONTROL_URL='https://upstream:9443')
         telemetry=dict(DATABASE_URL=f'postgres://telemetry:{password}@artifactory-timescaledb:5432/telemetry',ARTIFACTORY_BUSINESS_DATABASE_URL=f'postgres://business:{password}@artifactory-timescaledb:5432/business',ARTIFACTORY_TELEMETRY_TOKEN=token)
         control.update(ARTIFACTORY_TELEMETRY_ENDPOINT='https://artifactory-telemetry:8444',ARTIFACTORY_TELEMETRY_URL='https://artifactory-telemetry:8093',ARTIFACTORY_TELEMETRY_TOKEN=token)
         # 设备使用集群网关，主机客户端通过端口转发访问同一入口。
         control['ARTIFACTORY_PUBLIC_URL']='http://gateway:8080'
         control['ARTIFACTORY_GATEWAY_TOKEN']=gateway_token
         self.origin=control['ARTIFACTORY_PUBLIC_URL']
-        self.apply(*self.control_identity(),self.secret('telemetry',telemetry),self.secret('runtime',runtime),self.secret('control-plane',control),self.workload('control-plane',self.image('control-plane'),['serve'],secret='control-plane',pki=True),self.service('control-plane',[8080,8443]),*self.gateway(gateway_token),self.workload('upstream',self.image('operator-fixture'),[],env={'FIXTURE_ARCH':self.arch},pki=True),self.service('upstream',[9443]))
+        self.apply(*self.control_identity(),self.secret('telemetry',telemetry),self.secret('planning',runtime),self.secret('control-plane',control),self.workload('control-plane',self.image('control-plane'),['serve'],secret='control-plane',pki=True),self.service('control-plane',[8080,8443]),*self.gateway(gateway_token),self.workload('upstream',self.image('operator-fixture'),[],env={'FIXTURE_ARCH':self.arch},pki=True),self.service('upstream',[9443]))
         self.wait(lambda:self.sql('business','SELECT 1')=='1')
-        self.command(['kubectl','--context',self.context,'apply','-f',str(ROOT/'operators/agent-operator/config/crd/resources.yaml')])
-        values={'image':{'repository':self.registry+'/agent-operator','tag':self.image_tag,'pullPolicy':self.pull_policy},'runtime':{'secretName':'runtime','url':'https://gateway:8445/internal/planner'},'telemetry':{'enabled':True,'secretName':'telemetry','pkiSecretName':'acceptance-pki','image':{'repository':self.registry+'/control-plane','tag':self.image_tag}},'agentPool':{'image':self.image('operator-pi'),'sourcePreparerImage':self.image('source-preparer'),'maxActive':2,'maxPerProject':1,'ephemeralStorage':'2Gi'},'tls':{'secretName':'service-tls'},'controlUrl':'https://upstream:9443','networkPolicy':{'enabled':True,'gitPorts':[9443]}}
+        self.command(['kubectl','--context',self.context,'apply','-f',str(ROOT/'operators/planning-operator/config/crd/resources.yaml')])
+        values={'image':{'repository':self.registry+'/planning-operator','tag':self.image_tag,'pullPolicy':self.pull_policy},'coordinator':{'secretName':'planning','url':'https://gateway:8445/internal/planning'},'telemetry':{'enabled':True,'secretName':'telemetry','pkiSecretName':'acceptance-pki','image':{'repository':self.registry+'/control-plane','tag':self.image_tag}},'planningPool':{'image':self.image('planning-worker'),'sourcePreparerImage':self.image('source-preparer'),'maxActive':2,'maxPerProject':1,'ephemeralStorage':'2Gi'},'tls':{'secretName':'service-tls'},'controlUrl':'https://upstream:9443','networkPolicy':{'enabled':True,'gitPorts':[9443]}}
         path=self.run/'values.json';path.write_text(json.dumps(values))
-        self.command(['helm','--kube-context',self.context,'upgrade','--install','native',str(ROOT/'charts/artifactory-agent-operator'),'-n',self.ns,'-f',str(path)])
+        self.command(['helm','--kube-context',self.context,'upgrade','--install','native',str(ROOT/'charts/artifactory-planning-operator'),'-n',self.ns,'-f',str(path)])
         self.kubectl('rollout','status','deploy/control-plane','--timeout=180s')
         self.kubectl('rollout','status','deploy/gateway','--timeout=180s')
         self.forward('service/gateway','38081:8080')
@@ -276,7 +286,7 @@ class Acceptance:
         if not runs:
             return None
         run = runs[0]['id']
-        value = self.sql('planner', f"SELECT jsonb_build_object('id',id,'life',lifecycle,'execution',execution) FROM runtime_runs WHERE id='{run}' AND status='running' AND (lifecycle->>'calls')::int={calls}")
+        value = self.sql('planning', f"SELECT jsonb_build_object('id',id,'life',lifecycle,'execution',execution) FROM planning_runs WHERE id='{run}' AND status='running' AND (lifecycle->>'calls')::int={calls}")
         if not value:
             return None
         state = json.loads(value)
@@ -329,9 +339,9 @@ class Acceptance:
         return self.wait(ready, seconds)
 
     def verify(self):
-        self.kubectl('patch','agentpool','default','--type=merge','-p','{"spec":{"maxActive":2}}')
+        self.kubectl('patch','planningpool','default','--type=merge','-p','{"spec":{"maxActive":2}}')
         self.service_request(39443,'/test/mode',{'reset_ack':True,'hold':True})
-        build = self.api(f'/api/v1/projects/{self.project}/builds',{'ref':'v-fixture','goal':'Inspect source and build dist/result.txt on Linux '+self.arch,'target_requirements':[{'os':'linux','arch':self.arch}]})['id']
+        build = self.create_build(self.project, 'Inspect source and build dist/result.txt on Linux ' + self.arch)['id']
         self.evidence['build_id'] = build
         running = self.wait(lambda:self.run_state(build),300)
         run = running['id']
@@ -356,7 +366,7 @@ class Acceptance:
         self.check('fixed manifest -> AI init -> validated plan -> native build',detail['status']=='succeeded')
         history = self.api('/api/v1/builds/'+build+'/plans')
         self.check('one logical run and one accepted revision',len(history['runs'])==1 and len(history['plans'])==1)
-        calls = int(self.sql('planner',f"SELECT lifecycle->>'calls' FROM runtime_runs WHERE id='{run}'"))
+        calls = int(self.sql('planning',f"SELECT lifecycle->>'calls' FROM planning_runs WHERE id='{run}'"))
         self.check('invalid plan is corrected within one cumulative budget',calls==4)
         self.check('lost acceptance ACK reuses result without another inference','fixture_dropped_accept_acks 1' in self.service_request(39443,'/metrics') and calls==4)
         self.check('native build verifies actual LFS bytes',detail['artifacts'] and detail['artifacts'][0]['sha256']==hashlib.sha256(b'operator-native-ok\n').hexdigest())
@@ -372,23 +382,23 @@ class Acceptance:
 
     def faults(self, commit):
         self.forward('service/gateway','38091:8445')
-        self.wait(lambda:'artifactory_runtime_runs' in self.service_request(38091,'/internal/planner/metrics'))
+        self.wait(lambda:'artifactory_planning_runs' in self.service_request(38091,'/internal/planning/metrics'))
         try:
-            urllib.request.urlopen('https://127.0.0.1:38091/internal/planner/metrics',context=self.tls,timeout=10)
+            urllib.request.urlopen('https://127.0.0.1:38091/internal/planning/metrics',context=self.tls,timeout=10)
             unauthorized=False
         except urllib.error.HTTPError as error:
             unauthorized=error.code==401
         self.check('Runtime metrics reject unauthenticated requests',unauthorized)
-        lease=json.loads(self.kubectl('get','lease','artifactory-agent-operator','-o','json'))
+        lease=json.loads(self.kubectl('get','lease','artifactory-planning-operator','-o','json'))
         holder=lease['spec']['holderIdentity']
-        pods=json.loads(self.kubectl('get','pods','-l','app.kubernetes.io/name=artifactory-agent-operator','-o','json'))['items']
+        pods=json.loads(self.kubectl('get','pods','-l','app.kubernetes.io/name=artifactory-planning-operator','-o','json'))['items']
         leader=next(p['metadata']['name'] for p in pods if p['metadata']['uid']==holder)
         self.kubectl('delete','pod',leader,'--wait=false')
-        self.wait(lambda:json.loads(self.kubectl('get','lease','artifactory-agent-operator','-o','json'))['spec']['holderIdentity']!=holder,60)
+        self.wait(lambda:json.loads(self.kubectl('get','lease','artifactory-planning-operator','-o','json'))['spec']['holderIdentity']!=holder,60)
         self.check('two Operator replicas elect a replacement after leader deletion',True)
         # Hold a real model request before its headers, then kill the owning Pi Pod.
         self.service_request(39443,'/test/mode',{'hold':True})
-        build=self.api(f'/api/v1/projects/{self.project}/builds',{'ref':'v-fixture','goal':'fault injection: retain budget across Pod loss','target_requirements':[{'os':'linux','arch':self.arch}]})['id']
+        build=self.create_build(self.project, 'fault injection: retain budget across Pod loss')['id']
         before=self.wait(lambda:self.run_state(build),300)
         pod=json.loads(self.kubectl('get','pod',before['execution']['name'],'-o','json'))
         self.evidence['pi_image']={key:pod['status']['containerStatuses'][0][key] for key in ['image','imageID']}
@@ -399,7 +409,7 @@ class Acceptance:
         run=before['id'];self.evidence['fault_run_id']=run
         self.kubectl('delete','pod',before['execution']['name'],'--wait=false')
         def retried():
-            value=self.sql('planner',f"SELECT lifecycle FROM runtime_runs WHERE id='{run}'")
+            value=self.sql('planning',f"SELECT lifecycle FROM planning_runs WHERE id='{run}'")
             life=json.loads(value)
             return life if life['generation']==2 and life['calls']>=2 else None
         after=self.wait(retried,120)
@@ -409,7 +419,7 @@ class Acceptance:
         self.check('physical retry retains source commit',self.api('/api/v1/builds/'+build)['commit_sha']==commit)
         started=time.monotonic();self.api('/api/v1/builds/'+build+'/cancel',{})
         self.evidence['cancel_api_seconds']=round(time.monotonic()-started,3)
-        self.wait(lambda:self.sql('planner',f"SELECT status FROM runtime_runs WHERE id='{run}'")=='canceled',30)
+        self.wait(lambda:self.sql('planning',f"SELECT status FROM planning_runs WHERE id='{run}'")=='canceled',30)
         self.evidence['cancel_authority_observed_seconds']=round(time.monotonic()-started,3)
         self.wait(lambda:not json.loads(self.kubectl('get','pods','-l','artifactory.dev/run='+run,'-o','json'))['items'],60)
         self.check('cancel revokes authorization and stops Pi without creating device jobs',not self.api('/api/v1/builds/'+build)['jobs'])
@@ -417,7 +427,7 @@ class Acceptance:
         self.service_request(39443,'/test/mode',{})
         self.kubectl('rollout','restart','deploy/control-plane')
         self.kubectl('rollout','status','deploy/control-plane','--timeout=120s')
-        persisted=json.loads(self.sql('planner',f"SELECT lifecycle FROM runtime_runs WHERE id='{run}'"))
+        persisted=json.loads(self.sql('planning',f"SELECT lifecycle FROM planning_runs WHERE id='{run}'"))
         self.check('Runtime restart preserves cancellation, budget and deadline',persisted['canceled'] and persisted['calls']==2 and persisted['deadline_ms']==before['life']['deadline_ms'])
         # 暂停只阻止新准入；验收退出前恢复原容量。
         self.verify_pool_pause()
@@ -438,9 +448,9 @@ class Acceptance:
         key=AESGCM(base64.b64decode(environment['ARTIFACTORY_MASTER_KEY'])).decrypt(encrypted[:12],encrypted[12:],None).decode()
         profile=self.api('/api/v1/model-profiles',dict(model,name='Operator real model acceptance',api_key=key,max_calls=10,timeout_seconds=600,is_default=False))['id']
         del key,environment,connection,database
-        self.kubectl('patch','agentpool','default','--type=merge','-p','{"spec":{"maxActive":2}}')
+        self.kubectl('patch','planningpool','default','--type=merge','-p','{"spec":{"maxActive":2}}')
         project=self.api('/api/v1/projects',{'name':'Operator real model acceptance','repository_url':'https://upstream:9443/repo.git','model_profile_id':profile})['id']
-        build=self.api(f'/api/v1/projects/{project}/builds',{'ref':'v-fixture','goal':'Read README.md and build.sh. Build this source using sh build.sh and collect dist/result.txt on the available Linux device. Submit an ExecutionPlan v1 with evidence; no signing or external scripts are necessary.','target_requirements':[{'os':'linux','arch':self.arch}]})['id']
+        build=self.create_build(project, 'Read README.md and build.sh. Build this source using sh build.sh and collect dist/result.txt in target app on the available Linux device. Submit an ExecutionPlan v1 with evidence; no signing or external scripts are necessary.')['id']
         self.evidence['real_model']={'provider':model['base_url'],'model':model['model'],'build_id':build,'max_calls':10}
         self.check('real supplier build submitted through the same Kubernetes Pi runtime',True)
         previous=None
@@ -454,7 +464,7 @@ class Acceptance:
         self.check('real supplier -> Kubernetes Pi -> control acceptance -> Rust Emissary build',detail['status']=='succeeded')
         self.check('real-model build artifact content matches',detail['artifacts'][0]['sha256']==hashlib.sha256(b'operator-native-ok\n').hexdigest())
         run=self.api('/api/v1/builds/'+build+'/plans')['runs'][0]['id']
-        self.evidence['real_model']['runtime']=json.loads(self.sql('planner',f"SELECT jsonb_build_object('lifecycle',lifecycle,'usage',usage,'status',status) FROM runtime_runs WHERE id='{run}'"))
+        self.evidence['real_model']['runtime']=json.loads(self.sql('planning',f"SELECT jsonb_build_object('lifecycle',lifecycle,'usage',usage,'status',status) FROM planning_runs WHERE id='{run}'"))
         self.check('real model call budget is persisted in Runtime',True)
 
     def retention(self):
@@ -465,8 +475,8 @@ class Acceptance:
 
     def cleanup(self):
         for process in self.processes:process.terminate()
-        for name in ['control-plane','gateway','artifactory-agent-operator','artifactory-telemetry','upstream','device']:
-            target = ['-l', 'app.kubernetes.io/name=artifactory-agent-operator', '--prefix=true', '--max-log-requests=10'] if name == 'artifactory-agent-operator' else ['deploy/'+name]
+        for name in ['control-plane','gateway','artifactory-planning-operator','artifactory-telemetry','upstream','device']:
+            target = ['-l', 'app.kubernetes.io/name=artifactory-planning-operator', '--prefix=true', '--max-log-requests=10'] if name == 'artifactory-planning-operator' else ['deploy/'+name]
             try:(self.run/(name+'.log')).write_text(self.kubectl('logs',*target,'--all-containers=true','--tail=500'))
             except RuntimeError:pass
         # Keep the namespace for inspection; explicit user cleanup is separate.

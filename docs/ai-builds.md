@@ -15,13 +15,9 @@
 
 ## 对话式发起构建
 
-首页、项目详情及构建列表的“发起构建”统一进入 `/tenants/{tenant}/projects/{project}/builds/new`。当前项目已预选，引导按「源码 → 目标与平台 → 确认」三步收集信息。返回编辑保留答案，配置摘要始终可回看；切换项目时按现有未保存保护处理草稿。
+项目先创建 Release，填写严格 SemVer、源码 ref 和完整交付目标。项目侧栏的“版本”进入版本列表。Release 工作台包含概览、构建记录和交付物。
 
-- 源码可搜索真实分支、标签，或显式切换为手动输入引用与 commit。分支、标签提交完整引用以区分同名条目。查询失败提供刷新与手动输入，不自动使用 `HEAD`，也不猜测默认分支。
-- 目标支持常用模板和自由描述。平台默认由 AI 根据源码及授权节点能力选择，也可手动多选；无需在引导中选择模型、凭据或具体节点。
-- 默认只构建。最终确认页可开启内部 Release 并填写版本，或展开高级参数 JSON；参数名称与字符串值遵循已有执行参数约束。
-- 只有最终确认提交才调用创建构建接口。引导本身不调用模型，不拉取源码；提交后仍执行原有源码固定、AI 规划、澄清、执行及发布流程。列表中的 OID 是预览，不是提前固定的源码清单。
-- 草稿只在页面内存中保留；刷新、取消或离开后不恢复。语言、主题及动效切换不清空草稿。提交失败保留答案，提交期间禁止重复操作，不自动重发请求。
+构建只能从 Release 发起。构建向导固定显示版本、源码与目标修订，只收集构建方法说明和参数。首次构建固定源码，后续构建复用完整 SourceManifest；Release 已封存后不能新建或重试构建。目标修改只发生在草稿，并递增 `spec_revision`，旧修订构建不能发布。
 
 `GET /api/v1/projects/{id}/refs` 使用项目读取权限与该项目已配置的仓库凭据，通过只读 `git ls-remote --symref` 返回：
 
@@ -35,19 +31,19 @@
 
 ## 配置与运行
 
-AI 规划只使用 Kubernetes Pod。独立 Agent Operator 创建 Pi Pod，Runtime 保存模型配置、累计预算、截止时间与审计记录。控制平面校验计划后，向原生 Emissary 或镜像 Operator 派发构建。
+AI 规划只使用 Kubernetes Pod。独立 Planning Operator 创建 Pi Pod，规划协调器保存模型配置、累计预算、截止时间与审计记录。控制平面校验计划后，向原生 Emissary 或镜像 Operator 派发构建。
 
-1. 安装主 Chart、Agent Operator、Runtime 和 Image Operator。配置 AgentPool 的 `sourcePreparerImage`、`controlUrl`、规划镜像和临时存储限制。
+1. 安装主 Chart、Planning Operator 和 Image Operator。主 Chart 的 Control 内嵌规划协调器；配置 PlanningPool 的 `sourcePreparerImage`、`controlUrl`、规划镜像和临时存储限制。
 2. 在“访问与安全 → AI 规划”新增模型配置。支持 OpenAI Chat Completions、Responses 和 Anthropic Messages。项目可以覆盖平台默认配置。
 3. 注册并授权原生设备，或配置集群的 amd64/arm64 构建节点。任务通过绑定 Pod 的投影令牌领取材料，无需注册常驻规划 Worker。
 
-模型密钥使用主密钥加密落库。Pi 通过 Runtime 模型代理调用供应商，供应商密钥留在 Runtime。源码凭据只提供给准备进程，不能写入 CR、Pod、仓库 URL、主容器或 AI 会话。
+模型密钥使用主密钥加密落库。Pi 通过规划协调器模型代理调用供应商，供应商密钥留在规划协调器。源码凭据只提供给准备进程，不能写入 CR、Pod、仓库 URL、主容器或 AI 会话。
 
-Compose 供服务开发、控制台和鉴权验证。完整构建链需要 Kubernetes API、任务 ServiceAccount 和 Operator。模型连通性检查应在 Runtime 所在网络执行。
+Compose 供服务开发、控制台和鉴权验证。完整构建链需要 Kubernetes API、任务 ServiceAccount 和 Operator。模型连通性检查应在规划协调器所在网络执行。
 
 ## 临时源码
 
-提交构建后，控制平面创建临时 SourceTask。准备进程直接访问上游，以 CAS 固定引用对象和标签，再解析 commit、递归子模块 gitlink 和 LFS OID。完整 SourceManifest 与首次 PlanningRun 在同一事务提交。平台只保存 Manifest 元数据，不保存 Git bundle、源码包、仓库 checkout 或 Git/LFS 缓存。
+Release 首次构建创建共享临时 SourceTask。并发构建等待同一解析任务。准备进程直接访问上游，以 CAS 固定引用对象和标签，再解析 commit、递归子模块 gitlink 和 LFS OID。完整 SourceManifest 与首次 PlanningRun 在同一事务提交。平台只保存 Manifest 元数据，不保存 Git bundle、源码包、仓库 checkout 或 Git/LFS 缓存。
 
 分支、标签和子模块 URL 在准备后固定。所有规划重试、目标架构和人工重试读取同一 Manifest。上游拒绝获取原对象时明确失败，不能重新跟随分支或替换标签。Manifest 包含路径、上游 URL、commit、标签对象与 LFS OID/大小，摘要按排序后的仓库列表计算，元数据总量最多 4 MiB。
 
@@ -69,17 +65,17 @@ resolving → planning → queued → running → succeeded
                                   failed
 ```
 
-Pi 工具仅能列目录、读文件、搜索、读取 Git 元数据、节点能力和失败日志、提交计划或请求补充。不提供编辑或通用 Shell，不加载仓库 Pi 配置、插件或钩子。试运行统一在 Rust Emissary 执行。每轮默认 10 分钟、20 次模型调用，管理员可调整；可通过 `requests_per_minute` 限制调用速率。Runtime 持久化调用预算、用量、截止时间与 proposal。Worker 丢失后增加 generation，开启新的模型会话，不回放旧 checkpoint，不重置累计预算。
+Pi 工具仅能列目录、读文件、搜索、读取 Git 元数据、节点能力和失败日志、提交计划或请求补充。不提供编辑或通用 Shell，不加载仓库 Pi 配置、插件或钩子。试运行统一在 Rust Emissary 执行。每轮默认 10 分钟、20 次模型调用，管理员可调整；可通过 `requests_per_minute` 限制调用速率。规划协调器持久化调用预算、用量、截止时间与 proposal。Worker 丢失后增加 generation，开启新的模型会话，不回放旧 checkpoint，不重置累计预算。
 
 `ExecutionPlan v1` 包含摘要、实际文件依据、外置脚本和经过现有 Recipe 验证的目标/步骤/制品规则。平台固定源码清单、模型配置版本及计划版本；attempt 引用自己的计划，历史版本不可覆盖。脚本位于 `ARTIFACTORY_SCRIPT_DIR`，命令工作目录为 checkout，`ARTIFACTORY_WORK_DIR` 为其父 attempt 目录。
 
 有效计划自动执行。执行失败最多自动修订两次，共三轮；只修订失败目标，成功目标的执行与制品保留。修订不能改变 commit、目标集合、平台或扩大签名/节点池权限。源码凭据、模型认证及权限错误直接失败。所有阶段都可取消，提交计划与取消通过服务端事务排序，过期结果不能排队。
 
-人工重试复用原提交及该目标原计划；改变目标需新建构建。发布必须由有 release 权限的人显式请求，只收集每个成功目标最终有效 attempt 的制品。失败/旧轮次产物不能混入发布。
+人工重试复用原提交及该目标原计划。改变目标需修改 Release 草稿并创建新修订构建。发布在 Release 工作台显式选择当前修订的一次完整成功构建。失败和旧轮次产物不能混入交付。发布冻结、命名和镜像不可变约束见[项目版本交付](release-delivery.md)。
 
 ## 对话与审计
 
-Runtime 按 run 和 generation 保存会话。完成消息在继续执行前获得持久化确认；异常中断保留已确认消息。大消息按块传输，proposal 与接受回执由 Runtime 同一事务登记。日志、执行计划和制品继续持久化，对话引用的源码片段随对话保留。
+规划协调器按 run 和 generation 保存会话。完成消息在继续执行前获得持久化确认；异常中断保留已确认消息。大消息按块传输，proposal 与接受回执由规划协调器同一事务登记。日志、执行计划和制品继续持久化，对话引用的源码片段随对话保留。
 
 控制台在构建规划页按需加载会话和消息。公开接口为 `GET /api/v1/builds/{id}/planning/conversations` 和 `GET /api/v1/builds/{id}/planning/conversations/{run}/{generation}/messages?after=&limit=`。两者都检查当前租户与项目读取权限，不随构建详情一次性返回完整对话。
 
@@ -87,6 +83,6 @@ Runtime 按 run 和 generation 保存会话。完成消息在继续执行前获�
 
 完整构建验收使用 `tests/operator/acceptance/run.py`，在隔离 Kubernetes 命名空间验证临时源码、Pi、原生构建和制品下载。真实供应商验收显式提供 `--real-model-env`，私密配置与证据保存在忽略目录，不能上传整个目录。
 
-本次原型切换使用新业务与 Runtime 初始化基线，不提供旧数据库迁移或 Poll 兼容路径。重置前阻断写入口并停止旧任务，等待在途票据失效。保留 S3/Registry 物理对象、PKI 与主密钥；旧列表和授权不恢复，设备重新注册。
+本版只支持全新实例，不提供旧数据库迁移或 Poll 兼容路径。业务与规划数据库使用新基线，程序拒绝旧库；安装不重置旧库，也不删除旧部署。旧实例的备份、停写与退役由管理员另行执行，详见[初始化与清理](planning-protocol.md#初始化与清理)。
 
 跨平台编译不能替代真实 macOS、Windows 或双架构构建验收。实际执行范围记录在验收文档中。

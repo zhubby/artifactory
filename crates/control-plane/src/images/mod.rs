@@ -4,10 +4,13 @@
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod dispatch;
 pub mod registry;
+mod release;
 mod tasks;
 use anyhow::{Context, Result, ensure};
 use artifactory_image_protocol::RegistryLogin;
 pub use dispatch::tick;
+pub(crate) use release::publish as publish_release;
+pub(crate) use release::stopped as release_stopped;
 use std::path::PathBuf;
 pub use tasks::verify_report;
 
@@ -62,7 +65,7 @@ impl Config {
         );
         let insecure = std::env::var("ARTIFACTORY_INSECURE_DEV").as_deref() == Ok("true");
         config.login(uuid::Uuid::nil(), "").validate(insecure)?;
-        artifactory_runtime_protocol::service::endpoint(&config.control_url)?;
+        artifactory_service_transport::service::endpoint(&config.control_url)?;
         Ok(config)
     }
     pub fn login(&self, id: uuid::Uuid, token: &str) -> RegistryLogin {

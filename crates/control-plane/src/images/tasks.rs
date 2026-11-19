@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖完整固定源码清单、Assignment、凭据引用与执行令牌。
-//! [OUTPUT]: 校验清单与 commit，只向任务材料交付清单 ID 和摘要。
+//! [INPUT]: 依赖完整固定源码清单、Assignment、执行凭据与 OCI 仓库客户端。
+//! [OUTPUT]: 校验清单、Release 版本和 OCI 元数据；任务只携带固定身份。
 //! [POS]: 镜像 Secret 仅携带固定源码引用与执行凭据。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::Config;
@@ -123,6 +123,9 @@ pub async fn build(
         image: e.spec.clone(),
         source_manifest_id,
         source_digest,
+        release_id: context.release_id,
+        release_version: context.release_version,
+        source_revision: context.commit_sha,
         timeout_seconds: e.task_timeout_seconds.saturating_sub(600).max(1),
         docker_auth,
         secrets,
@@ -137,7 +140,7 @@ pub async fn verify_report(
     report: &artifactory_image_protocol::Report,
 ) -> Result<()> {
     let config = Config::load()?;
-    let registry = artifactory_image_registry::Registry::new(
+    let registry = artifactory_oci_registry_client::Registry::new(
         config.login(e.id, token),
         state.settings.insecure_dev,
     )?;
@@ -155,6 +158,16 @@ pub async fn verify_report(
                 &verified == result,
                 "platform report does not match registry content"
             );
+            let context = state.store.assignment_context(e.job_id).await?;
+            registry
+                .verify_release_metadata(
+                    &e.candidate_repository,
+                    &result.digest,
+                    &result.platform,
+                    &context.release_version,
+                    &context.commit_sha,
+                )
+                .await?;
         }
         artifactory_image_protocol::Report::Published { digest } => {
             let expected = if let Some(root) = &e.root_digest {
@@ -167,7 +180,7 @@ pub async fn verify_report(
             };
             ensure!(digest == &expected, "published index digest mismatch");
             let destination = if let Some(id) = e.destination_credential {
-                artifactory_image_registry::Registry::new(
+                artifactory_oci_registry_client::Registry::new(
                     serde_json::from_slice(&credential(state, e, id, "registry").await?)?,
                     state.settings.insecure_dev,
                 )?
@@ -250,6 +263,9 @@ mod tests {
                 image,
                 source_manifest_id,
                 source_digest,
+                release_id: Uuid::new_v4(),
+                release_version: "1.2.3".into(),
+                source_revision: "a".repeat(40),
                 timeout_seconds: 600,
                 docker_auth: json!({"auths": {}}),
                 secrets: BTreeMap::new(),

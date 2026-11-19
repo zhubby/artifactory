@@ -8,7 +8,7 @@ use crate::{
     error::{ApiError, Result},
     state::AppState,
 };
-use artifactory_runtime_protocol::service;
+use artifactory_service_transport::service;
 use axum::{
     Json,
     extract::{Path, Query},

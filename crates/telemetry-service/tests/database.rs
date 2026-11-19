@@ -4,7 +4,7 @@
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_database::{PoolSettings, connect, with_database, with_options};
 use artifactory_database::{params, sql};
-use artifactory_telemetry_model::{Batch, HostSample, Inventory, ProcessSample};
+use artifactory_emissary_protocol::telemetry::{Batch, HostSample, Inventory, ProcessSample};
 use artifactory_telemetry_service::{Service, query, store};
 use chrono::{Duration, Utc};
 use serde_json::Value;
@@ -274,13 +274,13 @@ async fn durable_replay_ordering_nulls_columnstore_and_rollups() {
     .await
     .unwrap();
     let resources = store::TelemetryStore::new(pool.clone(), pool.clone())
-        .resources(&[artifactory_telemetry_model::nodes::ResourceIdentity {
+        .resources(&[artifactory_emissary_protocol::nodes::ResourceIdentity {
             node_id: node,
             startup_id: current_startup,
         }])
         .await
         .unwrap_or_else(|error| match error {
-            artifactory_runtime_protocol::error::ApiError::Internal(error) => panic!("{error:#}"),
+            artifactory_service_transport::error::ApiError::Internal(error) => panic!("{error:#}"),
             _ => panic!("startup resource query failed"),
         });
     assert_eq!(resources.len(), 1);
@@ -333,7 +333,7 @@ async fn grpc_authorization(pool: &toasty::Db, node: Uuid, attempt: Uuid) {
         "INSERT INTO nodes(id,certificate_hash) VALUES($1,$2)",
         params![
             node,
-            artifactory_runtime_protocol::crypto::hash(client.der())
+            artifactory_service_transport::crypto::hash(client.der())
         ],
     )
     .await

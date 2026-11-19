@@ -43,7 +43,7 @@ async fn critical_store_latency() {
     let session = Uuid::new_v4();
     let target = json!({"os":"linux","arch":"amd64","steps":[{"name":"compile","run":"true"}],"artifacts":[]});
     sql::execute(&mut pool.clone(), "INSERT INTO projects(id,tenant_id,name,repository_url,pool_ids) VALUES($1,'00000000-0000-0000-0000-000000000001','perf','https://example.invalid/repo.git','{00000000-0000-0000-0000-000000000001}')", params![project]).await.unwrap();
-    sql::execute(&mut pool.clone(), "INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url) VALUES($1,$2,'main','queued','https://example.invalid/repo.git')", params![build, project])
+    sql::execute(&mut pool.clone(), "WITH fixture_release AS (INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets,source_resolution_id) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-',''),'main','test','[]','{}',$1) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url,release_id,spec_revision,release_version) VALUES($1,$2,'main','queued','https://example.invalid/repo.git', (SELECT id FROM fixture_release),1,(SELECT version FROM fixture_release))", params![build, project])
     .await
     .unwrap();
     let source = SourceManifest::new(

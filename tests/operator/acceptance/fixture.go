@@ -1,5 +1,5 @@
 // [INPUT]: 隔离服务身份、固定 Git/LFS 夹具与模型故障开关。
-// [OUTPUT]: 提供同源 Git/LFS、显式 native/BuildKit 规划与验收回执代理。
+// [OUTPUT]: 提供同源源码、Release 目标规划和验收回执代理。
 // [POS]: Kubernetes 新任务契约的上游与供应商夹具。
 // [PROTOCOL]: Update this header on change, then check AGENTS.md
 package main
@@ -74,8 +74,8 @@ func imagePlatforms(value, architecture string) ([]string, error) {
 
 func imageTarget(architecture string, platforms []string, allowEmulation bool, delay int64) map[string]any {
 	return map[string]any{"os": "linux", "arch": architecture, "executor": "buildkit", "timeout_seconds": 300,
-		"image": map[string]any{"name": "acceptance", "context": ".", "dockerfile": "Dockerfile", "platforms": platforms,
-			"pool": "default", "allow_emulation": allowEmulation, "tags": []string{"init-verified"},
+		"image": map[string]any{"name": "image", "context": ".", "dockerfile": "Dockerfile", "platforms": platforms,
+			"pool": "default", "allow_emulation": allowEmulation, "tags": []string{},
 			"build_args": map[string]string{"BUILD_DELAY_SECONDS": fmt.Sprint(delay)}}}
 }
 
@@ -265,7 +265,7 @@ func main() {
 	control, _ := url.Parse("http://control-plane:8080")
 	proxy := httputil.NewSingleHostReverseProxy(control)
 	proxy.ModifyResponse = func(response *http.Response) error {
-		if response.Request.URL.Path != "/internal/runtime/event" {
+		if response.Request.URL.Path != "/internal/planning/event" {
 			return nil
 		}
 		body, e := io.ReadAll(io.LimitReader(response.Body, 2<<20))

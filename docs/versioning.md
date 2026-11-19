@@ -1,6 +1,14 @@
+<!--
+[INPUT]: 统一 VERSION、发布流水线与镜像和 Chart 清单。
+[OUTPUT]: 定义版本检查、交付身份和发布验收边界。
+[POS]: 版本治理入口；不替代实际部署记录。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # 统一版本与发布
 
 项目使用单一稳定语义版本，权威来源为仓库根目录的 `VERSION`。0.2.0 是首个统一发布版本；Git 标签使用 `v0.2.0`，Helm Chart 与应用版本使用 `0.2.0`。
+
+本文描述 Artifactory 平台自身版本。用户项目中的 Release 采用独立版本，规则见[项目版本交付](release-delivery.md)。
 
 ## 管理范围
 
@@ -27,9 +35,9 @@ cargo metadata --locked --no-deps --format-version 1 > /dev/null
 
 1. 更新统一版本，完成测试并提交源码；核对工作区没有夹带私有配置。
 2. 推送源码，创建指向该提交的注释标签 `v<version>`，推送标签；禁止移动已发布标签。
-3. 创建同名 GitHub Release。`release-images` 先检查标签与所有版本一致，再构建五类 Linux amd64 / arm64 镜像。
+3. 创建同名 GitHub Release。`release-images` 先检查标签与所有版本一致，再构建十类 Linux amd64 / arm64 镜像。
 4. 镜像发布任务验证 manifest 同时具有两种架构。部署使用稳定版本或已核对的 digest，不以 `latest` 作为发布证据。
-5. 同一流水线上传两个 Helm 包、`VERSION`、`SOURCE_COMMIT` 和 `SHA256SUMS`；下载后独立核对校验和与提交。
+5. 同一流水线上传四个 Helm 包、`VERSION`、`SOURCE_COMMIT` 和 `SHA256SUMS`；下载后独立核对校验和与提交。
 6. 源码 CI、镜像发布、真实集群部署、设备运行分别记录结果。任何一层失败都不能冒称下一层通过。
 
 原生 Emissary 二进制仍使用 `emissary-release` 的六平台构建与签名流程。该流程需要独立的签名 secret 和发布环境；普通 `v<version>` 镜像发布不代表已提供签名 OTA manifest，也不代表 Apple / Windows 正式发行签名。

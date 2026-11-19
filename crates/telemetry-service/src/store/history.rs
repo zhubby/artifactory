@@ -1,8 +1,12 @@
+//! [INPUT]: 依赖遥测只读池、节点资源身份和查询时间范围。
+//! [OUTPUT]: 提供实时快照、历史游标和聚合遥测。
+//! [POS]: 时序读取边界；返回值受查询预算限制。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Bounded historical reads through the independent telemetry read pool.
 use super::TelemetryStore;
 use crate::query::{Range, Resolution};
 use artifactory_database::{params, sql};
-use artifactory_runtime_protocol::error::{ApiError, Result};
+use artifactory_service_transport::error::{ApiError, Result};
 use serde::Serialize;
 use serde_json::Value;
 use uuid::Uuid;
@@ -50,7 +54,7 @@ impl TelemetryStore {
     /// Fetch current-startup resources in one bounded query; historical replay stays isolated.
     pub async fn resources(
         &self,
-        identities: &[artifactory_telemetry_model::nodes::ResourceIdentity],
+        identities: &[artifactory_emissary_protocol::nodes::ResourceIdentity],
     ) -> Result<Vec<Value>> {
         Ok(sql::scalars(&mut self.read.clone(),"SELECT jsonb_build_object('node_id',h.node_id,'startup_id',h.startup_id,'sampled_at',h.sampled_at,'received_at',h.received_at,'available_memory_bytes',h.sample->'available_memory_bytes','build_disk_available_bytes',h.sample->'build_disk_available_bytes','cpu_percent',h.sample->'cpu_percent') FROM startup_resources h JOIN jsonb_to_recordset($1) AS r(node_id uuid,startup_id uuid) ON h.node_id=r.node_id AND h.startup_id=r.startup_id",params![serde_json::to_value(identities)?]).await?)
     }

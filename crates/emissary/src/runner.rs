@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖 mTLS 会话、持久化事件队列和节点配置。
+//! [INPUT]: 依赖 mTLS 会话、节点协议元数据和持久化事件队列。
 //! [OUTPUT]: 提供任务领取、租约续期和 Worker 监督。
 //! [POS]: 节点主进程；向 Worker 仅交付被授权的本机方案。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -171,7 +171,7 @@ struct State {
     drain_request: String,
     drain_update: String,
     telemetry: Option<crate::telemetry::Handle>,
-    startup: Option<artifactory_telemetry_model::nodes::MetadataSnapshot>,
+    startup: Option<artifactory_emissary_protocol::nodes::MetadataSnapshot>,
     metadata_acked: bool,
 }
 enum Action {

@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖固定后端、对象票据、请求预算与监听就绪状态。
-//! [OUTPUT]: 流式代理 HTTP；健康检查汇总全部必要监听。
+//! [INPUT]: 依赖固定后端、交付票据、发布围栏与请求预算。
+//! [OUTPUT]: 流式代理 HTTP；固定下载文件名并拦截正式 Manifest。
 //! [POS]: 不缓存认证结果，不缓冲镜像层，不重放写请求。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::config::Config;
@@ -20,25 +20,44 @@ use std::sync::{
 /// 只限制回池连接的空闲时间，保留流式传输的独立读写时限。
 const UPSTREAM_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
+fn delivery_disposition(filename: &str) -> anyhow::Result<String> {
+    anyhow::ensure!(
+        !filename.is_empty()
+            && filename.len() <= 255
+            && filename.as_bytes()[0].is_ascii_alphanumeric()
+            && filename
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte)),
+        "invalid delivery filename"
+    );
+    Ok(format!(
+        "attachment; filename=\"{filename}\"; filename*=UTF-8''{filename}"
+    ))
+}
+
 #[derive(Default)]
 pub struct Context {
     upstream: Option<url::Url>,
     object: bool,
+    disposition: Option<String>,
     permit: Option<tokio::sync::OwnedSemaphorePermit>,
     upstream_reused: Option<bool>,
 }
+
 pub struct Gateway {
     config: Config,
     readiness: Readiness,
     next: AtomicUsize,
     http: reqwest::Client,
     requests: Arc<tokio::sync::Semaphore>,
+    manifests: tokio::sync::Semaphore,
     ca: Option<Arc<pingora::protocols::tls::CaType>>,
 }
 impl Gateway {
     pub fn new(config: Config, readiness: Readiness) -> anyhow::Result<Self> {
         let mut http = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
             .timeout(std::time::Duration::from_secs(10));
         let mut ca = None;
         if let Ok(path) = std::env::var("ARTIFACTORY_SERVICE_CA") {
@@ -72,6 +91,8 @@ impl Gateway {
         }
         Ok(Self {
             requests: Arc::new(tokio::sync::Semaphore::new(config.max_http)),
+            // 八个四 MiB 正文上限，避免普通 HTTP 预算放大缓冲内存。
+            manifests: tokio::sync::Semaphore::new(8),
             config,
             readiness,
             next: AtomicUsize::new(0),
@@ -82,7 +103,7 @@ impl Gateway {
     fn select(&self, urls: &[url::Url]) -> url::Url {
         urls[self.next.fetch_add(1, Ordering::Relaxed) % urls.len()].clone()
     }
-    async fn object(&self, session: &Session) -> anyhow::Result<url::Url> {
+    async fn object(&self, session: &Session) -> anyhow::Result<(url::Url, Option<String>)> {
         let method = session.req_header().method.as_str();
         anyhow::ensure!(
             ["GET", "HEAD", "PUT"].contains(&method),
@@ -115,6 +136,7 @@ impl Gateway {
         #[derive(Deserialize)]
         struct Resolved {
             url: String,
+            filename: Option<String>,
         }
         let mut bytes = Vec::new();
         while let Some(chunk) = response
@@ -137,7 +159,12 @@ impl Gateway {
                 && url.fragment().is_none(),
             "object origin rejected"
         );
-        Ok(url)
+        let disposition = resolved
+            .filename
+            .as_deref()
+            .map(delivery_disposition)
+            .transpose()?;
+        Ok((url, disposition))
     }
 }
 fn failure(message: &'static str) -> Box<Error> {
@@ -183,9 +210,10 @@ impl ProxyHttp for Gateway {
         }
         if path == "/artifacts/object" {
             match self.object(session).await {
-                Ok(url) => {
+                Ok((url, disposition)) => {
                     ctx.upstream = Some(url);
-                    ctx.object = true
+                    ctx.object = true;
+                    ctx.disposition = disposition;
                 }
                 Err(_) => {
                     session.respond_error(403).await?;
@@ -196,6 +224,32 @@ impl ProxyHttp for Gateway {
             session.respond_error(404).await?;
             return Ok(true);
         } else if path == "/v2" || path.starts_with("/v2/") {
+            if !["GET", "HEAD", "OPTIONS"].contains(&session.req_header().method.as_str())
+                && (path.contains('%')
+                    || path.contains('\\')
+                    || path.contains("//")
+                    || path.split('/').any(|part| part == "." || part == ".."))
+            {
+                session.respond_error(400).await?;
+                return Ok(true);
+            }
+            if session.req_header().method == "PUT"
+                && crate::registry::formal_manifest(path).is_some()
+            {
+                let Ok(_manifest) = self.manifests.try_acquire() else {
+                    session.respond_error(503).await?;
+                    return Ok(true);
+                };
+                crate::registry::write_manifest(
+                    session,
+                    &self.http,
+                    self.select(&self.config.control),
+                    self.select(&self.config.registry),
+                    &self.config.token,
+                )
+                .await?;
+                return Ok(true);
+            }
             ctx.upstream = Some(self.select(&self.config.registry));
         } else if internal
             || path.starts_with("/api/")
@@ -297,6 +351,11 @@ impl ProxyHttp for Gateway {
             }
             response.remove_header("location");
             response.insert_header("Cache-Control", "private, no-store")?;
+            if let Some(disposition) = &ctx.disposition
+                && response.status.is_success()
+            {
+                response.insert_header("Content-Disposition", disposition)?;
+            }
         }
         Ok(())
     }
@@ -344,5 +403,30 @@ impl ProxyHttp for Gateway {
         ctx.upstream_reused = Some(false);
         error.set_retry(false);
         error
+    }
+}
+
+#[cfg(test)]
+mod delivery_tests {
+    use super::*;
+    #[test]
+    fn content_disposition_accepts_only_bounded_safe_delivery_names() {
+        assert_eq!(
+            delivery_disposition("app-1.2.3-linux-amd64.tar.gz").unwrap(),
+            "attachment; filename=\"app-1.2.3-linux-amd64.tar.gz\"; filename*=UTF-8''app-1.2.3-linux-amd64.tar.gz"
+        );
+        for invalid in [
+            "",
+            "../app",
+            "a/b",
+            "a\\b",
+            "a\r\nX:1",
+            "a\"b",
+            "a;b",
+            "中文.zip",
+        ] {
+            assert!(delivery_disposition(invalid).is_err());
+        }
+        assert!(delivery_disposition(&"a".repeat(256)).is_err());
     }
 }

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证monochrome-workspace页面行为。
+ * [OUTPUT]: 验证快捷导航、业务草稿保护与日志状态保持。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -9,7 +9,7 @@ import { fixtureAPI, build, project, tenantURL, openPreferences, closePreference
 
 test("keyboard quick navigation searches authorized projects and restores focus on Escape", async ({ page }) => {
   const events = await fixtureAPI(page);
-  await page.goto(tenantURL("/projects/desktop-client/builds"));
+  await page.goto(tenantURL("/"));
   const trigger = page.getByRole("button", { name: "快捷导航", exact: true });
   await trigger.focus();
   await page.keyboard.press("Control+k");
@@ -19,12 +19,12 @@ test("keyboard quick navigation searches authorized projects and restores focus 
   await expect(page.getByRole("option").filter({ hasText: "Desktop Client" }).first()).toBeVisible();
   await search.fill("not-an-accessible-project");
   await expect(page.getByRole("option")).toHaveCount(0);
-  await search.fill("共享设备");
+  await search.fill("构建节点");
   await expect(page.getByRole("option")).toHaveCount(1);
   await page.keyboard.press("Escape");
   await expect(trigger).toBeFocused();
   await trigger.click();
-  await search.fill("共享设备");
+  await search.fill("构建节点");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(tenantURL("/nodes"));
   expect(events.writes).toEqual([]);
@@ -32,15 +32,14 @@ test("keyboard quick navigation searches authorized projects and restores focus 
 
 test("quick navigation respects unsaved build drafts and viewer permissions", async ({ page }) => {
   const events = await fixtureAPI(page);
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  await page.getByRole("button", { name: "继续", exact: true }).click();
+  await page.goto(tenantURL("/projects/desktop-client/releases/new"));
   await page.locator('textarea[name="goal"]').fill("Preserve the exact draft");
   await page.keyboard.press("Control+k");
-  await page.getByRole("combobox", { name: "搜索项目或页面", exact: true }).fill("共享设备");
+  await page.getByRole("combobox", { name: "搜索项目或页面", exact: true }).fill("返回租户工作台");
   const rejected = page.waitForEvent("dialog").then(dialog => dialog.dismiss());
   await page.keyboard.press("Enter");
   await rejected;
-  await expect(page).toHaveURL(tenantURL("/projects/desktop-client/builds/new"));
+  await expect(page).toHaveURL(tenantURL("/projects/desktop-client/releases/new"));
   await expect(page.locator('textarea[name="goal"]')).toHaveValue("Preserve the exact draft");
   expect(events.writes).toEqual([]);
 });
@@ -71,26 +70,14 @@ test("quick navigation shortcuts preserve the active modal and still toggle the 
   await expect(close).toBeFocused();
 });
 
-test("the wizard presents three stages with goal and platform validation together", async ({ page }) => {
-  await fixtureAPI(page);
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  await expect(page.locator(".wizard-steps li")).toHaveCount(3);
-  await expect(page.locator('.wizard-steps [aria-current="step"]')).toHaveText(/源码/);
-  await page.getByRole("button", { name: "继续", exact: true }).click();
-  await page.getByRole("radio", { name: "构建并收集产物", exact: true }).check();
-  await expect(page.getByRole("radio", { name: "自动选择平台", exact: true })).toBeChecked();
-  await page.getByRole("radio", { name: "指定目标平台", exact: true }).check();
-  await page.getByRole("button", { name: "继续", exact: true }).click();
-  await expect(page.locator(".error-box")).toContainText("请至少选择一个目标平台");
-  await page.getByRole("checkbox", { name: "Linux · x64", exact: true }).check();
-  await page.getByRole("button", { name: "继续", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "确认后即可发起构建", exact: true })).toBeVisible();
-  await expect(page.locator('.wizard-steps [aria-current="step"]')).toHaveText(/确认/);
-  await page.getByRole("button", { name: "上一步", exact: true }).click();
-  await expect(page.locator('.wizard-steps [aria-current="step"]')).toHaveText(/目标与平台/);
-  await expect(page.getByRole("checkbox", { name: "Linux · x64", exact: true })).toBeChecked();
-  await page.getByRole("button", { name: "继续", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "确认后即可发起构建", exact: true })).toBeVisible();
+test("Release target forms keep host and application platforms consistent", async ({page})=>{
+ await fixtureAPI(page);await page.goto(tenantURL("/projects/desktop-client/releases/new"));
+ const target=page.locator("fieldset").first();
+ await target.getByRole("combobox",{name:"构建宿主系统",exact:true}).selectOption("darwin");
+ await expect(target.getByRole("combobox",{name:"应用平台",exact:true})).toHaveValue("");
+ await expect(target.getByRole("combobox",{name:"应用平台",exact:true}).getByRole("option")).toHaveText(["非应用目标","macos","ios","android"]);
+ await target.getByRole("combobox",{name:"应用平台",exact:true}).selectOption("ios");
+ await expect(target.getByRole("combobox",{name:"应用平台",exact:true})).toHaveValue("ios");
 });
 
 test("detail tabs and preferences preserve the live subscription and the log position", async ({ page }) => {
@@ -185,8 +172,8 @@ test("viewer quick navigation exposes no administrative or create-build actions"
   await page.goto(tenantURL("/projects/desktop-client"));
   await page.getByRole("button", { name: "快捷导航", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByRole("option").filter({ hasText: "发起构建" })).toHaveCount(0);
-  await expect(page.getByRole("option").filter({ hasText: "租户管理" })).toHaveCount(0);
+  await expect(page.getByRole("option").filter({ hasText: "新建 Release" })).toHaveCount(0);
+  await expect(page.getByRole("option").filter({ hasText: "租户设置" })).toHaveCount(0);
   await expect(page.getByRole("option").filter({ hasText: project.name }).first()).toBeVisible();
   await page.keyboard.press("Escape");
   await page.goto(tenantURL("/settings/credentials"));

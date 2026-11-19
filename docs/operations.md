@@ -1,8 +1,16 @@
+<!--
+[INPUT]: 当前服务拓扑、持久身份和独立部署脚本。
+[OUTPUT]: 定义安装、备份、节点注册和故障处理边界。
+[POS]: 运维入口；当前基线只用于新实例。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # 部署与运维
 
 ## 部署边界
 
-Control 为支持多副本的 Linux 服务，内嵌规划 Runtime。后端统一使用 TimescaleDB 2.32+ / PostgreSQL 17，关系表保存队列和业务状态，独立 Rust Telemetry 服务保存时序数据。多副本设备调度使用 PostgreSQL Outbox 与节点行锁，部署、容量与回退见 [Control 多副本](control-ha.md)。Kubernetes 规划和源码任务的部署见 [Operator 运维](operator-operations.md)。宿主执行只接受内部可信项目。签名节点应与一般构建节点分池、最小授权、限制网络和服务账户权限。
+Control 为支持多副本的 Linux 服务，内嵌规划协调器。后端统一使用 TimescaleDB 2.32+ / PostgreSQL 17，关系表保存队列和业务状态，独立 Rust Telemetry 服务保存时序数据。多副本设备调度使用 PostgreSQL Outbox 与节点行锁，部署、容量与回退见 [Control 多副本](control-ha.md)。Kubernetes 规划和源码任务的部署见 [Operator 运维](operator-operations.md)。宿主执行只接受内部可信项目。签名节点应与一般构建节点分池、最小授权、限制网络和服务账户权限。
+
+本版只安装全新实例。业务数据库基线为 `2026112001`，规划数据库基线为 `2026111901`；程序拒绝旧库，不执行原地升级或自动重置。安装脚本不退役旧 Deployment、CRD、Pod、PVC 或持久数据，完整边界见[初始化与清理](planning-protocol.md#初始化与清理)。
 
 生产需可解析的控制台和 Emissary gRPC 域名。Compose 的 Caddy 只负责 80/443 与 ACME，全部应用请求转至 Pingora。Pingora 反向代理控制台、API、内建仓库与制品，S3 没有公开入口。构建 gRPC 使用钉住私有 CA 的 TLS 8443，独立遥测 mTLS 使用同一设备域名的 8444。仅向受信网络开放设备端口；不公开数据库、遥测内部查询、SeaweedFS 管理端口及 filer/master。代理不得缓冲 SSE。
 
@@ -20,7 +28,9 @@ docker compose --env-file .deploy/env config --quiet
 docker compose --env-file .deploy/env up -d --build
 ```
 
-`.deploy/env` 包含随机数据库密码、Git 凭据加密主密钥、S3 密钥和初始密码；`.deploy/pki` 包含节点证书签发私钥。均不入 Git，目录权限为 0700，文件为 0600；容器以该部署账户 UID/GID 读取。不要在已有部署上重新初始化或更换主密钥。
+新安装的初始账号为 `admin / 123456`。仅在业务库没有用户时创建，重启不覆盖已有密码。该初始密码使用随机盐 Argon2 散列存储。注册和修改密码仍要求 12–256 字节。
+
+`.deploy/env` 包含随机数据库密码、Git 凭据加密主密钥、S3 密钥和初始账号；`.deploy/pki` 包含节点证书签发私钥。均不入 Git，目录权限为 0700，文件为 0600；容器以该部署账户 UID/GID 读取。不要在已有部署上重新初始化或更换主密钥。
 
 Compose 内 S3 禁止匿名访问，只在私有网络使用 `http://s3:8333`。Control 显式设置 `ARTIFACTORY_S3_ALLOW_HTTP=true`，只放行管理员配置的私有存储地址；公开入口仍要求 HTTPS。Emissary 和浏览器只访问网关票据地址。升级既有 `.deploy/env` 时补充至少 32 字符的随机 `ARTIFACTORY_GATEWAY_TOKEN`，保留数据库口令、主密钥和设备 CA；旧 `ARTIFACTORY_S3_DOMAIN` 被忽略。不要重新运行初始化脚本覆盖已有身份。
 
@@ -30,7 +40,7 @@ S3 启动脚本把只读挂载、0600 权限的宿主认证配置复制为容器
 
 ### 用户自助注册
 
-**自助注册默认开启，包括未设置新开关的升级部署。任何能够访问控制台的人均可注册为 `viewer`，查看并下载本实例全部项目的构建与产物。** 当前账号权限是实例级，不是项目成员隔离。新用户不能发起构建、创建项目或管理账号、凭据和节点；不会自动获得管理员权限。
+**自助注册默认开启。任何能够访问控制台的人均可创建全局账号，但新账号没有租户或项目权限，需要创建租户或接受邀请。** 业务数据按租户和项目授权隔离，注册不会授予已有空间的读取或管理权限。
 
 不希望开放注册时，在本地控制平面环境中设置 `ARTIFACTORY_REGISTRATION_ENABLED=false` 并重启控制平面；Compose 在 `.deploy/env` 中设置相同值并重新创建 control-plane 服务；Helm 使用 `--set auth.registrationEnabled=false` 后升级。开关仅接受 `true` / `false`，默认 `true`。初始化脚本尊重已导出的开关值，但不会覆盖已有环境文件。关闭后注册 API 返回 `403`，登录页不展示注册入口，已有用户和会话保持可用；重新开启不改变已创建账号的角色。
 
@@ -188,14 +198,14 @@ doctor 报告路径、版本命令是否成功、实际 OS/CPU、可发现工具
 必须协调备份各 TimescaleDB 数据库、S3 对象、`.deploy/env` 中主密钥及 PKI；只有数据库备份无法解密凭据，也无法恢复制品。备份应离线加密，并独立限制访问。
 
 1. 排空节点、停止新触发、等待在途任务结束，停止 Control 和 Telemetry 写入。
-2. `pg_dump` 分别保存实际部署的业务、Runtime、遥测数据库，记录 schema 与 TimescaleDB 扩展版本；同时保存 S3 内容与对象校验清单。分别导出的数据库不自动构成跨库事务快照，必须先停写。
+2. `pg_dump` 分别保存实际部署的业务、规划协调器、遥测数据库，记录 schema 与 TimescaleDB 扩展版本；同时保存 S3 内容与对象校验清单。分别导出的数据库不自动构成跨库事务快照，必须先停写。
 3. 保存主密钥、S3 密钥、签发 CA、节点授权与镜像版本；不要在普通工单里复制这些秘密。
 4. 在相同 TimescaleDB 版本的隔离环境恢复：各库预装扩展，执行 `timescaledb_pre_restore()`，串行 `pg_restore` 后执行 `timescaledb_post_restore()`。使用相同 master key，检查凭据解密、Release 下载 SHA-256、遥测列存 / 聚合 / 后台策略及最新摘要，再开放流量。
 5. 升级前保留备份，执行迁移后回滚必须连同 schema 和对象状态一起评估，不能仅回退二进制。
 
 构建日志与制品没有自动 GC / retention API；遥测按 [保留策略](telemetry.md#数据与保留策略) 自动清理。禁止直接批量删除平台数据目录或 Release 对象。暂存对象和孤立失败日志的清理必须停写、基于数据库引用清单、先备份再删除；已发布制品不能按文件时间猜测是否无用。生产备份恢复演练仍是独立验收项。
 
-本次原型重置保留 S3/Registry 物理对象、PKI 和主密钥。新业务与 Runtime 库使用唯一初始化基线，不回填旧列表或授权，原生设备需重新注册。重置前阻断写入口，停止旧任务，确认在途写入和最长 15 分钟的上传票据失效。
+旧实例的备份保留其原数据库、S3/Registry 对象、PKI 和主密钥。新实例不导入旧业务列表或授权，设备向新实例重新注册。旧实例的停写、任务排空和资源退役由管理员独立执行；安装新版本不会触发这些操作。
 
 ## 临时规划与源码
 

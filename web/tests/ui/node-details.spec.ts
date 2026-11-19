@@ -1,11 +1,11 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证node-details页面行为。
+ * [OUTPUT]: 验证节点详情布局、分区查询及管理操作。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { expect, test, type Page } from "@playwright/test";
-import { effectsStorage, themeStorage } from "../../src/lib/preferences";
+import { themeStorage } from "../../src/lib/preferences";
 import {fixtureAPI, nodes, nodeTelemetry, tenantURL } from "./fixtures";
 import type { Node } from "../../src/lib/types";
 
@@ -56,11 +56,10 @@ for (const theme of ["light", "dark"]) {
     const events = await fixtureAPI(page);
     await english(page);
     await page.addInitScript(
-      ({ themeStorage, effectsStorage, theme }) => {
+      ({ themeStorage, theme }) => {
         localStorage.setItem(themeStorage, theme);
-        localStorage.setItem(effectsStorage, "off");
       },
-      { themeStorage, effectsStorage, theme },
+      { themeStorage, theme },
     );
     const longName =
       "Windows-Signing-Runner-with-a-very-long-device-name-production-2026";

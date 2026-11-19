@@ -5,7 +5,7 @@
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { expect, test } from "@playwright/test";
-import { build, fixtureAPI, project, tenantURL } from "./fixtures";
+import { artifact, build, fixtureAPI, project, release, tenantURL } from "./fixtures";
 import type { ImageExecution } from "../../src/lib/types";
 const digest = "sha256:" + "a".repeat(64);
 const execution: ImageExecution = {
@@ -16,48 +16,40 @@ const execution: ImageExecution = {
 };
 const credential = { id: "registry-credential", name: "External", kind: "registry", enabled: true };
 
-test("image outputs publish and retry by digest without rebuilding", async ({ page }, info) => {
+test("published Release images distribute a fixed version and show independent publication state", async ({ page }, info) => {
   await fixtureAPI(page);
-  const external = { ...execution, id: "publication-failed", parent_id: execution.id, operation: "publish", status: "publish_failed", destination_repository: "release/application", destination_credential: credential.id, destination_registry: "https://external.example.com:5443" };
+  const external = { ...execution, id: "publication-failed", parent_id: execution.id, operation: "publish", status: "publish_failed", destination_repository: "release/application", destination_credential: credential.id, destination_registry: "https://external.example.com:5443", tags:[release.version] };
   const result = { ...build, status: "succeeded", finished_at: build.created_at, artifacts: [], image_executions: [execution, external], image_registry: "https://images.example.com" };
+  const image = {id:"official-image",execution_id:execution.id,name:"application",target:"container",repository:execution.destination_repository,digest,version:release.version,platforms:[{platform:"linux/amd64",digest},{platform:"linux/arm64",digest}]};
+  await page.route(`**/api/v1/releases/${release.id}`,route=>route.fulfill({json:{...release,status:"published",selected_build_id:build.id,images:[image],image_registry:result.image_registry}}));
   for (const path of ["projects/by-slug/desktop-client/builds/128", "builds/build-main"])
     await page.route(`**/api/v1/${path}`, route => route.fulfill({ json: result }));
   await page.route("**/api/v1/projects/project-main/image-credentials", route => route.fulfill({ json: [credential] }));
-  await page.route("**/api/v1/builds/build-main/logs?*", route => route.fulfill({ json: { logs: [], next_before: null } }));
   await page.route("**/api/v1/image-executions/*/logs?*", route => route.fulfill({ json: [{ id: 1, platform: "linux/arm64", text: "verified platform result\n" }] }));
   const publications: unknown[] = [];
   await page.route("**/api/v1/image-executions/image-main/publish", async route => {
-    publications.push(route.request().postDataJSON());
-    await route.fulfill({ json: { id: "new-publication" } });
+    publications.push(route.request().postDataJSON()); await route.fulfill({ json: { id: "new-publication" } });
   });
-  await page.goto(tenantURL("/projects/desktop-client/builds/128"));
-  await page.getByRole("tab", { name: "制品", exact: true }).click();
-  await expect(page.getByText(`images.example.com/${execution.destination_repository}@${digest}`, { exact: false })).toBeVisible();
+  await page.goto(tenantURL(`/projects/desktop-client/releases/${release.id}`));
+  await page.getByRole("tab",{name:"交付物",exact:true}).click();
+  await expect(page.getByText(`images.example.com/${execution.destination_repository}:${release.version}`,{exact:false})).toBeVisible();
   await expect(page.getByText(`external.example.com:5443/release/application@${digest}`, { exact: false })).toBeVisible();
-  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", {
-    configurable: true,
-    value: { writeText: async (value: string) => { document.documentElement.dataset.copiedImage = value; } },
-  }));
+  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable:true,value:{writeText:async(value:string)=>{document.documentElement.dataset.copiedImage=value;}} }));
   await page.locator("article").filter({ hasText: "external.example.com:5443/release/application" }).getByRole("button", { name: "复制", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-copied-image", `external.example.com:5443/release/application@${digest}`);
-  await expect(page.getByText(`images.example.com/release/application`, { exact: false })).toHaveCount(0);
   await page.getByText("平台构建日志", { exact: true }).first().click();
   await expect(page.getByText("[linux/arm64] verified platform result", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "推送到外部仓库", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("combobox", { name: "仓库凭据", exact: true }).selectOption(credential.id);
+  const dialog=page.getByRole("dialog");
+  await expect(dialog.getByLabel("版本标签（固定）")).toHaveValue(release.version);
+  await expect(dialog.getByLabel("版本标签（固定）")).toHaveAttribute("readonly","");
+  await dialog.getByRole("combobox",{name:"仓库凭据",exact:true}).selectOption(credential.id);
   await dialog.getByLabel("目标仓库路径").fill("release/application");
-  await dialog.getByLabel("标签（逗号分隔）").fill("v1,stable");
-  await dialog.getByRole("button", { name: "推送到外部仓库", exact: true }).click();
+  await dialog.getByRole("button",{name:"推送到外部仓库",exact:true}).click();
   await expect(dialog).not.toBeVisible();
-  await page.getByRole("button", { name: "重试发布", exact: true }).click();
-  await expect.poll(() => publications.length).toBe(2);
-  expect(publications).toEqual([
-    { credential_id: credential.id, repository: "release/application", tags: ["v1", "stable"] },
-    { credential_id: credential.id, repository: "release/application", tags: ["v1"] },
-  ]);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
-  await page.screenshot({ path: info.outputPath("image-outputs.png"), fullPage: true });
+  expect(publications).toEqual([{credential_id:credential.id,repository:"release/application"}]);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBeTruthy();
+  await page.screenshot({path:info.outputPath("release-image-delivery.png"),fullPage:true});
 });
 
 test("registry credential creation clears private inputs and supports revocation", async ({ page }) => {
@@ -88,24 +80,30 @@ test("registry credential creation clears private inputs and supports revocation
   await expect(section.getByText("已停用", { exact: true })).toBeVisible();
 });
 
-test("project image catalog and immutable release expose digest references", async ({ page }) => {
-  await fixtureAPI(page);
-  const image = { id: "verified-image", project_id: project.id, name: "application", target: "container", repository: execution.destination_repository, digest,
-    platforms: [{ platform: "linux/amd64", digest }, { platform: "linux/arm64", digest }], project_slug: project.slug, build_number: build.number, registry: "https://images.example.com", created_at: build.created_at };
-  await page.route("**/api/v1/images?*", route => {
-    expect(new URL(route.request().url()).searchParams.get("project_id")).toBe(project.id);
-    return route.fulfill({ json: [image] });
-  });
-  await page.route("**/api/v1/releases/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", route => route.fulfill({ json: {
-    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", project_id: project.id, project_name: project.name, project_slug: project.slug,
-    build_number: build.number, build_id: build.id, version: "v2", commit_sha: build.commit_sha,
-    created_at: build.created_at, artifact_count: 1, artifacts: [], images: [image], image_registry: image.registry,
-  } }));
-  await page.goto(tenantURL(`/projects/${project.slug}/artifacts`));
-  await expect(page.getByRole("heading", { name: "镜像结果", exact: true })).toBeVisible();
-  await expect(page.getByText(`images.example.com/${image.repository}@${digest}`, { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "#128", exact: true })).toHaveAttribute("href", tenantURL(`/projects/${project.slug}/builds/128`));
-  await page.goto(tenantURL(`/projects/${project.slug}/releases/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa`));
-  await expect(page.getByRole("heading", { name: "镜像结果", exact: true })).toBeVisible();
-  await expect(page.getByText(`images.example.com/${image.repository}@${digest}`, { exact: false })).toBeVisible();
+test("formal delivery uses server filenames, version links and downloadable manifests", async ({page})=>{
+ await fixtureAPI(page);
+ const image={id:"verified-image",execution_id:execution.id,release_id:release.id,release_version:release.version,project_id:project.id,name:"application",target:"container",repository:execution.destination_repository,digest,platforms:[{platform:"linux/amd64",digest},{platform:"linux/arm64",digest}],project_slug:project.slug,build_number:build.number,registry:"https://images.example.com",created_at:build.created_at};
+ await page.route("**/api/v1/images?*",route=>route.fulfill({json:[image]}));
+ const filename=`desktop-client-app-${release.version}-macos-arm64.zip`;
+ await page.route(`**/api/v1/releases/${release.id}`,route=>route.fulfill({json:{...release,status:"published",selected_build_id:build.id,artifacts:[{...artifact,delivery_filename:filename,release_id:release.id,release_version:release.version}],images:[image],image_registry:image.registry,delivery_manifest:{version:release.version}}}));
+ await page.route(`**/api/v1/releases/${release.id}/manifest`,route=>route.fulfill({headers:{"Content-Disposition":`attachment; filename="desktop-client-${release.version}-release.json"`},json:{version:release.version}}));
+ await page.route(`**/api/v1/releases/${release.id}/checksums`,route=>route.fulfill({headers:{"Content-Disposition":`attachment; filename="desktop-client-${release.version}-SHA256SUMS"`},contentType:"text/plain",body:`${artifact.sha256}  ${filename}\n`}));
+ await page.goto(tenantURL(`/projects/${project.slug}/artifacts`));
+ await expect(page.getByRole("link",{name:release.version,exact:true})).toHaveAttribute("href",tenantURL(`/projects/${project.slug}/releases/${release.id}`));
+ await expect(page.getByRole("link",{name:"#128",exact:true})).toHaveAttribute("href",tenantURL(`/projects/${project.slug}/releases/${release.id}/builds/128`));
+ await page.goto(tenantURL(`/projects/${project.slug}/releases/${release.id}`));
+ await page.getByRole("tab",{name:"交付物",exact:true}).click();
+ await expect(page.getByText(filename,{exact:true})).toBeVisible();
+ await expect(page.getByText(`images.example.com/${image.repository}@${digest}`,{exact:false})).toBeVisible();
+ for(const name of ["版本 Manifest","SHA256SUMS"]){const download=page.waitForEvent("download");await page.getByRole("button",{name,exact:true}).click();const file=await download;expect(file.suggestedFilename()).toBe(name==="SHA256SUMS"?`desktop-client-${release.version}-SHA256SUMS`:`desktop-client-${release.version}-release.json`);}
+});
+
+test("candidate build images provide logs without external distribution actions",async({page})=>{
+ await fixtureAPI(page);
+ await page.route("**/api/v1/projects/by-slug/desktop-client/builds/128",route=>route.fulfill({json:{...build,status:"succeeded",image_executions:[execution],image_registry:"https://images.example.com"}}));
+ await page.route("**/api/v1/builds/build-main/logs?*",route=>route.fulfill({json:{logs:[],next_before:null}}));
+ await page.goto(tenantURL(`/projects/${project.slug}/releases/${release.id}/builds/128`));
+ await page.getByRole("tab",{name:"制品",exact:true}).click();
+ await expect(page.getByRole("button",{name:"推送到外部仓库",exact:true})).toHaveCount(0);
+ await expect(page.getByRole("button",{name:"发布版本",exact:true})).toHaveCount(0);
 });

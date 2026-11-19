@@ -1,8 +1,10 @@
-//! [INPUT]: 依赖节点配置文件、工具路径与私有文件写入。
-//! [OUTPUT]: 提供节点设置和共享私有目录、原子文件写入。
+//! [INPUT]: 依赖节点配置文件、源码私有目录和共享私有写入。
+//! [OUTPUT]: 提供节点设置、私有文件入口和原子记录写入。
 //! [POS]: Runner 与 Worker 共用的配置和本机文件边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
+pub use artifactory_execution_support::fs::private_write;
+pub use artifactory_source_checkout::private_dir;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -64,37 +66,6 @@ impl Config {
     pub fn tool(&self, name: &str) -> String {
         self.tools.get(name).cloned().unwrap_or_else(|| name.into())
     }
-}
-pub fn private_dir(path: &Path) -> Result<()> {
-    let mut builder = fs::DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder.create(path)?;
-    Ok(())
-}
-pub fn private_write(path: &Path, bytes: &[u8], executable: bool, exclusive: bool) -> Result<()> {
-    // Windows has no Unix execute permission bit.
-    #[cfg(windows)]
-    let _ = executable;
-    let mut options = fs::OpenOptions::new();
-    options
-        .write(true)
-        .create_new(exclusive)
-        .create(!exclusive)
-        .truncate(!exclusive);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(if executable { 0o700 } else { 0o600 });
-    }
-    let mut file = options.open(path)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    Ok(())
 }
 pub fn atomic_json(path: &Path, value: &impl Serialize) -> Result<()> {
     atomic_bytes(path, &serde_json::to_vec(value)?, false)

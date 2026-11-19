@@ -1,4 +1,7 @@
-//! Background telemetry with a bounded durable spool, independent of leases and build logs.
+//! [INPUT]: 依赖节点遥测契约、mTLS 通道和有界磁盘队列。
+//! [OUTPUT]: 采集启动元数据并异步发送遥测批次。
+//! [POS]: 独立于任务租约和构建日志的节点遥测循环。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod collector;
 mod inventory;
 mod managed;
@@ -27,8 +30,8 @@ pub async fn startup(
     diagnostics: &Value,
     capabilities: Vec<String>,
 ) -> anyhow::Result<(
-    artifactory_telemetry_model::nodes::MetadataSnapshot,
-    artifactory_telemetry_model::Inventory,
+    artifactory_emissary_protocol::nodes::MetadataSnapshot,
+    artifactory_emissary_protocol::telemetry::Inventory,
 )> {
     let mut system = sysinfo::System::new();
     system.refresh_cpu_all();
@@ -80,7 +83,7 @@ pub async fn startup(
     for (key, value) in &cfg.metadata {
         metadata.insert(format!("custom.{key}"), value.clone());
     }
-    let snapshot = artifactory_telemetry_model::nodes::MetadataSnapshot::new(
+    let snapshot = artifactory_emissary_protocol::nodes::MetadataSnapshot::new(
         startup_id,
         metadata,
         capabilities,
@@ -102,7 +105,7 @@ impl Handle {
     pub fn start(
         cfg: Config,
         startup_id: uuid::Uuid,
-        inventory: artifactory_telemetry_model::Inventory,
+        inventory: artifactory_emissary_protocol::telemetry::Inventory,
     ) -> Self {
         let registry = Registry::default();
         let cancel = CancellationToken::new();
@@ -230,9 +233,11 @@ impl Handle {
                     tokio::select! {_=upload_cancel.cancelled()=>break,_=notify.notified()=>{},_=tokio::time::sleep(Duration::from_secs(10))=>{}};
                     continue;
                 };
-                let expected = serde_json::from_slice::<artifactory_telemetry_model::Batch>(&bytes)
-                    .ok()
-                    .map(|b| b.id.to_string());
+                let expected = serde_json::from_slice::<
+                    artifactory_emissary_protocol::telemetry::Batch,
+                >(&bytes)
+                .ok()
+                .map(|b| b.id.to_string());
                 let operation = async {
                     if connection.is_none() {
                         connection = Some(TelemetryClient::new(

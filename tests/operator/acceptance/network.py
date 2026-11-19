@@ -80,8 +80,8 @@ Promise.all(Object.entries(targets).map(connect)).then(async tcp => {
 
 def probe(a, restricted):
     name = 'pi-network-' + ('restricted' if restricted else 'control')
-    pool = json.loads(a.kubectl('get', 'agentpool', 'default', '-o', 'json'))['spec']
-    pod = {'apiVersion': 'v1', 'kind': 'Pod', 'metadata': {'name': name, 'labels': {'app.kubernetes.io/name': 'artifactory-pi' if restricted else 'network-control', 'artifactory.dev/network-probe': str(time.time_ns())}}, 'spec': {'restartPolicy': 'Never', 'automountServiceAccountToken': False, 'containers': [{'name': 'probe', 'image': pool['image'], 'imagePullPolicy': pool.get('imagePullPolicy', 'IfNotPresent'), 'command': ['node', '-e', probe_script(targets(a))]}]}}
+    pool = json.loads(a.kubectl('get', 'planningpool', 'default', '-o', 'json'))['spec']
+    pod = {'apiVersion': 'v1', 'kind': 'Pod', 'metadata': {'name': name, 'labels': {'app.kubernetes.io/name': 'artifactory-planning-worker' if restricted else 'network-control', 'artifactory.dev/network-probe': str(time.time_ns())}}, 'spec': {'restartPolicy': 'Never', 'automountServiceAccountToken': False, 'containers': [{'name': 'probe', 'image': pool['image'], 'imagePullPolicy': pool.get('imagePullPolicy', 'IfNotPresent'), 'command': ['node', '-e', probe_script(targets(a))]}]}}
     a.kubectl('delete', 'pod', name, '--ignore-not-found')
     a.apply(pod)
     a.wait(lambda: json.loads(a.kubectl('get', 'pod', name, '-o', 'json'))['status']['phase'] in ['Succeeded', 'Failed'])

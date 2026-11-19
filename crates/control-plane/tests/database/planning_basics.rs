@@ -5,7 +5,7 @@
 use super::*;
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
-async fn model_profile_queries_mask_keys_and_validate_runtime_parameters() {
+async fn model_profile_queries_mask_keys_and_validate_planning_parameters() {
     let database = Database::with_tenant().await;
     let user = Uuid::new_v4();
     sql::execute(

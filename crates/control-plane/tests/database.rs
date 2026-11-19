@@ -28,12 +28,14 @@ mod fixture;
 mod images;
 #[path = "database/planning_basics.rs"]
 mod planning_basics;
+#[path = "database/planning_bridge.rs"]
+mod planning_bridge;
 #[path = "database/registration.rs"]
 mod registration;
+#[path = "database/release_contract.rs"]
+mod release_contract;
 #[path = "database/replication.rs"]
 mod replication;
-#[path = "database/runtime.rs"]
-mod runtime;
 #[path = "database/source_refs.rs"]
 mod source_refs;
 #[path = "database/tenancy.rs"]
@@ -130,7 +132,7 @@ async fn queued_signing_authorization_is_rechecked() {
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
-async fn scoped_retry_cannot_enable_publication_and_source_is_snapshotted() {
+async fn build_scope_can_retry_release_drafts_and_source_is_snapshotted() {
     let database = Database::with_tenant().await;
     let (project, _, job) = database.fixture().await;
     let user = Uuid::new_v4();
@@ -153,14 +155,17 @@ async fn scoped_retry_cannot_enable_publication_and_source_is_snapshotted() {
         .unwrap();
     assert_eq!(
         router.clone().oneshot(request).await.unwrap().status(),
-        StatusCode::FORBIDDEN
+        StatusCode::OK
     );
     let request = Request::builder()
         .method("POST")
-        .uri(format!("/api/v1/projects/{project}/builds"))
+        .uri(format!(
+            "/api/v1{}",
+            database.release_build_path(project).await
+        ))
         .header("content-type", "application/json")
         .header("authorization", "Bearer builder")
-        .body(Body::from(r#"{"ref":"main"}"#))
+        .body(Body::from(r#"{}"#))
         .unwrap();
     let response = router.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -206,7 +211,7 @@ async fn incomplete_artifacts_never_make_a_release_visible() {
     );
     let count: i64 = sql::scalar(
         &mut database.pool.clone(),
-        "SELECT count(*) FROM releases",
+        "SELECT count(*) FROM releases WHERE status='published'",
         params![],
     )
     .await
@@ -219,7 +224,7 @@ async fn incomplete_artifacts_never_make_a_release_visible() {
     )
     .await
     .unwrap();
-    assert_eq!(count, 1);
+    assert_eq!(count, 0);
     database.close().await;
 }
 
@@ -327,14 +332,17 @@ async fn real_http_authorization_rejects_csrf_and_scope_escalation() {
     let router = api::router(database.state.clone());
     let request = Request::builder()
         .method("POST")
-        .uri(format!("/api/v1/projects/{project}/builds"))
+        .uri(format!(
+            "/api/v1{}",
+            database.release_build_path(project).await
+        ))
         .header("content-type", "application/json")
         .header(
             "X-Artifactory-Tenant",
             "00000000-0000-0000-0000-000000000001",
         )
         .header("cookie", "artifactory_session=session")
-        .body(Body::from(r#"{"ref":"main"}"#))
+        .body(Body::from(r#"{}"#))
         .unwrap();
     assert_eq!(
         router.clone().oneshot(request).await.unwrap().status(),
@@ -342,10 +350,13 @@ async fn real_http_authorization_rejects_csrf_and_scope_escalation() {
     );
     let request = Request::builder()
         .method("POST")
-        .uri(format!("/api/v1/projects/{project}/builds"))
+        .uri(format!(
+            "/api/v1{}",
+            database.release_build_path(project).await
+        ))
         .header("content-type", "application/json")
         .header("authorization", "Bearer api-token")
-        .body(Body::from(r#"{"ref":"main"}"#))
+        .body(Body::from(r#"{}"#))
         .unwrap();
     assert_eq!(
         router.clone().oneshot(request).await.unwrap().status(),

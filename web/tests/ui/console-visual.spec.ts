@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证console-visual页面行为。
+ * [OUTPUT]: 验证多语言工作台、侧栏设置与个人设置布局。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -60,36 +60,36 @@ for (const locale of ["zh-CN", "en"] as const)
         [
           "artifacts",
           tenantURL("/projects/desktop-client/artifacts"),
-          en ? "Artifacts" : "制品仓库",
+          en ? "Artifacts" : "制品",
         ],
         [
           "releases",
           tenantURL("/projects/desktop-client/releases"),
-          en ? "Internal releases" : "内部发布",
+          en ? "Releases" : "Release 版本",
         ],
         [
           "release-detail",
           tenantURL(
             "/projects/desktop-client/releases/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           ),
-          "v1.2.0-internal",
+          "1.2.0-internal",
         ],
-        ["devices", tenantURL("/nodes"), en ? "Shared devices" : "共享设备"],
+        ["devices", tenantURL("/nodes"), en ? "Build nodes" : "构建节点"],
         [
           "tenant-management",
           tenantURL("/settings"),
-          en ? "Tenant settings" : "租户管理",
+          en ? "General" : "基本信息",
         ],
         [
           "project-management",
           tenantURL("/projects/desktop-client/settings"),
-          en ? "Project settings" : "项目管理",
+          en ? "General" : "基本信息",
         ],
       ];
       for (const [name, path, heading] of routes) {
         await page.goto(path);
         await expect(
-          page.getByRole("heading", { name: heading, exact: true }),
+          page.getByRole("heading", { name: heading, level: 1, exact: true }),
         ).toBeVisible();
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
         await expect(page.locator(".error-box[role=alert]")).toHaveCount(0);

@@ -8,7 +8,6 @@ use crate::store::dto;
 use crate::{
     auth::Auth,
     error::{ApiError, Result},
-    scheduler,
     state::AppState,
 };
 use axum::{
@@ -20,71 +19,6 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
-
-pub use crate::store::BuildInput;
-
-pub async fn create(
-    TenantState(state): TenantState,
-    auth: Auth,
-    Path(project): Path<Uuid>,
-    Json(mut input): Json<BuildInput>,
-) -> Result<Json<Value>> {
-    auth.project(project, "build")?;
-    if input.release_version.is_some() {
-        auth.project(project, "release")?;
-    }
-    if input.reference.is_empty()
-        || input.reference.len() > 255
-        || input.reference.starts_with('-')
-        || input.reference.contains(['\0', '\n', '\r'])
-        || !input.parameters.is_object()
-        || input.parameters.to_string().len() > 16384
-        || input.targets.len() > 32
-    {
-        return Err(ApiError::BadRequest("invalid build request".into()));
-    }
-    if let Some(version) = &input.release_version {
-        crate::build::validate_release_version(version)?;
-    }
-    let goal = input.goal.take().unwrap_or_else(|| {
-        "Build and verify this project, then collect its distributable artifacts.".into()
-    });
-    if goal.trim().is_empty() || goal.len() > 16000 {
-        return Err(ApiError::BadRequest(
-            "a build goal of 1..16000 bytes is required".into(),
-        ));
-    }
-    let requirements = input
-        .target_requirements
-        .as_array()
-        .ok_or_else(|| ApiError::BadRequest("target_requirements must be an array".into()))?;
-    if requirements.len() > 32
-        || requirements.iter().any(|r| {
-            !r.is_object()
-                || r.as_object()
-                    .unwrap()
-                    .keys()
-                    .any(|k| k != "os" && k != "arch")
-                || !["linux", "darwin", "windows"].contains(&r["os"].as_str().unwrap_or(""))
-                || !["amd64", "arm64"].contains(&r["arch"].as_str().unwrap_or(""))
-        })
-    {
-        return Err(ApiError::BadRequest("invalid platform requirements".into()));
-    }
-    let id = state
-        .store
-        .create_build(project, auth.user_id, &input, goal)
-        .await?;
-    state
-        .audit(
-            auth.user_id,
-            "build_created",
-            id,
-            json!({"project_id":project,"ref":input.reference}),
-        )
-        .await?;
-    Ok(Json(state.store.build_route(id).await?))
-}
 
 #[derive(Deserialize, Default)]
 pub struct Filter {
@@ -111,6 +45,20 @@ pub async fn list(
         state
             .store
             .builds(filter.project_id, auth.visible_projects())
+            .await?,
+    ))
+}
+
+pub async fn project_list(
+    TenantState(state): TenantState,
+    auth: Auth,
+    Path(project): Path<Uuid>,
+) -> Result<Json<Vec<dto::BuildSummary>>> {
+    auth.project(project, "read")?;
+    Ok(Json(
+        state
+            .store
+            .builds(Some(project), auth.visible_projects())
             .await?,
     ))
 }
@@ -175,34 +123,6 @@ pub async fn retry(
     Ok(Json(json!({"ok":true})))
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PublishInput {
-    version: Option<String>,
-}
-
-pub async fn publish(
-    TenantState(state): TenantState,
-    auth: Auth,
-    Path(id): Path<Uuid>,
-    Json(input): Json<PublishInput>,
-) -> Result<Json<Value>> {
-    auth.project(state.store.build_project(id).await?, "release")?;
-    state.store.request_publication(id, input.version).await?;
-    let release = scheduler::publish_build(&state, id)
-        .await
-        .map_err(|error| ApiError::Conflict(error.to_string()))?;
-    state
-        .audit(
-            auth.user_id,
-            "publish_requested",
-            id,
-            json!({"release_id":release}),
-        )
-        .await?;
-    Ok(Json(json!({"id":release})))
-}
-
 pub async fn artifacts(
     TenantState(state): TenantState,
     auth: Auth,
@@ -231,7 +151,12 @@ pub async fn download(
     state
         .audit(auth.user_id, "artifact_downloaded", id, json!({}))
         .await?;
-    let url = state.storage.download_url(&artifact.object_key)?;
+    let url = match artifact.delivery_filename {
+        Some(name) => state
+            .storage
+            .delivery_download_url(&artifact.object_key, &name)?,
+        None => state.storage.download_url(&artifact.object_key)?,
+    };
     if headers
         .get("accept")
         .and_then(|h| h.to_str().ok())

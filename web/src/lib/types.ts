@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供应用分类、领域类型与镜像发布来源快照。
+ * [OUTPUT]: 提供 Release 目标合同、构建归属与冻结交付类型。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -165,6 +165,9 @@ export interface Job {
   attempts: Attempt[];
 }
 export interface Artifact {
+  release_id?: string;
+  release_version?: string;
+  delivery_filename?: string | null;
   signing?: SigningEvidence | null;
   id: string;
   path: string;
@@ -184,6 +187,8 @@ export interface ImageExecution {
   destination_repository: string; destination_credential: string | null; destination_registry?: string | null; error: string | null;
 }
 export interface Build {
+  release_id: string;
+  spec_revision: number;
   number: number;
   project_slug: string;
   goal?: string | null;
@@ -200,7 +205,7 @@ export interface Build {
   publish_status: string;
   publish_error: string | null;
   error: string | null;
-  release_version: string | null;
+  release_version: string;
   created_at: string;
   finished_at: string | null;
   jobs?: Job[];
@@ -347,28 +352,54 @@ export interface NodeTelemetry {
 }
 export interface Release {
   project_slug: string;
-  build_number: number;
   id: string;
   project_id: string;
   project_name: string;
   version: string;
-  build_id: string;
-  commit_sha: string;
+  status: "draft" | "publishing" | "published" | "publish_failed";
+  requested_ref: string;
+  goal: string;
+  target_requirements: ReleaseTarget[];
+  targets: string[];
+  spec_revision: number;
+  source_manifest_id: string | null;
+  commit_sha: string | null;
+  build_count: number;
+  selected_build_id: string | null;
+  delivery_manifest: Record<string, unknown> | null;
+  publish_error: string | null;
   created_at: string;
-  artifact_count: number;
+  artifact_count?: number;
   artifacts?: Artifact[];
   images?: ReleaseImage[];
   image_registry?: string | null;
 }
+export type ReleaseTarget = {
+  kind: "native";
+  key: string;
+  os: "linux" | "darwin" | "windows";
+  arch: "amd64" | "arm64";
+  application_platform?: ApplicationPlatform | null;
+  artifact_key?: string;
+  format_suffix?: string;
+} | {
+  kind: "image";
+  key: string;
+  platforms: ("linux/amd64" | "linux/arm64")[];
+};
 export interface ReleaseImage {
   id: string;
   name: string;
   target: string;
   repository: string;
   digest: string;
+  execution_id?: string;
+  version?: string;
   platforms: { platform: string; digest: string }[];
 }
 export interface ImageArtifact extends ReleaseImage {
+  release_id: string;
+  release_version: string;
   project_id: string;
   project_slug: string;
   build_number: number;

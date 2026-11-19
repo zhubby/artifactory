@@ -8,7 +8,7 @@ mod placement;
 mod tools;
 
 use super::*;
-use artifactory_telemetry_model::nodes::MetadataSnapshot;
+use artifactory_emissary_protocol::nodes::MetadataSnapshot;
 use std::collections::BTreeMap;
 
 async fn connect_snapshot(
@@ -302,7 +302,7 @@ async fn node_tool(state: &mut AppState, run: Uuid, name: &str, args: Value) -> 
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/internal/runtime/tool")
+                .uri("/internal/planning/tool")
                 .header("authorization", format!("Bearer {token}"))
                 .header("content-type", "application/json")
                 .body(Body::from(

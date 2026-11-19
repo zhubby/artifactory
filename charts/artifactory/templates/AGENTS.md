@@ -6,7 +6,7 @@ _helpers.tpl: 统一新实例的资源前缀、私有 SeaweedFS 地址与安全�
 config.yaml: 生成非敏感服务配置。
 control-plane.yaml: 部署无状态 Control，使用临时目录和只读持久身份。
 gateway.yaml: 部署双副本统一网关，按端口和来源隔离入口。
-image-dispatch.yaml: 授权 Control 下发 CR、校验直接 Pod 归属和调用 TokenReview。集群角色名按资源前缀和命名空间区分。
+image-dispatch.yaml: 授权 Control 下发 CR、核验执行停机与 Pod 归属并调用 TokenReview。集群角色名区分资源前缀和命名空间。
 ingress.yaml: 单域名接入统一 Pingora HTTP 入口。
 persistence.yaml: 只创建数据库和对象存储的 PVC。
 postgres.yaml: 部署 TimescaleDB 和数据库持久卷。

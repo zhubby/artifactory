@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖固定源码元数据、执行计划和业务数据库。
 //! [OUTPUT]: 保存计划并查询授权节点与构建日志。
-//! [POS]: Runtime 提案的事务持久化边界。
+//! [POS]: Coordinator 提案的事务持久化边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use crate::{crypto, execution_plan::ExecutionPlan};

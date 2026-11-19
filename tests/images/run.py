@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """[INPUT]: 显式 Kubernetes context、隔离 namespace、镜像 tag 和平台。
-[OUTPUT]: 验证跨版本容器隔离、源码 init、BuildKit RUN 与 OCI 交付。
+[OUTPUT]: 验证容器隔离、源码 init 和 Release 正式镜像交付。
 [POS]: 复用只读安全规则；仅保存白名单证据并回收临时身份。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
 import base64
+import hashlib
 import importlib.util
 import json
 import os
@@ -109,6 +110,23 @@ def save(a, evidence):
     path.chmod(0o600)
 
 
+def publish_release(a, release_id, build_id):
+    def published():
+        try:
+            release = a.api('/api/v1/releases/' + release_id + '/publish', {'build_id': build_id})
+        except urllib.error.HTTPError as error:
+            if error.code != 409:
+                raise
+            error.close()
+            return None
+        return release if release['status'] == 'published' else None
+    release = a.wait(published, 180)
+    assert release['selected_build_id'] == build_id
+    assert release['delivery_manifest']['build_id'] == build_id
+    assert release['delivery_manifest']['version'] == release['version']
+    return release
+
+
 def verify(a, args, platforms):
     evidence = {'context':a.context,'namespace':a.ns,'platforms':platforms,'image_tag':a.image_tag,'pods':{},'result':'running','cleanup_errors':[]}
     token_id = credential_id = build_id = project_id = None
@@ -117,7 +135,7 @@ def verify(a, args, platforms):
     source_control=None
     def detail():
         value = a.api('/api/v1/builds/'+build_id)
-        evidence['build'] = {key:value.get(key) for key in ['id','status','commit_sha','source_manifest_id']}
+        evidence['build'] = {key:value.get(key) for key in ['id','status','commit_sha','source_manifest_id','release_id','release_version','spec_revision']}
         evidence['executions'] = [{key:item.get(key) for key in ['id','operation','status','root_digest','destination_repository','tags']}
             for item in value.get('image_executions',[])]
         save(a,evidence)
@@ -138,9 +156,10 @@ def verify(a, args, platforms):
         commit = a.kubectl('exec','deploy/upstream','--','git','-C','/tmp/upstream/repo.git','rev-parse','HEAD').strip()
         evidence.update(project_id=project_id,source_commit=commit)
         a.service_request(39443,'/test/mode',{'build_seconds':args.build_delay})
-        build_id=a.api('/api/v1/projects/'+project_id+'/builds',{'ref':commit,'parameters':{},'targets':['image'],
-            'goal':'Read Dockerfile and build the immutable source with BuildKit for '+','.join(platforms),
-            'target_requirements':[{'os':'linux','arch':p.split('/')[1]} for p in platforms]})['id']
+        build=a.create_build(project_id, 'Read Dockerfile and build the immutable source with BuildKit for '+','.join(platforms),
+            ref=commit, target_requirements=[{'kind':'image','key':'image','platforms':platforms}])
+        build_id=build['id']
+        evidence.update(release_id=build['release_id'],release_version=build['release_version'])
         deadline=time.monotonic()+args.timeout
         while time.monotonic()<deadline:
             value=detail()
@@ -184,9 +203,16 @@ def verify(a, args, platforms):
             assert pod['envelope']['source_manifest_id']==pod['manifest']['id']
             assert pod['envelope']['source_digest']==pod['manifest']['digest']
             assert pod['envelope']['material_bytes']<=900*1024
+        a.wait(lambda:not a.kubectl('get','pods','-l','artifactory.dev/project='+project_id,'-o','name').splitlines(),90)
+        release=publish_release(a,build['release_id'],build_id)
+        delivery=next(image for image in release['delivery_manifest']['images'] if image['target']=='image')
+        assert delivery['root_digest']==execution['root_digest']
+        assert delivery['version']==release['version']==build['release_version']
+        assert delivery['repository']!=execution['destination_repository']
+        evidence['release']={key:release[key] for key in ['id','version','status','selected_build_id','commit_sha','spec_revision']}
         issued=a.api('/api/v1/tokens',{'name':'Image digest verification','project_ids':[project_id],'scopes':['read'],'days':1})
         token_id=issued['id']
-        query=urllib.parse.urlencode({'service':'artifactory-registry','scope':'repository:'+execution['destination_repository']+':pull'})
+        query=urllib.parse.urlencode({'service':'artifactory-registry','scope':'repository:'+delivery['repository']+':pull'})
         basic=base64.b64encode(('_token:'+issued['token']).encode()).decode()
         status,_,payload=raw(a,'/api/v1/registry/token?'+query,headers={'Authorization':'Basic '+basic})
         assert status==200
@@ -194,11 +220,14 @@ def verify(a, args, platforms):
             'Accept':'application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json'}
         def internal(path,method='GET',headers=None):
             return raw(a,path,method,dict(authorization,**(headers or {})))
-        evidence['internal_registry']=registry_graph(internal,execution['destination_repository'],execution['root_digest'],platforms)
+        status,_,version_manifest=internal('/v2/'+delivery['repository']+'/manifests/'+release['version'])
+        assert status==200 and 'sha256:'+hashlib.sha256(version_manifest).hexdigest()==delivery['root_digest']
+        evidence['internal_registry']=registry_graph(internal,delivery['repository'],delivery['root_digest'],platforms,
+            release_version=release['version'],commit_sha=commit)
         if args.external_http:
             login={key:base64.b64decode(value).decode() for key,value in json.loads(a.kubectl('get','secret','external-registry-login','-o','json'))['data'].items()}
             credential_id=a.api('/api/v1/projects/'+project_id+'/image-credentials',{'kind':'registry','name':'Isolated external HTTP registry','login':login})['id']
-            publication=a.api('/api/v1/image-executions/'+execution['id']+'/publish',{'credential_id':credential_id,'repository':'acceptance/source-init','tags':['verified']})['id']
+            publication=a.api('/api/v1/image-executions/'+execution['id']+'/publish',{'credential_id':credential_id,'repository':'acceptance/source-init'})['id']
             deadline=time.monotonic()+180
             while time.monotonic()<deadline:
                 published=next(e for e in detail()['image_executions'] if e['id']==publication)
@@ -206,6 +235,7 @@ def verify(a, args, platforms):
                     break
                 time.sleep(1)
             assert published['status']=='succeeded' and published['root_digest']==execution['root_digest']
+            assert published['tags']==[release['version']]
             a.forward('service/external-registry','38500:5000')
             opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
             external_auth='Basic '+base64.b64encode((login['username']+':'+login['password']).encode()).decode()
@@ -215,7 +245,10 @@ def verify(a, args, platforms):
                 with opener.open(urllib.request.Request('http://127.0.0.1:38500'+path,method=method,headers=outgoing),timeout=30) as response:
                     return response.status,response.headers,response.read()
             a.wait(lambda:external('/v2/')[0]==200,30)
-            evidence['external_registry']=registry_graph(external,'acceptance/source-init',execution['root_digest'],platforms)
+            status,_,version_manifest=external('/v2/acceptance/source-init/manifests/'+release['version'])
+            assert status==200 and 'sha256:'+hashlib.sha256(version_manifest).hexdigest()==delivery['root_digest']
+            evidence['external_registry']=registry_graph(external,'acceptance/source-init',execution['root_digest'],platforms,
+                release_version=release['version'],commit_sha=commit)
         deadline=time.monotonic()+90
         remaining=[]
         while time.monotonic()<deadline:

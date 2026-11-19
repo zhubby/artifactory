@@ -221,26 +221,6 @@ pub(super) struct Job {
 }
 
 #[derive(Debug, toasty::Model)]
-#[table = "releases"]
-#[key(id)]
-pub(super) struct Release {
-    pub id: Uuid,
-    pub project_id: Uuid,
-    pub build_id: Uuid,
-    pub version: String,
-    pub idempotency_key: String,
-    pub commit_sha: String,
-}
-
-#[derive(Debug, toasty::Model)]
-#[table = "release_artifacts"]
-#[key(release_id, artifact_id)]
-pub(super) struct ReleaseArtifact {
-    pub release_id: Uuid,
-    pub artifact_id: Uuid,
-}
-
-#[derive(Debug, toasty::Model)]
 #[table = "publish_attempts"]
 #[key(id)]
 pub(super) struct PublishAttempt {
@@ -276,9 +256,9 @@ pub(super) struct EmissaryRelease {
 }
 
 #[derive(Debug, toasty::Model)]
-#[table = "runtime_receipts"]
+#[table = "planning_receipts"]
 #[key(event_id)]
-pub(super) struct RuntimeReceipt {
+pub(super) struct PlanningReceipt {
     pub event_id: Uuid,
     pub input_hash: String,
     #[column(type = jsonb)]

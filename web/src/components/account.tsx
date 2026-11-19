@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖账户 API、Radix 弹窗和未保存保护。
  * [OUTPUT]: 提供 AccountProvider 与 useAccount。
- * [POS]: 账户偏好覆盖面板，保留业务页面状态。
+ * [POS]: 统一个人设置入口，面板内分区管理资料、安全和偏好，保留业务页面状态。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -81,8 +81,8 @@ function AccountMenu({
     { id: "security", icon: ShieldCheck },
     { id: "preferences", icon: SlidersHorizontal },
   ];
-  function open(section: string) {
-    setSection(section);
+  function open() {
+    setSection("profile");
     setMenu(false);
     setSaved(false);
     setPanel(true);
@@ -135,11 +135,7 @@ function AccountMenu({
                 <strong>{account.display_name}</strong>
                 <span>@{account.username}</span>
               </p>
-              <button role="menuitem" autoFocus onClick={() => open("profile")}>
-                <UserRound />
-                {t("account.profile")}
-              </button>
-              <button role="menuitem" onClick={() => open("preferences")}>
+              <button role="menuitem" autoFocus onClick={open}>
                 <Settings2 />
                 {t("account.settings")}
               </button>

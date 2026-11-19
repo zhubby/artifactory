@@ -82,20 +82,16 @@ for (const locale of ["zh-CN", "en"] as const)
       await page.unroute("**/api/v1/projects/by-slug/desktop-client");
 
       await fixtureAPI(page, "viewer");
-      await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-      await expect(page.locator(".empty-state")).toBeVisible();
-      await capture("no-build-permission");
+      await page.goto(tenantURL("/projects/desktop-client/releases/new"));
+      await expect(page.locator(".notice")).toBeVisible();
+      await capture("no-release-permission");
 
       await fixtureAPI(page);
-      await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-      await expect(page.getByRole("radio", { name: locale === "en" ? "Branch main" : "分支 main", exact: true })).toBeChecked();
-      await capture("wizard-source");
-      const next = page.getByRole("button", { name: locale === "en" ? "Continue" : "继续", exact: true });
-      await next.click();
-      await page.locator('textarea[name="goal"]').fill("Build and verify packages from packages/desktop-client/platforms/a-long-native-target-path, preserving native signing and artifact hashes.");
-      await capture("wizard-goal");
-      await next.click();
-      await expect(page.locator(".wizard-review")).toBeVisible();
-      await capture("wizard-review");
+      await page.goto(tenantURL("/projects/desktop-client/releases/new"));
+      await expect(page.locator('input[name="ref"]')).toHaveValue("refs/heads/main");
+      await capture("release-source");
+      await page.locator('input[name="version"]').fill("1.2.0-rc.1");
+      await page.locator('textarea[name="goal"]').fill("Build and verify native signed packages with reproducible delivery names.");
+      await capture("release-contract");
     });
   }

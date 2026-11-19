@@ -1,19 +1,14 @@
 //! ```text
-//! [INPUT]: 依赖清单身份、池代理、推送 Secret、只读源码和 BuildKit。
-//! [OUTPUT]: 构建并校验平台镜像，收尾后提交候选或脱敏失败诊断。
+//! [INPUT]: 依赖清单身份、共享执行、源码检出、OCI 客户端和 BuildKit。
+//! [OUTPUT]: 注入固定 Release 版本并读回 OCI 元数据，收尾后提交候选。
 //! [POS]: BuildKit Pod 的隔离执行进程。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! ```
 use crate::{lifecycle, transport::Control};
 use anyhow::{Context, Result, ensure};
-use artifactory_emissary::{
-    config::{private_dir, private_write},
-    process,
-    signing::redact,
-    source,
-    worker::Emitter,
-};
+use artifactory_execution_support::{events::Emitter, fs::private_write, process, redact};
 use artifactory_image_protocol::{BuildTask, PlatformResult, Report};
+use artifactory_source_checkout::{self as source, private_dir};
 use std::{
     collections::BTreeMap,
     ffi::OsString,
@@ -266,7 +261,7 @@ async fn build(
             auth = serde_json::json!({"auths":{}});
         }
         let registry =
-            artifactory_image_registry::Registry::new(task.registry.clone(), task.insecure)?;
+            artifactory_oci_registry_client::Registry::new(task.registry.clone(), task.insecure)?;
         use base64::Engine;
         let encoded = base64::engine::general_purpose::STANDARD.encode(format!(
             "{}:{}",
@@ -326,6 +321,7 @@ async fn build(
             &task.image.build_args,
             proxy_environment.as_ref(),
         )?;
+        release_arguments(&mut command, task)?;
         let secrets = log_secrets(task);
         for (name, value) in &task.secrets {
             let path = root.join(format!("secret-{name}"));
@@ -367,6 +363,15 @@ async fn build(
         let result = registry
             .verify_platform(&task.repository, digest, platform)
             .await?;
+        registry
+            .verify_release_metadata(
+                &task.repository,
+                &result.digest,
+                platform,
+                &task.release_version,
+                &task.source_revision,
+            )
+            .await?;
         Ok::<_, anyhow::Error>(result)
     }
     .await;
@@ -376,6 +381,45 @@ async fn build(
     let result = result?;
     log_result?;
     Ok(result)
+}
+
+fn release_arguments(command: &mut Command, task: &BuildTask) -> Result<()> {
+    ensure!(
+        !task.release_id.is_nil()
+            && !task.release_version.is_empty()
+            && [40, 64].contains(&task.source_revision.len())
+            && task.source_revision.bytes().all(|b| b.is_ascii_hexdigit()),
+        "invalid fixed Release identity"
+    );
+    ensure!(
+        !task
+            .image
+            .build_args
+            .keys()
+            .any(|key| key.starts_with("ARTIFACTORY_RELEASE_")),
+        "Release build arguments are reserved"
+    );
+    for (name, value) in [
+        (
+            "build-arg:ARTIFACTORY_RELEASE_ID",
+            task.release_id.to_string(),
+        ),
+        (
+            "build-arg:ARTIFACTORY_RELEASE_VERSION",
+            task.release_version.clone(),
+        ),
+        (
+            "label:org.opencontainers.image.version",
+            task.release_version.clone(),
+        ),
+        (
+            "label:org.opencontainers.image.revision",
+            task.source_revision.clone(),
+        ),
+    ] {
+        command.arg("--opt").arg(format!("{name}={value}"));
+    }
+    Ok(())
 }
 
 pub async fn run() -> Result<()> {
@@ -443,6 +487,34 @@ pub async fn run() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn release_arguments_are_fixed_and_oci_labels_follow_the_pinned_source() {
+        let mut task: BuildTask = serde_json::from_value(serde_json::json!({
+            "execution_id":"fixture","token":"test-only","control_url":"https://control.example.com",
+            "registry":{"endpoint":"https://registry.example.com","username":"fixture","password":"test-only"},
+            "repository":"candidate/fixture","image":{"name":"app"},
+            "source_manifest_id":"00000000-0000-0000-0000-000000000001","source_digest":"a".repeat(64),
+            "release_id":"00000000-0000-0000-0000-000000000002","release_version":"1.2.3-rc.1",
+            "source_revision":"b".repeat(40),"timeout_seconds":300,"insecure":false
+        })).unwrap();
+        let mut command = Command::new("buildctl");
+        release_arguments(&mut command, &task).unwrap();
+        let args: Vec<_> = command
+            .as_std()
+            .get_args()
+            .map(|v| v.to_string_lossy().into_owned())
+            .collect();
+        assert!(args.contains(&"build-arg:ARTIFACTORY_RELEASE_VERSION=1.2.3-rc.1".into()));
+        assert!(args.contains(&"label:org.opencontainers.image.version=1.2.3-rc.1".into()));
+        assert!(args.contains(&format!(
+            "label:org.opencontainers.image.revision={}",
+            "b".repeat(40)
+        )));
+        task.image
+            .build_args
+            .insert("ARTIFACTORY_RELEASE_VERSION".into(), "9.0.0".into());
+        assert!(release_arguments(&mut Command::new("buildctl"), &task).is_err());
+    }
     #[test]
     fn pool_proxy_build_arguments_are_present_only_when_configured_and_nonempty() {
         let recipe = BTreeMap::from([
@@ -631,7 +703,7 @@ mod tests {
             "execution_id":"test", "token":"task-token", "control_url":"https://control.example/",
             "registry":{"endpoint":"https://registry.example/","username":"runner","password":"internal-password"},
             "repository":"candidate", "image":{"name":"app"},
-            "source_manifest_id":"00000000-0000-0000-0000-000000000001","source_digest":"a".repeat(64), "timeout_seconds":300, "docker_auth":{"auths":{"external.example":{"auth":"dXNlcjpleHRlcm5hbC1wYXNzd29yZA=="}}},
+            "source_manifest_id":"00000000-0000-0000-0000-000000000001","source_digest":"a".repeat(64), "release_id":"00000000-0000-0000-0000-000000000002", "release_version":"1.2.3", "source_revision":"a".repeat(40), "timeout_seconds":300, "docker_auth":{"auths":{"external.example":{"auth":"dXNlcjpleHRlcm5hbC1wYXNzd29yZA=="}}},
             "insecure":false
         })).unwrap();
         let (emit, mut events) = Emitter::channel();

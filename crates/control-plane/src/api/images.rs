@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖项目权限、执行令牌和仓库内容校验。
-//! [OUTPUT]: 提供镜像凭据、候选回执、构建与发布日志及独立发布接口。
+//! [OUTPUT]: 提供镜像凭据、候选回执、构建日志及已发布 Release 外仓分发接口。
 //! [POS]: 人员 API 与工作 Pod API 使用独立认证边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -205,8 +205,6 @@ pub async fn disable_credential(
 pub struct Publish {
     credential_id: Option<Uuid>,
     repository: Option<String>,
-    #[serde(default)]
-    tags: Vec<String>,
 }
 pub async fn publish(
     TenantState(state): TenantState,
@@ -219,20 +217,14 @@ pub async fn publish(
     if !images::enabled() {
         return Err(ApiError::Conflict(images::DISABLED_MESSAGE.into()));
     }
-    if input.tags.len() > 16
+    if input.credential_id.is_none()
         || input
-            .tags
-            .iter()
-            .any(|s| !artifactory_image_protocol::tag(s))
-        || input.credential_id.is_some()
-            && input
-                .repository
-                .as_deref()
-                .is_none_or(|s| !artifactory_image_protocol::repository(s))
-        || input.credential_id.is_none() && (input.repository.is_some() || !input.tags.is_empty())
+            .repository
+            .as_deref()
+            .is_none_or(|repo| !artifactory_image_protocol::repository(repo))
     {
         return Err(ApiError::BadRequest(
-            "invalid publication destination".into(),
+            "external distribution requires credential_id and repository".into(),
         ));
     }
     let publication = Uuid::new_v4();
@@ -244,7 +236,7 @@ pub async fn publish(
             publication,
             input.credential_id,
             input.repository.as_deref(),
-            &input.tags,
+            &[],
             &crypto::hash(&token),
         )
         .await?;

@@ -1,5 +1,5 @@
 """[INPUT]: Helm 模板与独立 Secret 初始化脚本。
-[OUTPUT]: 验证资源命名、池代理端口、统一网关和持久凭据。
+[OUTPUT]: 验证固定初始账号、资源命名、网关和持久凭据。
 [POS]: 部署契约回归；不连接 Kubernetes。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -20,6 +20,47 @@ SCRIPT = Path(__file__).with_name("init-helm.py")
 
 class HelmBootstrapTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_registry_ingress_cannot_inherit_the_trial_namespace_allow_rule(self):
+        root = SCRIPT.parents[1]
+        rendered = subprocess.run([
+            'helm', 'template', 'registry-test', str(root / 'charts/artifactory-registry'),
+            '--kube-version', '1.28.3',
+        ], check=True, capture_output=True, text=True).stdout
+        policies = [doc for doc in rendered.split('\n---\n') if 'kind: NetworkPolicy\n' in doc]
+        self.assertEqual(len(policies), 1)
+        policy = policies[0]
+        destination, allowed = policy.split('  ingress:\n', 1)
+        self.assertIn('app.kubernetes.io/name: artifactory-registry', destination)
+        self.assertIn('app.kubernetes.io/instance: registry-test', destination)
+        self.assertIn('app.kubernetes.io/component: gateway', allowed)
+        self.assertIn('app.kubernetes.io/name: artifactory', allowed)
+        self.assertIn('{protocol: TCP, port: 5000}', allowed)
+        self.assertNotIn('podSelector: {}', allowed)
+        trial = (root / 'deploy/kubernetes-trial.yaml').read_text()
+        trial_policies = [doc for doc in trial.split('\n---\n') if 'kind: NetworkPolicy\n' in doc]
+        self.assertEqual(len(trial_policies), 2)
+        broad = next(doc for doc in trial_policies if '  podSelector: {}\n' in doc)
+        self.assertIn('policyTypes: [Egress]', broad)
+        self.assertNotIn('  ingress:', broad)
+        internal = next(doc for doc in trial_policies if '  ingress:' in doc)
+        self.assertIn('key: app.kubernetes.io/name\n        operator: NotIn\n        values: [artifactory-registry]', internal)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_planning_pool_and_coordinator_settings_reach_control(self):
+        chart = str(SCRIPT.parents[1] / 'charts/artifactory')
+        base = ['helm', 'template', 'planning-test', chart, '--kube-version', '1.28.3']
+        default = subprocess.run(base, check=True, capture_output=True, text=True).stdout
+        self.assertIn('ARTIFACTORY_PLANNING_POOL: "default"', default)
+        configured = subprocess.run(base + [
+            '--set', 'planning.pool=custom-planning',
+            '--set', 'planning.coordinatorUrl=https://planning.example/internal/planning',
+            '--set', 'planning.serviceSecretName=planning-identity',
+        ], check=True, capture_output=True, text=True).stdout
+        self.assertIn('ARTIFACTORY_PLANNING_POOL: "custom-planning"', configured)
+        self.assertIn('ARTIFACTORY_PLANNING_URL: "https://planning.example/internal/planning"', configured)
+        self.assertIn('name: planning-identity', configured)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_pool_proxy_is_optional_and_adds_only_explicit_proxy_ports(self):
         charts = SCRIPT.parents[1] / 'charts'
         proxy = {
@@ -27,7 +68,7 @@ class HelmBootstrapTests(unittest.TestCase):
             'httpsProxy': 'https://egress.example:19443',
             'noProxy': 'localhost,127.0.0.1,.svc,artifactory-gateway-internal,artifactory-registry,10.96.0.1',
         }
-        for chart, pool in [('artifactory-agent-operator', 'agentPool'),
+        for chart, pool in [('artifactory-planning-operator', 'planningPool'),
                             ('artifactory-image-operator', 'builderPool')]:
             command = ['helm', 'template', 'proxy-test', str(charts / chart), '--kube-version', '1.28.3']
             default = subprocess.run(command, check=True, capture_output=True, text=True).stdout
@@ -40,7 +81,7 @@ class HelmBootstrapTests(unittest.TestCase):
             self.assertIn('  proxy:', rendered)
             for key, value in proxy.items():
                 self.assertIn(f'{key}: {value}', rendered)
-            if pool == 'agentPool':
+            if pool == 'planningPool':
                 policy = next(document for document in rendered.split('---')
                               if 'kind: NetworkPolicy' in document)
                 self.assertIn('{port: 18443, protocol: TCP}', policy)
@@ -69,7 +110,7 @@ class HelmBootstrapTests(unittest.TestCase):
 
         for prefix in ('artifactory', 'custom'):
             outputs = {}
-            for chart in ('artifactory', 'artifactory-agent-operator', 'artifactory-image-operator', 'artifactory-registry'):
+            for chart in ('artifactory', 'artifactory-planning-operator', 'artifactory-image-operator', 'artifactory-registry'):
                 command = ['helm', 'template', 'unrelated-release', str(charts / chart), '--kube-version', '1.28.3']
                 if prefix != 'artifactory':
                     command += ['--set', 'fullnameOverride=' + prefix]
@@ -80,10 +121,10 @@ class HelmBootstrapTests(unittest.TestCase):
                     self.assertIn(f'{prefix}-{name}', resource_names(main, kind))
             self.assertIn('http://' + prefix + '-seaweedfs:8333', main)
             self.assertIn('http://' + prefix + '-registry:5000', main)
-            agent = outputs['artifactory-agent-operator']
-            self.assertEqual(resource_names(agent, 'Deployment'), [f'{prefix}-agent-operator'])
+            agent = outputs['artifactory-planning-operator']
+            self.assertEqual(resource_names(agent, 'Deployment'), [f'{prefix}-planning-operator'])
             self.assertEqual(resource_names(agent, 'Service'), [])
-            self.assertIn('https://' + prefix + '-gateway-internal:8445/internal/planner', agent)
+            self.assertIn('https://' + prefix + '-gateway-internal:8445/internal/planning', agent)
             image = outputs['artifactory-image-operator']
             self.assertEqual(resource_names(image, 'Deployment'), [f'{prefix}-image-operator'])
             self.assertIn('https://' + prefix + '-gateway-internal:8445', image)
@@ -121,14 +162,14 @@ class HelmBootstrapTests(unittest.TestCase):
                 self.assertIn(f'claimName: {name}', deployment)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
-    def test_agent_operator_and_telemetry_selectors_are_release_scoped(self):
-        chart = SCRIPT.parents[1] / 'charts/artifactory-agent-operator'
+    def test_planning_operator_and_telemetry_selectors_are_release_scoped(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory-planning-operator'
         for release in ('first', 'second'):
             rendered = subprocess.run(
                 ['helm', 'template', release, str(chart), '--set', 'telemetry.enabled=true'],
                 check=True, capture_output=True, text=True).stdout
             documents = rendered.split('\n---\n')
-            for name in ('agent-operator', 'telemetry'):
+            for name in ('planning-operator', 'telemetry'):
                 deployment = next(doc for doc in documents if 'kind: Deployment\n' in doc
                                   and f'  name: artifactory-{name}\n' in doc)
                 labels = f'app.kubernetes.io/name: artifactory-{name}, app.kubernetes.io/instance: {release}'
@@ -144,7 +185,7 @@ class HelmBootstrapTests(unittest.TestCase):
         charts = SCRIPT.parents[1] / 'charts'
         chart_settings = (
             ('artifactory', 'timescaledb', []),
-            ('artifactory-agent-operator', 'agent-operator', ['--set', 'telemetry.enabled=true']),
+            ('artifactory-planning-operator', 'planning-operator', ['--set', 'telemetry.enabled=true']),
             ('artifactory-image-operator', 'image-operator', []),
             ('artifactory-registry', 'registry', []),
         )
@@ -169,7 +210,7 @@ class HelmBootstrapTests(unittest.TestCase):
                     if chart == 'artifactory':
                         self.assertIn(truncated + '-gateway-internal', services)
                         self.assertIn('http://' + truncated + '-seaweedfs:8333', rendered)
-                    if chart in ('artifactory-agent-operator', 'artifactory-image-operator'):
+                    if chart in ('artifactory-planning-operator', 'artifactory-image-operator'):
                         self.assertIn('https://' + truncated + '-gateway-internal:8445', rendered)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
@@ -250,10 +291,10 @@ class HelmBootstrapTests(unittest.TestCase):
         self.assertIn('fieldPath: metadata.namespace', image)
         self.assertNotIn('metadata.uidspace', image)
         self.assertNotIn('resources: [secrets]', image)
-        agent = subprocess.run(['helm', 'template', 'native', str(SCRIPT.parents[1] / 'charts/artifactory-agent-operator')],
+        agent = subprocess.run(['helm', 'template', 'native', str(SCRIPT.parents[1] / 'charts/artifactory-planning-operator')],
                                check=True, capture_output=True, text=True).stdout
-        self.assertIn('name: artifactory-agent-operator', agent)
-        self.assertIn('app.kubernetes.io/name: artifactory-agent-operator', agent)
+        self.assertIn('name: artifactory-planning-operator', agent)
+        self.assertIn('app.kubernetes.io/name: artifactory-planning-operator', agent)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_gateway_nodeports_and_network_sources_preserve_internal_boundary(self):
@@ -367,6 +408,8 @@ class HelmBootstrapTests(unittest.TestCase):
             secret = json.loads((output / "credentials.json").read_text())
             data = secret["stringData"]
             self.assertEqual(secret["metadata"]["namespace"], "test-builds")
+            self.assertEqual(data["bootstrap-username"], "admin")
+            self.assertEqual(data["bootstrap-password"], "123456")
             self.assertEqual(len(base64.b64decode(data["master-key"])), 32)
             self.assertIn(data["database-password"] + f"@{truncated}-timescaledb:5432/", data["database-url"])
             self.assertIn(f'@{truncated}-timescaledb:5432/', data['telemetry-database-url'])

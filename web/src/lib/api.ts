@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户作用域、CSRF 边界与 React 生命周期。
- * [OUTPUT]: 提供请求、变更和可停止轮询的 useRemote。
+ * [OUTPUT]: 提供请求、变更、附件下载和可停止轮询的 useRemote。
  * [POS]: 控制台远端数据的请求与取消边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -32,6 +32,7 @@ export function cancelBusinessRequests(scope: string) {
 export async function api<Type>(
   path: string,
   init: RequestInit = {},
+  format: "json" | "attachment" = "json",
 ): Promise<Type> {
   const tenant = currentTenant();
   const independent = /^\/(?:auth|tenants|invitations|operations)(?:\/|$)/.test(
@@ -73,7 +74,12 @@ export async function api<Type>(
       throw new LocalizedError("common.networkFailed");
     }
     check();
-    const body = await response.json().catch(() => undefined);
+    const body = format === "attachment" && response.ok
+      ? {
+          blob: await response.blob(),
+          filename: /filename="([^"]+)"/i.exec(response.headers.get("Content-Disposition") || "")?.[1] || "download",
+        }
+      : await response.json().catch(() => undefined);
     check();
     if (!response.ok) {
       if (
@@ -114,6 +120,16 @@ export async function api<Type>(
   } finally {
     scopedRequests.delete(controller);
   }
+}
+
+export async function downloadFile(path: string) {
+  const attachment = await api<{blob:Blob;filename:string}>(path, {}, "attachment");
+  const url = URL.createObjectURL(new Blob([attachment.blob], {type:"application/octet-stream"}));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = attachment.filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export async function mutation<Type>(

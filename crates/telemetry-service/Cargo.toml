@@ -7,8 +7,7 @@ edition.workspace = true
 anyhow = "1"
 artifactory-database = { path = "../database" }
 artifactory-emissary-protocol = { path = "../emissary-protocol" }
-artifactory-runtime-protocol = { path = "../runtime-protocol" }
-artifactory-telemetry-model = { path = "../telemetry-model" }
+artifactory-service-transport = { path = "../service-transport" }
 axum = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"

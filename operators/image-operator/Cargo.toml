@@ -8,11 +8,11 @@ default-run = "artifactory-image-operator"
 [features]
 default = ["operator"]
 operator = [
-    "dep:artifactory-runtime-protocol",
+    "dep:artifactory-service-transport",
     "dep:artifactory-source-checkout",
-    "dep:artifactory-image-registry",
+    "dep:artifactory-oci-registry-client",
     "dep:artifactory-image-protocol",
-    "dep:artifactory-emissary",
+    "dep:artifactory-execution-support",
     "dep:async-trait",
     "dep:base64",
     "dep:chrono",
@@ -34,12 +34,12 @@ operator = [
 ]
 
 [dependencies]
-artifactory-runtime-protocol = { path = "../../crates/runtime-protocol", optional = true }
+artifactory-service-transport = { path = "../../crates/service-transport", optional = true }
 artifactory-source-checkout = { path = "../../crates/source-checkout", optional = true }
-artifactory-image-registry = { path = "../../crates/image-registry", optional = true }
+artifactory-oci-registry-client = { path = "../../crates/oci-registry-client", optional = true }
 anyhow = "1"
 artifactory-image-protocol = { path = "../../crates/image-protocol", optional = true }
-artifactory-emissary = { path = "../../crates/emissary", optional = true }
+artifactory-execution-support = { path = "../../crates/execution-support", optional = true }
 async-trait = { version = "0.1", optional = true }
 base64 = { version = "0.22", optional = true }
 chrono = { version = "0.4", optional = true }

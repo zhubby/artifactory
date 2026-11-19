@@ -1,13 +1,12 @@
 /**
  * [INPUT]: 依赖 Playwright、真实控制面与活跃快照夹具。
- * [OUTPUT]: 验证控制台业务链路，保存焦点失败的脱敏证据。
+ * [OUTPUT]: 验证业务链路、构建节点导航与脱敏焦点证据。
  * [POS]: 需要可用后端的端到端浏览器入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { expect, request, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { execFileSync } from "node:child_process";
 
 const evidence = JSON.parse(
   readFileSync(
@@ -186,13 +185,13 @@ test("self-registration requires explicit tenant and project grants before artif
     ),
   ).toBe(true);
   await expect(
-    page.getByRole("link", { name: "发起构建", exact: true }),
+    page.getByRole("link", { name: "新建 Release", exact: true }),
   ).toHaveCount(0);
   const denied = await page.request.post(
-    `/api/v1/projects/${evidence.project_id}/builds`,
+    `/api/v1/releases/${evidence.release_id}/builds`,
     {
       headers: tenantHeaders,
-      data: { ref: "main" },
+      data: { parameters: {} },
     },
   );
   expect(denied.status()).toBe(403);
@@ -215,7 +214,7 @@ test("self-registration requires explicit tenant and project grants before artif
   expect((await page.request.get("/api/v1/auth/me")).status()).toBe(401);
   await login(page, registeredUser, registeredPassword);
   await expect(
-    page.getByRole("link", { name: "发起构建", exact: true }),
+    page.getByRole("link", { name: "新建 Release", exact: true }),
   ).toHaveCount(0);
 });
 
@@ -231,14 +230,14 @@ test("real console, native logs, artifact download and immutable release", async
   });
   for (const [route, title] of [
     [`projects/${evidence.project_slug}/builds`, "构建记录"],
-    ["nodes", "共享设备"],
-    [`projects/${evidence.project_slug}/artifacts`, "制品仓库"],
-    [`projects/${evidence.project_slug}/releases`, "内部发布"],
-    ["settings", "租户管理"],
+    ["nodes", "构建节点"],
+    [`projects/${evidence.project_slug}/artifacts`, "制品"],
+    [`projects/${evidence.project_slug}/releases`, "Release 版本"],
+    ["settings", "基本信息"],
   ]) {
     await page.goto(tenantURL(`/${route}`));
     await expect(
-      page.getByRole("heading", { name: title, exact: true }),
+      page.getByRole("heading", { name: title, level: 1, exact: true }),
     ).toBeVisible();
     await expect(page.locator(".error-box[role=alert]")).toHaveCount(0);
     expect(
@@ -266,7 +265,9 @@ test("real console, native logs, artifact download and immutable release", async
       `/projects/${evidence.project_slug}/releases/${evidence.release_id}`,
     ),
   );
-  await expect(page.getByText("dist/app", { exact: true })).toBeVisible();
+  await page.getByRole("tab",{name:"交付物",exact:true}).click();
+  const delivery=await (await page.request.get(`/api/v1/releases/${evidence.release_id}`,{headers:tenantHeaders})).json();
+  for(const artifact of delivery.artifacts) await expect(page.getByText(artifact.delivery_filename,{exact:true})).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("release.png"),
     fullPage: true,
@@ -318,9 +319,9 @@ test("dialogs are keyboard accessible and mobile navigation works", async ({
     await expect(
       page.getByRole("button", { name: "关闭导航", exact: true }),
     ).toBeVisible();
-    await page.getByRole("link", { name: "共享设备", exact: true }).click();
+    await page.getByRole("link", { name: "构建节点", exact: true }).click();
     await expect(
-      page.getByRole("heading", { name: "共享设备", exact: true }),
+      page.getByRole("heading", { name: "构建节点", exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "关闭导航", exact: true }),
@@ -353,22 +354,22 @@ test("readonly identity cannot trigger builds or modify nodes", async ({
   await page.getByRole("menuitem", { name: "退出登录", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
   await login(page, readonlyUser, readonlyPassword);
-  await expect(page.getByRole("link", { name: "发起构建" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "新建 Release" })).toHaveCount(0);
   const denied = await page.request.post(
-    `/api/v1/projects/${evidence.project_id}/builds`,
-    { headers: tenantHeaders, data: { ref: "main" } },
+    `/api/v1/releases/${evidence.release_id}/builds`,
+    { headers: tenantHeaders, data: { parameters: {} } },
   );
   expect(denied.status()).toBe(403);
-  await page.goto(tenantURL(`/projects/${evidence.project_slug}/builds/new`));
+  await page.goto(tenantURL(`/projects/${evidence.project_slug}/releases/new`));
   await expect(
-    page.getByText("当前账号没有发起构建的权限。", { exact: true }),
+    page.getByText("当前账号没有创建 Release 的权限。", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "继续", exact: true }),
   ).toHaveCount(0);
   await page.goto(tenantURL("/nodes"));
   await expect(
-    page.getByRole("heading", { name: "共享设备", exact: true }),
+    page.getByRole("heading", { name: "构建节点", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "接入节点" })).toHaveCount(0);
 });
@@ -423,10 +424,9 @@ test("SSE reconnect and failed publication never imply overall success", async (
     });
   }
   if (evidence.collision_build_id) {
-    await page.goto(buildURL(evidence.collision_build_number));
-    await expect(page.locator(".error-box[role=alert]")).toContainText(
-      "发布失败（构建结果保留）",
-    );
+    const build=await (await page.request.get(`/api/v1/builds/${evidence.collision_build_id}`,{headers:tenantHeaders})).json();
+    await page.goto(tenantURL(`/projects/${evidence.project_slug}/releases/${build.release_id}`));
+    await expect(page.locator(".page-actions .status-publish_failed")).toBeVisible();
   }
 });
 
@@ -468,24 +468,17 @@ test("real repository references and the build wizard preserve model configurati
   const referenceResponse = page.waitForResponse((response) =>
     new URL(response.url()).pathname.endsWith("/refs"),
   );
-  await page.getByRole("link", { name: "发起构建", exact: true }).click();
-  await expect(page).toHaveURL(/\/projects\/[^/]+\/builds\/new$/);
+  await page.getByRole("link", { name: "新建 Release", exact: true }).click();
+  await expect(page).toHaveURL(/\/projects\/[^/]+\/releases\/new$/);
   const references = await referenceResponse;
   expect(references.status()).toBe(200);
-  expect(await references.json()).toMatchObject({
-    default_ref: "refs/heads/main",
-    branches: [{ name: "main", ref: "refs/heads/main" }],
-    tags: [],
-  });
-  await expect(
-    page.getByRole("radio", { name: "分支 main", exact: true }),
-  ).toBeChecked();
-  await page.getByRole("button", { name: "继续", exact: true }).click();
-  await page
-    .locator('textarea[name="goal"]')
-    .fill("Build the native C application and collect dist/app");
-  await page.getByRole("button", { name: "继续", exact: true }).click();
-  await page.getByRole("button", { name: "发起构建", exact: true }).click();
+  await expect(page.locator('input[name="ref"]')).toHaveValue("refs/heads/main");
+  await page.locator('input[name="version"]').fill(`0.0.${Date.now()}`);
+  await page.locator('textarea[name="goal"]').fill("Build the native C application and collect dist/app");
+  await page.getByRole("button",{name:"新建 Release",exact:true}).click();
+  await expect(page).toHaveURL(/\/releases\/[0-9a-f-]{36}$/);
+  await page.getByRole("button",{name:"发起构建",exact:true}).click();
+  await page.getByRole("dialog").getByRole("button",{name:"发起构建",exact:true}).click();
   // This regression server seeds pre-migration builds and has no model key.
   // Real-provider execution is covered by scripts/ai_acceptance.py.
   await expect(page).toHaveURL(/\/builds\/[^/]+$/);
@@ -500,32 +493,24 @@ test("real repository references and the build wizard preserve model configurati
   ).toBeVisible();
 });
 
-test("native fixture builds can be canceled and published through the interface", async ({ page }, info) => {
-  test.skip(!process.env.DATABASE_URL, "requires the isolated historical-build fixture database");
-  test.setTimeout(120000);
+test("published Release workbench exposes immutable delivery names and version manifests", async ({page})=>{
   await login(page);
-  const seed = (mode: string) => JSON.parse(execFileSync("python3", [resolve("../scripts/legacy_fixture.py")], {
-    input: JSON.stringify({ project: evidence.project_id, body: { ref: "main", targets: ["native"], parameters: { MODE: mode } } }),
-    encoding: "utf8",
-  })) as { id: string };
-  const current = async (id: string) => (await (await page.request.get(`/api/v1/builds/${id}`, { headers: tenantHeaders })).json()) as { number: number; status: string; publish_status: string };
-  const slow = seed("slow");
-  await expect.poll(async () => (await current(slow.id)).status, { timeout: 45000 }).toBe("running");
-  await page.goto(buildURL((await current(slow.id)).number));
-  await page.getByRole("button", { name: "取消构建", exact: true }).click();
-  await expect.poll(async () => (await current(slow.id)).status, { timeout: 30000 }).toBe("canceled");
-  await expect(page.locator(".page-actions .status-canceled")).toBeVisible();
-  const native = seed("normal");
-  await expect.poll(async () => (await current(native.id)).status, { timeout: 45000 }).toBe("succeeded");
-  await page.goto(buildURL((await current(native.id)).number));
-  await page.getByRole("button", { name: "发布制品", exact: true }).click();
-  await page.getByRole("textbox", { name: "版本名称", exact: true }).fill(`ux-${info.project.name}-${Date.now()}`);
-  await page.getByRole("button", { name: "生成内部 Release", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect.poll(async () => (await current(native.id)).publish_status).toBe("succeeded");
-  await expect(page.locator(".build-meta .status-succeeded")).toBeVisible();
-  await page.getByRole("tab", { name: "制品", exact: true }).click();
-  const download = page.waitForEvent("download");
-  await page.getByRole("link", { name: "下载 dist/app", exact: true }).click();
-  expect(await (await download).failure()).toBeNull();
+  const response=await page.request.get(`/api/v1/releases/${evidence.release_id}`,{headers:tenantHeaders});
+  expect(response.ok()).toBeTruthy();
+  const release=await response.json();
+  expect(release.status).toBe("published");
+  expect(release.selected_build_id).toBeTruthy();
+  await page.goto(tenantURL(`/projects/${evidence.project_slug}/releases/${evidence.release_id}`));
+  await expect(page.getByRole("button",{name:"编辑草稿",exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"发起构建",exact:true})).toHaveCount(0);
+  await page.getByRole("tab",{name:"交付物",exact:true}).click();
+  for(const artifact of release.artifacts) {
+    expect(artifact.delivery_filename).toContain(release.version);
+    const downloading=page.waitForEvent("download");
+    await page.getByRole("link",{name:`下载 ${artifact.delivery_filename}`,exact:true}).click();
+    const download=await downloading;
+    expect(await download.failure()).toBeNull();
+    expect(download.suggestedFilename()).toBe(artifact.delivery_filename);
+  }
+  for(const name of ["版本 Manifest","SHA256SUMS"]){const downloading=page.waitForEvent("download");await page.getByRole("button",{name,exact:true}).click();expect(await(await downloading).failure()).toBeNull();}
 });

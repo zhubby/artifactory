@@ -12,7 +12,7 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 FIRST_PARTY_COMPONENTS = (
-    "control-plane", "web", "agent-worker", "agent-operator",
+    "control-plane", "web", "planning-worker", "planning-operator",
     "source-preparer", "image-operator", "image-worker", "buildkit", "gateway", "emissary",
 )
 FIRST_PARTY_IMAGE = re.compile(

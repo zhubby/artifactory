@@ -1,7 +1,11 @@
+//! [INPUT]: 依赖节点资源契约、项目授权和遥测查询接口。
+//! [OUTPUT]: 提供规划工具的节点筛选与能力查询。
+//! [POS]: 控制平面将项目权限转换为只读节点查询的边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Project-scoped node discovery and bounded bulk resource reads for planning and admission.
 use crate::state::AppState;
 use anyhow::{Result, ensure};
-use artifactory_telemetry_model::nodes::{MAX_QUERY_BYTES, ResourceIdentity, Resources};
+use artifactory_emissary_protocol::nodes::{MAX_QUERY_BYTES, ResourceIdentity, Resources};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -83,7 +87,7 @@ pub(crate) async fn resources(
         .await?
         .error_for_status()?;
     let rows: Vec<Value> =
-        artifactory_runtime_protocol::service::decode(response, 512 * 1024).await?;
+        artifactory_service_transport::service::decode(response, 512 * 1024).await?;
     let mut result = HashMap::new();
     for mut row in rows {
         let id: Uuid = serde_json::from_value(row["node_id"].take())?;

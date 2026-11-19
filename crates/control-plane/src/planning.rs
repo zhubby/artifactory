@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖固定源码元数据、节点能力和执行计划。
-//! [OUTPUT]: 校验 AI 执行计划并读取构建日志。
-//! [POS]: Runtime 提案进入业务调度的校验边界。
+//! [OUTPUT]: 校验完整 Release 目标合同并读取构建日志。
+//! [POS]: Coordinator 提案进入业务调度的校验边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{execution_plan::ExecutionPlan, recipe::Recipe, state::AppState};
 use anyhow::{Context, Result, ensure};
@@ -36,41 +36,62 @@ fn target_requirements(recipe: &Recipe, requirements: &Value) -> Result<()> {
     let requirements = requirements
         .as_array()
         .context("target requirements must be an array")?;
-    let platforms: Vec<_> = recipe
-        .targets
-        .values()
-        .flat_map(|target| {
-            if let Some(image) = &target.image {
-                image.platforms.clone()
-            } else {
-                vec![format!("{}/{}", target.os, target.arch)]
-            }
-        })
-        .collect();
+    ensure!(
+        requirements.len() == recipe.targets.len(),
+        "plan must implement every Release target exactly once"
+    );
     for requirement in requirements {
-        let os = requirement["os"]
+        let key = requirement["key"]
             .as_str()
-            .context("target OS is required")?;
-        let arch = requirement["arch"]
-            .as_str()
-            .context("target architecture is required")?;
-        ensure!(
-            platforms.contains(&format!("{os}/{arch}")),
-            "plan does not cover requested platform {os}/{arch}"
-        );
-    }
-    if !requirements.is_empty() {
-        ensure!(
-            platforms
-                .iter()
-                .all(|platform| requirements.iter().any(|r| platform
-                    == &format!(
-                        "{}/{}",
-                        r["os"].as_str().unwrap_or(""),
-                        r["arch"].as_str().unwrap_or("")
-                    ))),
-            "plan adds an unrequested platform"
-        );
+            .context("target key is required")?;
+        let target = recipe
+            .targets
+            .get(key)
+            .context("plan omits a Release target")?;
+        match requirement["kind"].as_str() {
+            Some("image") => {
+                let image = target
+                    .image
+                    .as_ref()
+                    .context("Release image requires BuildKit")?;
+                ensure!(
+                    target.executor == "buildkit" && image.name == key,
+                    "image component identity changed"
+                );
+                let expected: Vec<String> =
+                    serde_json::from_value(requirement["platforms"].clone())?;
+                let mut expected = expected;
+                let mut actual = image.platforms.clone();
+                expected.sort();
+                actual.sort();
+                ensure!(
+                    expected == actual,
+                    "image platforms differ from Release targets"
+                );
+                ensure!(
+                    image.tags.is_empty(),
+                    "image tags are controlled by Release publication"
+                );
+                ensure!(
+                    !image
+                        .build_args
+                        .keys()
+                        .any(|key| key.starts_with("ARTIFACTORY_RELEASE_")),
+                    "Release build arguments are reserved"
+                );
+            }
+            Some("native") => {
+                ensure!(
+                    target.executor == "native"
+                        && requirement["os"].as_str() == Some(target.os.as_str())
+                        && requirement["arch"].as_str() == Some(target.arch.as_str())
+                        && requirement["application_platform"].as_str()
+                            == target.application_platform.as_deref(),
+                    "native platform differs from Release target"
+                );
+            }
+            _ => anyhow::bail!("invalid Release target kind"),
+        }
     }
     Ok(())
 }
@@ -263,11 +284,34 @@ mod tests {
         assert!(
             target_requirements(
                 &recipe,
-                &json!([{"os":"linux","arch":"amd64"},{"os":"linux","arch":"arm64"}])
+                &json!([{"kind":"image","key":"image","platforms":["linux/amd64","linux/arm64"]}])
+            )
+            .is_err(),
+            "component key must match image.name"
+        );
+        let mut recipe = recipe;
+        recipe
+            .targets
+            .get_mut("image")
+            .unwrap()
+            .image
+            .as_mut()
+            .unwrap()
+            .name = "image".into();
+        assert!(
+            target_requirements(
+                &recipe,
+                &json!([{"kind":"image","key":"image","platforms":["linux/arm64","linux/amd64"]}])
             )
             .is_ok()
         );
-        assert!(target_requirements(&recipe, &json!([{"os":"linux","arch":"amd64"}])).is_err());
-        assert!(target_requirements(&recipe,&json!([{"os":"linux","arch":"amd64"},{"os":"linux","arch":"arm64"},{"os":"darwin","arch":"arm64"}])).is_err());
+        assert!(
+            target_requirements(
+                &recipe,
+                &json!([{"kind":"image","key":"image","platforms":["linux/amd64"]}])
+            )
+            .is_err()
+        );
+        assert!(target_requirements(&recipe, &json!([])).is_err());
     }
 }

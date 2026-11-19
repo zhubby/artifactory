@@ -1,6 +1,12 @@
+<!--
+[INPUT]: 节点启动快照、独立遥测和规划工具通道。
+[OUTPUT]: 定义元数据查询、候选排序和分配围栏。
+[POS]: 节点协议与 AI 选机之间的授权契约。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # 节点元数据、MCP 与 AI 选机
 
-Emissary 在进程启动时探测一次静态信息，控制平面持久化快照；动态资源继续进入独立 Telemetry 数据库。内置构建 Agent 通过 MCP 查询授权设备、排列候选，控制平面在分配时复查并执行。传输复用已有 mTLS gRPC 或 Runtime 通道，无新增公开端口或消息中间件。
+Emissary 在进程启动时探测一次静态信息，控制平面持久化快照；动态资源继续进入独立 Telemetry 数据库。规划 Worker 通过 MCP 查询授权设备、排列候选，控制平面在分配时复查并执行。传输复用已有 mTLS gRPC 或规划协调器通道，无新增公开端口或消息中间件。
 
 ## 启动快照
 
@@ -26,7 +32,7 @@ Emissary 在进程启动时探测一次静态信息，控制平面持久化快�
 
 Telemetry 的兼容字段 `Batch.session_id` 对新版 Emissary 表示 `startup_id`。独立库的 `startup_resources` 按节点和启动保存最新样本，只有更新的采样时间才能替换同一启动的记录。调度与查询使用当前业务节点的启动 ID 批量读取；历史重放不能替换其他启动的资源。采样和服务端接收时间都必须在过去 90 秒以内，允许最多 30 秒的时钟超前。必需指标未知或资源过期时不满足分配条件。
 
-Worker 使用官方 `@modelcontextprotocol/sdk` 的 client/server、`initialize`、`tools/list`、`tools/call` 会话；内存 transport 不监听网络。工具调用复用当前规划任务绑定的认证通道，Agent 无数据库连接、SQL 或通用 Shell 能力。
+规划 Worker 使用官方 `@modelcontextprotocol/sdk` 的 client/server、`initialize`、`tools/list`、`tools/call` 会话；内存 transport 不监听网络。工具调用复用当前规划任务绑定的认证通道，Worker 无数据库连接、SQL 或通用 Shell 能力。
 
 | 工具 | 输入与结果 |
 | --- | --- |
@@ -69,11 +75,11 @@ Worker 使用官方 `@modelcontextprotocol/sdk` 的 client/server、`initialize`
 
 重选只接受未分配目标的候选列表，原资源门槛、脚本、目标平台和签名范围保持不变。提交时校验任务版本，跳过已运行的目标，拒绝取消、过期租约或过期轮次的结果。预算用尽后继续排队，在构建详情展示原因。实际构建失败后的脚本修订仍沿用原有修订机制，与选机重选预算分开。
 
-## 启用与升级
+## 初始化与启用
 
-1. 升级 Control，追加业务迁移 `2026111402 / 0002_node_placements.sql`；旧节点和在途任务继续工作。
-2. 升级 Telemetry，追加独立库迁移 `2026111403 / 0001_startup_resources.sql`。业务授权角色继续只读，无需新增写权限。
-3. 升级 Runtime、Worker，随后升级 Emissary，确认新启动 metadata 和当前资源均已上报。
+1. 安装全新 Control 和内嵌规划协调器，分别初始化业务基线 `2026112001` 与规划基线 `2026111901`。程序拒绝旧库，不迁入旧节点或在途任务。
+2. 初始化独立 Telemetry 数据库。业务授权角色继续只读，无需新增写权限。
+3. 部署 Planning Operator 与规划 Worker，并注册 Emissary，确认启动 metadata 和当前资源均已上报。
 4. 最后设置 `ARTIFACTORY_AI_PLACEMENT=true`，Helm 对应 `controlPlane.aiPlacement: true`。
 
 开关默认为关闭。新 AI 构建创建时固定 `planning_context.placement_version`；已有计划、旧版本 AI 构建和普通 recipe 继续使用原调度方式。更换 Worker 或开关不会改变在途构建的模式。关闭开关只影响之后创建的 AI 构建；已启用的构建仍需要支持选机的组件处理。

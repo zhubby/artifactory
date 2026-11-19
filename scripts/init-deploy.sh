@@ -1,6 +1,6 @@
 #!/bin/sh
 # [INPUT]: 公网域名和非 root 部署身份。
-# [OUTPUT]: 初始化设备 PKI、私有存储和网关共享令牌。
+# [OUTPUT]: 初始化固定初始账号、设备 PKI 和随机私有凭据。
 # [POS]: 仅初始化新部署，不轮换已有持久密钥。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 set -eu
@@ -30,7 +30,7 @@ ARTIFACTORY_GATEWAY_TOKEN=$(openssl rand -hex 32)
 ARTIFACTORY_S3_ACCESS_KEY=artifactory
 ARTIFACTORY_S3_SECRET_KEY=$(openssl rand -hex 32)
 ARTIFACTORY_BOOTSTRAP_USERNAME=admin
-ARTIFACTORY_BOOTSTRAP_PASSWORD=$(openssl rand -hex 24)
+ARTIFACTORY_BOOTSTRAP_PASSWORD=123456
 EOF
 set -a
 . .deploy/env

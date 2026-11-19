@@ -1,3 +1,9 @@
+<!--
+[INPUT]: 当前 HTTP 路由、会话和租户项目授权。
+[OUTPUT]: 定义公开接口、输入、返回值与权限边界。
+[POS]: 控制台与外部集成共用的 HTTP 契约入口。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # HTTP API v1
 
 统一前缀 `/api/v1`。生产网关将 `/api/*` 直接转给控制平面；开发控制台可使用同源代理。JSON 错误形态为 `{"error":"..."}`；401 未登录、403 禁止、404 不存在、409 冲突、400 参数错误；无效 JSON / schema 由 Axum 返回 4xx。
@@ -44,7 +50,9 @@
 | `GET /audit` | 最近 200 条审计事件，仅管理员 |
 | `GET, POST /projects` | 创建 `{name,repository_url,credential_id,pool_ids,signing_profiles,model_profile_id?,build_context?,source_credentials?}` |
 | `GET, PATCH /projects/{id}` | PATCH 使用完整项目设置，不是任意 JSON Patch |
-| `POST /projects/{id}/builds` | `{ref,goal,target_requirements?,parameters?,targets?,release_version?}`；所有新构建走 AI |
+| `POST /projects/{id}/releases` | 项目 release；`{version,ref,goal,target_requirements,targets}`，创建严格 SemVer 草稿 |
+| `GET, POST /releases/{id}/builds` | 读取版本构建；创建需要 build 权限，只接受 `{parameters?,goal?}` |
+| `PATCH /releases/{id}` | 项目 release；`{spec_revision,goal?,target_requirements?,targets?}`，仅草稿，递增目标修订 |
 | `GET /builds` | 可选 `?project_id=`，最多 100 条 |
 | `GET /builds/{id}` | 完整源码清单、当前计划 ID、修订次数、澄清、目标、设备 attempt、步骤、制品、镜像执行和发布记录 |
 | `GET /builds/{id}/plans` | 不可变计划历史、摘要、文件依据、规划运行和调用统计；不返回模型密钥或 checkpoint |
@@ -56,19 +64,20 @@
 | `GET /model-options` | 操作者会话可读模型 ID、名称和 enabled，用于项目选择 |
 | `POST /builds/{id}/cancel` | 空对象，停止队列和在途任务 |
 | `POST /jobs/{id}/retry` | 空对象，仅失败 / lost / canceled 且尚未发布的 job |
-| `POST /builds/{id}/publish` | `{version?}`；既有版本不可更改；重试复用制品 |
+| `POST /releases/{id}/publish` | 项目 release；`{build_id}`，冻结当前修订的一次完整成功构建，失败只重试相同交付 |
 | `GET /builds/{id}/logs` | 静态历史日志；`attempt_id?`、`step?` 筛选，`before?` 向前翻页；返回 `{logs, next_before}`，每页最多 100 块，页内按 ID 升序；无更早日志时游标为 `null` |
 | `GET /builds/{id}/events` | SSE `snapshot` / `log` / `complete`；`Last-Event-ID` 或 `?after=` 恢复日志；终态排空日志后发送包含最终详情的 `complete`，客户端停止重连 |
 | `GET /artifacts` | 可按项目过滤，不返回对象 key |
 | `GET /artifacts/{id}/download` | 项目 read 权限后重定向到有期限的网关票据地址；不返回 S3 地址 |
 | `GET /images` | 当前权限范围内的已验证镜像和 digest |
 | `GET /image-executions/{id}/logs?after=0` | 项目 read；镜像日志，按返回 ID 继续读取 |
-| `POST /image-executions/{id}/publish` | 项目 release；`{credential_id?,repository?,tags:[]}`；省略外部凭据时重试完整平台结果的内建发布，否则按原 digest 复制到同项目凭据指定仓库 |
+| `POST /image-executions/{id}/publish` | 项目 release；`{credential_id,repository}`；仅分发已发布版本选中的镜像，标签自动等于 Release 版本，拒绝 tags 字段 |
 | `GET /projects/{id}/image-credentials` | 项目 read；只返回名称、类别和启用状态 |
 | `POST /projects/{id}/image-credentials` | 项目 admin；`{kind:"registry",name,login:{endpoint,username,password}}` 或 `{kind:"secret",name,value}` |
 | `DELETE /projects/{id}/image-credentials/{credential}` | 项目 admin；吊销凭据，不返回加密材料 |
-| `GET /releases` | 可按项目过滤 |
-| `GET /releases/{id}` | 不可变版本与制品目录 |
+| `GET /releases` | 可按项目过滤，按 SemVer 降序 |
+| `GET /releases/{id}` | 草稿目标、固定源码、状态、修订、构建数量与正式交付 |
+| `GET /releases/{id}/manifest`、`GET /releases/{id}/checksums` | published 版本的命名交付清单与 SHA256SUMS |
 
 创建租户和项目返回 `{id,slug}`，构建返回 `{id,number,project_slug}`；其他资源创建通常返回 `{id}`；Token 类创建还返回明文值；修改操作通常返回 `{ok:true}`。所有查询使用真实数据库，不返回演示对象。
 
@@ -77,21 +86,24 @@
 ## 触发示例
 
 ```sh
-curl --fail-with-body -X POST 'https://build.example.com/api/v1/projects/PROJECT_UUID/builds' \
+curl --fail-with-body -X POST 'https://build.example.com/api/v1/projects/PROJECT_UUID/releases' \
   -H "Authorization: Bearer $ARTIFACTORY_API_TOKEN" \
+  -H 'X-Artifactory-Tenant: TENANT_UUID' \
   -H 'Content-Type: application/json' \
-  --data '{"ref":"main","goal":"Build the CLI, test it and collect the executable","target_requirements":[{"os":"linux","arch":"amd64"}],"parameters":{"CHANNEL":"preview"},"release_version":"v1.0.0-preview.1"}'
+  --data '{"version":"1.2.3-rc.1","ref":"main","goal":"Build and verify the CLI","targets":["cli"],"target_requirements":[{"kind":"native","key":"cli","os":"linux","arch":"amd64","artifact_key":"cli","format_suffix":".tar.gz"}]}'
 ```
 
-发布版本的请求与会重新启用自动发布的 retry 均需要 release scope。更改项目仓库不会改变已经创建的构建源地址。凭据轮换应创建新的引用并修改项目；历史构建不静默切换凭据。
+随后向 `/releases/RELEASE_UUID/builds` 提交 `{}` 发起构建，向 `/releases/RELEASE_UUID/publish` 提交 `{"build_id":"BUILD_UUID"}` 发布。旧项目级创建构建和构建级补版本发布入口已移除。
 
-未指定 goal 时使用项目平台侧 build_context；两者均为空时拒绝。项目模型为空时继承平台默认值，创建构建固定该配置版本。`target_requirements` 是 `{os,arch}` 数组；`targets` 若提供则固定目标名集合。人工 job 重试使用原提交与计划，规划中不可重试。状态为 resolving / planning / needs_input / replanning / queued / running / succeeded / failed / canceled / lost。执行失败最多两次自动修订，权限、认证和源码凭据错误不自动修订，详见 [AI 构建](ai-builds.md)。
+版本严格遵循稳定或预发布 SemVer，最多 100 ASCII 字节，不接受 `v` 或 `+metadata`。版本和源码 ref 创建后不可改。目标合同固定原生 key/os/arch/application_platform 或镜像 key/platforms。Build、Artifact 和 Image 响应带 Release 身份，下载名由服务器生成。完整约束见[项目版本交付](release-delivery.md)。
+
+创建 Release 与发布需要 release 权限，执行与重试需要 build 权限。项目模型为空时继承默认模型，创建构建固定配置版本。源码在首次构建解析后供同 Release 的全部构建复用。人工 job 重试使用原提交与计划，只允许 draft Release。构建状态仍为 resolving/planning/needs_input/replanning/queued/running/succeeded/failed/canceled/lost。
 
 生命周期状态、清理顺序和管理页面见[工作台](workspaces.md)。操作记录与目标业务行独立保存，状态为 waiting/running/succeeded/failed/canceled；等待阶段可取消，实际清理开始后只能查询或重试。归档保持查询下载，禁止新增业务写入。
 
 当前列表为内部小团队规模的有界查询，并未提供全量导出、复杂分页或外部商店发布 API；Webhook 和 OIDC 尚未实现。
 
-OCI 客户端通过公开网关的 `/v2/` 访问内建仓库。Registry Token realm 为 `/api/v1/registry/token`，使用 HTTP Basic 携带平台 API Token 或执行专属短期身份，不使用浏览器 Cookie。返回的仓库 JWT 有效期为 60 秒，scope 严格约束租户、项目和仓库。构建回执与 publication 接口只接受执行专属 Bearer Token。部署与取消边界见 [镜像构建与网关](image-builds.md)。
+OCI 客户端通过公开网关的 `/v2/` 访问内建仓库。Registry Token realm 为 `/api/v1/registry/token`，使用 HTTP Basic 携带平台 API Token 或执行专属短期身份，不使用浏览器 Cookie。返回的仓库 JWT 有效期为 60 秒，scope 严格约束租户、项目和仓库。普通 API Token 对正式仓只读；平台发布 JWT 额外绑定 Release 与发布租约代次。构建回执与 publication 接口只接受执行专属 Bearer Token。部署与取消边界见 [镜像构建与网关](image-builds.md)。
 
 ## Emissary 版本与升级
 

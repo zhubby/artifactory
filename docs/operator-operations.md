@@ -4,59 +4,61 @@
 [POS]: 最低支持 Kubernetes 1.28 的工作负载运维入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
-# Kubernetes Agent Operator 运维
+# Kubernetes Planning Operator 运维
 
-Agent Operator 是独立 Rust 服务。它协调 `AgentPool`、`AgentRun` 和 `SourceTask`，直接创建临时 Pod。源码任务与规划任务各自按 AgentPool 预算准入，不创建常驻源码服务、源码 PVC 或源码 S3 对象。
+Planning Operator 是独立 Rust 服务。它协调 `PlanningPool`、`PlanningRun` 和 `SourceTask`，直接创建临时 Pod。源码任务与规划任务各自按 PlanningPool 预算准入，不创建常驻源码服务、源码 PVC 或源码 S3 对象。
 
-Kubernetes 最低支持版本为 1.28。1.28 及以上版本使用同一套 Pod 执行实现。四个 Chart 均声明 `kubeVersion: '>=1.28.0-0'`，不设版本上限。默认将 Agent Operator 与 Control 放在同一命名空间。Operator 的两个副本共享 `artifactory-agent-operator` Lease，只有持有 Lease 的副本修改资源。
+三种 CRD 均使用 `planning.artifactory.dev/v1alpha1`。当前 Chart 只支持新实例，不接管旧 API group 的 CR 或 Pod，也不删除旧 Lease、Deployment、CRD 或 PVC。新旧实例使用独立命名空间和数据库；管理员另行退役旧实例。
+
+Kubernetes 最低支持版本为 1.28。1.28 及以上版本使用同一套 Pod 执行实现。四个 Chart 均声明 `kubeVersion: '>=1.28.0-0'`，不设版本上限。默认将 Planning Operator 与 Control 放在同一命名空间。Operator 的两个副本共享 `artifactory-planning-operator` Lease，只有持有 Lease 的副本修改资源。
 
 ## 安装
 
-先准备业务数据库、Runtime 数据库和服务身份。Control 的规划 Secret 包含 `ARTIFACTORY_RUNTIME_DATABASE_URL`、`ARTIFACTORY_SERVICE_KEY`、`ARTIFACTORY_SERVICE_TOKEN` 和 `ARTIFACTORY_CONTROL_URL`。Agent Operator 使用相同服务令牌。TLS Secret 包含 `ca.crt`，证书覆盖内部网关 DNS。源码任务仅使用投影的任务身份，不取得业务数据库或 S3 凭据。
+先准备业务数据库、规划协调器数据库和服务身份。Control 的规划 Secret 包含 `ARTIFACTORY_PLANNING_DATABASE_URL`、`ARTIFACTORY_SERVICE_KEY`、`ARTIFACTORY_SERVICE_TOKEN` 和 `ARTIFACTORY_CONTROL_URL`。Planning Operator 使用相同服务令牌。TLS Secret 包含 `ca.crt`，证书覆盖内部网关 DNS。源码任务仅使用投影的任务身份，不取得业务数据库或 S3 凭据。
 
 ```sh
-kubectl --context YOUR_CONTEXT apply -f operators/agent-operator/config/crd/resources.yaml
-helm upgrade --install native charts/artifactory-agent-operator \
-  --kube-context YOUR_CONTEXT -n artifactory -f agent-values.yaml
+kubectl --context YOUR_CONTEXT apply -f operators/planning-operator/config/crd/resources.yaml
+helm upgrade --install native charts/artifactory-planning-operator \
+  --kube-context YOUR_CONTEXT -n artifactory -f planning-values.yaml
 ```
 
 ```yaml
-runtime:
-  secretName: artifactory-runtime
-  url: https://artifactory-gateway-internal:8445/internal/planner
+coordinator:
+  secretName: artifactory-planning
+  url: https://artifactory-gateway-internal:8445/internal/planning
 controlUrl: https://artifactory-gateway-internal:8445
 tls:
   secretName: artifactory-services-tls
-agentPool:
+planningPool:
   name: default
   maxActive: 8
   maxPerProject: 4
-  image: ghcr.io/zhubby/artifactory-agent-worker:0.2.0
+  image: ghcr.io/zhubby/artifactory-planning-worker:0.2.0
   sourcePreparerImage: ghcr.io/zhubby/artifactory-source-preparer:0.2.0
   ephemeralStorage: 10Gi
 networkPolicy:
   gitPorts: [443, 80, 22]
 ```
 
-私有 Git 使用其他端口时，将端口加入 `networkPolicy.gitPorts`。Control 的 `planning.namespace` 与 `planning.agentPool` 指向此命名空间和池。跨命名空间部署时，Runtime 和 Control 地址须包含命名空间 DNS。Gateway 内部策略只放行主部署及配置的规划、镜像命名空间。`planning.runtimeUrl` 指向内部网关的 `/internal/planner`；`planning.serviceSecretName` 提供规划数据库和服务身份；`planning.serviceCaSecretName` 提供 `ca.crt`。
+私有 Git 使用其他端口时，将端口加入 `networkPolicy.gitPorts`。Control 的 `planning.namespace` 与 `planning.pool` 指向此命名空间和池。跨命名空间部署时，规划协调器和 Control 地址须包含命名空间 DNS。Gateway 内部策略只放行主部署及配置的规划、镜像命名空间。`planning.coordinatorUrl` 指向内部网关的 `/internal/planning`；`planning.serviceSecretName` 提供规划数据库和服务身份；`planning.serviceCaSecretName` 提供 `ca.crt`。
 
 ## 池级出口代理
 
-外部 Git 或 LFS 需要指定出口时，管理员配置 `agentPool.proxy`。直接创建 CR 时，对应字段为 `AgentPool.spec.proxy`。该对象只接受 `httpProxy`、`httpsProxy`、`noProxy`，不接受任意环境变量或 Pod 模板。至少提供一个 HTTP(S) 代理 origin，禁止路径、查询串、片段、空白和控制字符。代理 origin 支持 URL 编码的认证信息。
+外部 Git 或 LFS 需要指定出口时，管理员配置 `planningPool.proxy`。直接创建 CR 时，对应字段为 `PlanningPool.spec.proxy`。该对象只接受 `httpProxy`、`httpsProxy`、`noProxy`，不接受任意环境变量或 Pod 模板。至少提供一个 HTTP(S) 代理 origin，禁止路径、查询串、片段、空白和控制字符。代理 origin 支持 URL 编码的认证信息。
 
 ```yaml
-agentPool:
+planningPool:
   proxy:
     httpProxy: http://artifactory-egress:18443
     httpsProxy: http://artifactory-egress:18443
     noProxy: localhost,127.0.0.1,.svc,.cluster.local,artifactory-gateway-internal,artifactory-registry,kubernetes.default.svc,10.233.0.1
 ```
 
-`noProxy` 必须由管理员显式提供。将 Control、Runtime、内建 Registry、内建仓库认证 realm 和 Kubernetes API 的主机加入清单。短服务名与外部发布域名不会被 `.svc` 后缀覆盖，须逐项加入。API Service IP 使用实际 `KUBERNETES_SERVICE_HOST`，示例中的 `10.233.0.1` 只代表一个集群。校验使用不带端口的主机名、IP 和前导点 DNS 后缀；API IP 显式列出，不以 CIDR 代替。不同客户端对 `*.svc` 的解释不同，配置拒绝该语法；使用 `.svc`。
+`noProxy` 必须由管理员显式提供。将 Control、规划协调器、内建 Registry、内建仓库认证 realm 和 Kubernetes API 的主机加入清单。短服务名与外部发布域名不会被 `.svc` 后缀覆盖，须逐项加入。API Service IP 使用实际 `KUBERNETES_SERVICE_HOST`，示例中的 `10.233.0.1` 只代表一个集群。校验使用不带端口的主机名、IP 和前导点 DNS 后缀；API IP 显式列出，不以 CIDR 代替。不同客户端对 `*.svc` 的解释不同，配置拒绝该语法；使用 `.svc`。
 
-Operator 在创建 Pod 前校验 Control、Runtime、`kubernetes.default.svc` 和注入的 API Service IP 已直连。内建 Registry 与认证 realm 地址由任务材料提供，因此其直连覆盖由池管理员保证；外部目标仓库保留代理路由。代理不自动修改 `noProxy`。
+Operator 在创建 Pod 前校验 Control、规划协调器、`kubernetes.default.svc` 和注入的 API Service IP 已直连。内建 Registry 与认证 realm 地址由任务材料提供，因此其直连覆盖由池管理员保证；外部目标仓库保留代理路由。代理不自动修改 `noProxy`。
 
-代理环境同时使用大小写标准变量，传入源码解析 Pod 与规划源码 init。Git 的隔离进程环境保留这些变量。规划 Worker 只访问内网 Runtime，保持原有环境。Agent Chart 自动将已配置代理的 TCP 端口加入出站策略；上层 NetworkPolicy、DNS、代理可达性仍须由部署环境放行。未配置代理的池保持原有网络行为。
+代理环境同时使用大小写标准变量，传入源码解析 Pod 与规划源码 init。Git 的隔离进程环境保留这些变量。规划 Worker 只访问内网规划协调器，保持原有环境。Planning Operator Chart 自动将已配置代理的 TCP 端口加入出站策略；上层 NetworkPolicy、DNS、代理可达性仍须由部署环境放行。未配置代理的池保持原有网络行为。
 
 镜像构建池使用同结构的 `builderPool.proxy`，详见[镜像构建](image-builds.md)。代理地址不进入 AI 执行计划或业务构建日志；含认证信息的 values 文件按部署凭据保护。
 
@@ -70,13 +72,13 @@ Operator 在创建 Pod 前，持久化 attempt、唯一 Pod 名和总 deadline�
 
 ## 规划任务
 
-`AgentRun` 固定 `runId`、`projectId`、`generation`、`pool`、`sourceManifestId` 和 `sourceDigest`。Operator 同时限制池和项目的实际执行数；未知和清理中的旧执行仍计费。选机任务没有源码清单，因此不创建源码 init container。
+`PlanningRun` 固定 `runId`、`projectId`、`generation`、`pool`、`sourceManifestId` 和 `sourceDigest`。Operator 同时限制池和项目的实际执行数；未知和清理中的旧执行仍计费。选机任务没有源码清单，因此不创建源码 init container。
 
-有源码的规划 Pod 先执行 `artifactory-source-preparer checkout`。init container 通过 Runtime `/v1/prepare` 领取固定源码与凭据，每次从原 Git/LFS 上游重新拉取。`/workspace` 是有大小限额的 emptyDir。init 专属 token、SSH key 和 askpass 材料不挂载给主容器。
+有源码的规划 Pod 先执行 `artifactory-source-preparer checkout`。init container 通过规划协调器 `/v1/prepare` 领取固定源码与凭据，每次从原 Git/LFS 上游重新拉取。`/workspace` 是有大小限额的 emptyDir。init 专属 token、SSH key 和 askpass 材料不挂载给主容器。
 
-主容器只读挂载 `/workspace/source` 和 `/workspace/source-manifest.json`，工具在本地读取文件。模型调用、预算、租约和结果仍由 Runtime 控制。AI 对话、日志、计划及明确产出的制品允许持久保存。
+主容器只读挂载 `/workspace/source` 和 `/workspace/source-manifest.json`，工具在本地读取文件。模型调用、预算、租约和结果仍由规划协调器控制。AI 对话、日志、计划及明确产出的制品允许持久保存。
 
-源码 init 非零退出、Worker 终止或 Pod 失败时，Operator 向 Runtime `/v1/execution-failed` 提交已登记的完整执行身份。Runtime 以 generation 和 Pod UID 拒绝旧回报。已领取租约的 Worker 以退出码 `75` 报告结果未知，Runtime 使用原预算和截止时间有限重试。其他故障通过持久 outbox 结束业务构建。Worker 已提交的提案和已有终态不被覆盖。源码准备期间任务显示 `Provisioning`，主 Worker acquire 后显示 `Running`。
+源码 init 非零退出、Worker 终止或 Pod 失败时，Operator 向规划协调器 `/v1/execution-failed` 提交已登记的完整执行身份。规划协调器以 generation 和 Pod UID 拒绝旧回报。已领取租约的 Worker 以退出码 `75` 报告结果未知，规划协调器使用原预算和截止时间有限重试。其他故障通过持久 outbox 结束业务构建。Worker 已提交的提案和已有终态不被覆盖。源码准备期间任务显示 `Provisioning`，主 Worker acquire 后显示 `Running`。
 
 ## 清理与故障
 
@@ -88,15 +90,15 @@ Operator 在创建 Pod 前，持久化 attempt、唯一 Pod 名和总 deadline�
 
 ImageBuild 的 `status.podOwnership.pods` 保存 Pod 名、UID、平台和 `stopped` 证据。创建 Pod 前，Operator 安装 CR 清理 finalizer；Pod 自身也带停止确认 finalizer。直接删除 ImageBuild 仍须等待实际任务 Pod 收尾。活动、状态未知或尚未确认停止的 Pod 占用容量。所有容器已终止的 Pod 保留诊断证据，但释放执行槽，允许 Publisher 准入。节点失联时保留 `CleanupPending`，不能以 API 逻辑删除代替实际停止。
 
-Pod 不共享仓库或 BuildKit 缓存。任务结束、失败或取消后，Operator 按 UID 删除 Pod，逐容器确认停止，先将 `stopped=true` 写入 CR，再移除 Pod finalizer。Pod 消失后才完成清理。Agent Operator 发出创建请求前先持久化 `createStarted=true`；Image Operator 先在 `podOwnership.creating` 预留唯一 Pod 名。取消时未看到 Pod，但请求可能已发出，也保留预留台账，持续查询迟到的 Pod。API 对象消失但缺少停止证据时，保留未知执行台账和容量，不自动重建执行。清理依赖 Operator 持续协调，不使用 Job TTL。
+Pod 不共享仓库或 BuildKit 缓存。任务结束、失败或取消后，Operator 按 UID 删除 Pod，逐容器确认停止，先将 `stopped=true` 写入 CR，再移除 Pod finalizer。Pod 消失后才完成清理。Planning Operator 发出创建请求前先持久化 `createStarted=true`；Image Operator 先在 `podOwnership.creating` 预留唯一 Pod 名。取消时未看到 Pod，但请求可能已发出，也保留预留台账，持续查询迟到的 Pod。API 对象消失但缺少停止证据时，保留未知执行台账和容量，不自动重建执行。清理依赖 Operator 持续协调，不使用 Job TTL。
 
-源码 Pod 非零退出最多执行三次，重试共享首次记录的总截止期限。只有旧 Pod 已停止且对象已消失，Operator 才创建下一 attempt。准备进程已向 Control 提交业务错误时，业务任务直接失败；Control 随后取消 CR，再次领取不会得到源码凭据。取消写回前仍可能出现下一 attempt，但不会重开业务任务。规划 Pod 不在 Kubernetes 内重试，恢复由 Runtime generation 控制。Pod 丢失先通过 `/v1/execution-lost` 撤销旧授权；未知旧执行仍占容量并阻止同 run 的新 Pod。镜像 Pod 在同一次执行内不自动重建。上游固定 commit 被删除或无法拉取时，任务报源码不可用，不切换当前分支。
+源码 Pod 非零退出最多执行三次，重试共享首次记录的总截止期限。只有旧 Pod 已停止且对象已消失，Operator 才创建下一 attempt。准备进程已向 Control 提交业务错误时，业务任务直接失败；Control 随后取消 CR，再次领取不会得到源码凭据。取消写回前仍可能出现下一 attempt，但不会重开业务任务。规划 Pod 不在 Kubernetes 内重试，恢复由规划协调器 generation 控制。Pod 丢失先通过 `/v1/execution-lost` 撤销旧授权；未知旧执行仍占容量并阻止同 run 的新 Pod。镜像 Pod 在同一次执行内不自动重建。上游固定 commit 被删除或无法拉取时，任务报源码不可用，不切换当前分支。
 
 缺少停止证据的执行需要保守占槽。恢复节点后让 kubelet 上报退出状态；永久退役节点须先完成隔离和磁盘处置，再由管理员确认执行已停止。不要仅为释放配额而移除 finalizer 或清空执行台账。
 
 任务终态且 Pod 全部清理后，Operator 主动移除 CR 清理 finalizer，保留 CR 审计记录。卸载运行中的实例时，先取消并删除任务 CR，等待 Pod 和清理 finalizer 消失，再卸载 Operator 或删除命名空间。命名空间删除会同时终止 Operator 并删除 Lease，不能代替任务收尾流程。
 
-Operator 重启后按 CRD 执行台账、Pod owner UID 和 Runtime 状态继续清理。节点失联时，逻辑删除不能证明节点本地磁盘已经回收；待节点恢复后检查 kubelet 回收，退役节点按设备磁盘策略处置。
+Operator 重启后按 CRD 执行台账、Pod owner UID 和规划协调器状态继续清理。节点失联时，逻辑删除不能证明节点本地磁盘已经回收；待节点恢复后检查 kubelet 回收，退役节点按设备磁盘策略处置。
 
 ```sh
 python3 scripts/check_ephemeral_source.py --context YOUR_CONTEXT --namespace artifactory --idle

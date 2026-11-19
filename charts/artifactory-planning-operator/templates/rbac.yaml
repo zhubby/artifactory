@@ -1,0 +1,38 @@
+# [INPUT]: 规划控制器和源码准备身份。
+# [OUTPUT]: 规划工作负载权限。
+# [POS]: 不向 Pi 工作 Pod 授予 Secret 读取权限。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+{{- $prefix := regexReplaceAll "-+$" (default "artifactory" .Values.fullnameOverride | trunc 46) "" }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $prefix }}-planning-operator
+rules:
+  - apiGroups: [planning.artifactory.dev]
+    resources: [planningpools, sourcetasks, planningruns]
+    verbs: [get, list, watch, create, patch, update, delete]
+  - apiGroups: [planning.artifactory.dev]
+    resources: [planningpools/status, sourcetasks/status, planningruns/status]
+    verbs: [get, patch, update]
+  - apiGroups: [planning.artifactory.dev]
+    resources: [sourcetasks/finalizers, planningruns/finalizers]
+    verbs: [get, patch, update]
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [get, list, watch, create, patch, delete]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $prefix }}-planning-operator
+subjects:
+  - {kind: ServiceAccount, name: {{ $prefix }}-planning-operator, namespace: {{ .Release.Namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ $prefix }}-planning-operator}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: artifactory-source-preparer}
+automountServiceAccountToken: false

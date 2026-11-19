@@ -172,7 +172,7 @@ impl Database {
         let project = Uuid::new_v4();
         let build = Uuid::new_v4();
         sql::execute(&mut self.pool.clone(),"INSERT INTO projects(id,tenant_id,name,repository_url) VALUES($1,'00000000-0000-0000-0000-000000000001','source-test','https://example.invalid/source.git')",params![project]).await?;
-        sql::execute(&mut self.pool.clone(),r#"INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url,model_config_snapshot,planning_context) VALUES($1,$2,'main','resolving','https://example.invalid/source.git','{}','{"source_credentials":[]}')"#,params![build,project]).await?;
+        sql::execute(&mut self.pool.clone(),r#"WITH fixture_release AS (INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets,source_resolution_id) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-',''),'main','test','[]','{}',$1) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url,model_config_snapshot,planning_context,release_id,spec_revision,release_version) VALUES($1,$2,'main','resolving','https://example.invalid/source.git','{}','{"source_credentials":[]}', (SELECT id FROM fixture_release),1,(SELECT version FROM fixture_release))"#,params![build,project]).await?;
         self.store.enqueue_source_resolutions().await?;
         let manifest = SourceManifest::new(
             build,
@@ -382,7 +382,7 @@ async fn large_source_material_keeps_one_manifest_copy() -> Result<()> {
         for material in [receipt, fixed] {
             ensure!(
                 serde_json::to_vec(&material)?.len()
-                    < artifactory_runtime_protocol::service::SERVICE_JSON_LIMIT,
+                    < artifactory_service_transport::service::SERVICE_JSON_LIMIT,
                 "legal source manifest exceeds the material transport limit"
             );
         }
@@ -404,8 +404,9 @@ async fn completed_source_material_does_not_reissue_credentials() -> Result<()> 
         ensure!(material.credentials.is_empty() && material.completed_result.is_some(),"completed task reissued credentials instead of a receipt");
         let unused=Uuid::new_v4();
         sql::execute(&mut db.pool.clone(),"INSERT INTO credentials(id,tenant_id,name,kind,ciphertext) VALUES($1,'00000000-0000-0000-0000-000000000001','unused','https','deliberately not decryptable')",params![unused]).await?;
-        sql::execute(&mut db.pool.clone(),"UPDATE builds SET planning_context=jsonb_set(planning_context,'{source_credentials}',$2) WHERE id=$1",params![build,json!([{"repository_url":"https://elsewhere.invalid/unused.git","credential_id":unused}])]).await?;
-        let material=db.store.build_source_material(&[7;32],build).await?;
+        let bound=Uuid::new_v4();
+        sql::execute(&mut db.pool.clone(),"INSERT INTO builds(id,project_id,release_id,release_version,spec_revision,requested_ref,status,source_repository_url,source_manifest_id,commit_sha,model_config_snapshot,planning_context) SELECT $2,project_id,release_id,release_version,spec_revision,requested_ref,status,source_repository_url,source_manifest_id,commit_sha,model_config_snapshot,jsonb_set(planning_context,'{source_credentials}',$3) FROM builds WHERE id=$1",params![build,bound,json!([{"repository_url":"https://elsewhere.invalid/unused.git","credential_id":unused}])]).await?;
+        let material=db.store.build_source_material(&[7;32],bound).await?;
         ensure!(material.credentials.is_empty(),"unrelated repository credential was disclosed");
         Ok(())
     }.await;
@@ -451,6 +452,8 @@ async fn source_pins_and_commit_are_idempotent() -> Result<()> {
             )
             .await?;
         ensure!(first == second, "a retry followed moving tags");
+        let durable:serde_json::Value=sql::scalar(&mut db.pool.clone(),"SELECT jsonb_build_object('oid',r.pinned_ref_oid,'tags',r.frozen_tags) FROM releases r JOIN builds b ON b.release_id=r.id WHERE b.id=$1",params![id]).await?;
+        ensure!(durable["oid"]==pinned["oid"]&&durable["tags"][""]==first["tags"],"partial source pins were not retained by Release");
         let result = json!({"manifest":manifest});
         let (a, b) = tokio::join!(
             db.store.commit_source_task(id, &identity, &result),
@@ -549,4 +552,24 @@ async fn source_credentials_require_the_bound_tenant() -> Result<()> {
     }.await;
     let cleanup = db.close().await;
     result.and(cleanup)
+}
+
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL; shared Release source identity"]
+async fn shared_release_source_survives_first_build_cancellation() -> Result<()> {
+    let db = Database::new().await?;
+    let outcome=async {
+  let (first,manifest)=db.task().await?;let second=Uuid::new_v4();
+  sql::execute(&mut db.pool.clone(),"INSERT INTO builds(id,project_id,release_id,release_version,spec_revision,requested_ref,source_repository_url,model_config_snapshot,status) SELECT $2,project_id,release_id,release_version,spec_revision,requested_ref,source_repository_url,model_config_snapshot,'resolving' FROM builds WHERE id=$1",params![first,second]).await?;
+  db.store.cancel_build(first).await?;
+  db.store.enqueue_source_resolutions().await?;
+  db.pin(first).await?;
+  db.store.commit_source_task(first,&execution(),&json!({"manifest":manifest})).await?;
+  let source:Uuid=sql::scalar(&mut db.pool.clone(),"SELECT source_manifest_id FROM builds WHERE id=$1",params![second]).await?;
+  ensure!(source==first,"waiting build did not reuse resolver source");
+  let state:String=sql::scalar(&mut db.pool.clone(),"SELECT status FROM builds WHERE id=$1",params![first]).await?;ensure!(state=="canceled","canceled build was revived");
+  let count:i64=sql::scalar(&mut db.pool.clone(),"SELECT count(*) FROM source_tasks",params![]).await?;ensure!(count==1,"shared source created multiple tasks");Ok(())
+ }.await;
+    db.close().await?;
+    outcome
 }

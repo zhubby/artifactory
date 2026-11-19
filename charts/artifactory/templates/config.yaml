@@ -37,9 +37,9 @@ data:
   ARTIFACTORY_TELEMETRY_ENDPOINT: {{ .Values.telemetry.endpoint | quote }}
   ARTIFACTORY_TELEMETRY_URL: {{ printf "https://%s-telemetry:8093" (include "artifactory.fullname" .) | quote }}
   {{- end }}
-  ARTIFACTORY_AGENT_POOL: {{ .Values.planning.agentPool | quote }}
-  {{- if .Values.planning.runtimeUrl }}
-  ARTIFACTORY_RUNTIME_URL: {{ .Values.planning.runtimeUrl | quote }}
+  ARTIFACTORY_PLANNING_POOL: {{ .Values.planning.pool | quote }}
+  {{- if .Values.planning.coordinatorUrl }}
+  ARTIFACTORY_PLANNING_URL: {{ .Values.planning.coordinatorUrl | quote }}
   {{- if .Values.planning.serviceCaSecretName }}
   ARTIFACTORY_SERVICE_CA: /run/service-ca/ca.crt
   {{- end }}

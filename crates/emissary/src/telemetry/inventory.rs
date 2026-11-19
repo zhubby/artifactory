@@ -1,5 +1,9 @@
+//! [INPUT]: 依赖系统资源、原生工具和节点遥测契约。
+//! [OUTPUT]: 生成固定工具、内存和加速器能力快照。
+//! [POS]: 节点启动元数据和加速器遥测的探测边界。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{config::Config, process};
-use artifactory_telemetry_model::{Accelerator, AcceleratorSample, Inventory, Tool};
+use artifactory_emissary_protocol::telemetry::{Accelerator, AcceleratorSample, Inventory, Tool};
 use serde_json::Value;
 use std::{collections::BTreeMap, time::Duration};
 use sysinfo::System;

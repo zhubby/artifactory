@@ -390,8 +390,8 @@ async fn registered_account_requires_membership_then_project_viewer_can_only_rea
             json!({"name":"forbidden","repository_url":"https://example.com/repo.git"}),
         ),
         (
-            format!("/projects/{project}/builds"),
-            json!({"ref":"main","goal":"Build the application"}),
+            database.release_build_path(project).await,
+            json!({"goal":"Build the application"}),
         ),
         (
             "/users".to_owned(),

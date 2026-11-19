@@ -2,8 +2,8 @@
 > L2 | Parent: ../AGENTS.md
 
 app/: 提供 Next.js 业务路由和全局样式。
-components/: 组合工作台、签名设置和共享控件。
-lib/: 提供租户请求、公开类型和路由边界。
+components/: 组合 Release 版本工作台、构建、签名设置和共享控件。
+lib/: 提供版本合同、租户请求、公开类型和路由边界。
 messages/: 提供中文与英文界面文案。
 styles/: 定义中性色、控件、工作台和构建引导样式。
 

@@ -1,6 +1,10 @@
+//! [INPUT]: 依赖遥测数据库、设备 RPC 契约和服务传输配置。
+//! [OUTPUT]: 启动遥测接收、鉴权查询与保留任务。
+//! [POS]: 遥测服务进程入口；业务数据库仅供只读授权。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
 use artifactory_emissary_protocol::telemetry_server::TelemetryServer;
-use artifactory_runtime_protocol::service;
+use artifactory_service_transport::service;
 use artifactory_telemetry_service::query;
 use std::{env, path::PathBuf, time::Duration};
 use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
@@ -32,8 +36,9 @@ async fn main() -> Result<()> {
         .concurrency_limit_per_connection(2)
         .tls_config(tls)?
         .add_service(
-            TelemetryServer::new(state.clone())
-                .max_decoding_message_size(artifactory_telemetry_model::MAX_BATCH_BYTES + 1024),
+            TelemetryServer::new(state.clone()).max_decoding_message_size(
+                artifactory_emissary_protocol::telemetry::MAX_BATCH_BYTES + 1024,
+            ),
         )
         .serve(
             env::var("ARTIFACTORY_TELEMETRY_GRPC_BIND")

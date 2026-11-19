@@ -242,7 +242,7 @@ impl protocol::control_server::Control for EmissaryService {
             .get("startup")
             .filter(|v| !v.is_null())
             .map(|v| {
-                serde_json::from_value::<artifactory_telemetry_model::nodes::MetadataSnapshot>(
+                serde_json::from_value::<artifactory_emissary_protocol::nodes::MetadataSnapshot>(
                     v.clone(),
                 )
                 .map_err(|_| Status::invalid_argument("invalid startup metadata"))
@@ -336,7 +336,7 @@ impl protocol::control_server::Control for EmissaryService {
                     if event.kind == "heartbeat" {
                         heartbeat(&state, node, session, &event, &sender).await?;
                     } else if event.kind == "metadata" {
-                        if event.payload_json.len()>artifactory_telemetry_model::nodes::MAX_METADATA_BYTES { return Err(Status::invalid_argument("oversized metadata")); }
+                        if event.payload_json.len()>artifactory_emissary_protocol::nodes::MAX_METADATA_BYTES { return Err(Status::invalid_argument("oversized metadata")); }
                         let snapshot=serde_json::from_str(&event.payload_json).map_err(|_|Status::invalid_argument("invalid metadata"))?;
                         metadata_ack(&state,node,session,&snapshot,&sender).await?;
                     } else {
@@ -675,7 +675,7 @@ async fn metadata_ack(
     state: &AppState,
     node: Uuid,
     session: Uuid,
-    snapshot: &artifactory_telemetry_model::nodes::MetadataSnapshot,
+    snapshot: &artifactory_emissary_protocol::nodes::MetadataSnapshot,
     sender: &mpsc::Sender<Result<Command, Status>>,
 ) -> Result<(), Status> {
     state.store.retry_metadata(node, session, snapshot).await?;

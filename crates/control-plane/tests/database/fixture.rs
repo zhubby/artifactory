@@ -122,7 +122,7 @@ impl Database {
         sql::execute(&mut self.pool.clone(), query, params![project])
             .await
             .unwrap();
-        sql::execute(&mut self.pool.clone(), "INSERT INTO builds(id,project_id,requested_ref,commit_sha,config_snapshot,status,release_version,source_repository_url) VALUES($1,$2,'main',$3,$4,'queued','v1','https://example.com/repo.git')", params![build, project, "0".repeat(40), serde_json::to_value(&recipe).unwrap()]).await.unwrap();
+        sql::execute(&mut self.pool.clone(), "WITH fixture_release AS (INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets,source_resolution_id) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-',''),'main','test','[{\"kind\":\"native\",\"key\":\"app\",\"os\":\"linux\",\"arch\":\"amd64\"}]','{app}',$1) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,commit_sha,config_snapshot,status,source_repository_url,release_id,spec_revision,release_version,selected_targets,target_requirements) VALUES($1,$2,'main',$3,$4,'queued','https://example.com/repo.git', (SELECT id FROM fixture_release),1,(SELECT version FROM fixture_release),'{app}','[{\"kind\":\"native\",\"key\":\"app\",\"os\":\"linux\",\"arch\":\"amd64\"}]')", params![build, project, "0".repeat(40), serde_json::to_value(&recipe).unwrap()]).await.unwrap();
         sql::execute(
             &mut self.pool.clone(),
             "INSERT INTO jobs(id,build_id,target,target_config) VALUES($1,$2,'app',$3)",
@@ -143,7 +143,14 @@ impl Database {
         )
         .await
         .unwrap();
+        sql::execute(&mut self.pool.clone(),"UPDATE releases SET source_manifest_id=$2,commit_sha=$3 WHERE id=(SELECT release_id FROM builds WHERE id=$1)",params![build,manifest,"0".repeat(40)]).await.unwrap();
         (project, build, job)
+    }
+    pub(super) async fn release_build_path(&self, project: Uuid) -> String {
+        let release = Uuid::new_v4();
+        sql::execute(&mut self.pool.clone(),"INSERT INTO model_profiles(id,tenant_id,name,api,base_url,model,key_ciphertext,is_default) SELECT $1,p.tenant_id,'Release test','openai-responses','https://example.com','test','unused',true FROM projects p WHERE p.id=$2 AND NOT EXISTS(SELECT 1 FROM model_profiles m WHERE m.tenant_id=p.tenant_id AND m.enabled AND m.is_default)",params![Uuid::new_v4(),project]).await.unwrap();
+        sql::execute(&mut self.pool.clone(),"INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets) VALUES($1,$2,$3,'main','Build test artifacts',$4,'{app}')",params![release,project,format!("0.0.0-test.{}",release.simple()),serde_json::json!([{"kind":"native","key":"app","os":"linux","arch":"amd64"}])]).await.unwrap();
+        format!("/releases/{release}/builds")
     }
     pub(super) async fn source(&self, project: Uuid, id: Uuid) {
         let manifest = artifactory_source_checkout::SourceManifest::new(

@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖构建 API、事件订阅和共享控件。
+ * [INPUT]: 依赖 Release 归属、构建 API、事件订阅和共享控件。
  * [OUTPUT]: 提供含应用分类与宿主的构建详情。
- * [POS]: 活跃构建订阅事件；终态展示静态分页日志。
+ * [POS]: Release 内的构建详情；候选结果在版本工作台冻结交付。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -20,7 +20,6 @@ import {
   Play,
   RefreshCw,
   Server,
-  ShieldCheck,
   Square,
   Terminal,
 } from "lucide-react";
@@ -37,18 +36,15 @@ import {
   TargetPlatformLabel,
 } from "@/components/common";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Modal } from "@/components/ui/dialog";
 import { Tabs } from "@/components/ui/tabs";
-import { SubmitForm } from "@/components/forms";
 import { ImageBuilds } from "@/components/image-builds";
 import { BuildPlanning } from "@/components/build-planning";
 import { BuildLogHistory } from "@/components/build-log-history";
 import { isBuildTerminal, type BuildLog } from "@/lib/build-state";
-import { Field } from "@/components/common";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
-import type { Build, User } from "@/lib/types";
+import type { Build, Release, User } from "@/lib/types";
+import { releasePath } from "@/lib/routes";
 import { cn, elapsed, short } from "@/lib/utils";
 
 export function BuildDetail({
@@ -56,11 +52,13 @@ export function BuildDetail({
   number,
   user,
   readOnly = false,
+  releaseId,
 }: {
   projectSlug: string;
   number: number;
   user: User;
   readOnly?: boolean;
+  releaseId?: string;
 }) {
   const { t, date } = useUI();
   const remote = useRemote<Build>(
@@ -69,6 +67,8 @@ export function BuildDetail({
   );
   const build = remote.data;
   const id = build?.id;
+  const release = useRemote<Release>(build?.release_id ? `/releases/${build.release_id}` : null);
+  const canMutate = !readOnly && release.data?.status === "draft";
   const role =
     user.role === "admin"
       ? "admin"
@@ -81,7 +81,6 @@ export function BuildDetail({
   const [watching, setWatching] = useState<string>();
   const live = !!id && (!isBuildTerminal(build?.status) || watching === id);
   const [error, setError] = useState<Error>();
-  const [publish, setPublish] = useState(false);
   const [tab, setTab] = useState("execution");
   const [clipped, setClipped] = useState(false);
   const terminal = useRef<HTMLDivElement>(null);
@@ -141,6 +140,8 @@ export function BuildDetail({
         <Loading />
       </>
     );
+  if (releaseId && releaseId !== build.release_id)
+    return <ErrorBox message={t("common.notFound")} />;
   const job = build.jobs?.find((job) => job.id === selected) || build.jobs?.[0];
   const attempt = job?.attempts.at(-1);
   const displayed = logs.filter(
@@ -160,11 +161,11 @@ export function BuildDetail({
   return (
     <>
       <Link
-        href={`/projects/${projectSlug}/builds`}
+        href={releasePath(projectSlug, build.release_id)}
         className="mb-5 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-primary max-md:min-h-11"
       >
         <ArrowLeft size={13} />
-        {t("builds.all")}
+        {t("releaseFlow.returnRelease", {version:build.release_version})}
       </Link>
       {build.jobs?.some((job) => job.blocked_reason) && (
         <p className="notice" role="status">
@@ -191,15 +192,6 @@ export function BuildDetail({
             {t("builds.cancel")}
           </Button>
         )}
-        {!readOnly &&
-          role !== "viewer" &&
-          build.status === "succeeded" &&
-          build.publish_status !== "succeeded" && (
-            <Button onClick={() => setPublish(true)}>
-              <ShieldCheck />
-              {t("builds.publish")}
-            </Button>
-          )}
       </PageTitle>
       <ErrorBox message={error || remote.error || build.error} />
       <div className="build-meta">
@@ -215,17 +207,13 @@ export function BuildDetail({
           <Clock3 size={14} />
           {elapsed(build.created_at, build.finished_at)}
         </span>
-        <span className="meta-item">
-          {t("builds.publication")}{" "}
-          <Status small value={build.publish_status} />
-        </span>
+        <span className="meta-item">{t("releaseFlow.revision", {number:build.spec_revision})}</span>
         {build.release_version && (
           <span className="meta-item text-primary">
-            {build.release_version}
+            <Link href={releasePath(projectSlug,build.release_id)}>{build.release_version}</Link>
           </span>
         )}
       </div>
-      {build.publish_error && <ErrorBox message={t("builds.publishError", { detail: build.publish_error })} />}
       {build.status === "needs_input" && <div className="notice build-attention" role="status">
         <span>{t("redesign.needsInput")}</span><Button size="sm" variant="secondary" onClick={() => setTab("plan")}>{t("redesign.viewPlan")}</Button>
       </div>}
@@ -348,7 +336,7 @@ export function BuildDetail({
               !["planning", "replanning", "needs_input"].includes(
                 build.status,
               ) &&
-              !readOnly &&
+              canMutate &&
               role !== "viewer" && (
                 <div className="p-4">
                   <Button
@@ -423,7 +411,7 @@ export function BuildDetail({
           </div>
         </div>
         <div hidden={activeTab !== "plan"}>
-          {build.goal ? <BuildPlanning build={build} user={{ ...user, role }} refresh={remote.reload} />
+          {build.goal ? <BuildPlanning build={build} user={{ ...user, role: canMutate ? role : "viewer" }} refresh={remote.reload} />
             : <Empty title={t("redesign.plan")} detail={t("builds.noConfig")} />}
       <details className="panel mt-5">
         <summary className="cursor-pointer px-5 py-4 text-xs text-muted-foreground">
@@ -442,7 +430,7 @@ export function BuildDetail({
           title={t("builds.verified")}
           detail={t("artifacts.shaVerified")}
         />
-        {!!build.image_executions?.length && <ImageBuilds executions={build.image_executions} projectId={build.project_id} registry={build.image_registry} editable={role !== "viewer" && !readOnly} reload={remote.reload} />}
+        {!!build.image_executions?.length && <ImageBuilds executions={build.image_executions} registry={build.image_registry} />}
         {build.artifacts?.length ? (
           <ArtifactTable artifacts={build.artifacts} />
         ) : !build.image_executions?.length ? (
@@ -454,34 +442,6 @@ export function BuildDetail({
       </section>
       </>}</Tabs>
 
-      <Modal
-        open={publish}
-        onOpenChange={setPublish}
-        title={t("builds.publishTitle")}
-        description={t("builds.publishDetail")}
-      >
-        <SubmitForm
-          label={t("builds.createRelease")}
-          onSubmit={async (form) => {
-            await mutation(`/builds/${id}/publish`, {
-              version: String(form.get("version")),
-            });
-            setPublish(false);
-            await remote.reload();
-          }}
-        >
-          <Field label={t("builds.version")}>
-            <Input
-              name="version"
-              defaultValue={build.release_version || ""}
-              readOnly={!!build.release_version}
-              required
-              maxLength={100}
-              placeholder="v1.0.0"
-            />
-          </Field>
-        </SubmitForm>
-      </Modal>
     </>
   );
 }

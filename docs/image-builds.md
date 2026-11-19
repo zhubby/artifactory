@@ -15,7 +15,7 @@ Image Operator 在 Kubernetes 中启动 BuildKit。平台固定源码清单后�
 | 服务 | 入口与职责 | 持久状态 |
 |---|---|---|
 | Control | 固定源码、执行授权、任务派发、仓库令牌 | 业务 PostgreSQL |
-| Agent Operator | AgentPool、AgentRun 与临时 SourceTask | 独立 Lease，任务 CRD |
+| Planning Operator | PlanningPool、PlanningRun 与临时 SourceTask | 独立 Lease，任务 CRD |
 | Image Operator | BuilderPool、ImageBuild 与 BuildKit Pod | 独立 Lease，镜像 CRD |
 | Distribution | OCI Registry API、上传与内容读取 | 独立私有 S3 Bucket |
 | Pingora HTTP | 控制入口、仓库反向代理、制品票据流转 | 无本地制品副本 |
@@ -31,13 +31,17 @@ Image Operator 在 Kubernetes 中启动 BuildKit。平台固定源码清单后�
 
 Gateway NetworkPolicy 将 8445 限制为 Control、planning.namespace 和 imageBuilds.namespace 中的 Pod。`gateway.networkPolicy.publicFrom` 和 `deviceFrom` 接受 Kubernetes 网络来源列表；空列表允许任意来源。设置这些列表时同步检查其他 NetworkPolicy，相加规则仍能放行相同流量。设备长连接在建立时选择后端，网关不重放设备消息。新增 Control 副本接纳新连接，已有连接通过排空和客户端重连迁移。
 
-Runtime 与源码任务使用独立 ClusterIP `https://<prefix>-gateway-internal:8445`。该入口只接受内部 API 和健康检查，强制 TLS，并由 Control 核验服务令牌或任务身份。默认服务器身份来自设备 PKI；已有独立服务 CA 使用 `gateway.internalTlsSecret` 提供受 Runtime 与源码任务信任的证书。不要将内部 Service 添加到公开 Ingress。
+规划协调器与源码任务使用独立 ClusterIP `https://<prefix>-gateway-internal:8445`。该入口只接受内部 API 和健康检查，强制 TLS，并由 Control 核验服务令牌或任务身份。默认服务器身份来自设备 PKI；已有独立服务 CA 使用 `gateway.internalTlsSecret` 提供受规划协调器与源码任务信任的证书。不要将内部 Service 添加到公开 Ingress。
 
 公开和内部 `/healthz` 汇总全部必要监听。网关向本机固定监听端口发起启动探测，等待自己的接受回调；其他进程占用端口不能使探测成功。四个监听全部完成端口绑定、TLS 构建并接受连接后，健康检查返回 200。在此之前返回 503。启动探测期限为三十五秒，包含 Pingora 的端口占用重试。监听任务崩溃、提前结束或探测超时会使进程非零退出。收到正常关闭信号后撤销就绪状态。
 
 HTTP 上游连接回池后最多空闲三十秒。该时限不终止活动中的流式上传或下载。网关不自动重放失败的写请求。错误日志只记录类型、来源、监听角色和连接复用状态，不记录请求头、查询串或对象地址。
 
-原生制品的上传、下载、Range 和 HEAD 均通过 `/artifacts/object`。Control 生成绑定对象、方法和期限的加密票据。Gateway 通过内部认证接口换取私有 S3 签名地址，并流式转发字节。浏览器、Emissary 和外部客户端不取得 S3 地址或凭据。网关拒绝公开访问 `/internal/*`。
+原生制品的上传、下载、Range 和 HEAD 均通过 `/artifacts/object`。Control 生成绑定对象、方法和期限的加密票据。正式交付票据还绑定不可变交付文件名。Gateway 通过内部认证接口换取私有 S3 签名地址，并流式转发字节。GET、HEAD 和 Range 成功响应使用相同的 `Content-Disposition`。文件名只改变下载名称，签名后的制品字节保持原样。浏览器、Emissary 和外部客户端不取得 S3 地址或凭据。网关拒绝公开访问 `/internal/*`。
+
+正式仓库路径为 `{tenantUUID}/{projectUUID}/images/{component_key}`。Gateway 先缓冲完整 Manifest，正文上限为四 MiB，每个监听最多并行缓冲八个正文。它计算实际 SHA256，再向 Control 请求单次授权。Control 校验仓库 JWT、当前发布租约与递增代次。冻结清单规定唯一版本标签、根摘要和完整子 Manifest 摘要集合。版本标签只能写入根摘要，摘要引用必须等于正文摘要并位于白名单。失败或过期租约不解除永久版本绑定。镜像层继续流式传输。
+
+Registry Chart 的 NetworkPolicy 只允许同命名空间 Gateway Pod 访问 Distribution 5000 端口。默认 Gateway 标签为 `app.kubernetes.io/name=artifactory` 和 `app.kubernetes.io/component=gateway`；使用自定义标签时同步设置 `networkPolicy.gatewaySelector`。集群 CNI 必须执行 NetworkPolicy。所有选中 Registry Pod 的入站策略权限相加，命名空间全放行策略会使围栏失效。试用清单将通用入站策略排除 Registry；部署时同步替换已有宽策略，并验证普通 Pod 不能直接连接 Registry。
 
 ## 安装顺序
 
@@ -128,7 +132,7 @@ builderPool:
   buildkitConfigMap: buildkit-config
 ```
 
-需要通过指定出口访问 GitHub、ECR 或其他外部仓库时，在 `builderPool.proxy` 配置 `httpProxy`、`httpsProxy` 和显式 `noProxy`。直接创建 CR 时，对应字段为 `BuilderPool.spec.proxy`。配置格式与[Agent 池代理](operator-operations.md#池级出口代理)相同，不提供任意 Pod 环境入口。
+需要通过指定出口访问 GitHub、ECR 或其他外部仓库时，在 `builderPool.proxy` 配置 `httpProxy`、`httpsProxy` 和显式 `noProxy`。直接创建 CR 时，对应字段为 `BuilderPool.spec.proxy`。配置格式与[规划池代理](operator-operations.md#池级出口代理)相同，不提供任意 Pod 环境入口。
 
 ```yaml
 builderPool:
@@ -192,12 +196,12 @@ targets:
       platforms: [linux/amd64, linux/arm64]
       pool: default
       allow_emulation: false
-      tags: [candidate]
+      tags: []
       build_args:
         MODE: production
 ```
 
-源码地址、提交和清单摘要在入队前固定。源码 init container 每次从 Git/LFS 上游拉取固定清单，Runner 只读核验后为单平台推送候选镜像。Control 读取镜像 manifest/config，校验 digest、OS 和架构。缺少任一请求平台时不发布最终 Index。
+源码地址、提交和清单摘要在入队前固定。源码 init container 每次从 Git/LFS 上游拉取固定清单，Runner 只读核验后为单平台推送候选镜像。Control 读取镜像 manifest/config，校验 digest、OS、架构及 Release version/revision 标签。缺少任一请求平台时不生成完整候选 Index。构建仅写入 execution 隔离候选仓，Release 发布时才推广正式仓。
 
 `context` 和 `dockerfile` 均相对源码根目录，不能逃逸该目录。Dockerfile 路径不相对 context。仓库中的 `examples/container-image.yaml` 和 `examples/image/Dockerfile` 提供双原生架构验收模板。
 
@@ -205,15 +209,15 @@ targets:
 
 构建输出页显示平台结果、Index digest、构建日志与发布状态。内建仓库路径由租户、项目和镜像名称组成。使用平台 API Token 登录公开网关域名，并按控制台提供的完整路径拉取。令牌的项目权限仍适用，跨项目仓库访问被拒绝。
 
-项目制品页列出已验证镜像、完整摘要引用和来源构建。Release 固定引用镜像摘要；标签后续变更不改变已发布 Release。
+项目制品页列出已验证镜像、完整摘要引用和来源构建。Release 固定一次完整成功构建的镜像摘要。正式标签只等于 Release.version，永久绑定根摘要。
 
-外部发布从已验证的内建仓库 digest 复制完整 OCI 图，再提交目标标签。每次发布固定不含用户名和密码的仓库来源地址，历史引用在凭据停用或轮换后保持完整。发布需要项目 release 权限和该项目的 Registry 凭据。失败后在输出页重试发布；它创建独立执行，不重新构建 Dockerfile。内部发布失败且平台结果完整时，同样可重试发布。多个标签按顺序写入；OCI Registry 不提供跨标签事务，失败时部分标签已经写入，重试最终收敛到同一 digest。
+外仓分发仅接受 published Release 中选中的镜像，复制正式仓的完整 OCI 图。用户选择同项目 Registry 凭据和目标仓库，标签由 Release.version 提供。相同摘要幂等，不同内容占用版本则拒绝，并在复制后读回。分发创建独立执行，不改变 Release 已发布状态。外仓离开平台后的防覆盖依赖其不可变策略。
 
 ## 取消、清理与备份
 
 排空阻止新建构建和新发布。已接受的排队及运行镜像任务继续执行，生命周期操作等待它们完成。LFS 能力只注入原生目标，持久化计划在注入后重新校验。
 
-取消或截止期限使执行令牌和源码授权失效。超时记为失败；所有平台结果完整时记为发布失败，允许重试发布。显式取消与旧计划执行禁止重试。已签发的仓库 JWT 最长保留 60 秒权限。Image Operator 按 Pod UID 删除，避免删除同名替换资源。终态任务 Secret 被清理。每个 Pod 直接归属 ImageBuild，使用 `restartPolicy: Never`，并带停止确认 finalizer。Operator 将全部容器停止的证据写入 `status.podOwnership.pods[].stopped` 后，才移除 Pod finalizer并等待对象消失。节点失联或 Pod 无故消失且未保存停止证据时，保留 `CleanupPending` 和容量，不在原 execution 中重建 Pod。ImageBuild 作为执行审计记录保留；不要将 CRD 终态当作 Registry 内容回收信号。
+取消或截止期限使执行令牌和源码授权失效。超时记为失败；所有平台结果完整时记为候选 Index 失败，草稿 Release 可重试目标构建。显式取消与旧计划执行禁止重试。已签发的仓库 JWT 最长保留 60 秒权限。Image Operator 按 Pod UID 删除，避免删除同名替换资源。终态任务 Secret 被清理。每个 Pod 直接归属 ImageBuild，使用 `restartPolicy: Never`，并带停止确认 finalizer。Operator 将全部容器停止的证据写入 `status.podOwnership.pods[].stopped` 后，才移除 Pod finalizer并等待对象消失。节点失联或 Pod 无故消失且未保存停止证据时，保留 `CleanupPending` 和容量，不在原 execution 中重建 Pod。ImageBuild 作为执行审计记录保留；不要将 CRD 终态当作 Registry 内容回收信号。
 
 日志存入原生制品 Bucket，执行与发布元数据存入业务数据库。最终镜像 manifest 和 blob 存入独立仓库 Bucket。项目删除等待至少五分钟的在途日志写入宽限期，再清理已登记对象及租户、项目作用域的镜像日志前缀。清扫包含拒绝回执留下的孤立对象，并以持久化游标从存储故障中恢复。项目删除不自动删除仓库 blob。当前关闭在线 Registry 删除与自动 GC；按组织保留策略安排停写备份、离线 GC 和容量告警。不能根据业务记录删除数推断 S3 空间已释放。
 
@@ -222,7 +226,7 @@ targets:
 ## 验证入口
 
 ```sh
-cargo test --locked -p artifactory-image-protocol -p artifactory-image-registry -p artifactory-image-operator
+cargo test --locked -p artifactory-image-protocol -p artifactory-oci-registry-client -p artifactory-image-operator
 cargo build --locked -p artifactory-gateway
 python3 tests/images/gateway.py
 helm lint charts/artifactory-image-operator --strict

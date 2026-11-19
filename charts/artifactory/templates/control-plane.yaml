@@ -83,9 +83,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "artifactory.fullname" . }}-config
-            {{- if .Values.planning.runtimeUrl }}
+            {{- if .Values.planning.coordinatorUrl }}
             - secretRef:
-                name: {{ required "planning.serviceSecretName is required with Runtime" .Values.planning.serviceSecretName }}
+                name: {{ required "planning.serviceSecretName is required with planning coordinator" .Values.planning.serviceSecretName }}
             {{- end }}
           env:
             - {name: ARTIFACTORY_KUBERNETES_NAMESPACE, value: {{ .Values.planning.namespace | default .Release.Namespace | quote }}}

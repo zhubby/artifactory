@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 新部署命名空间、资源前缀和设备入口 SAN。
-[OUTPUT]: 持久业务凭据、设备 PKI、网关令牌和独立仓库签名密钥。
+[OUTPUT]: 固定初始账号、随机持久凭据、设备 PKI 和仓库签名密钥。
 [POS]: 只初始化新目录；已有部署必须保留主密钥和设备 CA。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -101,7 +101,7 @@ def main():
         "s3-access-key": s3_access,
         "s3-secret-key": s3_secret,
         "bootstrap-username": "admin",
-        "bootstrap-password": secrets.token_hex(24),
+        "bootstrap-password": "123456",
         "s3.json": json.dumps({"identities": [{
             "name": "artifactory",
             "credentials": [{"accessKey": s3_access, "secretKey": s3_secret}],

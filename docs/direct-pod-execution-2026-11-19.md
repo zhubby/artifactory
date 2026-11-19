@@ -98,4 +98,4 @@ SourceTask 在业务数据库固定 CR UID。材料领取按任务行锁单调�
 
 本轮验证不等同于 TaskNotes 完整构建发布验收。实际构建、私有 Git、Registry 推送和双架构 RUN 的完整验收入口仍是 `tests/operator/acceptance/run.py` 与 `tests/images/run.py`。
 
-当前安装、资源与故障处理契约见 [Operator 运维](operator-operations.md)、[Runtime 协议](runtime-protocol.md) 和 [镜像构建](image-builds.md)。
+当前安装、资源与故障处理契约见 [Operator 运维](operator-operations.md)、[Runtime 协议](planning-protocol.md) 和 [镜像构建](image-builds.md)。

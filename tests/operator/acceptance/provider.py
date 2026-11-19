@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 显式选择的私有供应商配置与隔离服务栈。
-[OUTPUT]: 验证真实模型、工具调用、预算与取消。
+[OUTPUT]: 经 Release 验证真实模型、工具、预算与取消。
 [POS]: 只在内存解密凭据；中继只记录脱敏时序。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -90,10 +90,9 @@ class ProviderAcceptance:
                             'model_profile_id':profile})['id']
         goal = goal or ('First inspect README.md and build.sh using read_file and inspect node_capabilities. '
                         'Use the actual tool results before submitting your plan. Build with sh build.sh and '
-                        'collect dist/result.txt on the available Linux device. Include README.md and build.sh '
+                        'collect dist/result.txt in target app on the available Linux device. Include README.md and build.sh '
                         'as evidence. No signing or external scripts are necessary.')
-        build = self.a.api(f'/api/v1/projects/{project}/builds', {'ref':'v-fixture','goal':goal,
-                          'target_requirements':[{'os':'linux','arch':self.a.arch}]})['id']
+        build = self.a.create_build(project, goal)['id']
         self.builds.append(build)
         print('BUILD',label,build,flush=True)
         return build
@@ -103,7 +102,7 @@ class ProviderAcceptance:
         if not history['runs']:
             return None
         run = history['runs'][0]['id']
-        value = json.loads(self.a.sql('planner', f"SELECT jsonb_build_object('id',id,'status',status,'lifecycle',lifecycle,'usage',usage,'source_manifest_id',source_manifest_id,'source_digest',source_digest,'requests',(SELECT jsonb_agg(jsonb_build_object('id',request_id,'generation',generation,'state',state,'created_at',created_at) ORDER BY created_at) FROM runtime_model_requests WHERE run_id=r.id)) FROM runtime_runs r WHERE id='{run}'"))
+        value = json.loads(self.a.sql('planning', f"SELECT jsonb_build_object('id',id,'status',status,'lifecycle',lifecycle,'usage',usage,'source_manifest_id',source_manifest_id,'source_digest',source_digest,'requests',(SELECT jsonb_agg(jsonb_build_object('id',request_id,'generation',generation,'state',state,'created_at',created_at) ORDER BY created_at) FROM planning_model_requests WHERE run_id=r.id)) FROM planning_runs r WHERE id='{run}'"))
         value['accepted_plans'] = len(history['plans'])
         return value
 
@@ -114,7 +113,7 @@ class ProviderAcceptance:
         return self.a.wait(terminal, seconds)
 
     def checkpoint_summary(self, run):
-        value = json.loads(self.a.sql('planner', f"SELECT coalesce(checkpoint,'{{}}') FROM runtime_runs WHERE id='{run}'"))
+        value = json.loads(self.a.sql('planning', f"SELECT coalesce(checkpoint,'{{}}') FROM planning_runs WHERE id='{run}'"))
         encoded = value.get('messages')
         if not encoded:
             return {}
@@ -231,7 +230,7 @@ class ProviderAcceptance:
             self.check('device container has a process-reaping init',a.kubectl('exec','deploy/device','--','cat','/proc/1/comm').strip()=='tini')
             deployment=json.loads(a.kubectl('get','deploy','upstream','-o','json'))
             self.original_upstream=copy.deepcopy(deployment['spec']['template']['spec']['containers'])
-            self.original_pool=json.loads(a.kubectl('get','agentpool','default','-o','json'))['spec']
+            self.original_pool=json.loads(a.kubectl('get','planningpool','default','-o','json'))['spec']
             self.model,key=load_profile(self.args.profile_env)
             self.evidence.update(provider=self.model['base_url'],model=self.model['model'],protocol=self.model['api'],git_head=a.command(['git','rev-parse','HEAD']).strip(),relay_image=self.args.relay_image)
             containers=copy.deepcopy(self.original_upstream)
@@ -242,12 +241,12 @@ class ProviderAcceptance:
             for process in a.processes:process.terminate();process.wait(timeout=10)
             a.processes.clear();a.resume()
             a.wait(lambda:self.relay() is not None)
-            a.kubectl('patch','agentpool','default','--type=merge','-p','{"spec":{"maxActive":2}}')
+            a.kubectl('patch','planningpool','default','--type=merge','-p','{"spec":{"maxActive":2}}')
             self.evidence['images']=a.images()
             self.evidence['emissary_binary_sha256']=a.kubectl('exec','deploy/device','--','sha256sum','/usr/local/bin/artifactory-emissary').split()[0]
             source_hash=hashlib.sha256()
-            sources=[ROOT/'Cargo.toml',ROOT/'Cargo.lock',ROOT/'packages/agent-worker/package-lock.json']
-            for directory in ('crates','operators','packages/agent-worker/src','proto'):
+            sources=[ROOT/'Cargo.toml',ROOT/'Cargo.lock',ROOT/'packages/planning-worker/package-lock.json']
+            for directory in ('crates','operators','packages/planning-worker/src','proto'):
                 sources.extend(path for path in (ROOT/directory).rglob('*') if path.is_file())
             for path in sorted(sources):
                 source_hash.update(str(path.relative_to(ROOT)).encode()+b'\0'+path.read_bytes()+b'\0')
@@ -270,7 +269,7 @@ class ProviderAcceptance:
             for ident,body in self.profiles:
                 a.api('/api/v1/model-profiles/'+ident,body,method='PATCH')
             if self.original_pool is not None:
-                a.kubectl('patch','agentpool','default','--type=merge','-p',json.dumps({'spec':self.original_pool}))
+                a.kubectl('patch','planningpool','default','--type=merge','-p',json.dumps({'spec':self.original_pool}))
             if self.original_upstream is not None:
                 a.kubectl('patch','deploy','upstream','--type=json','-p',json.dumps([{'op':'replace','path':'/spec/template/spec/containers','value':self.original_upstream}]))
                 a.kubectl('rollout','status','deploy/upstream','--timeout=180s')
@@ -278,11 +277,11 @@ class ProviderAcceptance:
                 ids=','.join("'"+str(uuid.UUID(ident))+"'" for ident,_ in self.profiles)
                 self.check('all temporary supplier profiles are disabled',a.sql('business',f'SELECT count(*) FROM model_profiles WHERE enabled AND id IN ({ids})')=='0')
             upstream_restored=self.original_upstream is not None and json.loads(a.kubectl('get','deploy','upstream','-o','json'))['spec']['template']['spec']['containers']==self.original_upstream
-            pool_restored=self.original_pool is not None and json.loads(a.kubectl('get','agentpool','default','-o','json'))['spec']==self.original_pool
+            pool_restored=self.original_pool is not None and json.loads(a.kubectl('get','planningpool','default','-o','json'))['spec']==self.original_pool
             if self.original_upstream is not None:
                 self.check('supplier relay deployment is restored',upstream_restored)
             if self.original_pool is not None:
-                self.check('AgentPool configuration is restored',pool_restored)
+                self.check('PlanningPool configuration is restored',pool_restored)
             active=sum(a.api('/api/v1/builds/'+build)['status'] not in ('succeeded','failed','lost','canceled','needs_input') for build in self.builds)
             self.check('no active supplier test build remains',active==0)
             self.evidence['cleanup']={'test_profiles_disabled':len(self.profiles),'upstream_restored':upstream_restored,'pool_restored':pool_restored,'active_test_builds':active}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 已保存的隔离命名空间和显式活动容量。
-[OUTPUT]: 记录真实 Pi Pod、预算、故障恢复与取消。
+[OUTPUT]: 经独立 Release 记录真实 Pi Pod、预算、恢复与取消。
 [POS]: 准入前检查容量；只输出脱敏观测证据。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -77,13 +77,13 @@ class Capacity:
                 if pod['podRef']['namespace'] != 'kube-system' and pod['podRef']['uid'] not in live:
                     continue
                 values.append({'name': pod['podRef']['name'], 'namespace': pod['podRef']['namespace'], 'uid': pod['podRef']['uid'], 'cpu_ns': pod.get('cpu',{}).get('usageCoreNanoSeconds',0), 'rss_bytes': pod.get('memory',{}).get('rssBytes',0), 'working_set_bytes': pod.get('memory',{}).get('workingSetBytes',0), 'rx_bytes': pod.get('network',{}).get('rxBytes',0), 'tx_bytes': pod.get('network',{}).get('txBytes',0)})
-        database = json.loads(self.a.sql('postgres', "SELECT json_build_object('connections',(SELECT json_agg(s) FROM (SELECT datname,wait_event_type,count(*) FROM pg_stat_activity WHERE datname IN ('business','planner') GROUP BY datname,wait_event_type) s),'databases',(SELECT json_agg(s) FROM (SELECT datname,numbackends,xact_commit,xact_rollback,deadlocks FROM pg_stat_database WHERE datname IN ('business','planner')) s))"))
-        counts = json.loads(self.a.sql('planner', "SELECT coalesce(json_object_agg(status,n),'{}') FROM (SELECT status,count(*) n FROM runtime_runs GROUP BY status) s"))
-        pi = [self.pod_state(p) for p in current if p['metadata'].get('labels',{}).get('app.kubernetes.io/name') == 'artifactory-pi']
-        executions = [] if not self.project else json.loads(self.a.sql('planner', "SELECT coalesce(json_agg(json_build_object('id',id,'status',status,'generation',lifecycle->'generation','owner',lifecycle->'owner','calls',lifecycle->'calls','lease_until_ms',lifecycle->'lease_until_ms')),'[]') FROM runtime_runs WHERE project_id='"+self.project+"'"))
+        database = json.loads(self.a.sql('postgres', "SELECT json_build_object('connections',(SELECT json_agg(s) FROM (SELECT datname,wait_event_type,count(*) FROM pg_stat_activity WHERE datname IN ('business','planning') GROUP BY datname,wait_event_type) s),'databases',(SELECT json_agg(s) FROM (SELECT datname,numbackends,xact_commit,xact_rollback,deadlocks FROM pg_stat_database WHERE datname IN ('business','planning')) s))"))
+        counts = json.loads(self.a.sql('planning', "SELECT coalesce(json_object_agg(status,n),'{}') FROM (SELECT status,count(*) n FROM planning_runs GROUP BY status) s"))
+        pi = [self.pod_state(p) for p in current if p['metadata'].get('labels',{}).get('app.kubernetes.io/name') == 'artifactory-planning-worker']
+        executions = [] if not self.project else json.loads(self.a.sql('planning', "SELECT coalesce(json_agg(json_build_object('id',id,'status',status,'generation',lifecycle->'generation','owner',lifecycle->'owner','calls',lifecycle->'calls','lease_until_ms',lifecycle->'lease_until_ms')),'[]') FROM planning_runs WHERE project_id='"+self.project+"'"))
         owners = {r['owner'] for r in executions if r['status'] == 'running'}
         running = {p['uid'] for p in pi if p['uid'] in live}
-        return {'time': time.time(), 'pods': values, 'database': database, 'runtime_counts': counts, 'pi_pods': pi, 'runtime_executions': executions, 'running_owners_without_running_pod': sorted(owners-running), 'running_pods_without_runtime_owner': sorted(running-owners), 'pi_running_pods': len(running), 'agentrun_crds': len(json.loads(self.a.kubectl('get','agentruns','-o','json'))['items'])}
+        return {'time': time.time(), 'pods': values, 'database': database, 'runtime_counts': counts, 'pi_pods': pi, 'planning_executions': executions, 'running_owners_without_running_pod': sorted(owners-running), 'running_pods_without_runtime_owner': sorted(running-owners), 'pi_running_pods': len(running), 'planningrun_crds': len(json.loads(self.a.kubectl('get','planningruns','-o','json'))['items'])}
 
     @staticmethod
     def pod_state(pod):
@@ -96,7 +96,7 @@ class Capacity:
         decoder, buffer = json.JSONDecoder(), ''
         captured = set()
         with (self.directory/'pod-events.jsonl').open('w') as events, (self.directory/'pod-watch.log').open('w') as errors:
-            self.pod_watch = subprocess.Popen(['kubectl','--context',self.a.context,'-n',self.a.ns,'get','pods','-l','app.kubernetes.io/name=artifactory-pi','--watch','--output-watch-events','-o','json'], stdout=subprocess.PIPE, stderr=errors)
+            self.pod_watch = subprocess.Popen(['kubectl','--context',self.a.context,'-n',self.a.ns,'get','pods','-l','app.kubernetes.io/name=artifactory-planning-worker','--watch','--output-watch-events','-o','json'], stdout=subprocess.PIPE, stderr=errors)
             try:
                 while chunk := self.pod_watch.stdout.read1(65536):
                     buffer += chunk.decode()
@@ -126,7 +126,7 @@ class Capacity:
     def api_counters(self):
         result = {}
         for line in self.a.command(['kubectl','--context',self.a.context,'get','--raw','/metrics']).splitlines():
-            if line.startswith('apiserver_request_total{') and 'group="agents.artifactory.dev"' in line:
+            if line.startswith('apiserver_request_total{') and 'group="planning.artifactory.dev"' in line:
                 labels, value = line.rsplit(' ',1)
                 if re.search(r'verb="(CREATE|UPDATE|PATCH|DELETE)"', labels):
                     result[labels] = float(value)
@@ -147,22 +147,22 @@ class Capacity:
             stop.wait(max(0, 1-(time.monotonic()-tick)))
 
     def fingerprint(self, project):
-        return json.loads(self.a.sql('planner', "SELECT coalesce(json_agg(json_build_object('id',id,'generation',lifecycle->'generation','calls',lifecycle->'calls','deadline',lifecycle->'deadline_ms','source_manifest_id',source_manifest_id,'source_digest',source_digest) ORDER BY id),'[]') FROM runtime_runs WHERE project_id='"+project+"' AND status='running'"))
+        return json.loads(self.a.sql('planning', "SELECT coalesce(json_agg(json_build_object('id',id,'generation',lifecycle->'generation','calls',lifecycle->'calls','deadline',lifecycle->'deadline_ms','source_manifest_id',source_manifest_id,'source_digest',source_digest) ORDER BY id),'[]') FROM planning_runs WHERE project_id='"+project+"' AND status='running'"))
 
     def run(self):
         self.preflight()
         self.a.resume()
-        assert self.a.sql('planner', "SELECT count(*) FROM runtime_runs WHERE status IN ('running','provisioning')") == '0', 'Use a drained dedicated namespace'
-        original = json.loads(self.a.kubectl('get','agentpool','default','-o','json'))['spec']
-        baseline_crds = len(json.loads(self.a.kubectl('get','agentruns','-o','json'))['items'])
-        self.evidence['baseline_agentrun_crds'] = baseline_crds
+        assert self.a.sql('planning', "SELECT count(*) FROM planning_runs WHERE status IN ('running','provisioning')") == '0', 'Use a drained dedicated namespace'
+        original = json.loads(self.a.kubectl('get','planningpool','default','-o','json'))['spec']
+        baseline_crds = len(json.loads(self.a.kubectl('get','planningruns','-o','json'))['items'])
+        self.evidence['baseline_planningrun_crds'] = baseline_crds
         self.evidence['images'] = self.a.images()
         stop = threading.Event()
         thread = threading.Thread(target=self.monitor,args=(stop,),daemon=True)
         watcher = threading.Thread(target=self.watch_pods,daemon=True)
         started = time.monotonic()
         try:
-            self.a.kubectl('patch','agentpool','default','--type=merge','-p',json.dumps({'spec':{'maxActive':self.args.active,'maxPerProject':self.args.active,'cpu':self.args.cpu,'memory':self.args.memory}}))
+            self.a.kubectl('patch','planningpool','default','--type=merge','-p',json.dumps({'spec':{'maxActive':self.args.active,'maxPerProject':self.args.active,'cpu':self.args.cpu,'memory':self.args.memory}}))
             self.a.service_request(39443,'/test/mode',{'hold':True})
             project = self.a.api('/api/v1/projects',{'name':'active-capacity-'+uuid.uuid4().hex[:8],'repository_url':'https://upstream:9443/repo.git',})['id']
             self.project = project
@@ -171,16 +171,16 @@ class Capacity:
             thread.start()
             watcher.start()
             for _ in range(self.args.active+self.args.queued):
-                self.builds.append(self.a.api('/api/v1/projects/'+project+'/builds',{'ref':'v-fixture','goal':'Inspect the fixed source and build dist/result.txt','target_requirements':[{'os':'linux','arch':self.a.arch}]})['id'])
+                self.builds.append(self.a.create_build(project, 'Inspect the fixed source and build dist/result.txt')['id'])
 
             def active():
-                value = json.loads(self.a.sql('planner',"SELECT json_build_object('running',count(*) FILTER(WHERE status='running' AND (lifecycle->>'calls')::int>=1),'active',count(*) FILTER(WHERE status IN ('running','provisioning')),'queued',count(*) FILTER(WHERE status='queued'),'bad',count(*) FILTER(WHERE status IN ('failed','succeeded','needs_input'))) FROM runtime_runs WHERE project_id='"+project+"'"))
+                value = json.loads(self.a.sql('planning',"SELECT json_build_object('running',count(*) FILTER(WHERE status='running' AND (lifecycle->>'calls')::int>=1),'active',count(*) FILTER(WHERE status IN ('running','provisioning')),'queued',count(*) FILTER(WHERE status='queued'),'bad',count(*) FILTER(WHERE status IN ('failed','succeeded','needs_input'))) FROM planning_runs WHERE project_id='"+project+"'"))
                 assert value['active'] <= self.args.active, 'Pool admission overflowed'
                 assert not value['bad'], 'Pi failed before the load window'
                 if value['running'] != self.args.active or value['queued'] != self.args.queued:
                     return None
-                owners = set(json.loads(self.a.sql('planner', "SELECT json_agg(lifecycle->>'owner') FROM runtime_runs WHERE project_id='"+project+"' AND status='running'")))
-                pods = json.loads(self.a.kubectl('get','pods','-l','app.kubernetes.io/name=artifactory-pi','-o','json'))['items']
+                owners = set(json.loads(self.a.sql('planning', "SELECT json_agg(lifecycle->>'owner') FROM planning_runs WHERE project_id='"+project+"' AND status='running'")))
+                pods = json.loads(self.a.kubectl('get','pods','-l','app.kubernetes.io/name=artifactory-planning-worker','-o','json'))['items']
                 live = {p['metadata']['uid'] for p in pods if p['status']['phase'] == 'Running' and not p['metadata'].get('deletionTimestamp')}
                 # A crashed process can retain its live lease for 90 seconds.
                 # Wait for real current owners, including after Runtime restart.
@@ -192,7 +192,7 @@ class Capacity:
             first = self.fingerprint(project)
             self.evidence['apiserver_mutations_before_hold'] = self.api_counters()
             assert len(first) == self.args.active and len({r['id'] for r in first}) == self.args.active
-            assert self.a.sql('planner',"SELECT count(*) FROM runtime_runs WHERE project_id='"+project+"' AND status='queued' AND ((lifecycle->>'calls')::int<>0 OR lifecycle->>'deadline_ms' IS NOT NULL)") == '0'
+            assert self.a.sql('planning',"SELECT count(*) FROM planning_runs WHERE project_id='"+project+"' AND status='queued' AND ((lifecycle->>'calls')::int<>0 OR lifecycle->>'deadline_ms' IS NOT NULL)") == '0'
             end = time.monotonic()+self.args.hold_seconds
             while time.monotonic() < end:
                 assert active(), 'Active count or quota changed during the hold window'
@@ -204,7 +204,7 @@ class Capacity:
             print('HELD PODS',json.dumps({'running':held['pi_running_pods'],'missing_owners':held['running_owners_without_running_pod'],'unowned_pods':held['running_pods_without_runtime_owner']}),flush=True)
             assert held['pi_running_pods'] == self.args.active, 'Database counts must correspond to real Pods'
             assert not held['running_owners_without_running_pod'] and not held['running_pods_without_runtime_owner'], 'Each running Pi must hold the current execution identity'
-            assert held['agentrun_crds'] <= baseline_crds + self.args.active, 'Queued runs generated extra AgentRun CRDs'
+            assert held['planningrun_crds'] <= baseline_crds + self.args.active, 'Queued runs generated extra PlanningRun CRDs'
             assert self.fingerprint(project) == first, 'Hold must not reset budgets or change source manifests'
             self.evidence['apiserver_mutations_after_hold'] = self.api_counters()
             before_hold = self.evidence['apiserver_mutations_before_hold']
@@ -212,9 +212,9 @@ class Capacity:
             self.evidence['hold_crd_mutations'] = hold_writes
             assert hold_writes <= 2*self.args.active, 'Steady heartbeats caused excessive CRD writes'
             (self.directory/'runtime-before-restart.log').write_text(self.a.kubectl('logs','-l','app=control-plane','--prefix','--tail=200'))
-            old_services = {p['metadata']['uid'] for p in json.loads(self.a.kubectl('get','pods','-o','json'))['items'] if p['metadata'].get('labels',{}).get('app.kubernetes.io/name') in ['artifactory-agent-operator'] or p['metadata'].get('labels',{}).get('app') == 'control-plane'}
+            old_services = {p['metadata']['uid'] for p in json.loads(self.a.kubectl('get','pods','-o','json'))['items'] if p['metadata'].get('labels',{}).get('app.kubernetes.io/name') in ['artifactory-planning-operator'] or p['metadata'].get('labels',{}).get('app') == 'control-plane'}
             restarted = time.monotonic()
-            for deployment in ['control-plane','artifactory-agent-operator']:
+            for deployment in ['control-plane','artifactory-planning-operator']:
                 self.a.kubectl('rollout','restart','deployment/'+deployment)
                 self.a.kubectl('rollout','status','deployment/'+deployment,'--timeout=120s')
             self.a.wait(lambda: not old_services.intersection(p['metadata']['uid'] for p in json.loads(self.a.kubectl('get','pods','-o','json'))['items']),120)
@@ -251,13 +251,13 @@ class Capacity:
             canceled = time.monotonic()
             with ThreadPoolExecutor(max_workers=10) as executor:
                 list(executor.map(lambda build:self.a.api('/api/v1/builds/'+build+'/cancel',{}),self.builds))
-            self.a.wait(lambda:self.a.sql('planner',"SELECT count(*) FROM runtime_runs WHERE project_id='"+project+"' AND status<>'canceled'")=='0',60)
+            self.a.wait(lambda:self.a.sql('planning',"SELECT count(*) FROM planning_runs WHERE project_id='"+project+"' AND status<>'canceled'")=='0',60)
             self.evidence['cancel_authority_seconds'] = round(time.monotonic()-canceled,3)
-            self.a.wait(lambda:not json.loads(self.a.kubectl('get','pods','-l','app.kubernetes.io/name=artifactory-pi','-o','json'))['items'],120)
+            self.a.wait(lambda:not json.loads(self.a.kubectl('get','pods','-l','app.kubernetes.io/name=artifactory-planning-worker','-o','json'))['items'],120)
             self.evidence['cancel_physical_pods_seconds'] = round(time.monotonic()-canceled,3)
             assert self.a.sql('business',"SELECT count(*) FROM jobs WHERE build_id IN (SELECT id FROM builds WHERE project_id='"+project+"')") == '0'
             assert self.a.sql('business',"SELECT count(*) FROM planning_events WHERE kind IN ('model_call','usage','checkpoint') AND run_id IN (SELECT id FROM planning_runs WHERE build_id IN (SELECT id FROM builds WHERE project_id='"+project+"'))") == '0'
-            assert self.a.sql('planner',"SELECT count(*) FROM runtime_runs WHERE project_id='"+project+"' AND (lifecycle->>'calls')::int>(lifecycle->>'max_calls')::int") == '0'
+            assert self.a.sql('planning',"SELECT count(*) FROM planning_runs WHERE project_id='"+project+"' AND (lifecycle->>'calls')::int>(lifecycle->>'max_calls')::int") == '0'
             p95 = sorted(self.samples)[max(0,math.ceil(len(self.samples)*.95)-1)]
             self.evidence.update({'overview_samples':len(self.samples),'overview_p95_ms':round(p95,3),'errors':self.errors,'observations':self.observations,'fingerprints_sha256':hashlib.sha256(json.dumps(first,sort_keys=True).encode()).hexdigest(),'real_active_pods':held['pi_running_pods'],'pi_peak_total_rss_bytes':max(sum(p['rss_bytes'] for p in o['pods'] if p['name'].startswith('pi-')) for o in self.observations),'business_jobs_after_cancel':0,'business_pi_hot_events':0})
             self.evidence['apiserver_mutations_after_cancel'] = self.api_counters()
@@ -268,7 +268,7 @@ class Capacity:
             self.evidence['failure'] = {'type':type(error).__name__, 'message':str(error)[:300]}
             # Capture the original failure before cancellation adds expected
             # fencing errors, and before a later rollout discards Pod logs.
-            for name, selector in [('control-plane', 'app=control-plane'), ('operator', 'app.kubernetes.io/name=artifactory-agent-operator')]:
+            for name, selector in [('control-plane', 'app=control-plane'), ('operator', 'app.kubernetes.io/name=artifactory-planning-operator')]:
                 try:
                     log = self.a.kubectl('logs','-l',selector,'--prefix','--tail=1000')
                     (self.directory/(name+'-failure.log')).write_text(log)
@@ -287,9 +287,9 @@ class Capacity:
                 if self.a.api('/api/v1/builds/'+build)['status'] not in ['succeeded','failed','canceled','lost']:
                     self.a.api('/api/v1/builds/'+build+'/cancel',{})
             if self.project:
-                self.a.wait(lambda:self.a.sql('planner',"SELECT count(*) FROM runtime_runs WHERE project_id='"+self.project+"' AND status NOT IN ('canceled','failed','succeeded','needs_input')")=='0',60)
+                self.a.wait(lambda:self.a.sql('planning',"SELECT count(*) FROM planning_runs WHERE project_id='"+self.project+"' AND status NOT IN ('canceled','failed','succeeded','needs_input')")=='0',60)
             self.a.service_request(39443,'/test/mode',{})
-            self.a.kubectl('patch','agentpool','default','--type=merge','-p',json.dumps({'spec':original}))
+            self.a.kubectl('patch','planningpool','default','--type=merge','-p',json.dumps({'spec':original}))
             self.save()
             self.a.cleanup()
 

@@ -1,3 +1,9 @@
+<!--
+[INPUT]: 当前手册、实施计划和带日期验收记录。
+[OUTPUT]: 定义 mdBook 章节及历史记录入口。
+[POS]: 文档站导航索引；新增页面同步列入此处。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # 目录
 
 [Artifactory 文档](README.md)
@@ -20,8 +26,9 @@
 - [部署与运维](operations.md)
 - [Helm / Kubernetes 部署](helm.md)
 - [统一版本与发布](versioning.md)
+- [项目版本交付](release-delivery.md)
 - [控制平面多副本与设备容量](control-ha.md)
-- [Kubernetes Pi Operator 运维](operator-operations.md)
+- [Kubernetes Planning Operator 运维](operator-operations.md)
 - [集群镜像构建、内建仓库与网关](image-builds.md)
 - [Emissary OTA 自动升级](emissary-ota.md)
 - [Emissary 时序观测](telemetry.md)
@@ -29,9 +36,11 @@
 # 接口与架构
 
 - [模块布局与命名](module-layout.md)
+- [模块边界与规划命名实施方案 · 2026-11-19](plans/2026-11-19-module-boundaries.md)
+- [Release 中心版本交付实施方案 · 2026-11-20](plans/2026-11-20-release-centered-delivery.md)
 - [HTTP API v1](api.md)
 - [Emissary 协议与状态机](protocol.md)
-- [Runtime 与源码准备协议](runtime-protocol.md)
+- [规划协调器与源码准备协议](planning-protocol.md)
 
 # 验收记录
 
@@ -90,6 +99,8 @@
 - [租户与项目工作台 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-workspace-hierarchy-kubernetes.md)
 - [中性色控制台 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-monochrome-console-kubernetes.md)
 - [托管应用签名 Kubernetes 升级记录 · 2026-11-16](releases/2026-11-16-managed-signing-kubernetes.md)
+- [模块重构 Kubernetes 新实例部署 · 2026-11-19](releases/2026-11-19-module-boundaries-kubernetes.md)
+- [Release 中心版本交付 Kubernetes 记录 · 2026-11-20](releases/2026-11-20-release-delivery-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)
 

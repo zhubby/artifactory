@@ -3,8 +3,8 @@ Rust 2024 + Toasty 0.11.0 + PostgreSQL 17 + Next.js 16.4.5 + React 19.3.1
 
 <directory>
 .github/ - 平台验证与不可变镜像交付。
-crates/ - 控制平面、临时源码检出、执行节点与 Pingora 网关。
-operators/ - 独立 Agent 与镜像构建 Operator。
+crates/ - 控制平面、规划协调、共享协议、临时源码检出、执行节点与网关。
+operators/ - 独立规划与镜像构建 Operator。
 packages/ - Kubernetes Pod 使用的 Node.js AI 规划 Worker。
 web/ - 多租户构建控制台。
 proto/ - 设备通信协议。
@@ -32,5 +32,8 @@ book.toml - mdBook 文档构建。
 统一 Pingora 双副本网关反向代理内建仓库与制品。
 公开、内部和设备入口使用独立端口。设备连接透传 mTLS。
 HTTP 仓库只在用户指定该协议时接入。
+项目 Release 固定 SemVer、源码和目标修订。
+Release 只交付一次完整构建，正式版本不可覆盖。
+镜像执行只写隔离候选，正式推广受发布租约与摘要准入约束。
 变更后检查文件契约、模块地图与项目地图。
 [PROTOCOL]: Update this header on change, then check AGENTS.md

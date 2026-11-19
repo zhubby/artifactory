@@ -48,6 +48,9 @@ export function Status({
   const { t } = useUI();
   const labels: Record<string, string> = {
     active: t("status.active"),
+    draft: t("status.draft"),
+    publishing: t("status.publishing"),
+    published: t("status.published"),
     archived: t("status.archived"),
     deleting: t("status.deleting"),
     waiting: t("status.waiting"),
@@ -72,9 +75,9 @@ export function Status({
     draining: t("status.draining"),
     revoked: t("status.revoked"),
   };
-  const Icon = ["running", "resolving", "canceling", "preparing"].includes(value)
+  const Icon = ["running", "resolving", "canceling", "preparing", "publishing"].includes(value)
     ? LoaderCircle
-    : ["succeeded", "online"].includes(value)
+    : ["succeeded", "online", "published"].includes(value)
       ? CheckCircle2
       : ["failed", "lost", "revoked", "publish_failed"].includes(value)
         ? XCircle
@@ -270,9 +273,9 @@ export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
             {artifacts.map((artifact) => (
               <tr key={artifact.id}>
                 <td>
-                  <div className="font-medium">{artifact.path}</div>
+                  <div className="font-medium break-all">{artifact.delivery_filename || artifact.path}</div>
                   <div className="mt-1 font-mono text-xs text-muted-foreground">
-                    {artifact.target}
+                    {artifact.target}{artifact.release_version ? ` · ${artifact.release_version}` : ""}
                   </div>
                 </td>
                 <td className="font-mono text-xs">{bytes(artifact.size)}</td>
@@ -323,7 +326,7 @@ export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
                           .catch((error) => setError(asError(error)));
                       }}
                       aria-label={t("artifacts.download", {
-                        path: artifact.path,
+                        path: artifact.delivery_filename || artifact.path,
                       })}
                     >
                       <Download />

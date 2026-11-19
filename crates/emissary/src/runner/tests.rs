@@ -1,10 +1,14 @@
+//! [INPUT]: 依赖 Runner 状态夹具与节点协议元数据。
+//! [OUTPUT]: 验证重连、租约、静态元数据与日志确认边界。
+//! [POS]: Runner 状态机的本地回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use crate::config::read_json;
 use std::path::Path;
 
 #[test]
 fn reconnect_reuses_startup_metadata_and_ordinary_heartbeats_exclude_static_data() {
-    use artifactory_telemetry_model::nodes::MetadataSnapshot;
+    use artifactory_emissary_protocol::nodes::MetadataSnapshot;
     let root = tempfile::tempdir().unwrap();
     let mut state = test_state(root.path());
     let startup = uuid::Uuid::new_v4();

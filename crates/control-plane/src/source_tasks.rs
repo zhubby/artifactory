@@ -86,9 +86,9 @@ fn tasks(client: Client, namespace: &str) -> Api<DynamicObject> {
         client,
         namespace,
         &ApiResource {
-            group: "agents.artifactory.dev".into(),
+            group: "planning.artifactory.dev".into(),
             version: "v1alpha1".into(),
-            api_version: "agents.artifactory.dev/v1alpha1".into(),
+            api_version: "planning.artifactory.dev/v1alpha1".into(),
             kind: "SourceTask".into(),
             plural: "sourcetasks".into(),
         },
@@ -121,7 +121,7 @@ pub async fn reconcile(state: &AppState) -> Result<()> {
         let name = format!("source-{}", task_id.simple());
         let stopped = matches!(task["status"].as_str(), Some("failed" | "canceled"));
         let desired: DynamicObject = serde_json::from_value(
-            json!({"apiVersion":"agents.artifactory.dev/v1alpha1","kind":"SourceTask","metadata":{"name":name,"namespace":namespace,"labels":{"artifactory.dev/source-task-id":task_id.to_string()}},"spec":{"taskId":task_id,"tenantId":task["tenant_id"],"projectId":task["project_id"],"purpose":task["purpose"],"pool":std::env::var("ARTIFACTORY_AGENT_POOL").unwrap_or_else(|_|"default".into()),"timeoutSeconds":if task["purpose"]=="refs"{30}else{900},"cancelRequested":false}}),
+            json!({"apiVersion":"planning.artifactory.dev/v1alpha1","kind":"SourceTask","metadata":{"name":name,"namespace":namespace,"labels":{"artifactory.dev/source-task-id":task_id.to_string()}},"spec":{"taskId":task_id,"tenantId":task["tenant_id"],"projectId":task["project_id"],"purpose":task["purpose"],"pool":std::env::var("ARTIFACTORY_PLANNING_POOL").unwrap_or_else(|_|"default".into()),"timeoutSeconds":if task["purpose"]=="refs"{30}else{900},"cancelRequested":false}}),
         )?;
         let existing = match api.get_opt(&name).await? {
             Some(value) => value,
@@ -350,7 +350,7 @@ async fn authorize_task(state: &AppState, request: &Value) -> Result<(Value, Sou
     let name = format!("source-{}", task_id.simple());
     let owner = direct_owner(
         &identity.pod,
-        "agents.artifactory.dev/v1alpha1",
+        "planning.artifactory.dev/v1alpha1",
         "SourceTask",
         &name,
     )?;
@@ -379,7 +379,7 @@ async fn authorize_task(state: &AppState, request: &Value) -> Result<(Value, Sou
 
 fn validate_source_contract(pod: &Pod, resource: &DynamicObject, task: &Value) -> Result<()> {
     let task_id = id(task, "id")?;
-    let pool = std::env::var("ARTIFACTORY_AGENT_POOL").unwrap_or_else(|_| "default".into());
+    let pool = std::env::var("ARTIFACTORY_PLANNING_POOL").unwrap_or_else(|_| "default".into());
     ensure!(
         resource.data["spec"]["taskId"] == task_id.to_string()
             && resource.data["spec"]["projectId"] == task["project_id"]

@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖模型配置、规划记录和项目读取权限。
 //! [OUTPUT]: 保存模型方案、澄清回复和对话查询上下文。
-//! [POS]: 控制台规划管理与 Runtime 审计查询的业务边界。
+//! [POS]: 控制台规划管理与 Coordinator 审计查询的业务边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use super::dto;

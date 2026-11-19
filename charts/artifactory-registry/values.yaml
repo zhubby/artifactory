@@ -21,6 +21,11 @@ auth:
   issuer: artifactory
   # tls.crt only. Private RSA tls.key stays in the control-plane Secret.
   certificateSecret: ""
+networkPolicy:
+  # Gateway 与 Distribution 必须位于同一命名空间。
+  gatewaySelector:
+    app.kubernetes.io/name: artifactory
+    app.kubernetes.io/component: gateway
 resources:
   requests: {cpu: 100m, memory: 128Mi}
   limits: {cpu: '2', memory: 512Mi}

@@ -46,7 +46,7 @@ class NativeGitEgressTests(unittest.TestCase):
             self.assertEqual(spec['policyTypes'], ['Egress'])
             self.assertEqual(spec['podSelector']['matchExpressions'], [{
                 'key': 'app.kubernetes.io/name', 'operator': 'In',
-                'values': ['artifactory-pi', 'artifactory-source-task'],
+                'values': ['artifactory-planning-worker', 'artifactory-source-task'],
             }])
             self.assertEqual(spec['egress'], [{
                 'to': [{'ipBlock': {'cidr': '192.0.2.3/32'}}],

@@ -188,7 +188,7 @@ pub async fn conversations(
     auth.project(project, "read")?;
     let mut conversations = Vec::new();
     for run in context["runs"].as_array().ok_or(ApiError::NotFound)? {
-        let result: Value = crate::runtime_bridge::runtime()?
+        let result: Value = crate::planning_bridge::coordinator()?
             .post(
                 "/v1/conversations",
                 &json!({"run_id":run["run_id"],"tenant_id":auth.tenant_id,"project_id":project}),
@@ -230,5 +230,5 @@ pub async fn messages(
     {
         return Err(ApiError::NotFound);
     }
-    Ok(Json(crate::runtime_bridge::runtime()?.post("/v1/conversation/messages",&json!({"run_id":run,"tenant_id":auth.tenant_id,"project_id":project,"generation":generation,"after":page.after.unwrap_or(0),"limit":page.limit.unwrap_or(50).min(100)})).await?))
+    Ok(Json(crate::planning_bridge::coordinator()?.post("/v1/conversation/messages",&json!({"run_id":run,"tenant_id":auth.tenant_id,"project_id":project,"generation":generation,"after":page.after.unwrap_or(0),"limit":page.limit.unwrap_or(50).min(100)})).await?))
 }

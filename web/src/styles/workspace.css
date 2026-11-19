@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖主题变量及业务框架类名。
- * [OUTPUT]: 提供导航、面板和响应式工作区样式。
- * [POS]: 连接控制台、设置与认证入口布局。
+ * [INPUT]: 依赖主题变量、工作区范围导航和账户面板类名。
+ * [OUTPUT]: 提供页首租户切换、侧栏范围导航和响应式工作区样式。
+ * [POS]: 统一业务与设置侧栏，固定文档入口并保留账户面板布局。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 /* One workspace frame, shared by every business page. */
@@ -14,20 +14,29 @@
 .sidebar-navigation { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .sidebar-navigation > * { flex-shrink: 0; }
 .sidebar-navigation > nav { display: grid; gap: 3px; }
+.sidebar-context { flex-shrink: 0; min-width: 0; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+.workspace-current-scope { padding: 8px 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.workspace-current-scope small { display: block; margin-bottom: 4px; color: var(--muted-foreground); font-size: 10px; font-weight: 400; }
+.workspace-current-scope strong { display: block; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.sidebar-navigation > .workspace-settings-navigation { display: grid; gap: 16px; padding-bottom: 8px; }
+.workspace-settings-group { display: grid; gap: 3px; }
+.workspace-settings-group .nav-label { padding-top: 4px; }
 .nav-item { display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 34px; padding: 7px 9px; border-radius: 5px; color: var(--muted-foreground); font-size: 13px; line-height: 1.5; transition: background .12s, color .12s; }
 .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
 .nav-item:hover { background: var(--secondary); color: var(--foreground); }
 .nav-item.active { background: var(--accent); color: var(--foreground); font-weight: 500; }
-.sidebar-bottom { display: grid; gap: 3px; margin-top: auto; padding-top: 24px; }
-.sidebar-back { display: flex; align-items: center; gap: 7px; padding: 8px 9px; color: var(--muted-foreground); font-size: 12px; }
+.sidebar-bottom { display: grid; flex-shrink: 0; gap: 3px; margin-top: auto; padding-top: 12px; }
+.sidebar-back { display: flex; flex-shrink: 0; align-items: center; gap: 7px; min-height: 36px; margin-bottom: 8px; padding: 8px 9px; border-radius: 5px; color: var(--muted-foreground); font-size: 12px; }
+.sidebar-back svg { flex-shrink: 0; }
+.sidebar-back:hover { background: var(--secondary); color: var(--foreground); }
 .workspace { min-width: 0; margin-left: 240px; }
 .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 0 24px; border-bottom: 1px solid var(--border); background: var(--header); }
 .workspace-breadcrumb { display: flex; flex: 1; gap: 8px; align-items: center; min-width: 0; color: var(--muted-foreground); font-size: 12px; }
 .workspace-tools, .workspace-tools .page-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-.workspace-breadcrumb a, .workspace-breadcrumb span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.workspace-breadcrumb a:hover { color: var(--foreground); }
+.workspace-breadcrumb > a, .workspace-breadcrumb > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.workspace-breadcrumb > a:hover { color: var(--foreground); }
 .workspace-breadcrumb > :last-child { color: var(--foreground); }
-.workspace-breadcrumb svg { width: 12px; height: 12px; flex-shrink: 0; color: var(--placeholder); }
+.workspace-breadcrumb > svg { width: 12px; height: 12px; flex-shrink: 0; color: var(--placeholder); }
 .main { max-width: 1600px; margin: 0 auto; padding: 28px 24px 64px; min-width: 0; }
 .main fieldset { min-width: 0; }
 .mobile-menu, .workspace-nav-dismiss, .sidebar-close { display: none; }
@@ -35,8 +44,7 @@
 .workspace-state p { color: var(--muted-foreground); }
 .workspace-state > a { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; }
 
-/* Tenant/project selection lives in the sidebar. */
-.space-switchers { display: grid; flex-shrink: 0; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+/* 租户在页首切换，项目在所属侧栏切换。 */
 .space-selector { position: relative; min-width: 0; }
 .space-selector summary { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 9px; list-style: none; border-radius: 5px; cursor: pointer; }
 .space-selector summary::-webkit-details-marker { display: none; }
@@ -46,10 +54,15 @@
 .space-selector summary strong { display: block; font-size: 12px; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .space-selector summary > svg { flex-shrink: 0; color: var(--muted-foreground); }
 .space-selector summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.workspace-breadcrumb > .space-selector.tenant { flex: 0 1 auto; min-width: 72px; max-width: 240px; }
+.workspace-breadcrumb .space-selector.tenant summary { gap: 7px; min-height: 36px; padding: 6px 8px; }
+.workspace-breadcrumb .space-selector.tenant summary strong { line-height: 1.5; }
+.sidebar-context .space-selector.project summary small { display: block; margin-bottom: 3px; color: var(--muted-foreground); font-size: 10px; }
 .space-selector-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 60; display: flex; flex-direction: column; width: 292px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 180px); border: 1px solid var(--border); border-radius: 7px; background: var(--card); box-shadow: var(--shadow); overflow: clip; }
 .space-search { display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); color: var(--muted-foreground); }
 .space-search input { width: 100%; min-width: 0; background: transparent; outline: 0; font-size: 12px; color: var(--foreground); }
-.space-selector-options { min-height: 0; max-height: 340px; overflow-y: auto; overscroll-behavior: contain; padding: 4px; }
+.workspace-breadcrumb .space-selector-menu { max-height: calc(100dvh - 72px); }
+.space-selector-options { flex: 1; min-height: 0; max-height: 340px; overflow-y: auto; overscroll-behavior: contain; padding: 4px; }
 .space-option { display: flex; align-items: center; gap: 8px; padding: 9px; border-radius: 4px; font-size: 12px; }
 .space-option:hover, .space-option[aria-current="true"] { background: var(--secondary); }
 .space-option > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -89,14 +102,7 @@
 .latest-release { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin: 24px 0; font-size: 12px; color: var(--muted-foreground); }
 .latest-release a { color: var(--foreground); font-weight: 500; }
 
-/* Settings keep a single section navigation next to the form. */
-.management-layout { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 32px; align-items: start; }
-.management-tabs { display: grid; gap: 3px; }
-.management-nav-group { display: grid; gap: 3px; }
-.management-nav-group + .management-nav-group { margin-top: 16px; }
-.management-nav-group > p { padding: 0 10px 5px; color: var(--muted-foreground); font-size: 10px; }
-.management-tabs a { padding: 9px 10px; border-radius: 5px; color: var(--muted-foreground); font-size: 12px; }
-.management-tabs a:hover, .management-tabs a[aria-current="page"] { background: var(--secondary); color: var(--foreground); }
+/* 设置正文沿用工作区宽度，栏目导航由同一侧栏承载。 */
 .management-content { min-width: 0; max-width: 960px; }
 .management-section { padding: 22px; }
 .management-section h2 { margin-bottom: 16px; font-size: 15px; font-weight: 550; }
@@ -209,7 +215,7 @@
   @starting-style { .sidebar.open { translate: -100% 0; } }
   .workspace { margin-left: 0; }
   .mobile-menu { display: inline-flex; flex-shrink: 0; }
-  .sidebar-close { position: absolute; top: 10px; right: 10px; }
+  .sidebar-close { position: absolute; top: 10px; right: 10px; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; }
   .workspace-nav-dismiss { display: block; position: fixed; inset: 0; z-index: 40; background: #00000055; }
   .topbar { padding: 0 64px 0 12px; gap: 8px; justify-content: flex-start; min-height: 56px; }
   .workspace-breadcrumb { flex: 1; }
@@ -217,7 +223,9 @@
   .workspace-account .account-trigger-name, .workspace-account .account-trigger > svg { display: none; }
   .workspace-account .account-trigger { padding: 0; min-width: 44px; min-height: 44px; justify-content: center; }
   .workspace-account .account-menu { top: calc(100% + 8px); bottom: auto; left: auto; right: 0; }
-  .management-layout { gap: 20px; grid-template-columns: 150px minmax(0, 1fr); }
+  .nav-item, .sidebar-back, .space-selector summary, .space-option, .space-menu-actions a { min-height: 44px; }
+  .workspace-breadcrumb .space-selector.tenant summary { min-height: 44px; }
+  .workspace-breadcrumb .space-selector-menu { max-width: calc(100vw - 84px); }
 }
 @media (max-width: 767px) {
   .main { padding: 24px 16px 48px; }
@@ -225,9 +233,11 @@
   .account-trigger { min-width: 44px; min-height: 44px; }
   .command-result { min-height: 44px; }
   .space-selector summary, .space-option, .space-menu-actions a { min-height: 44px; }
-  .workspace-breadcrumb a, .hall-header > a, .project-card-title, .project-shortcuts a, .latest-release a, .login-form-content p > a { display: inline-flex; align-items: center; min-height: 44px; }
+  .workspace-breadcrumb > a, .hall-header > a, .project-card-title, .project-shortcuts a, .latest-release a, .login-form-content p > a { display: inline-flex; align-items: center; min-height: 44px; }
   .main summary, .space-search { min-height: 44px; }
-  .workspace-breadcrumb { font-size: 11px; gap: 5px; }
+  .workspace-breadcrumb { flex-wrap: wrap; font-size: 11px; gap: 0 5px; padding-block: 4px; }
+  .workspace-breadcrumb > .space-selector.tenant { flex: 0 0 100%; min-width: 0; max-width: 100%; }
+  .workspace-breadcrumb > .space-selector.tenant + svg { display: none; }
   .command-trigger { min-width: 44px; min-height: 44px; border: 0; justify-content: center; }
   .command-trigger span, .command-trigger kbd { display: none; }
   .project-card { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 16px 4px; }
@@ -235,12 +245,6 @@
   .project-card-count { display: none; }
   .project-card > a:last-child { grid-column: 2; grid-row: 1; }
   .project-shortcuts { flex-wrap: wrap; gap: 16px; }
-  .management-layout { grid-template-columns: minmax(0, 1fr); }
-  .management-tabs { display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-  .management-nav-group { display: flex; flex-shrink: 0; }
-  .management-nav-group + .management-nav-group { margin-top: 0; padding-left: 8px; border-left: 1px solid var(--border); }
-  .management-nav-group > p { display: none; }
-  .management-tabs a { white-space: nowrap; flex-shrink: 0; min-height: 44px; display: flex; align-items: center; }
   .management-section { padding: 16px; }
   .account-panel { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; max-height: 92dvh; }
   .account-panel > header { padding: 16px; }

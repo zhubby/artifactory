@@ -29,6 +29,10 @@ that suite were opt-in; this baseline does not claim they ran.
 | cmd/artifactory-agent | main, service::{manage,launchd,systemd} | CLI, foreground, systemd / launchd / SCM lifecycle |
 | cmd/agent-release | bin/emissary-release | six-platform Ed25519 release manifest |
 
+通用进程树、事件管道、私有写入和脱敏由 `artifactory-execution-support` 提供。
+节点模块保留原有调用入口，Worker 会话登记与源码清扫仍由 Emissary 负责。
+节点资源与遥测类型由 `artifactory-emissary-protocol::{nodes,telemetry}` 提供。
+
 ## Test mapping
 
 Integration test targets are files in `tests/`. Related live tests share a fixture
@@ -48,7 +52,7 @@ CI 从隔离验收记录传入 `ARTIFACTORY_LIVE_TENANT_ID`。
 | TestDoctorOnlyAdvertisesWorkingToolchains | doctor::tests::only_advertises_working_toolchains (Unix) |
 | TestCollectRejectsEscapesAndSymlinks | contracts::collect_rejects_escapes_and_symlinks |
 | TestLeaseUsesLocalMonotonicDeadline | contracts::lease_uses_local_monotonic_deadline |
-| TestJobObjectTerminatesDescendants | process_tree::process_tree_terminates_descendants (Windows) |
+| TestJobObjectTerminatesDescendants | artifactory-execution-support::process_tree::process_tree_terminates_descendants (Windows) |
 | Upstream source identity and content | artifactory-source-checkout::upstream (fresh fetch, frozen tags, submodules and Git LFS) |
 | Task cache and crash cleanup | source::{task_environment_contains_all_writable_caches,startup_sweep_kills_orphaned_worker_sessions_before_deleting_source} |
 | TestWorkerKillsProcessTreeOnParentDeathAndLeaseExpiry | runtime::worker_kills_process_tree_on_parent_death_and_lease_expiry (Unix, also SIGTERM) |

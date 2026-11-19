@@ -13,7 +13,7 @@ import subprocess
 import time
 import uuid
 
-from runtime import Runtime
+from coordinator import Coordinator
 
 
 def require_kubernetes_minimum(version):
@@ -56,7 +56,7 @@ class Harness:
         self.node = args.cluster + '-control-plane'
         self.processes = {}
         self.logs = []
-        self.runtime = Runtime()
+        self.coordinator = Coordinator()
         self.evidence = {'namespace': self.ns, 'context': self.context, 'scenarios': [], 'observed': {}}
         self.frozen_pid = None
         self.kubelet_stopped = False
@@ -143,24 +143,24 @@ class Harness:
         self.namespace_uid = namespace['metadata']['uid']
         self.evidence['namespace_uid'] = self.namespace_uid
         self.command([self.args.kind, 'load', 'docker-image', self.args.image, '--name', self.args.cluster], timeout=120)
-        self.kubectl('apply', '-f', str(self.root / 'operators/agent-operator/config/crd/resources.yaml'))
+        self.kubectl('apply', '-f', str(self.root / 'operators/planning-operator/config/crd/resources.yaml'))
         self.kubectl('apply', '-f', str(self.root / 'operators/image-operator/config/crd/resources.yaml'))
-        self.kubectl('wait', 'crd/agentruns.agents.artifactory.dev', 'crd/sourcetasks.agents.artifactory.dev',
+        self.kubectl('wait', 'crd/planningruns.planning.artifactory.dev', 'crd/sourcetasks.planning.artifactory.dev',
                      'crd/imagebuilds.images.artifactory.dev', '--for=condition=Established', '--timeout=60s')
-        for name in ('artifactory-pi', 'artifactory-source-preparer', 'artifactory-image-worker'):
+        for name in ('artifactory-planning-worker', 'artifactory-source-preparer', 'artifactory-image-worker'):
             self.apply({'apiVersion': 'v1', 'kind': 'ServiceAccount', 'metadata': {'name': name}})
-        agent = {'maxActive': 1, 'maxPerProject': 1, 'image': self.args.image, 'sourcePreparerImage': self.args.image,
-                 'imagePullPolicy': 'IfNotPresent', 'runtimeUrl': self.runtime.url, 'controlUrl': self.runtime.url,
+        planning = {'maxActive': 1, 'maxPerProject': 1, 'image': self.args.image, 'sourcePreparerImage': self.args.image,
+                 'imagePullPolicy': 'IfNotPresent', 'coordinatorUrl': self.coordinator.url, 'controlUrl': self.coordinator.url,
                  'ephemeralStorage': '32Mi', 'cpu': '100m', 'memory': '64Mi'}
-        self.apply({'apiVersion': 'agents.artifactory.dev/v1alpha1', 'kind': 'AgentPool',
-                    'metadata': {'name': 'lifecycle'}, 'spec': agent})
+        self.apply({'apiVersion': 'planning.artifactory.dev/v1alpha1', 'kind': 'PlanningPool',
+                    'metadata': {'name': 'lifecycle'}, 'spec': planning})
         budget = {'cpu': '100m', 'memory': '64Mi', 'ephemeralStorage': '32Mi'}
         image = {'workerImage': self.args.image, 'buildkitImage': self.args.image, 'sourcePreparerImage': self.args.image,
-                 'controlUrl': self.runtime.url, 'imagePullPolicy': 'IfNotPresent', 'maxActive': 1, 'maxPerProject': 1,
+                 'controlUrl': self.coordinator.url, 'imagePullPolicy': 'IfNotPresent', 'maxActive': 1, 'maxPerProject': 1,
                  'resources': {role: dict(budget) for role in ('source', 'runner', 'buildkit', 'publisher')}}
         self.apply({'apiVersion': 'images.artifactory.dev/v1alpha1', 'kind': 'BuilderPool',
                     'metadata': {'name': 'lifecycle'}, 'spec': image})
-        self.start('agent')
+        self.start('planning')
         self.start('image')
 
     def cleanup_namespace(self):
@@ -171,8 +171,8 @@ class Harness:
         if metadata['uid'] != self.namespace_uid or metadata.get('labels', {}).get('tests.artifactory.dev/lifecycle') != self.namespace_nonce:
             raise ValueError('Namespace ownership changed')
         # 先收尾执行 CR；直接删 namespace 会与其中的选主 Lease 竞争。
-        self.kubectl('delete', 'agentruns,sourcetasks,imagebuilds', '--all', '--wait=false')
-        self.wait(lambda: not self.get('agentruns,sourcetasks,imagebuilds')['items'],
+        self.kubectl('delete', 'planningruns,sourcetasks.planning.artifactory.dev,imagebuilds', '--all', '--wait=false')
+        self.wait(lambda: not self.get('planningruns,sourcetasks.planning.artifactory.dev,imagebuilds')['items'],
                   'Execution finalizers did not finish before namespace deletion')
         self.kubectl('delete', '--raw', '/api/v1/namespaces/' + self.ns, '-f', '-', data=json.dumps({
             'apiVersion': 'v1', 'kind': 'DeleteOptions', 'preconditions': {'uid': self.namespace_uid}}))
@@ -181,8 +181,8 @@ class Harness:
         self.evidence['namespace_deleted'] = True
 
     def terminal_finalizers(self):
-        resources = self.get('agentruns,sourcetasks,imagebuilds')['items']
-        protected = {'agents.artifactory.dev/execution-cleanup', 'images.artifactory.dev/cleanup'}
+        resources = self.get('planningruns,sourcetasks.planning.artifactory.dev,imagebuilds')['items']
+        protected = {'planning.artifactory.dev/execution-cleanup', 'images.artifactory.dev/cleanup'}
         for resource in resources:
             if resource.get('status', {}).get('phase') in ('Succeeded', 'Failed', 'Canceled', 'failed', 'canceled'):
                 if protected.intersection(resource['metadata'].get('finalizers', [])):
@@ -191,7 +191,7 @@ class Harness:
 
     def start(self, operator):
         env = dict(os.environ, KUBECONFIG=self.kubeconfig, ARTIFACTORY_NAMESPACE=self.ns,
-                   ARTIFACTORY_RUNTIME_URL=self.runtime.url, ARTIFACTORY_SERVICE_TOKEN=self.runtime.token,
+                   ARTIFACTORY_PLANNING_URL=self.coordinator.url, ARTIFACTORY_SERVICE_TOKEN=self.coordinator.token,
                    ARTIFACTORY_INSECURE_DEV='true', POD_UID=self.ns + '-' + operator, RUST_LOG='info')
         log = (self.out / (operator + '-' + str(time.time_ns()) + '.log')).open('w')
         self.logs.append(log)
@@ -215,13 +215,13 @@ class Harness:
 
     def source(self):
         name = 'source-retry'
-        self.apply({'apiVersion': 'agents.artifactory.dev/v1alpha1', 'kind': 'SourceTask', 'metadata': {'name': name},
+        self.apply({'apiVersion': 'planning.artifactory.dev/v1alpha1', 'kind': 'SourceTask', 'metadata': {'name': name},
                     'spec': {'taskId': execution_id(), 'tenantId': str(uuid.uuid4()), 'projectId': str(uuid.uuid4()),
                              'purpose': 'resolve', 'pool': 'lifecycle', 'timeoutSeconds': 240}})
         seen = {}
 
         def complete():
-            obj = self.observe('sourcetask', name)
+            obj = self.observe('sourcetasks.planning.artifactory.dev', name)
             execution = obj.get('status', {}).get('execution')
             if execution and execution.get('uid'):
                 seen[execution['attempt']] = dict(execution)
@@ -236,18 +236,18 @@ class Harness:
     def planning(self, code, source=False):
         run_id = execution_id(code)
         name = 'planning-' + str(code)
-        self.runtime.add(run_id)
+        self.coordinator.add(run_id)
         spec = {'runId': run_id, 'projectId': str(uuid.uuid4()), 'generation': 1, 'pool': 'lifecycle'}
         if source:
             spec.update(sourceManifestId=str(uuid.uuid4()), sourceDigest='a' * 64)
-        self.apply({'apiVersion': 'agents.artifactory.dev/v1alpha1', 'kind': 'AgentRun',
+        self.apply({'apiVersion': 'planning.artifactory.dev/v1alpha1', 'kind': 'PlanningRun',
                     'metadata': {'name': name}, 'spec': spec})
-        self.wait(lambda: self.state('agentrun', name, ['failed'], cleaned=True), 'Planning failure was not reported')
-        events = [e for e in self.runtime.snapshot() if e['path'] == '/v1/execution-failed'
+        self.wait(lambda: self.state('planningrun', name, ['failed'], cleaned=True), 'Planning failure was not reported')
+        events = [e for e in self.coordinator.snapshot() if e['path'] == '/v1/execution-failed'
                   and e['body']['execution']['run_id'] == run_id]
         assert events, 'Planning Pod failure did not reach Runtime'
         identity = events[0]['body']['execution']
-        registered = [e['body'] for e in self.runtime.snapshot() if e['path'] == '/v1/register' and e['body'] == identity]
+        registered = [e['body'] for e in self.coordinator.snapshot() if e['path'] == '/v1/register' and e['body'] == identity]
         assert registered and identity['uid'] and identity['namespace'] == self.ns
         assert not self.pods('artifactory.dev/run=' + run_id)
         self.evidence['scenarios'].append({'name': 'planning-init-failure' if source else 'planning-main-failure',
@@ -256,13 +256,13 @@ class Harness:
     def planning_restart(self):
         run_id = execution_id(2)
         name = 'planning-restart'
-        self.runtime.add(run_id)
-        self.apply({'apiVersion': 'agents.artifactory.dev/v1alpha1', 'kind': 'AgentRun',
+        self.coordinator.add(run_id)
+        self.apply({'apiVersion': 'planning.artifactory.dev/v1alpha1', 'kind': 'PlanningRun',
                     'metadata': {'name': name}, 'spec': {'runId': run_id, 'projectId': str(uuid.uuid4()),
                                                        'generation': 1, 'pool': 'lifecycle'}})
 
         def running():
-            obj = self.observe('agentrun', name)
+            obj = self.observe('planningrun', name)
             ledger = obj.get('status', {}).get('execution') or {}
             pods = self.pods('artifactory.dev/run=' + run_id)
             if len(pods) == 1 and pods[0].get('status', {}).get('phase') == 'Running' and ledger.get('uid'):
@@ -272,14 +272,14 @@ class Harness:
 
         pod = self.wait(running, 'Planning fixture did not start')
         identity = self.pod_evidence(pod)
-        self.stop('agent')
-        self.start('agent')
+        self.stop('planning')
+        self.start('planning')
         for _ in range(5):
             pods = self.pods('artifactory.dev/run=' + run_id)
             assert len(pods) == 1 and pods[0]['metadata']['uid'] == identity['uid']
             time.sleep(2)
-        self.runtime.cancel(run_id)
-        self.wait(lambda: self.state('agentrun', name, ['canceled'], cleaned=True),
+        self.coordinator.cancel(run_id)
+        self.wait(lambda: self.state('planningrun', name, ['canceled'], cleaned=True),
                   'Planning cancellation did not clean up the recovered execution')
         assert not self.pods('artifactory.dev/run=' + run_id)
         self.evidence['scenarios'].append({'name': 'planning-operator-restart-and-cancel', 'passed': True,
@@ -287,12 +287,12 @@ class Harness:
 
     def source_cancel(self):
         name = 'source-cancel'
-        self.apply({'apiVersion': 'agents.artifactory.dev/v1alpha1', 'kind': 'SourceTask', 'metadata': {'name': name},
+        self.apply({'apiVersion': 'planning.artifactory.dev/v1alpha1', 'kind': 'SourceTask', 'metadata': {'name': name},
                     'spec': {'taskId': execution_id(4), 'tenantId': str(uuid.uuid4()), 'projectId': str(uuid.uuid4()),
                              'purpose': 'resolve', 'pool': 'lifecycle', 'timeoutSeconds': 700}})
 
         def running():
-            obj = self.observe('sourcetask', name)
+            obj = self.observe('sourcetasks.planning.artifactory.dev', name)
             ledger = obj.get('status', {}).get('execution') or {}
             pods = self.pods('artifactory.dev/source-task=' + name)
             if len(pods) == 1 and pods[0].get('status', {}).get('phase') == 'Running' and ledger.get('uid'):
@@ -300,22 +300,22 @@ class Harness:
             return None
 
         identity = self.wait(running, 'Source fixture did not start')
-        self.kubectl('patch', 'sourcetask', name, '--type=merge', '-p', json.dumps({'spec': {'cancelRequested': True}}))
-        self.wait(lambda: self.state('sourcetask', name, ['Canceled'], cleaned=True), 'Source cancellation did not clean up')
+        self.kubectl('patch', 'sourcetasks.planning.artifactory.dev', name, '--type=merge', '-p', json.dumps({'spec': {'cancelRequested': True}}))
+        self.wait(lambda: self.state('sourcetasks.planning.artifactory.dev', name, ['Canceled'], cleaned=True), 'Source cancellation did not clean up')
         assert not self.pods('artifactory.dev/source-task=' + name)
         self.evidence['scenarios'].append({'name': 'source-cancel', 'passed': True, 'pod': identity})
 
     def planning_pull_cancel(self):
         run_id, name = execution_id(2), 'planning-pull-cancel'
-        self.runtime.add(run_id)
-        self.kubectl('patch', 'agentpool', 'lifecycle', '--type=merge', '-p',
+        self.coordinator.add(run_id)
+        self.kubectl('patch', 'planningpool', 'lifecycle', '--type=merge', '-p',
                      json.dumps({'spec': {'image': '127.0.0.1:1/fixture:missing'}}))
-        self.apply({'apiVersion': 'agents.artifactory.dev/v1alpha1', 'kind': 'AgentRun',
+        self.apply({'apiVersion': 'planning.artifactory.dev/v1alpha1', 'kind': 'PlanningRun',
                     'metadata': {'name': name}, 'spec': {'runId': run_id, 'projectId': str(uuid.uuid4()),
                                                        'generation': 1, 'pool': 'lifecycle'}})
         try:
             def pull_failed():
-                self.observe('agentrun', name)
+                self.observe('planningrun', name)
                 pods = self.pods('artifactory.dev/run=' + run_id)
                 for pod in pods:
                     states = pod.get('status', {}).get('containerStatuses', [])
@@ -325,14 +325,14 @@ class Harness:
                         return self.pod_evidence(pod)
                 return None
             identity = self.wait(pull_failed, 'Scheduled Pod did not reach the expected pull failure')
-            self.runtime.cancel(run_id)
-            self.wait(lambda: self.state('agentrun', name, ['canceled'], cleaned=True),
+            self.coordinator.cancel(run_id)
+            self.wait(lambda: self.state('planningrun', name, ['canceled'], cleaned=True),
                       'Scheduled never-started Pod did not confirm stop after cancellation', 100)
             assert not self.pods('artifactory.dev/run=' + run_id)
             self.evidence['scenarios'].append({'name': 'planning-scheduled-pull-failure-cancel', 'passed': True,
                                                 'pod_before_cancel': identity})
         finally:
-            self.kubectl('patch', 'agentpool', 'lifecycle', '--type=merge', '-p',
+            self.kubectl('patch', 'planningpool', 'lifecycle', '--type=merge', '-p',
                          json.dumps({'spec': {'image': self.args.image}}))
 
     def image(self, name, seconds=3):
@@ -485,7 +485,7 @@ class Harness:
         except Exception as error:
             failures.append('node restoration: ' + str(error))
         try:
-            self.evidence['runtime_events'] = self.runtime.snapshot()
+            self.evidence['planning_events'] = self.coordinator.snapshot()
         except Exception as error:
             failures.append('Runtime snapshot: ' + str(error))
         for operator in list(self.processes):
@@ -494,7 +494,7 @@ class Harness:
             except Exception as error:
                 failures.append(operator + ' stop: ' + str(error))
         try:
-            self.runtime.close()
+            self.coordinator.close()
         except Exception as error:
             failures.append('Runtime stop: ' + str(error))
         for log in self.logs:

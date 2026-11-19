@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖独立仓库 RSA 密钥、平台 API 令牌和镜像执行授权。
-//! [OUTPUT]: 校验 RSA 材料并签发 RFC 7638 kid 的 Distribution 3 JWT。
+//! [OUTPUT]: 签发只读用户令牌与绑定发布租约代次的 Distribution JWT。
 //! [POS]: 内建仓库认证入口；不签发外部仓库凭据。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::Config;
@@ -40,6 +40,15 @@ pub async fn token(
     let config = Config::load()?;
     let scope = requested_scope(query.as_deref().unwrap_or_default(), &config.service)?;
     let (username, password) = basic(&headers)?;
+    let release_publisher = if let Ok(id) = username.parse::<Uuid>() {
+        state
+            .store
+            .release_publisher_scope(id, &password)
+            .await?
+            .map(|scope| (id, scope))
+    } else {
+        None
+    };
     let execution = if let Ok(id) = username.parse::<Uuid>() {
         state
             .store
@@ -52,7 +61,21 @@ pub async fn token(
     let mut access = Vec::new();
     let mut ttl = 60u32;
     let subject;
-    if let Some((id, publisher)) = execution {
+    let mut generation = None;
+    if let Some((id, publisher)) = release_publisher {
+        subject = id.to_string();
+        generation = Some(publisher.generation);
+        ttl = ttl.min(publisher.ttl_seconds);
+        for item in scope.split_whitespace() {
+            let (repo, actions) = repository_scope(item)?;
+            let source = publisher.source_repositories.iter().any(|r| r == repo);
+            let destination = publisher.destination_repositories.iter().any(|r| r == repo);
+            if !(destination || source && actions.iter().all(|a| *a == "pull")) {
+                return Err(ApiError::Forbidden);
+            }
+            access.push(json!({"type":"repository","name":repo,"actions":actions}));
+        }
+    } else if let Some((id, publisher)) = execution {
         if !state.store.image_live(id).await? {
             return Err(ApiError::Unauthorized);
         }
@@ -62,9 +85,12 @@ pub async fn token(
         for item in scope.split_whitespace() {
             let (repo, actions) = repository_scope(item)?;
             let candidate = repo == e.candidate_repository;
-            let final_repo =
-                publisher && e.destination_credential.is_none() && repo == e.destination_repository;
-            if !(candidate || final_repo) {
+            // 构建与候选 Index 发布身份只能写 execution 隔离仓。
+            let candidate_destination = publisher
+                && e.destination_credential.is_none()
+                && e.destination_repository == e.candidate_repository
+                && repo == e.destination_repository;
+            if !(candidate || candidate_destination) {
                 return Err(ApiError::Forbidden);
             }
             if e.destination_credential.is_some() && actions.iter().any(|s| *s != "pull") {
@@ -89,24 +115,52 @@ pub async fn token(
             }
             let project = Uuid::parse_str(parts[1]).map_err(|_| ApiError::Forbidden)?;
             auth.project(project, "read")?;
-            if actions.contains(&"push") {
-                auth.project(project, "build")?;
-                state
-                    .store
-                    .ensure_writable(tenant, Some("projects"), Some(project))
-                    .await?;
+            if actions.iter().any(|action| *action != "pull") {
+                return Err(ApiError::Forbidden);
             }
             access.push(json!({"type":"repository","name":repo,"actions":actions}));
         }
     }
     let now = chrono::Utc::now().timestamp();
-    let claims = json!({"iss":config.issuer,"sub":subject,"aud":config.service,"exp":now+i64::from(ttl),"nbf":now-5,"iat":now,"jti":Uuid::new_v4(),"access":access});
+    let mut claims = json!({"iss":config.issuer,"sub":subject,"aud":config.service,"exp":now+i64::from(ttl),"nbf":now-5,"iat":now,"jti":Uuid::new_v4(),"access":access});
+    if let Some(generation) = generation {
+        claims["generation"] = json!(generation);
+    }
     let key_bytes = std::fs::read(&config.signing_key).map_err(anyhow::Error::from)?;
     let cert_bytes = std::fs::read(&config.signing_cert).map_err(anyhow::Error::from)?;
     let token = sign(&claims, &key_bytes, &cert_bytes)?;
     Ok(Json(
         json!({"token":token,"access_token":token,"expires_in":ttl,"issued_at":chrono::Utc::now().to_rfc3339()}),
     ))
+}
+
+pub(crate) fn verify_release_registry_token(token: &str) -> Result<Option<(Uuid, i64)>> {
+    let config = Config::load()?;
+    let cert_bytes = std::fs::read(config.signing_cert).map_err(anyhow::Error::from)?;
+    let (_, pem) =
+        x509_parser::pem::parse_x509_pem(&cert_bytes).map_err(|_| ApiError::Unauthorized)?;
+    let cert = pem.parse_x509().map_err(|_| ApiError::Unauthorized)?;
+    let key =
+        jsonwebtoken::DecodingKey::from_rsa_der(cert.public_key().subject_public_key.data.as_ref());
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
+    validation.set_audience(&[config.service]);
+    validation.set_issuer(&[config.issuer]);
+    validation.validate_nbf = true;
+    validation.leeway = 0;
+    let claims = jsonwebtoken::decode::<Value>(token, &key, &validation)
+        .map_err(|_| ApiError::Unauthorized)?
+        .claims;
+    let Some(generation) = claims["generation"].as_i64() else {
+        return Ok(None);
+    };
+    let release = claims["sub"]
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .ok_or(ApiError::Unauthorized)?;
+    if generation < 1 {
+        return Err(ApiError::Unauthorized);
+    }
+    Ok(Some((release, generation)))
 }
 fn sign(claims: &Value, key_bytes: &[u8], cert_bytes: &[u8]) -> Result<String> {
     let key = jsonwebtoken::EncodingKey::from_rsa_pem(key_bytes).map_err(anyhow::Error::from)?;

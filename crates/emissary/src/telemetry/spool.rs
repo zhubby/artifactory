@@ -1,6 +1,10 @@
+//! [INPUT]: 依赖节点遥测批次、磁盘额度和私有原子记录。
+//! [OUTPUT]: 持久化有界发送队列，确认后删除批次。
+//! [POS]: 节点遥测断线缓冲边界，独占锁阻止重复发送器。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::config::{atomic_json, private_dir, read_json};
 use anyhow::{Context, Result, ensure};
-use artifactory_telemetry_model::{Batch, MAX_BATCH_BYTES};
+use artifactory_emissary_protocol::telemetry::{Batch, MAX_BATCH_BYTES};
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, fs, path::PathBuf};
 

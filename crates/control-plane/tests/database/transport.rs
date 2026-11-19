@@ -112,7 +112,7 @@ struct Device {
     client: pb::control_client::ControlClient<Channel>,
     events: mpsc::Sender<pb::EmissaryEvent>,
     commands: tonic::Streaming<pb::Command>,
-    startup: Option<artifactory_telemetry_model::nodes::MetadataSnapshot>,
+    startup: Option<artifactory_emissary_protocol::nodes::MetadataSnapshot>,
 }
 
 impl Device {
@@ -167,7 +167,7 @@ impl Device {
         key: &str,
         url: &str,
         ca: &str,
-        startup: Option<&artifactory_telemetry_model::nodes::MetadataSnapshot>,
+        startup: Option<&artifactory_emissary_protocol::nodes::MetadataSnapshot>,
     ) -> anyhow::Result<(
         pb::control_client::ControlClient<Channel>,
         mpsc::Sender<pb::EmissaryEvent>,

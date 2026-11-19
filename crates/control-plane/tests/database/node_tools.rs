@@ -1,12 +1,12 @@
 //! [INPUT]: node_metadata 的租户、规划租约和 mTLS 夹具。
-//! [OUTPUT]: 验证 Runtime 节点工具及真实 MCP SDK 授权。
-//! [POS]: 分别验证 Control 与 Runtime 的租约和项目范围。
+//! [OUTPUT]: 验证 Coordinator 节点工具及真实 MCP SDK 授权。
+//! [POS]: 分别验证 Control 与 Coordinator 的租约和项目范围。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL and ARTIFACTORY_SERVICE_TOKEN"]
-async fn runtime_node_tools_authenticate_and_intersect_current_project_scope() {
+async fn planning_node_tools_authenticate_and_intersect_current_project_scope() {
     let database = Database::with_tenant().await;
     let (_, build, _) = database.fixture().await;
     let node = database.node().await;
@@ -20,13 +20,13 @@ async fn runtime_node_tools_authenticate_and_intersect_current_project_scope() {
     .await
     .unwrap();
     let token = std::env::var("ARTIFACTORY_SERVICE_TOKEN")
-        .expect("isolated Runtime test needs ARTIFACTORY_SERVICE_TOKEN");
+        .expect("isolated Coordinator test needs ARTIFACTORY_SERVICE_TOKEN");
     let router = api::router(database.state.clone());
     let body = json!({"run_id":run,"name":"get_node","arguments":{"node_id":node}});
     for authorized in [false, true] {
         let mut request = Request::builder()
             .method("POST")
-            .uri("/internal/runtime/tool")
+            .uri("/internal/planning/tool")
             .header("content-type", "application/json");
         if authorized {
             request = request.header("authorization", format!("Bearer {token}"));
@@ -63,7 +63,7 @@ async fn runtime_node_tools_authenticate_and_intersect_current_project_scope() {
     .unwrap();
     let request = Request::builder()
         .method("POST")
-        .uri("/internal/runtime/tool")
+        .uri("/internal/planning/tool")
         .header("content-type", "application/json")
         .header("authorization", format!("Bearer {token}"))
         .body(Body::from(body.to_string()))
@@ -87,7 +87,7 @@ async fn mcp_probe(config: &Value) -> Value {
     )
     .arg(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../packages/agent-worker/scripts/node-mcp-probe.mjs"
+        "/../../packages/planning-worker/scripts/node-mcp-probe.mjs"
     ))
     .stdin(std::process::Stdio::piped())
     .stdout(std::process::Stdio::piped())
@@ -122,9 +122,10 @@ async fn mcp_probe(config: &Value) -> Value {
 
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL, Node.js 24, built Agent Worker and ARTIFACTORY_SERVICE_TOKEN"]
-async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
-    use artifactory_planner_runtime::{server, store::RuntimeStore};
-    use artifactory_runtime_protocol::{Execution, ModelConfiguration, RunIntent, service::Client};
+async fn official_mcp_sdk_queries_over_real_planning_and_rejects_stale_leases() {
+    use artifactory_planning_coordinator::{server, store::PlanningStore};
+    use artifactory_planning_protocol::{Execution, ModelConfiguration, RunIntent};
+    use artifactory_service_transport::service::Client;
     let database = Database::with_tenant().await;
     let (project, build, _) = database.fixture().await;
     let node = database.node().await;
@@ -138,7 +139,7 @@ async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
     )
     .await
     .unwrap();
-    let schema = format!("runtime_mcp_{}", Uuid::new_v4().simple());
+    let schema = format!("planning_mcp_{}", Uuid::new_v4().simple());
     sql::execute(
         &mut database.pool.clone(),
         &format!("CREATE SCHEMA {schema}"),
@@ -151,16 +152,19 @@ async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
         &[("search_path", &schema)],
     )
     .unwrap();
-    let runtime_db = connect(
+    let planning_db = connect(
         &url,
-        artifactory_planner_runtime::store::models(),
+        artifactory_planning_coordinator::store::models(),
         PoolSettings::new(4),
     )
     .await
     .unwrap();
-    artifactory_database::migrate(&runtime_db, &artifactory_planner_runtime::store::MIGRATIONS)
-        .await
-        .unwrap();
+    artifactory_database::migrate(
+        &planning_db,
+        &artifactory_planning_coordinator::store::MIGRATIONS,
+    )
+    .await
+    .unwrap();
     let control_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let control_origin = format!("http://{}", control_listener.local_addr().unwrap());
     let app = api::router(database.state.clone());
@@ -170,14 +174,14 @@ async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
     let mut upstream = Client::new("https://control.invalid".into(), token.clone()).unwrap();
     // Only disposable loopback fixtures use HTTP; service authorization remains active.
     upstream.origin = control_origin;
-    let runtime_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let planning_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!(
-        "http://{}/internal/planner",
-        runtime_listener.local_addr().unwrap()
+        "http://{}/internal/planning",
+        planning_listener.local_addr().unwrap()
     );
     let key = Arc::new([7; 32]);
-    let runtime = server::Runtime {
-        store: RuntimeStore::new(runtime_db.clone(), key.clone()),
+    let coordinator = server::Coordinator {
+        store: PlanningStore::new(planning_db.clone(), key.clone()),
         key,
         control: upstream,
         model_http: reqwest::Client::new(),
@@ -204,7 +208,7 @@ async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
             timeout_seconds: 60,
         },
     };
-    server::put_intent(&runtime, serde_json::to_value(intent).unwrap())
+    server::put_intent(&coordinator, serde_json::to_value(intent).unwrap())
         .await
         .unwrap();
     let execution = Execution {
@@ -214,24 +218,24 @@ async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
         name: "fixture-pod".into(),
         namespace: "isolated".into(),
     };
-    server::register_execution(&runtime, execution.clone())
+    server::register_execution(&coordinator, execution.clone())
         .await
         .unwrap();
     sql::execute(
-        &mut runtime_db.clone(),
-        "UPDATE runtime_runs SET status='provisioning' WHERE id=$1",
+        &mut planning_db.clone(),
+        "UPDATE planning_runs SET status='provisioning' WHERE id=$1",
         params![run],
     )
     .await
     .unwrap();
-    let acquired = runtime
+    let acquired = coordinator
         .store
         .acquire_execution(execution, &origin)
         .await
         .unwrap();
     let mut stale = acquired["lease"].clone();
     stale["generation"] = json!(0);
-    let app = api::mount_planner(axum::Router::new(), runtime, token.clone());
+    let app = api::mount_planning(axum::Router::new(), coordinator, token.clone());
     let unauthorized = reqwest::Client::new()
         .post(format!("{origin}/v1/queue"))
         .json(&json!({}))
@@ -240,14 +244,14 @@ async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
         .get(format!("{origin}/healthz"))
         .send();
     let runner = tokio::spawn(async move {
-        axum::serve(runtime_listener, app).await.unwrap();
+        axum::serve(planning_listener, app).await.unwrap();
     });
     assert_eq!(
         unauthorized.await.unwrap().status(),
         reqwest::StatusCode::UNAUTHORIZED
     );
     assert_eq!(health.await.unwrap().status(), reqwest::StatusCode::OK);
-    let config = json!({"transport":"runtime","endpoint":origin,"lease":acquired["lease"],"stale_lease":stale,"queries":[
+    let config = json!({"transport":"planning","endpoint":origin,"lease":acquired["lease"],"stale_lease":stale,"queries":[
         {"name":"summarize_nodes","arguments":{}},
         {"name":"query_nodes","arguments":{"os":"linux"}},
         {"name":"get_node","arguments":{"node_id":node}}
@@ -268,14 +272,14 @@ async fn official_mcp_sdk_queries_over_real_runtime_and_rejects_stale_leases() {
         assert_eq!(
             result["nodes"],
             json!([]),
-            "current project authorization is enforced through Runtime"
+            "current project authorization is enforced through Coordinator"
         );
     }
     runner.abort();
     let _ = runner.await;
     control.abort();
     let _ = control.await;
-    drop(runtime_db);
+    drop(planning_db);
     sql::execute(
         &mut database.pool.clone(),
         &format!("DROP SCHEMA {schema} CASCADE"),

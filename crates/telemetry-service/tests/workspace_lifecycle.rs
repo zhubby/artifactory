@@ -3,7 +3,7 @@
 //! [POS]: 工作区生命周期的遥测数据删除回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_database::{PoolSettings, connect, params, sql, with_database};
-use artifactory_telemetry_model::{Batch, HostSample, ProcessSample};
+use artifactory_emissary_protocol::telemetry::{Batch, HostSample, ProcessSample};
 use artifactory_telemetry_service::store::{self, TelemetryStore};
 use chrono::{Duration, Utc};
 use uuid::Uuid;

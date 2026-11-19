@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖任务身份、进程根与系统进程快照。
+//! [OUTPUT]: 登记受管进程，按 PID 和启动时间归属后代。
+//! [POS]: 节点遥测的进程身份边界，不读取进程参数。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result};
 use std::{
     collections::{BTreeMap, HashMap},

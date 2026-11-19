@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 隔离命名空间、TimescaleDB、节点出口策略和主机原生 Rust 工具链。
-[OUTPUT]: 验证主机构建；恢复出口、设备与公告地址后写入成功证据。
+[OUTPUT]: 经 Release 验证主机构建并恢复出口和设备原值。
 [POS]: 直拉共同可达的 Git NodePort；出口只覆盖本次节点和端口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -86,7 +86,7 @@ def native_git_egress(a, node_ip, port):
         'spec': {
             'podSelector': {'matchExpressions': [{
                 'key': 'app.kubernetes.io/name', 'operator': 'In',
-                'values': ['artifactory-pi', 'artifactory-source-task'],
+                'values': ['artifactory-planning-worker', 'artifactory-source-task'],
             }]},
             'policyTypes': ['Egress'],
             'egress': [{
@@ -115,7 +115,7 @@ def native_git_ready(a, git_origin):
             return response.status == 200 and b'# service=git-upload-pack' in response.read(256)
 
     a.wait(host_refs, 60)
-    pool = json.loads(a.kubectl('get', 'agentpool', 'default', '-o', 'json'))['spec']
+    pool = json.loads(a.kubectl('get', 'planningpool', 'default', '-o', 'json'))['spec']
     name = 'native-git-ready-' + uuid.uuid4().hex[:8]
     script = '''
 const https = require("node:https");
@@ -205,15 +205,15 @@ def run(args):
     node = None
     restore_devices = ExitStack()
     restore_network = ExitStack()
-    agent_pool = json.loads(a.kubectl('get', 'agentpool', 'default', '-o', 'json'))['spec']
+    agent_pool = json.loads(a.kubectl('get', 'planningpool', 'default', '-o', 'json'))['spec']
     original_control = environment(a, 'control-plane')
     original_upstream = environment(a, 'upstream')
     evidence = {'context': args.context, 'namespace': args.namespace, 'platform': host_os + '/' + arch, 'host_process': True, 'system_service_installed': False, 'passed': False}
     try:
         a.resume()
-        assert a.sql('planner', "SELECT count(*) FROM runtime_runs WHERE status IN ('running','provisioning')") == '0', 'Drain namespace before changing advertised routes'
+        assert a.sql('planning', "SELECT count(*) FROM planning_runs WHERE status IN ('running','provisioning')") == '0', 'Drain namespace before changing advertised routes'
         assert a.sql('business', "SELECT count(*) FROM attempts WHERE status IN ('leased','running')") == '0', 'Drain device jobs before changing routes'
-        a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', '{"spec":{"maxActive":2}}')
+        a.kubectl('patch', 'planningpool', 'default', '--type=merge', '-p', '{"spec":{"maxActive":2}}')
         set_environment(a, 'upstream', {'FIXTURE_OS': host_os, 'FIXTURE_ARCH': arch})
         set_environment(a, 'control-plane', {'ARTIFACTORY_PUBLIC_URL': a.base})
         for forward in a.processes:
@@ -248,7 +248,8 @@ def run(args):
         git_origin = f'https://{a.node_ip}:{port}/repo.git'
         evidence['git_readiness'] = native_git_ready(a, git_origin)
         project = a.api('/api/v1/projects', {'name': name, 'repository_url': git_origin,})['id']
-        build = a.api('/api/v1/projects/' + project + '/builds', {'ref': 'v-fixture', 'goal': 'Inspect source and build dist/result.txt on the host-native device', 'target_requirements': [{'os': host_os, 'arch': arch}]})['id']
+        build = a.create_build(project, 'Inspect source and build dist/result.txt on the host-native device',
+                               target_requirements=[{'kind': 'native', 'key': 'app', 'os': host_os, 'arch': arch}])['id']
         evidence['build_id'] = build
         (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
         detail = a.wait(lambda: host_build_terminal(a, build, directory, evidence), 600)
@@ -307,7 +308,7 @@ def run(args):
             set_environment(a, 'upstream', {key: original_upstream.get(key) for key in ['FIXTURE_OS','FIXTURE_ARCH']})
             set_environment(a, 'control-plane', {'ARTIFACTORY_PUBLIC_URL': original_control.get('ARTIFACTORY_PUBLIC_URL')})
             a.origin = a.kubectl('exec', 'deploy/control-plane', '--', 'printenv', 'ARTIFACTORY_PUBLIC_URL').strip()
-            a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': agent_pool}))
+            a.kubectl('patch', 'planningpool', 'default', '--type=merge', '-p', json.dumps({'spec': agent_pool}))
             a.kubectl('delete','service','upstream-native','--ignore-not-found')
             evidence['temporary_routes_restored'] = True
         finally:

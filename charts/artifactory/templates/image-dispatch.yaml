@@ -1,5 +1,5 @@
 # [INPUT]: 任务命名空间、资源前缀和 Control 服务身份。
-# [OUTPUT]: 源码与规划身份校验、任务声明及镜像 Secret 权限。
+# [OUTPUT]: 执行身份校验、任务声明和 Release 发布停机核验权限。
 # [POS]: Control 验证 Pod 直接归属 CR；Operator 编排普通 Pod。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 {{- $tokenReviewName := printf "%s-%s-source-tokenreview" (include "artifactory.fullname" .) .Release.Namespace }}
@@ -15,18 +15,21 @@ metadata:
   name: {{ include "artifactory.fullname" $root }}-control
   namespace: {{ $namespace }}
 rules:
-  - apiGroups: [agents.artifactory.dev]
+  - apiGroups: [planning.artifactory.dev]
     resources: [sourcetasks]
-    verbs: [get, create, patch]
-  - apiGroups: [agents.artifactory.dev]
-    resources: [agentpools, agentruns]
+    verbs: [get, list, create, patch]
+  - apiGroups: [planning.artifactory.dev]
+    resources: [planningpools]
     verbs: [get]
+  - apiGroups: [planning.artifactory.dev]
+    resources: [planningruns]
+    verbs: [get, list]
   - apiGroups: [images.artifactory.dev]
     resources: [imagebuilds]
-    verbs: [get, create, patch]
+    verbs: [get, list, create, patch]
   - apiGroups: ['']
     resources: [pods]
-    verbs: [get]
+    verbs: [get, list]
   - apiGroups: ['']
     resources: [secrets]
     verbs: [get, create, delete]

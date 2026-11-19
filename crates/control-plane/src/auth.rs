@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖账户存储、Argon2、会话和租户权限。
+//! [OUTPUT]: 提供认证、权限检查及独立的首次管理员密码散列。
+//! [POS]: HTTP 认证边界；初始密码例外不扩展到注册或改密。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     crypto,
     error::{ApiError, Result},
@@ -274,11 +278,24 @@ fn cookie(headers: &HeaderMap) -> Option<&str> {
         .find_map(|entry| entry.trim().strip_prefix("artifactory_session="))
 }
 
+pub const INITIAL_ADMIN_PASSWORD: &str = "123456";
+
+pub fn bootstrap_password_hash(password: &str) -> anyhow::Result<String> {
+    if password == INITIAL_ADMIN_PASSWORD {
+        return encode_password(password);
+    }
+    password_hash(password)
+}
+
 pub fn password_hash(password: &str) -> anyhow::Result<String> {
     anyhow::ensure!(
         password.len() >= 12 && password.len() <= 256,
         "password must contain 12..256 characters"
     );
+    encode_password(password)
+}
+
+fn encode_password(password: &str) -> anyhow::Result<String> {
     Ok(Argon2::default()
         .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
         .map_err(|_| anyhow::anyhow!("password hashing failed"))?

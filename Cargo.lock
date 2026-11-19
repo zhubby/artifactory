@@ -268,27 +268,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
-name = "artifactory-agent-operator"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "artifactory-runtime-protocol",
- "axum",
- "chrono",
- "futures",
- "k8s-openapi",
- "kube",
- "schemars",
- "serde",
- "serde_json",
- "serde_yaml",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "artifactory-control-plane"
 version = "0.2.0"
 dependencies = [
@@ -297,12 +276,14 @@ dependencies = [
  "argon2",
  "artifactory-database",
  "artifactory-emissary-protocol",
+ "artifactory-image-operator",
  "artifactory-image-protocol",
- "artifactory-image-registry",
- "artifactory-planner-runtime",
- "artifactory-runtime-protocol",
+ "artifactory-oci-registry-client",
+ "artifactory-planning-coordinator",
+ "artifactory-planning-operator",
+ "artifactory-planning-protocol",
+ "artifactory-service-transport",
  "artifactory-source-checkout",
- "artifactory-telemetry-model",
  "async-stream",
  "axum",
  "base64 0.22.1",
@@ -370,8 +351,8 @@ dependencies = [
  "anyhow",
  "artifactory-database",
  "artifactory-emissary-protocol",
+ "artifactory-execution-support",
  "artifactory-source-checkout",
- "artifactory-telemetry-model",
  "axum",
  "base64 0.22.1",
  "cap-fs-ext",
@@ -418,11 +399,31 @@ dependencies = [
 name = "artifactory-emissary-protocol"
 version = "0.2.0"
 dependencies = [
+ "anyhow",
+ "chrono",
  "prost",
  "serde",
+ "serde_json",
+ "sha2 0.10.9",
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "uuid",
+]
+
+[[package]]
+name = "artifactory-execution-support"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "process-wrap",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "zeroize",
 ]
 
 [[package]]
@@ -431,11 +432,13 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "hex",
  "pingora",
  "reqwest",
  "rustls-native-certs 0.8.5",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -448,10 +451,10 @@ name = "artifactory-image-operator"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "artifactory-emissary",
+ "artifactory-execution-support",
  "artifactory-image-protocol",
- "artifactory-image-registry",
- "artifactory-runtime-protocol",
+ "artifactory-oci-registry-client",
+ "artifactory-service-transport",
  "artifactory-source-checkout",
  "async-trait",
  "axum",
@@ -491,7 +494,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "artifactory-image-registry"
+name = "artifactory-oci-registry-client"
 version = "0.2.0"
 dependencies = [
  "anyhow",
@@ -509,12 +512,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "artifactory-planner-runtime"
+name = "artifactory-planning-coordinator"
 version = "0.2.0"
 dependencies = [
  "anyhow",
  "artifactory-database",
- "artifactory-runtime-protocol",
+ "artifactory-planning-protocol",
+ "artifactory-service-transport",
  "artifactory-source-checkout",
  "async-stream",
  "axum",
@@ -532,7 +536,38 @@ dependencies = [
 ]
 
 [[package]]
-name = "artifactory-runtime-protocol"
+name = "artifactory-planning-operator"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "artifactory-planning-protocol",
+ "artifactory-service-transport",
+ "axum",
+ "chrono",
+ "futures",
+ "k8s-openapi",
+ "kube",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "artifactory-planning-protocol"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "artifactory-service-transport"
 version = "0.2.0"
 dependencies = [
  "aes-gcm 0.10.3",
@@ -540,7 +575,6 @@ dependencies = [
  "async-stream",
  "axum",
  "base64 0.22.1",
- "chrono",
  "futures",
  "hex",
  "hyper-util",
@@ -556,7 +590,6 @@ dependencies = [
  "tokio-rustls",
  "tower",
  "url",
- "uuid",
 ]
 
 [[package]]
@@ -597,26 +630,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "artifactory-telemetry-model"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "chrono",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "uuid",
-]
-
-[[package]]
 name = "artifactory-telemetry-service"
 version = "0.2.0"
 dependencies = [
  "anyhow",
  "artifactory-database",
  "artifactory-emissary-protocol",
- "artifactory-runtime-protocol",
- "artifactory-telemetry-model",
+ "artifactory-service-transport",
  "axum",
  "chrono",
  "futures",

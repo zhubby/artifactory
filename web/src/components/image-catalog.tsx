@@ -9,7 +9,7 @@ import { useUI } from "@/components/providers";
 import { CopyButton, Empty, ErrorBox, Loading, SectionTitle } from "@/components/common";
 import { useRemote } from "@/lib/api";
 import { Link } from "@/lib/tenant";
-import { buildPath } from "@/lib/routes";
+import { buildPath, releasePath } from "@/lib/routes";
 import type { ImageArtifact } from "@/lib/types";
 
 export function ImageCatalog({ projectId, query, order }: { projectId: string; query: string; order: string }) {
@@ -25,9 +25,9 @@ export function ImageCatalog({ projectId, query, order }: { projectId: string; q
       <tbody>{images.map(image => {
         const ref = `${image.registry ? image.registry.replace(/^https?:\/\//, "").replace(/\/$/, "") + "/" : ""}${image.repository}@${image.digest}`;
         return <tr key={image.id}>
-          <td>{image.name}</td><td><code className="break-all text-xs">{ref}</code> <CopyButton value={ref} /></td>
+          <td>{image.name}<p className="mt-1 text-xs"><Link href={releasePath(image.project_slug,image.release_id)}>{image.release_version}</Link></p></td><td><code className="break-all text-xs">{ref}</code> <CopyButton value={ref} /></td>
           <td>{image.platforms.map(item => item.platform).join(" · ")}</td>
-          <td><Link href={buildPath(image.project_slug, image.build_number)}>#{image.build_number}</Link></td><td>{date(image.created_at)}</td>
+          <td><Link href={buildPath(image.project_slug, image.build_number,image.release_id)}>#{image.build_number}</Link></td><td>{date(image.created_at)}</td>
         </tr>;
       })}</tbody>
     </table></div>}

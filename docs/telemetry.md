@@ -6,7 +6,9 @@
 -->
 # Emissary 时序观测
 
-所有后端使用 TimescaleDB 2.32+。默认镜像为 `timescale/timescaledb:2.32.0-pg17`，数据库访问统一由 store 层通过 Toasty 0.11 执行；连接恢复补丁及来源记录位于 `vendor/toasty/PATCH.md`。Control、Runtime、Source 的状态表保持普通关系表；遥测使用独立逻辑数据库、写池、查询池和 Rust 服务。
+所有后端使用 TimescaleDB 2.32+。默认镜像为 `timescale/timescaledb:2.32.0-pg17`，数据库访问统一由 store 层通过 Toasty 0.11 执行；连接恢复补丁及来源记录位于 `vendor/toasty/PATCH.md`。Control 和规划协调器的状态表保持普通关系表；遥测使用独立逻辑数据库、写池、查询池和 Rust 服务。
+
+共享遥测模型归属 `artifactory_emissary_protocol::telemetry`，启动身份与选机契约归属同包的 `nodes` 模块。`artifactory.emissary.v1` RPC、JSON 字段、序列化字节和元数据摘要保持不变。模型合并不改变遥测缓存、数据库或独立服务的部署身份。
 
 ```mermaid
 flowchart LR
@@ -64,7 +66,7 @@ AI 查询和分配另以 `startup_resources` 保存每个节点／启动的最�
 
 Control 对节点查询要求 viewer 会话，对 attempt 查询要求所属项目的 read 权限。内部查询使用独立 bearer token 和 TLS，Emissary 无该 token。生产授权连接使用独立登录角色，所需权限为业务数据库的 `CONNECT`、业务 schema 的 `USAGE`，以及 `nodes`、`attempts`、`__toasty_migrations` 三张表的 `SELECT`。其中迁移表用于启动时校验 Business 版本；缺少权限会使启动失败。服务连接本身也设置只读模式。查询池可通过 `ARTIFACTORY_TELEMETRY_READ_DATABASE_URL` 指向专门的只读连接。
 
-先由管理员创建授权登录角色并配置凭据，在 Control 应用当前全部 Business 迁移后，以该业务库的所有者执行最小授权脚本。Telemetry 直接使用 Control 的迁移清单校验业务库，缺少迁移或未知版本都会阻止启动；不提供旧版本回退：
+先由管理员创建授权登录角色并配置凭据，在 Control 初始化当前业务基线 `2026112001` 后，以该业务库的所有者执行最小授权脚本。Telemetry 直接使用 Control 的迁移清单校验业务库，缺少迁移、旧迁移身份或未知版本都会阻止启动；不提供旧版本回退：
 
 ```sh
 psql "$ARTIFACTORY_BUSINESS_ADMIN_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
@@ -93,7 +95,7 @@ CREATE EXTENSION timescaledb;
 
 服务环境变量：`DATABASE_URL` 指向遥测库；`ARTIFACTORY_BUSINESS_DATABASE_URL` 指向只读授权连接；`ARTIFACTORY_TELEMETRY_TOKEN` 用于内部查询。`ARTIFACTORY_PKI_DIR` 包含 `ca.pem/server.pem/server.key`；HTTP 查询的 TLS 另使用 `ARTIFACTORY_SERVICE_TLS_CERT/KEY`。仅挂载这些文件，服务无需 CA 私钥。默认绑定 `127.0.0.1:8444/8093`，容器中显式绑定 `0.0.0.0`。
 
-独立 Operator Chart 的 `telemetry.secretName` 需要上述数据库 URL 与 token，`telemetry.pkiSecretName` 引用设备 CA 签发的服务身份。它不会创建外部数据库。Control 另配置 `ARTIFACTORY_TELEMETRY_ENDPOINT`（设备可达）、`ARTIFACTORY_TELEMETRY_URL`（内部查询）和相同 token。服务证书 SAN 必须涵盖两种访问域名；Pi 的网络策略继续只允许 Source/Runtime。
+独立 Planning Operator Chart 的 `telemetry.secretName` 需要上述数据库 URL 与 token，`telemetry.pkiSecretName` 引用设备 CA 签发的服务身份。它不会创建外部数据库。Control 另配置 `ARTIFACTORY_TELEMETRY_ENDPOINT`（设备可达）、`ARTIFACTORY_TELEMETRY_URL`（内部查询）和相同 token。服务证书 SAN 必须涵盖两种访问域名；规划 Worker 通过内部网关访问规划协调器，不直连遥测数据库。
 
 ## 查询与验证
 

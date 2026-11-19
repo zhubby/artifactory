@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 验收清单渲染器、本机 HTTP 服务和工作区 Dockerfile。
-[OUTPUT]: 验证会话收敛、池恢复、设备隔离和独立镜像。
+[OUTPUT]: 验证 Release 构建入口、会话、池恢复和设备隔离。
 [POS]: 只执行本机检查，不访问 Docker 或 Kubernetes。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -106,6 +106,46 @@ class NativeDeviceIsolationTests(unittest.TestCase):
 
 
 class HarnessTests(unittest.TestCase):
+    def test_build_creation_uses_unique_releases_with_exact_target_contracts(self):
+        acceptance = MODULE.Acceptance.__new__(MODULE.Acceptance)
+        acceptance.arch = 'amd64'
+        calls = []
+        def api(path, body):
+            calls.append((path, body))
+            if path.endswith('/releases'):
+                return {'id': 'release-' + str(len(calls)), 'version': body['version']}
+            return {'id': 'build-' + str(len(calls))}
+        acceptance.api = api
+        first = acceptance.create_build('project', 'Build native artifact')
+        image_contract = [{'kind': 'image', 'key': 'image', 'platforms': ['linux/amd64', 'linux/arm64']}]
+        second = acceptance.create_build('project', 'Build image', ref='a' * 40,
+            target_requirements=image_contract, parameters={'fixture': True})
+        self.assertEqual(calls[0][0], '/api/v1/projects/project/releases')
+        self.assertEqual(calls[0][1]['target_requirements'], [
+            {'kind': 'native', 'key': 'app', 'os': 'linux', 'arch': 'amd64'}])
+        self.assertEqual(calls[0][1]['targets'], ['app'])
+        self.assertEqual(calls[0][1]['ref'], 'v-fixture')
+        self.assertRegex(first['release_version'], r'^0\.0\.0-acceptance\.r[0-9a-f]{32}$')
+        self.assertNotEqual(first['release_version'], second['release_version'])
+        self.assertEqual(calls[1], ('/api/v1/releases/release-1/builds', {'parameters': {}}))
+        self.assertEqual(calls[2][1]['target_requirements'], image_contract)
+        self.assertEqual(calls[2][1]['targets'], ['image'])
+        self.assertEqual(calls[2][1]['ref'], 'a' * 40)
+        self.assertEqual(calls[3], ('/api/v1/releases/release-3/builds', {'parameters': {'fixture': True}}))
+        self.assertEqual(second['release_id'], 'release-3')
+
+    def test_release_failure_does_not_submit_an_unowned_build(self):
+        acceptance = MODULE.Acceptance.__new__(MODULE.Acceptance)
+        acceptance.arch = 'amd64'
+        calls = []
+        def api(path, body):
+            calls.append(path)
+            raise RuntimeError('release contract rejected')
+        acceptance.api = api
+        with self.assertRaisesRegex(RuntimeError, 'release contract rejected'):
+            acceptance.create_build('project', 'Build native artifact')
+        self.assertEqual(calls, ['/api/v1/projects/project/releases'])
+
     def test_pool_pause_restores_original_capacity_after_success_and_failure(self):
         for failure in (None, 'assertion', 'lost-patch-response'):
             with self.subTest(failure=failure):
@@ -154,10 +194,10 @@ class HarnessTests(unittest.TestCase):
             acceptance.run = Path(temporary)
             acceptance.cleanup()
             operator = next(call for call in calls if '-l' in call)
-            self.assertIn('app.kubernetes.io/name=artifactory-agent-operator', operator)
+            self.assertIn('app.kubernetes.io/name=artifactory-planning-operator', operator)
             self.assertIn('--prefix=true', operator)
-            self.assertNotIn('deploy/artifactory-agent-operator', operator)
-            self.assertIn('follower', (acceptance.run / 'artifactory-agent-operator.log').read_text())
+            self.assertNotIn('deploy/artifactory-planning-operator', operator)
+            self.assertIn('follower', (acceptance.run / 'artifactory-planning-operator.log').read_text())
 
     def test_changed_origin_login_waits_for_old_control_pod_exit(self):
         state = {'public_url': 'http://gateway:8080', 'desired_url': 'http://gateway:8080',
@@ -319,12 +359,13 @@ class HarnessTests(unittest.TestCase):
         account, role, binding, cluster, cluster_binding = acceptance.control_identity()
         self.assertEqual(account['metadata']['name'],'artifactory-control')
         self.assertTrue(any('sourcetasks' in rule['resources'] for rule in role['rules']))
+        self.assertTrue(all('list' in rule['verbs'] for rule in role['rules']))
         self.assertFalse(any('secrets' in rule['resources'] for rule in role['rules']))
         self.assertEqual(cluster['rules'][0]['resources'],['tokenreviews'])
         self.assertEqual(binding['subjects'],cluster_binding['subjects'])
 
     def test_service_dockerfiles_copy_only_existing_workspace_paths(self):
-        files = ['Dockerfile', 'crates/emissary/Dockerfile', 'crates/gateway/Dockerfile', 'crates/source-preparer/Dockerfile', 'operators/agent-operator/Dockerfile']
+        files = ['Dockerfile', 'crates/emissary/Dockerfile', 'crates/gateway/Dockerfile', 'crates/source-preparer/Dockerfile', 'operators/planning-operator/Dockerfile']
         for filename in files:
             for line in (ROOT / filename).read_text().splitlines():
                 fields = shlex.split(line)
@@ -335,7 +376,7 @@ class HarnessTests(unittest.TestCase):
                     self.assertTrue((ROOT / source).exists(), f'{filename}: missing COPY source {source}')
 
     def test_each_service_image_starts_its_own_binary(self):
-        components = {'operators/agent-operator': 'artifactory-agent-operator', 'crates/source-preparer': 'artifactory-source-preparer'}
+        components = {'operators/planning-operator': 'artifactory-planning-operator', 'crates/source-preparer': 'artifactory-source-preparer'}
         for directory, binary in components.items():
             dockerfile = (ROOT / directory / 'Dockerfile').read_text()
             self.assertIn(f'ENTRYPOINT ["/usr/local/bin/{binary}"]', dockerfile)

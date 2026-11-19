@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户、项目 slug 和页面段。
- * [OUTPUT]: 提供工作区路由生成和合法性校验。
+ * [OUTPUT]: 提供项目、Release 与其构建路由及合法性校验。
  * [POS]: 签名设置与业务页面的公开地址边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -24,8 +24,12 @@ export function projectPath(slug: string) {
   return `/projects/${encodeURIComponent(slug)}`;
 }
 
-export function buildPath(projectSlug: string, number: number) {
-  return `${projectPath(projectSlug)}/builds/${number}`;
+export function releasePath(projectSlug: string, releaseId: string) {
+  return `${projectPath(projectSlug)}/releases/${encodeURIComponent(releaseId)}`;
+}
+
+export function buildPath(projectSlug: string, number: number, releaseId?: string) {
+  return `${releaseId ? releasePath(projectSlug, releaseId) : projectPath(projectSlug)}/builds/${number}`;
 }
 
 export function projectFromPath(path: string) {
@@ -38,6 +42,7 @@ export function projectSwitchPath(path: string, slug: string) {
     /^\/tenants\/[^/]+\/projects\/[^/]+\/(builds|artifacts|releases)\/?$/.exec(
       path,
     )?.[1];
+  if (/^\/tenants\/[^/]+\/projects\/[^/]+\/releases\//.test(path)) return `${base}/releases`;
   return column ? `${base}/${column}` : base;
 }
 
@@ -73,9 +78,11 @@ export function validTenantRoute(segments: string[]) {
         "lifecycle",
       ].includes(segments[3]);
     if (segments.length === 4 && segments[2] === "releases")
-      return /^[0-9a-f-]{36}$/.test(segments[3]);
+      return segments[3] === "new" || /^[0-9a-f-]{36}$/.test(segments[3]);
+    if (segments.length === 6 && segments[2] === "releases" &&
+      /^[0-9a-f-]{36}$/.test(segments[3]) && segments[4] === "builds")
+      return /^[1-9][0-9]*$/.test(segments[5]) && Number.isSafeInteger(Number(segments[5]));
     if (segments.length === 4 && segments[2] === "builds") {
-      if (segments[3] === "new") return true;
       const number = Number(segments[3]);
       return /^[1-9][0-9]*$/.test(segments[3]) && Number.isSafeInteger(number);
     }

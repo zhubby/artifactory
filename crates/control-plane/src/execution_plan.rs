@@ -31,7 +31,7 @@ pub struct ExecutionPlan {
     pub recipe: Recipe,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub placements:
-        std::collections::BTreeMap<String, artifactory_telemetry_model::nodes::Placement>,
+        std::collections::BTreeMap<String, artifactory_emissary_protocol::nodes::Placement>,
 }
 
 impl ExecutionPlan {

@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖固定清单、租约、私有配置和日志事件管道。
+//! [INPUT]: 依赖固定清单、租约、私有配置和共享日志事件管道。
 //! [OUTPUT]: 临时检出源码，执行步骤、上传制品并检查目录清理。
 //! [POS]: 每任务子进程；凭据在用户步骤前删除。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -8,8 +8,9 @@ use crate::{
     process, protocol as pb, source,
 };
 use anyhow::{Context, Result, ensure};
+pub use artifactory_execution_support::events::{Emitter, Event};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -23,7 +24,6 @@ use tokio::{
         BufReader,
     },
     process::Command,
-    sync::mpsc,
 };
 use tokio_util::{io::ReaderStream, sync::CancellationToken};
 
@@ -38,28 +38,6 @@ pub struct Input {
     pub assignment: Option<pb::Assignment>,
     pub reason: String,
     pub signing_session_id: String,
-}
-#[derive(Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Event {
-    pub kind: String,
-    pub payload: Value,
-    pub step: String,
-    pub data: Vec<u8>,
-}
-#[derive(Clone)]
-pub struct Emitter(mpsc::Sender<Event>);
-impl Emitter {
-    pub fn channel() -> (Self, mpsc::Receiver<Event>) {
-        let (tx, rx) = mpsc::channel(64);
-        (Self(tx), rx)
-    }
-    pub async fn send(&self, event: Event) -> Result<()> {
-        self.0
-            .send(event)
-            .await
-            .context("Emissary event pipe closed")
-    }
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Lease {

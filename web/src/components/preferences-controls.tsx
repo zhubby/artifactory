@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖语言上下文、主题状态和共享弹窗。
+ * [OUTPUT]: 为登录页和个人设置提供语言、外观选择。
+ * [POS]: 两处入口复用同一组偏好字段；动画不提供用户开关。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import { useState } from "react";
@@ -7,7 +13,6 @@ import {
   Monitor,
   Moon,
   SlidersHorizontal,
-  Sparkles,
   Sun,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,8 +22,7 @@ import { isLocale } from "@/lib/preferences";
 
 export function PreferenceFields({ expanded = false }: { expanded?: boolean }) {
   const { t } = useUI();
-  const { locale, setLocale, effects, setEffects, ready, reduced } =
-    usePreferences();
+  const { locale, setLocale, ready } = usePreferences();
   const { theme, resolvedTheme, setTheme } = useTheme();
   const ThemeIcon =
     !ready || theme === "system"
@@ -57,33 +61,6 @@ export function PreferenceFields({ expanded = false }: { expanded?: boolean }) {
           <option value="light">{t("preferences.light")}</option>
         </select>
       </label>
-      <Button
-        type="button"
-        variant="ghost"
-        size={expanded ? "default" : "icon"}
-        aria-label={
-          effects
-            ? t("preferences.pauseEffects")
-            : t("preferences.enableEffects")
-        }
-        aria-pressed={effects}
-        title={
-          reduced
-            ? t("preferences.reduced")
-            : effects
-              ? t("preferences.pauseEffects")
-              : t("preferences.enableEffects")
-        }
-        onClick={() => setEffects(!effects)}
-      >
-        <Sparkles />
-        {expanded && t("preferences.effects")}
-      </Button>
-      {expanded && reduced && (
-        <p className="text-xs leading-6 text-muted-foreground">
-          {t("preferences.reduced")}
-        </p>
-      )}
     </div>
   );
 }

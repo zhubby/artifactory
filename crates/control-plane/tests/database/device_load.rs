@@ -64,7 +64,7 @@ impl ProcessReplica {
                 std::env::var("ARTIFACTORY_LOAD_DB_CONNECTIONS").unwrap_or_else(|_| "20".into()),
             )
             .env("ARTIFACTORY_CONTROL_DRAIN_SECONDS", "1")
-            .env_remove("ARTIFACTORY_RUNTIME_URL")
+            .env_remove("ARTIFACTORY_PLANNING_URL")
             .env_remove("ARTIFACTORY_TELEMETRY_ENDPOINT")
             .env(
                 "RUST_LOG",
@@ -378,7 +378,7 @@ async fn device_fleet_load() {
             let id=Uuid::new_v4();
             let (certificate,key)=certificates.device();
             sql::execute(&mut pool.clone(), "INSERT INTO nodes(id,name,os,arch,pool_id,certificate_hash,certificate_expires_at) VALUES($1,$2,'linux','amd64','00000000-0000-0000-0000-000000000001',$3,now()+interval '1 day')", params![id, format!("load-{index}"), pki::certificate_hash(&certificate).unwrap()]).await.unwrap();
-            let startup=Some(artifactory_telemetry_model::nodes::MetadataSnapshot::new(Uuid::new_v4(),std::collections::BTreeMap::from([("system.os".into(),json!("linux")),("system.arch".into(),json!("amd64")),("hardware.logical_cpus".into(),json!(8)),("custom.site".into(),json!("load-fixture"))]),vec!["git".into(),"bash".into()]).unwrap());
+            let startup=Some(artifactory_emissary_protocol::nodes::MetadataSnapshot::new(Uuid::new_v4(),std::collections::BTreeMap::from([("system.os".into(),json!("linux")),("system.arch".into(),json!("amd64")),("hardware.logical_cpus".into(),json!(8)),("custom.site".into(),json!("load-fixture"))]),vec!["git".into(),"bash".into()]).unwrap());
             let (client,events,commands)=Device::try_open_metadata(id,&certificate,&key,&urls[index%3],&certificates.ca,startup.as_ref()).await.context("establishing the mTLS fleet")?;
             Ok::<_,anyhow::Error>((index,Device{id,certificate,key,client,events,commands,startup}))
         }

@@ -1,5 +1,5 @@
 -- [INPUT]: 依赖全新的 PostgreSQL 数据库。
--- [OUTPUT]: 创建业务、租户、固定源码及源码和镜像 CR UID 约束。
+-- [OUTPUT]: 创建租户、Release 修订、固定源码及封存交付约束。
 -- [POS]: 原型重置后的唯一初始化基线。
 -- [PROTOCOL]: Update this header on change, then check AGENTS.md
 CREATE FUNCTION assign_build_number() RETURNS trigger
@@ -241,12 +241,12 @@ BEGIN
 END $$;
 
 
-CREATE FUNCTION publish_runtime_intent() RETURNS trigger
+CREATE FUNCTION publish_planning_intent() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
- IF TG_OP='INSERT' THEN INSERT INTO runtime_intents(run_id,version,kind) VALUES(NEW.id,1,'create');
- ELSIF NEW.state='canceled' AND OLD.state<>'canceled' THEN INSERT INTO runtime_intents(run_id,version,kind) VALUES(NEW.id,2,'cancel') ON CONFLICT DO NOTHING; END IF;
+ IF TG_OP='INSERT' THEN INSERT INTO planning_intents(run_id,version,kind) VALUES(NEW.id,1,'create');
+ ELSIF NEW.state='canceled' AND OLD.state<>'canceled' THEN INSERT INTO planning_intents(run_id,version,kind) VALUES(NEW.id,2,'cancel') ON CONFLICT DO NOTHING; END IF;
  RETURN NEW;
 END $$;
 
@@ -313,7 +313,8 @@ CREATE FUNCTION source_task_scope() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
- IF NEW.build_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM builds WHERE id=NEW.build_id AND project_id=NEW.project_id AND tenant_id=NEW.tenant_id) THEN RAISE EXCEPTION 'source build mismatch' USING ERRCODE='23514'; END IF;
+ IF NEW.release_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM releases WHERE id=NEW.release_id AND project_id=NEW.project_id AND tenant_id=NEW.tenant_id) THEN RAISE EXCEPTION 'source release mismatch' USING ERRCODE='23514'; END IF;
+ IF NEW.build_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM builds WHERE id=NEW.build_id AND project_id=NEW.project_id AND tenant_id=NEW.tenant_id AND release_id IS NOT DISTINCT FROM NEW.release_id) THEN RAISE EXCEPTION 'source build mismatch' USING ERRCODE='23514'; END IF;
  IF EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.bindings) b LEFT JOIN credentials c ON c.id=(b->>'credential_id')::uuid WHERE c.tenant_id IS DISTINCT FROM NEW.tenant_id) THEN RAISE EXCEPTION 'source credential mismatch' USING ERRCODE='23514'; END IF;
  RETURN NEW;
 END $$;
@@ -456,7 +457,9 @@ CREATE TABLE builds (
     selected_targets text[] DEFAULT '{}'::text[] NOT NULL,
     status text DEFAULT 'resolving'::text NOT NULL,
     error text,
-    release_version text,
+    release_id uuid NOT NULL,
+    spec_revision integer NOT NULL,
+    release_version text NOT NULL,
     publish_status text DEFAULT 'not_requested'::text NOT NULL,
     publish_error text,
     cancel_requested boolean DEFAULT false NOT NULL,
@@ -907,26 +910,65 @@ CREATE TABLE publish_attempts (
 
 CREATE TABLE release_artifacts (
     release_id uuid NOT NULL,
-    artifact_id uuid NOT NULL
+    artifact_id uuid NOT NULL,
+    delivery_filename text NOT NULL CHECK(octet_length(delivery_filename)<=255 AND delivery_filename ~ '^[A-Za-z0-9][A-Za-z0-9._-]+$'),
+    UNIQUE(release_id,delivery_filename)
 );
 
 CREATE TABLE release_images (
     release_id uuid NOT NULL,
-    image_id uuid NOT NULL
+    image_id uuid NOT NULL,
+    repository text NOT NULL,
+    version text NOT NULL,
+    root_digest text NOT NULL CHECK(root_digest ~ '^sha256:[0-9a-f]{64}$'),
+    manifest_digests jsonb NOT NULL CHECK(jsonb_typeof(manifest_digests)='array' AND manifest_digests ? root_digest),
+    UNIQUE(repository,version),
+    UNIQUE(release_id,repository)
 );
 
 CREATE TABLE releases (
     id uuid NOT NULL,
+    tenant_id uuid NOT NULL,
     project_id uuid NOT NULL,
-    build_id uuid NOT NULL,
     version text NOT NULL,
-    idempotency_key text NOT NULL,
-    commit_sha text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    tenant_id uuid NOT NULL
+    status text NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','publishing','published','publish_failed')),
+    requested_ref text NOT NULL,
+    goal text NOT NULL,
+    target_requirements jsonb NOT NULL,
+    targets text[] NOT NULL,
+    spec_revision integer NOT NULL DEFAULT 1 CHECK(spec_revision>0),
+    source_manifest_id uuid,
+    commit_sha text,
+    source_resolution_id uuid,
+    source_repository_url text,
+    source_credential_id uuid,
+    source_bindings jsonb,
+    pinned_ref_oid text,
+    frozen_tags jsonb NOT NULL DEFAULT '{}',
+    publish_error text,
+    published_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(tenant_id,project_id,id),
+    CHECK(octet_length(version)<=100 AND version ~ '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$')
 );
 
-CREATE TABLE runtime_intents (
+CREATE TABLE release_deliveries (
+    release_id uuid PRIMARY KEY,
+    build_id uuid NOT NULL UNIQUE,
+    source_manifest_id uuid NOT NULL,
+    spec_revision integer NOT NULL,
+    manifest jsonb NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE release_publication_leases (
+    release_id uuid PRIMARY KEY,
+    generation bigint NOT NULL,
+    token_hash text NOT NULL,
+    expires_at timestamptz NOT NULL
+);
+
+CREATE TABLE planning_intents (
     id bigint NOT NULL,
     run_id uuid NOT NULL,
     version bigint NOT NULL,
@@ -936,16 +978,16 @@ CREATE TABLE runtime_intents (
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
-CREATE SEQUENCE runtime_intents_id_seq
+CREATE SEQUENCE planning_intents_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
 
-ALTER SEQUENCE runtime_intents_id_seq OWNED BY runtime_intents.id;
+ALTER SEQUENCE planning_intents_id_seq OWNED BY planning_intents.id;
 
-CREATE TABLE runtime_receipts (
+CREATE TABLE planning_receipts (
     event_id uuid NOT NULL,
     input_hash text NOT NULL,
     result jsonb NOT NULL,
@@ -1022,6 +1064,7 @@ CREATE TABLE source_tasks (
     tenant_id uuid NOT NULL,
     project_id uuid NOT NULL,
     build_id uuid,
+    release_id uuid,
     purpose text NOT NULL,
     repository_url text NOT NULL,
     reference text NOT NULL,
@@ -1130,7 +1173,7 @@ ALTER TABLE ONLY log_chunks ALTER COLUMN id SET DEFAULT nextval('log_chunks_id_s
 
 ALTER TABLE ONLY planning_events ALTER COLUMN id SET DEFAULT nextval('planning_events_id_seq'::regclass);
 
-ALTER TABLE ONLY runtime_intents ALTER COLUMN id SET DEFAULT nextval('runtime_intents_id_seq'::regclass);
+ALTER TABLE ONLY planning_intents ALTER COLUMN id SET DEFAULT nextval('planning_intents_id_seq'::regclass);
 
 ALTER TABLE ONLY api_tokens
     ADD CONSTRAINT api_tokens_pkey PRIMARY KEY (id);
@@ -1321,20 +1364,18 @@ ALTER TABLE ONLY release_images
 ALTER TABLE ONLY releases
     ADD CONSTRAINT releases_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY releases
-    ADD CONSTRAINT releases_project_id_idempotency_key_key UNIQUE (project_id, idempotency_key);
 
 ALTER TABLE ONLY releases
     ADD CONSTRAINT releases_project_id_version_key UNIQUE (project_id, version);
 
-ALTER TABLE ONLY runtime_intents
-    ADD CONSTRAINT runtime_intents_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY planning_intents
+    ADD CONSTRAINT planning_intents_pkey PRIMARY KEY (id);
 
-ALTER TABLE ONLY runtime_intents
-    ADD CONSTRAINT runtime_intents_run_id_version_key UNIQUE (run_id, version);
+ALTER TABLE ONLY planning_intents
+    ADD CONSTRAINT planning_intents_run_id_version_key UNIQUE (run_id, version);
 
-ALTER TABLE ONLY runtime_receipts
-    ADD CONSTRAINT runtime_receipts_pkey PRIMARY KEY (event_id);
+ALTER TABLE ONLY planning_receipts
+    ADD CONSTRAINT planning_receipts_pkey PRIMARY KEY (event_id);
 
 ALTER TABLE ONLY sessions
     ADD CONSTRAINT sessions_pkey PRIMARY KEY (token_hash);
@@ -1542,7 +1583,7 @@ CREATE TRIGGER route_slug BEFORE INSERT OR UPDATE OF slug, tenant_id ON projects
 
 CREATE TRIGGER route_slug BEFORE INSERT OR UPDATE OF slug ON tenants FOR EACH ROW EXECUTE FUNCTION assign_route_slug();
 
-CREATE TRIGGER runtime_outbox AFTER INSERT OR UPDATE OF state ON planning_runs FOR EACH ROW EXECUTE FUNCTION publish_runtime_intent();
+CREATE TRIGGER planning_outbox AFTER INSERT OR UPDATE OF state ON planning_runs FOR EACH ROW EXECUTE FUNCTION publish_planning_intent();
 
 CREATE TRIGGER signing_version_immutable BEFORE UPDATE ON signing_versions FOR EACH ROW EXECUTE FUNCTION immutable_signing_version();
 
@@ -1552,7 +1593,7 @@ CREATE TRIGGER z_source_execution_scope BEFORE INSERT OR UPDATE OF tenant_id, bu
 
 CREATE TRIGGER source_manifest_immutable BEFORE UPDATE ON source_manifests FOR EACH ROW EXECUTE FUNCTION source_manifest_immutable();
 
-CREATE TRIGGER z_source_task_scope BEFORE INSERT OR UPDATE OF tenant_id, project_id, build_id, bindings ON source_tasks FOR EACH ROW EXECUTE FUNCTION source_task_scope();
+CREATE TRIGGER z_source_task_scope BEFORE INSERT OR UPDATE OF tenant_id, project_id, build_id, release_id, bindings ON source_tasks FOR EACH ROW EXECUTE FUNCTION source_task_scope();
 
 CREATE TRIGGER source_tasks_admission BEFORE INSERT ON source_tasks FOR EACH ROW EXECUTE FUNCTION project_membership_admission();
 
@@ -1614,7 +1655,7 @@ CREATE CONSTRAINT TRIGGER tenant_owner_check AFTER INSERT OR DELETE OR UPDATE ON
 
 CREATE CONSTRAINT TRIGGER tenant_owner_check AFTER INSERT OR UPDATE ON tenants DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION verify_tenant_owner();
 
-CREATE TRIGGER tenant_ref_build_id BEFORE INSERT OR UPDATE OF tenant_id, build_id ON releases FOR EACH ROW EXECUTE FUNCTION check_tenant_reference('builds', 'build_id');
+
 
 CREATE TRIGGER tenant_ref_credential_id BEFORE INSERT OR UPDATE OF tenant_id, credential_id ON projects FOR EACH ROW EXECUTE FUNCTION check_tenant_reference('credentials', 'credential_id');
 
@@ -1953,8 +1994,7 @@ ALTER TABLE ONLY release_images
 ALTER TABLE ONLY release_images
     ADD CONSTRAINT release_images_release_id_fkey FOREIGN KEY (release_id) REFERENCES releases(id);
 
-ALTER TABLE ONLY releases
-    ADD CONSTRAINT releases_build_id_fkey FOREIGN KEY (build_id) REFERENCES builds(id);
+
 
 ALTER TABLE ONLY releases
     ADD CONSTRAINT releases_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id);
@@ -1962,11 +2002,11 @@ ALTER TABLE ONLY releases
 ALTER TABLE ONLY releases
     ADD CONSTRAINT releases_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id);
 
-ALTER TABLE ONLY runtime_intents
-    ADD CONSTRAINT runtime_intents_run_id_fkey FOREIGN KEY (run_id) REFERENCES planning_runs(id);
+ALTER TABLE ONLY planning_intents
+    ADD CONSTRAINT planning_intents_run_id_fkey FOREIGN KEY (run_id) REFERENCES planning_runs(id);
 
-ALTER TABLE ONLY runtime_receipts
-    ADD CONSTRAINT runtime_receipts_run_id_fkey FOREIGN KEY (run_id) REFERENCES planning_runs(id);
+ALTER TABLE ONLY planning_receipts
+    ADD CONSTRAINT planning_receipts_run_id_fkey FOREIGN KEY (run_id) REFERENCES planning_runs(id);
 
 ALTER TABLE ONLY sessions
     ADD CONSTRAINT sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id);
@@ -2048,3 +2088,62 @@ CREATE FUNCTION build_node_allowed(build uuid, node uuid) RETURNS boolean
  THEN b.planning_context->'node_access'->'ids' ? n.id::text
  ELSE coalesce(b.planning_context->'node_access'->'ids',b.planning_context->'pool_ids','[]') ? n.pool_id::text END)
 $$;
+
+-- Release 固定版本、目标修订和源码身份；构建只接收草稿的快照。
+CREATE FUNCTION release_contract_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE r releases%ROWTYPE;
+BEGIN
+ IF TG_TABLE_NAME='releases' THEN
+  IF TG_OP='UPDATE' THEN
+   IF NEW.version<>OLD.version OR NEW.requested_ref<>OLD.requested_ref OR NEW.project_id<>OLD.project_id OR NEW.tenant_id<>OLD.tenant_id THEN RAISE EXCEPTION 'release identity is immutable' USING ERRCODE='23514'; END IF;
+   IF OLD.source_repository_url IS NOT NULL AND (NEW.source_repository_url IS DISTINCT FROM OLD.source_repository_url OR NEW.source_credential_id IS DISTINCT FROM OLD.source_credential_id OR NEW.source_bindings IS DISTINCT FROM OLD.source_bindings) THEN RAISE EXCEPTION 'release source references are immutable' USING ERRCODE='23514'; END IF;
+   IF OLD.pinned_ref_oid IS NOT NULL AND NEW.pinned_ref_oid IS DISTINCT FROM OLD.pinned_ref_oid THEN RAISE EXCEPTION 'release root pin is immutable' USING ERRCODE='23514'; END IF;
+   IF EXISTS(SELECT 1 FROM jsonb_each(OLD.frozen_tags) old_tag WHERE NEW.frozen_tags->old_tag.key IS DISTINCT FROM old_tag.value) THEN RAISE EXCEPTION 'release frozen tags are immutable' USING ERRCODE='23514'; END IF;
+   IF OLD.status='published' AND NEW.status<>'published' THEN RAISE EXCEPTION 'published release is immutable' USING ERRCODE='23514'; END IF;
+   IF OLD.source_manifest_id IS NOT NULL AND (NEW.source_manifest_id IS DISTINCT FROM OLD.source_manifest_id OR NEW.commit_sha IS DISTINCT FROM OLD.commit_sha) THEN RAISE EXCEPTION 'release source is immutable' USING ERRCODE='23514'; END IF;
+   IF OLD.status<>'draft' AND (NEW.goal IS DISTINCT FROM OLD.goal OR NEW.targets IS DISTINCT FROM OLD.targets OR NEW.target_requirements IS DISTINCT FROM OLD.target_requirements OR NEW.spec_revision<>OLD.spec_revision) THEN RAISE EXCEPTION 'release is sealed' USING ERRCODE='23514'; END IF;
+  END IF;
+  IF EXISTS(SELECT 1 FROM unnest(string_to_array(substring(NEW.version from position('-' in NEW.version)+1),'.')) v WHERE v ~ '^[0-9]+$' AND length(v)>1 AND left(v,1)='0') THEN RAISE EXCEPTION 'invalid SemVer prerelease' USING ERRCODE='23514'; END IF;
+ ELSE
+  IF TG_OP='INSERT' THEN SELECT * INTO r FROM releases WHERE id=NEW.release_id FOR UPDATE; ELSE SELECT * INTO r FROM releases WHERE id=NEW.release_id; END IF;
+  IF r.id IS NULL OR r.project_id<>NEW.project_id OR r.tenant_id<>NEW.tenant_id OR r.version<>NEW.release_version THEN RAISE EXCEPTION 'build release mismatch' USING ERRCODE='23514'; END IF;
+  IF TG_OP='INSERT' AND r.source_repository_url IS NOT NULL AND (NEW.source_repository_url IS DISTINCT FROM r.source_repository_url OR NEW.source_credential_id IS DISTINCT FROM r.source_credential_id OR NEW.planning_context->'source_credentials' IS DISTINCT FROM r.source_bindings) THEN RAISE EXCEPTION 'build source snapshot mismatch' USING ERRCODE='23514'; END IF;
+  IF TG_OP='INSERT' AND (r.status<>'draft' OR NEW.spec_revision<>r.spec_revision OR NEW.requested_ref<>r.requested_ref OR NEW.target_requirements<>r.target_requirements OR NEW.selected_targets<>r.targets) THEN RAISE EXCEPTION 'build requires current release contract' USING ERRCODE='23514'; END IF;
+  IF TG_OP='UPDATE' AND (NEW.release_id<>OLD.release_id OR NEW.release_version<>OLD.release_version OR NEW.spec_revision<>OLD.spec_revision OR NEW.requested_ref<>OLD.requested_ref OR NEW.selected_targets<>OLD.selected_targets OR NEW.target_requirements<>OLD.target_requirements OR NEW.source_repository_url IS DISTINCT FROM OLD.source_repository_url OR NEW.source_credential_id IS DISTINCT FROM OLD.source_credential_id OR NEW.planning_context->'source_credentials' IS DISTINCT FROM OLD.planning_context->'source_credentials') THEN RAISE EXCEPTION 'build release snapshot is immutable' USING ERRCODE='23514'; END IF;
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER z_release_contract BEFORE INSERT OR UPDATE OF tenant_id,project_id,release_id,release_version,spec_revision,requested_ref,selected_targets,target_requirements,source_repository_url,source_credential_id,planning_context ON builds FOR EACH ROW EXECUTE FUNCTION release_contract_guard();
+CREATE TRIGGER z_release_contract BEFORE INSERT OR UPDATE ON releases FOR EACH ROW EXECUTE FUNCTION release_contract_guard();
+ALTER TABLE builds ADD FOREIGN KEY(tenant_id,project_id,release_id) REFERENCES releases(tenant_id,project_id,id);
+ALTER TABLE releases ADD FOREIGN KEY(tenant_id,project_id,source_manifest_id) REFERENCES source_manifests(tenant_id,project_id,id);
+ALTER TABLE source_tasks ADD FOREIGN KEY(release_id) REFERENCES releases(id);
+ALTER TABLE release_deliveries ADD FOREIGN KEY(release_id) REFERENCES releases(id);
+ALTER TABLE release_deliveries ADD FOREIGN KEY(build_id) REFERENCES builds(id);
+ALTER TABLE release_deliveries ADD FOREIGN KEY(source_manifest_id) REFERENCES source_manifests(id);
+ALTER TABLE release_publication_leases ADD FOREIGN KEY(release_id) REFERENCES releases(id) ON DELETE CASCADE;
+CREATE FUNCTION immutable_release_record() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'release delivery is immutable' USING ERRCODE='23514'; END $$;
+CREATE TRIGGER immutable_delivery BEFORE UPDATE ON release_deliveries FOR EACH ROW EXECUTE FUNCTION immutable_release_record();
+CREATE TRIGGER immutable_release_images BEFORE UPDATE ON release_images FOR EACH ROW EXECUTE FUNCTION immutable_release_record();
+CREATE TRIGGER immutable_release_artifacts BEFORE UPDATE ON release_artifacts FOR EACH ROW EXECUTE FUNCTION immutable_release_record();
+
+CREATE FUNCTION release_delivery_scope() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE release_row releases%ROWTYPE; selected_build builds%ROWTYPE;
+BEGIN
+ SELECT * INTO release_row FROM releases WHERE id=NEW.release_id;
+ IF TG_TABLE_NAME='release_deliveries' THEN
+  SELECT * INTO selected_build FROM builds WHERE id=NEW.build_id;
+  IF selected_build.release_id IS DISTINCT FROM release_row.id OR selected_build.tenant_id IS DISTINCT FROM release_row.tenant_id OR selected_build.project_id IS DISTINCT FROM release_row.project_id OR selected_build.source_manifest_id IS DISTINCT FROM NEW.source_manifest_id OR selected_build.spec_revision<>NEW.spec_revision OR release_row.spec_revision<>NEW.spec_revision OR release_row.source_manifest_id IS DISTINCT FROM NEW.source_manifest_id THEN RAISE EXCEPTION 'delivery build scope mismatch' USING ERRCODE='23514'; END IF;
+ ELSIF TG_TABLE_NAME='release_images' THEN
+  IF NEW.version<>release_row.version OR NOT EXISTS(SELECT 1 FROM image_artifacts image_row JOIN jobs job_row ON job_row.id=image_row.job_id JOIN builds build_row ON build_row.id=job_row.build_id WHERE image_row.id=NEW.image_id AND build_row.release_id=release_row.id AND image_row.tenant_id=release_row.tenant_id AND image_row.project_id=release_row.project_id AND build_row.spec_revision=release_row.spec_revision AND image_row.digest=NEW.root_digest) THEN RAISE EXCEPTION 'delivery image scope mismatch' USING ERRCODE='23514'; END IF;
+ ELSE
+  IF NOT EXISTS(SELECT 1 FROM artifacts artifact_row JOIN attempts attempt_row ON attempt_row.id=artifact_row.attempt_id JOIN jobs job_row ON job_row.id=attempt_row.job_id JOIN builds build_row ON build_row.id=job_row.build_id WHERE artifact_row.id=NEW.artifact_id AND build_row.release_id=release_row.id AND build_row.tenant_id=release_row.tenant_id AND build_row.project_id=release_row.project_id AND build_row.spec_revision=release_row.spec_revision) THEN RAISE EXCEPTION 'delivery artifact scope mismatch' USING ERRCODE='23514'; END IF;
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER release_delivery_scope BEFORE INSERT ON release_deliveries FOR EACH ROW EXECUTE FUNCTION release_delivery_scope();
+CREATE TRIGGER release_delivery_scope BEFORE INSERT ON release_images FOR EACH ROW EXECUTE FUNCTION release_delivery_scope();
+CREATE TRIGGER release_delivery_scope BEFORE INSERT ON release_artifacts FOR EACH ROW EXECUTE FUNCTION release_delivery_scope();
+
+ALTER TABLE releases ADD FOREIGN KEY(source_credential_id) REFERENCES credentials(id);
+CREATE TRIGGER tenant_ref_source_credential_id BEFORE INSERT OR UPDATE OF tenant_id,source_credential_id ON releases FOR EACH ROW EXECUTE FUNCTION check_tenant_reference('credentials','source_credential_id');

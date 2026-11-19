@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 已保存的隔离命名空间与遥测服务。
-[OUTPUT]: 验证离线重放，保存白名单构建、准入与 Pod 执行台账诊断。
+[OUTPUT]: 经 Release 验证遥测离线重放，保存白名单执行诊断。
 [POS]: 只改变遥测副本；准入检查保留原池容量。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -38,19 +38,19 @@ def record_build(a, build, detail=None):
         snapshot['runs'] = [{key: run.get(key) for key in ('id', 'status', 'generation')} for run in runs]
         if runs:
             run_id = str(uuid.UUID(runs[0]['id']))
-            raw = a.sql('planner', "SELECT jsonb_build_object('id',id,'status',status,'generation',lifecycle->'generation','calls',lifecycle->'calls','pending',lifecycle->'pending','canceled',lifecycle->'canceled','deadline_ms',lifecycle->'deadline_ms') FROM runtime_runs WHERE id='" + run_id + "'")
+            raw = a.sql('planning', "SELECT jsonb_build_object('id',id,'status',status,'generation',lifecycle->'generation','calls',lifecycle->'calls','pending',lifecycle->'pending','canceled',lifecycle->'canceled','deadline_ms',lifecycle->'deadline_ms') FROM planning_runs WHERE id='" + run_id + "'")
             state = json.loads(raw) if raw else None
             snapshot['current_run'] = None if state is None else {key: state.get(key) for key in
                 ('id', 'status', 'generation', 'calls', 'pending', 'canceled', 'deadline_ms')}
     except (OSError, RuntimeError, ValueError, KeyError):
         snapshot['runtime_unavailable'] = True
     try:
-        resources = json.loads(a.kubectl('get', 'sourcetasks,agentruns,agentpools', '-o', 'json'))['items']
+        resources = json.loads(a.kubectl('get', 'sourcetasks.planning.artifactory.dev,planningruns,planningpools', '-o', 'json'))['items']
         run_ids = {run['id'] for run in runs}
         snapshot['resources'] = []
         for value in resources:
             spec = value.get('spec', {})
-            if (value['kind'] != 'AgentPool' and spec.get('taskId') != build and
+            if (value['kind'] != 'PlanningPool' and spec.get('taskId') != build and
                     spec.get('runId') not in run_ids):
                 continue
             status = value.get('status', {})
@@ -74,11 +74,11 @@ def record_build(a, build, detail=None):
 
 
 def require_admission(a):
-    pool = json.loads(a.kubectl('get', 'agentpool', 'default', '-o', 'json'))
+    pool = json.loads(a.kubectl('get', 'planningpool', 'default', '-o', 'json'))
     status = pool.get('status', {})
     a.evidence['telemetry_pool'] = {'max_active': pool['spec']['maxActive'], 'phase': status.get('phase')}
     (a.run / 'evidence.json').write_text(json.dumps(a.evidence, indent=2))
-    a.check('telemetry build has an admitting AgentPool', pool['spec']['maxActive'] > 0 and
+    a.check('telemetry build has an admitting PlanningPool', pool['spec']['maxActive'] > 0 and
             status.get('phase') == 'Ready' and status.get('observedGeneration') == pool['metadata']['generation'])
 
 
@@ -89,17 +89,17 @@ def run(args):
     try:
         a.resume()
         require_admission(a)
-        for database in ('business', 'planner', 'telemetry'):
+        for database in ('business', 'planning', 'telemetry'):
             a.check(database+' uses TimescaleDB', a.sql(database, "SELECT extversion FROM pg_extension WHERE extname='timescaledb'") == '2.32.0')
         node = next(n for n in a.api('/api/v1/nodes') if n['name'] == 'operator-native-device' and n['online'])
         latest = a.wait(lambda: (v if (v := a.api('/api/v1/nodes/'+node['id']+'/telemetry'))['host'] and v['host']['fresh'] and v['inventory'] else None))
         inventory = latest['inventory']['inventory']
         a.check('versioned OS, hardware, quota and tool inventory is available', inventory['logical_cpus'] > 0 and inventory['physical_memory_bytes'] > 0 and inventory['tools']['git']['available'] and 'collectors' in inventory)
-        a.check('business tables remain ordinary relational tables', all(a.sql(db,"SELECT count(*) FROM timescaledb_information.hypertables WHERE hypertable_schema='public'") == '0' for db in ('business','planner')))
+        a.check('business tables remain ordinary relational tables', all(a.sql(db,"SELECT count(*) FROM timescaledb_information.hypertables WHERE hypertable_schema='public'") == '0' for db in ('business','planning')))
         a.kubectl('scale','deploy/artifactory-telemetry','--replicas=0');stopped=True
         a.wait(lambda: not json.loads(a.kubectl('get','pods','-l','app.kubernetes.io/name=artifactory-telemetry','-o','json'))['items'])
         a.service_request(39443,'/test/mode',{'build_seconds':25})
-        build = a.api(f'/api/v1/projects/{a.project}/builds',{'ref':'v-fixture','goal':'Build dist/result.txt while telemetry is unavailable','target_requirements':[{'os':'linux','arch':a.arch}]})['id']
+        build = a.create_build(a.project, 'Build dist/result.txt while telemetry is unavailable')['id']
         def terminal():
             value=record_build(a, build)
             if value is None:return None

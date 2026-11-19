@@ -29,7 +29,7 @@ impl TelemetryStore {
     pub async fn ingest(
         &self,
         node: Uuid,
-        batch: &artifactory_telemetry_model::Batch,
+        batch: &artifactory_emissary_protocol::telemetry::Batch,
         bytes: &[u8],
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<bool, Status> {

@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖 Axum 响应与业务错误分类。
+//! [OUTPUT]: 提供统一 API 错误、状态码与去敏错误正文。
+//! [POS]: HTTP 错误边界；数据库约束转换由 store/errors 定义。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use axum::{
     Json,
     http::StatusCode,

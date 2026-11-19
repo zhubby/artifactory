@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖业务构建任务、租户授权和加密任务材料。
-//! [OUTPUT]: 保存候选、失败诊断与 CR UID，事务确认成功并登记唯一制品。
+//! [OUTPUT]: 保存隔离候选与 CR UID；外仓仅分发已发布 Release 的固定版本。
 //! [POS]: Control 是成功写入者；网络校验在事务外完成。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
@@ -51,6 +51,27 @@ const ROW: &str = "SELECT to_jsonb(e)||jsonb_build_object('timeout_seconds',grea
 // 构建锁先于执行锁，顺序与取消、重试一致。
 const LIVE: &str = "SELECT e.id FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=e.project_id JOIN tenants t ON t.id=e.tenant_id WHERE e.id=$1 AND e.status IN ('preparing','running') AND NOT e.cancel_requested AND NOT b.cancel_requested AND e.deadline_at>clock_timestamp() AND b.source_manifest_id=e.source_manifest_id AND j.plan_revision_id IS NOT DISTINCT FROM e.plan_revision_id AND p.status IN ('active','draining') AND t.status IN ('active','draining') AND (e.operation='publish' OR j.status IN ('leased','running'))";
 impl ControlStore {
+    pub(crate) async fn build_release(&self, build: Uuid) -> anyhow::Result<Uuid> {
+        Ok(sql::scalar(
+            &mut self.pool.clone(),
+            "SELECT release_id FROM builds WHERE id=$1",
+            params![build],
+        )
+        .await?)
+    }
+    pub(crate) async fn release_is_published(&self, release: Uuid) -> anyhow::Result<bool> {
+        Ok(sql::scalar(
+            &mut self.pool.clone(),
+            "SELECT status='published' FROM releases WHERE id=$1",
+            params![release],
+        )
+        .await?)
+    }
+    pub(crate) async fn release_workloads(&self, release: Uuid) -> anyhow::Result<Value> {
+        Ok(sql::scalar(&mut self.pool.clone(),
+            "SELECT jsonb_build_object('sources',(SELECT coalesce(jsonb_agg(s.id),'[]') FROM source_tasks s LEFT JOIN builds b ON b.id=s.build_id WHERE s.release_id=$1 OR b.release_id=$1),'planning',(SELECT coalesce(jsonb_agg(p.id),'[]') FROM planning_runs p JOIN builds b ON b.id=p.build_id WHERE b.release_id=$1),'images',(SELECT coalesce(jsonb_agg(e.id),'[]') FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id WHERE b.release_id=$1))",
+            params![release]).await?)
+    }
     pub async fn image_execution(&self, id: Uuid) -> anyhow::Result<ImageExecution> {
         Ok(serde_json::from_value(
             sql::scalar::<Value>(
@@ -135,9 +156,21 @@ impl ControlStore {
             .image
             .ok_or_else(|| anyhow::anyhow!("image specification required"))?;
         spec.validate()?;
+        ensure!(
+            spec.tags.is_empty(),
+            "image tags are assigned only by Release publication"
+        );
+        ensure!(
+            !spec
+                .build_args
+                .keys()
+                .any(|key| key.starts_with("ARTIFACTORY_RELEASE_")),
+            "Release build arguments are reserved"
+        );
         let candidate = format!("{tenant}/{project}/builds/{}", id.simple());
-        let destination = format!("{tenant}/{project}/images/{}", spec.name);
-        sql::execute(&mut tx,"INSERT INTO image_executions(id,tenant_id,project_id,job_id,source_manifest_id,plan_revision_id,build_token_hash,publish_token_hash,spec,candidate_repository,destination_repository,tags,deadline_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now()+($13::int+600)*interval '1 second')",params![id,tenant,project,job,row["snapshot"].as_str().unwrap().parse::<Uuid>()?,row["plan"].as_str().map(Uuid::parse_str).transpose()?,build_hash,publish_hash,serde_json::to_value(&spec)?,candidate,destination,&spec.tags,target.timeout_seconds as i32]).await?;
+        let destination = candidate.clone();
+        let tags = vec!["candidate".to_owned()];
+        sql::execute(&mut tx,"INSERT INTO image_executions(id,tenant_id,project_id,job_id,source_manifest_id,plan_revision_id,build_token_hash,publish_token_hash,spec,candidate_repository,destination_repository,tags,deadline_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now()+($13::int+600)*interval '1 second')",params![id,tenant,project,job,row["snapshot"].as_str().unwrap().parse::<Uuid>()?,row["plan"].as_str().map(Uuid::parse_str).transpose()?,build_hash,publish_hash,serde_json::to_value(&spec)?,candidate,destination,tags,target.timeout_seconds as i32]).await?;
         sql::execute(
             &mut tx,
             "UPDATE jobs SET status='running' WHERE id=$1",
@@ -469,7 +502,7 @@ impl ControlStore {
                 .validate(true)
                 .is_ok()
             });
-        Ok(sql::scalars(&mut self.pool.clone(),"SELECT to_jsonb(i)||jsonb_build_object('target',j.target,'build_id',j.build_id,'build_number',b.number,'project_slug',p.slug,'name',e.spec->>'name','registry',$4::text) FROM image_artifacts i JOIN image_executions e ON e.id=i.execution_id JOIN jobs j ON j.id=i.job_id JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=i.project_id WHERE i.tenant_id=$1 AND i.project_id=ANY($2) AND ($3::uuid IS NULL OR i.project_id=$3) ORDER BY i.created_at DESC LIMIT 100",params![self.tenant()?,visible,project,registry]).await?)
+        Ok(sql::scalars(&mut self.pool.clone(),"SELECT to_jsonb(i)||jsonb_build_object('target',j.target,'build_id',j.build_id,'build_number',b.number,'project_slug',p.slug,'release_id',b.release_id,'release_version',b.release_version,'release_status',(SELECT status FROM releases WHERE id=b.release_id),'name',e.spec->>'name','registry',$4::text) FROM image_artifacts i JOIN image_executions e ON e.id=i.execution_id JOIN jobs j ON j.id=i.job_id JOIN builds b ON b.id=j.build_id JOIN projects p ON p.id=i.project_id WHERE i.tenant_id=$1 AND i.project_id=ANY($2) AND ($3::uuid IS NULL OR i.project_id=$3) ORDER BY i.created_at DESC LIMIT 100",params![self.tenant()?,visible,project,registry]).await?)
     }
     pub async fn image_history(&self, build: Uuid) -> anyhow::Result<Vec<Value>> {
         Ok(sql::scalars(&mut self.pool.clone(),"SELECT to_jsonb(e)-'task_envelope'-'build_token_hash'-'publish_token_hash' FROM image_executions e JOIN jobs j ON j.id=e.job_id WHERE j.build_id=$1 ORDER BY e.created_at",params![build]).await?)
@@ -486,58 +519,41 @@ impl ControlStore {
         tags: &[String],
         hash: &str,
     ) -> Result<()> {
-        if destination.is_none() && (repository.is_some() || !tags.is_empty()) {
-            return Err(ApiError::BadRequest(
-                "internal publication destination is immutable".into(),
-            ));
+        if destination.is_none()
+            || repository.is_none_or(|repo| !artifactory_image_protocol::repository(repo))
+            || !tags.is_empty()
+        {
+            return Err(ApiError::BadRequest("external distribution requires a credential and repository; tags come from Release".into()));
         }
         let mut db = self.pool.clone();
         let mut tx = db.transaction().await?;
-        let project: Uuid = sql::optional_scalar(
-            &mut tx,
-            "SELECT project_id FROM image_executions WHERE id=$1 AND tenant_id=$2",
-            params![parent, self.tenant()?],
-        )
-        .await?
-        .ok_or(ApiError::NotFound)?;
+        let selected: Value = sql::optional_scalar(&mut tx,
+            "SELECT jsonb_build_object('project',r.project_id,'version',r.version,'repository',ri.repository,'digest',ri.root_digest) FROM releases r JOIN release_deliveries d ON d.release_id=r.id JOIN release_images ri ON ri.release_id=r.id JOIN image_artifacts a ON a.id=ri.image_id JOIN image_executions e ON e.id=a.execution_id WHERE e.id=$1 AND r.tenant_id=$2 AND r.status='published' AND e.status='succeeded' FOR SHARE OF r",
+            params![parent,self.tenant()?]).await?.ok_or_else(|| ApiError::Conflict("only an image selected by a published Release can be distributed".into()))?;
+        let project: Uuid =
+            serde_json::from_value(selected["project"].clone()).map_err(anyhow::Error::from)?;
+        self.scope
+            .as_ref()
+            .ok_or(ApiError::Unauthorized)?
+            .project(project, "release")?;
         sql::execute(
             &mut tx,
             "SELECT require_active_project($1)",
             params![project],
         )
         .await?;
-        sql::execute(&mut tx,"SELECT b.id FROM builds b JOIN jobs j ON j.build_id=b.id JOIN image_executions e ON e.job_id=j.id WHERE e.id=$1 FOR UPDATE OF b,j",params![parent]).await?;
-        let row:Value=sql::optional_scalar(&mut tx,"SELECT to_jsonb(e) FROM image_executions e WHERE id=$1 AND tenant_id=$2 AND operation='build' AND NOT cancel_requested AND EXISTS(SELECT 1 FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=e.job_id AND NOT b.cancel_requested AND j.plan_revision_id IS NOT DISTINCT FROM e.plan_revision_id AND ($3::uuid IS NOT NULL OR (j.status='failed' AND e.id=(SELECT id FROM image_executions WHERE job_id=j.id AND operation='build' ORDER BY created_at DESC,id DESC LIMIT 1)))) FOR UPDATE",params![parent,self.tenant()?,destination]).await?.ok_or(ApiError::NotFound)?;
-        let project: Uuid =
-            serde_json::from_value(row["project_id"].clone()).map_err(anyhow::Error::from)?;
-        self.scope
-            .as_ref()
-            .ok_or(ApiError::Unauthorized)?
-            .project(project, "release")?;
-        if destination.is_some() {
-            let credential: Option<Uuid> = sql::optional_scalar(&mut tx,"SELECT id FROM image_credentials WHERE id=$1 AND project_id=$2 AND tenant_id=$3 AND kind='registry' AND enabled FOR SHARE",params![destination,project,self.tenant()?]).await?;
-            if credential.is_none() {
-                return Err(ApiError::BadRequest(
-                    "image credential unavailable for project".into(),
-                ));
-            }
-            if row["status"] != "succeeded" {
-                return Err(ApiError::Conflict(
-                    "publish requires a verified image".into(),
-                ));
-            }
-        } else if row["status"] != "publish_failed" {
-            return Err(ApiError::Conflict(
-                "only a failed publication can be retried".into(),
+        let credential: Option<Uuid> = sql::optional_scalar(&mut tx,"SELECT id FROM image_credentials WHERE id=$1 AND project_id=$2 AND tenant_id=$3 AND kind='registry' AND enabled FOR SHARE",params![destination,project,self.tenant()?]).await?;
+        if credential.is_none() {
+            return Err(ApiError::BadRequest(
+                "image credential unavailable for project".into(),
             ));
         }
-        let n=sql::execute(&mut tx,"INSERT INTO image_executions(id,tenant_id,project_id,job_id,source_manifest_id,plan_revision_id,parent_id,operation,build_token_hash,publish_token_hash,spec,results,candidate_repository,destination_repository,destination_credential,destination_registry,tags,root_digest,deadline_at) SELECT $2,tenant_id,project_id,job_id,source_manifest_id,plan_revision_id,id,'publish','',$3,spec,results,CASE WHEN $4::uuid IS NULL THEN candidate_repository ELSE destination_repository END,CASE WHEN $4::uuid IS NULL THEN destination_repository ELSE $5 END,$4,(SELECT registry_origin FROM image_credentials WHERE id=$4),CASE WHEN $4::uuid IS NULL THEN tags ELSE $6 END,CASE WHEN $4::uuid IS NULL THEN NULL ELSE root_digest END,now()+interval '1 hour' FROM image_executions WHERE id=$1",params![parent,id,hash,destination,repository,tags]).await?;
+        let version = selected["version"].as_str().ok_or(ApiError::NotFound)?;
+        let source = selected["repository"].as_str().ok_or(ApiError::NotFound)?;
+        let digest = selected["digest"].as_str().ok_or(ApiError::NotFound)?;
+        let n=sql::execute(&mut tx,"INSERT INTO image_executions(id,tenant_id,project_id,job_id,source_manifest_id,plan_revision_id,parent_id,operation,build_token_hash,publish_token_hash,spec,results,candidate_repository,destination_repository,destination_credential,destination_registry,tags,root_digest,deadline_at) SELECT $2,tenant_id,project_id,job_id,source_manifest_id,plan_revision_id,id,'publish','',$3,spec,results,$7,$5,$4,(SELECT registry_origin FROM image_credentials WHERE id=$4),$6,$8,now()+interval '1 hour' FROM image_executions WHERE id=$1",params![parent,id,hash,destination,repository,vec![version.to_owned()],source,digest]).await?;
         if n != 1 {
             return Err(ApiError::NotFound);
-        }
-        if destination.is_none() {
-            sql::execute(&mut tx,"UPDATE jobs SET status='running' WHERE id=(SELECT job_id FROM image_executions WHERE id=$1)",params![parent]).await?;
-            sql::execute(&mut tx,"UPDATE builds SET status='running',finished_at=NULL WHERE id=(SELECT build_id FROM jobs WHERE id=(SELECT job_id FROM image_executions WHERE id=$1))",params![parent]).await?;
         }
         tx.commit().await?;
         Ok(())

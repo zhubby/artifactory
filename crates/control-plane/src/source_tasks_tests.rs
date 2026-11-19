@@ -93,7 +93,7 @@ fn source_fixture() -> (Pod, DynamicObject, Value) {
         "{cr_name}-a1-{}",
         &crate::crypto::hash(b"source-current")[..8]
     );
-    let owner = json!({"apiVersion":"agents.artifactory.dev/v1alpha1","kind":"SourceTask","name":cr_name,"uid":"source-current","controller":true});
+    let owner = json!({"apiVersion":"planning.artifactory.dev/v1alpha1","kind":"SourceTask","name":cr_name,"uid":"source-current","controller":true});
     let mut pod = pod(
         &name,
         &owner,
@@ -106,9 +106,9 @@ fn source_fixture() -> (Pod, DynamicObject, Value) {
     )]));
     let task = json!({"id":id,"tenant_id":Uuid::from_u128(2),"project_id":Uuid::from_u128(3),"purpose":"resolve","source_task_uid":"source-current"});
     let resource=serde_json::from_value(json!({
-        "apiVersion":"agents.artifactory.dev/v1alpha1","kind":"SourceTask",
+        "apiVersion":"planning.artifactory.dev/v1alpha1","kind":"SourceTask",
         "metadata":{"name":cr_name,"namespace":"test","uid":"source-current","generation":1},
-        "spec":{"taskId":id,"tenantId":task["tenant_id"],"projectId":task["project_id"],"purpose":"resolve","pool":std::env::var("ARTIFACTORY_AGENT_POOL").unwrap_or_else(|_|"default".into()),"timeoutSeconds":900,"cancelRequested":false},
+        "spec":{"taskId":id,"tenantId":task["tenant_id"],"projectId":task["project_id"],"purpose":"resolve","pool":std::env::var("ARTIFACTORY_PLANNING_POOL").unwrap_or_else(|_|"default".into()),"timeoutSeconds":900,"cancelRequested":false},
         "status":{"phase":"Running","observedGeneration":1,"execution":{"name":name,"uid":"pod-current","attempt":1,"deadlineMs":chrono::Utc::now().timestamp_millis()+60000}}
     })).unwrap();
     (pod, resource, task)
@@ -198,7 +198,7 @@ fn source_authorization_requires_direct_owner_pinned_cr_and_current_attempt_uid(
     let (pod, resource, task) = source_fixture();
     let owner = direct_owner(
         &pod,
-        "agents.artifactory.dev/v1alpha1",
+        "planning.artifactory.dev/v1alpha1",
         "SourceTask",
         &resource.name_any(),
     )
@@ -217,7 +217,7 @@ fn source_authorization_requires_direct_owner_pinned_cr_and_current_attempt_uid(
         assert!(
             direct_owner(
                 &changed,
-                "agents.artifactory.dev/v1alpha1",
+                "planning.artifactory.dev/v1alpha1",
                 "SourceTask",
                 &resource.name_any()
             )

@@ -1,7 +1,7 @@
 # image-operator/
 > L2 | Parent: ../AGENTS.md
 
-Cargo.toml: 声明独立镜像控制器、Runner、Publisher 与 CRD 程序。
+Cargo.toml: 声明镜像入口与共享执行依赖，最小监督入口不启用 Operator 特性。
 src/: 直接协调临时 Pod，以 UID 台账和收尾 Finalizer 防止重复执行。
 tests/: 验证 Pod API、逐容器收尾、UID 归属与失联容量。
 config/: 保存离线 Image CRD。

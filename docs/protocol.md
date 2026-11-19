@@ -1,12 +1,14 @@
 <!--
-[INPUT]: Emissary 公共协议、设备执行与 Runtime 身份。
+[INPUT]: Emissary 公共协议、设备执行与规划协调器身份。
 [OUTPUT]: 定义设备会话、执行租约与临时源码边界。
-[POS]: 设备通信入口；规划 Pod 的恢复细节由 Runtime 协议定义。
+[POS]: 设备通信入口；规划 Pod 的恢复细节由规划协调器协议定义。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
 # Emissary 协议与状态机
 
 公共契约位于 `proto/artifactory/emissary/v1/emissary.proto`，包名为 `artifactory.emissary.v1`。协议主版本为 1；不兼容的主版本在注册和 hello 时拒绝。控制平面和设备共用 Rust `emissary-protocol` crate，构建时由 Tonic/Prost 生成代码。设备不再提供旧 Go 协议或名称别名。
+
+同一 crate 的 `signing`、`telemetry` 和 `nodes` 模块分别定义签名材料、遥测记录与节点资源契约。遥测模型合并只调整 Rust 导入路径，保留设备 RPC、JSON 字段和元数据摘要。
 
 ## 连接与身份
 
@@ -66,7 +68,7 @@ Emissary 在租约内断线保持 Worker，重连后补报；无续租则本地�
 
 ## AI 与临时源码
 
-AI 规划由 Operator 直接创建 Kubernetes Pi Pod。Runtime 提供模型代理，保存累计调用预算、用量、截止时间、proposal 和分代会话。Worker 丢失后撤销旧授权；旧执行完成停机清理后，Operator 才创建新 generation 的 Pod。恢复不回放旧 checkpoint，不重置预算。协议细节见 [运行协议](runtime-protocol.md)。
+AI 规划由 Operator 直接创建 Kubernetes Pi Pod。规划协调器提供模型代理，保存累计调用预算、用量、截止时间、proposal 和分代会话。Worker 丢失后撤销旧授权；旧执行完成停机清理后，Operator 才创建新 generation 的 Pod。恢复不回放旧 checkpoint，不重置预算。协议细节见 [运行协议](planning-protocol.md)。
 
 Assignment 使用 `source_manifest_json` 传递固定元数据，包含仓库路径、上游 URL、commit、标签与 LFS OID。凭据不进入 Assignment。原生 Emissary 经 mTLS 调用 `Control.AcquireSourceMaterial`，请求包含 attempt、租约令牌和 Manifest digest；服务端验证节点身份、任务当前授权、租约、计划版本和源码清单。
 

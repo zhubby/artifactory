@@ -27,7 +27,7 @@ class ProjectVersionTests(unittest.TestCase):
                    'name = "artifactory-control-plane"\nversion = "0.1.0"\n\n'
                    '[[package]]\nname = "third-party"\nversion = "0.1.0"\n')
         for directory, name in [("web", "artifactory-console"),
-                                ("packages/agent-worker", "artifactory-agent-worker")]:
+                                ("packages/planning-worker", "artifactory-planning-worker")]:
             self.write_json(f"{directory}/package.json", {
                 "name": name, "version": "0.1.0", "dependencies": {"third-party": "0.1.0"},
             })
@@ -36,7 +36,7 @@ class ProjectVersionTests(unittest.TestCase):
                 "packages": {"": {"name": name, "version": "0.1.0"},
                              "node_modules/third-party": {"version": "0.1.0"}},
             })
-        for chart in ["artifactory", "artifactory-agent-operator"]:
+        for chart in ["artifactory", "artifactory-planning-operator"]:
             self.write(f"charts/{chart}/Chart.yaml", f"apiVersion: v2\nname: {chart}\n"
                        'version: 0.1.0\nappVersion: "0.1.0"\n')
         self.write("charts/artifactory-image-operator/Chart.yaml", "version: 0.1.0\nappVersion: 0.1.0\n")

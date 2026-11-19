@@ -112,7 +112,7 @@ impl Settings {
                     "telemetry endpoint requires an HTTPS host and port"
                 );
                 let query_url = required("ARTIFACTORY_TELEMETRY_URL")?;
-                artifactory_runtime_protocol::service::endpoint(&query_url)?;
+                artifactory_service_transport::service::endpoint(&query_url)?;
                 let token = required("ARTIFACTORY_TELEMETRY_TOKEN")?;
                 ensure!(
                     token.len() >= 32,

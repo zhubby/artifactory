@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖任务专属令牌、控制资源 URL 与服务 CA。
+//! [INPUT]: 依赖任务令牌、控制 URL、服务 CA 与共享脱敏。
 //! [OUTPUT]: 提供有界报告、脱敏失败日志、发布材料读取和心跳。
 //! [POS]: 工作 Pod 到控制平面的认证边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -67,7 +67,7 @@ impl Control {
         &self,
         platform: &str,
         error: &anyhow::Error,
-        secrets: artifactory_emissary::signing::redact::Secrets,
+        secrets: artifactory_execution_support::redact::Secrets,
         sequence: &AtomicI64,
     ) -> String {
         let text = crate::diagnostics::error_text(error, secrets)

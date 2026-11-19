@@ -43,7 +43,7 @@ class DataAccessBoundaries(unittest.TestCase):
     def test_operator_orchestration_obeys_the_same_boundary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
-            path = root / "operators/agent-operator/src/reconcile.rs"
+            path = root / "operators/planning-operator/src/reconcile.rs"
             path.parent.mkdir(parents=True)
             path.write_text("use toasty::Db;")
             self.assertTrue(violations(root))

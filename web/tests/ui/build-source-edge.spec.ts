@@ -1,97 +1,26 @@
 /**
- * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证build-source-edge页面行为。
- * [POS]: 使用模拟 API 的界面浏览器回归入口。
+ * [INPUT]: 依赖源码引用查询和 Release 创建表单。
+ * [OUTPUT]: 验证默认源码及迟到响应不覆盖手动输入。
+ * [POS]: Release 创建时固定源码入口的回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
-import { expect, test } from "@playwright/test";
-import { fixtureAPI, repositoryRefs, tenantURL } from "./fixtures";
-
-test("large reference lists keep the default and selected branch visible without losing search results", async ({
-  page,
-}) => {
-  await fixtureAPI(page);
-  const branches = Array.from({ length: 125 }, (_, index) => ({
-    name: `topic/${String(index).padStart(3, "0")}`,
-    ref: `refs/heads/topic/${String(index).padStart(3, "0")}`,
-    oid: "a".repeat(40),
-  }));
-  branches.push({
-    name: "zz-default",
-    ref: "refs/heads/zz-default",
-    oid: "b".repeat(40),
-  });
-  await page.route("**/api/v1/projects/project-main/refs", (route) =>
-    route.fulfill({
-      json: {
-        default_ref: "refs/heads/zz-default",
-        branches,
-        tags: [],
-      },
-    }),
-  );
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  const defaultBranch = page.getByRole("radio", {
-    name: "分支 zz-default",
-    exact: true,
-  });
-  await expect(defaultBranch).toBeChecked();
-  await defaultBranch.focus();
-  await page.keyboard.press("ArrowDown");
-  await expect(
-    page.getByRole("radio", { name: "分支 topic/000", exact: true }),
-  ).toBeChecked();
-  await page.keyboard.press("ArrowDown");
-  await expect(
-    page.getByRole("radio", { name: "分支 topic/001", exact: true }),
-  ).toBeChecked();
-  const search = page.getByRole("searchbox", { name: "搜索分支或标签" });
-  await search.fill("topic/124");
-  await page
-    .getByRole("radio", { name: "分支 topic/124", exact: true })
-    .check();
-  await search.clear();
-  await expect(
-    page.getByRole("radio", { name: "分支 topic/124", exact: true }),
-  ).toBeChecked();
-  await expect(
-    page.getByRole("radio", { name: "分支 zz-default", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "继续", exact: true }).click();
-  await expect(page.locator(".wizard-summary")).toContainText(
-    "refs/heads/topic/124",
-  );
+import { expect,test } from "@playwright/test";
+import {fixtureAPI,repositoryRefs,tenantURL} from "./fixtures";
+test("all repository refs remain available and the default populates the Release source",async({page})=>{
+ await fixtureAPI(page);const branches=Array.from({length:125},(_,index)=>({name:`topic/${index}`,ref:`refs/heads/topic/${index}`,oid:"a".repeat(40)}));
+ await page.route("**/api/v1/projects/project-main/refs",route=>route.fulfill({json:{default_ref:"refs/heads/topic/124",branches,tags:[]}}));
+ await page.goto(tenantURL("/projects/desktop-client/releases/new"));
+ await expect(page.locator('input[name="ref"]')).toHaveValue("refs/heads/topic/124");
+ await expect(page.locator("datalist option")).toHaveCount(125);
+ await page.locator('input[name="ref"]').fill("refs/tags/custom");
+ await expect(page.locator('input[name="ref"]')).toHaveValue("refs/tags/custom");
 });
-
-test("a late initial reference response cannot replace an explicit manual source choice", async ({
-  page,
-}) => {
-  const events = await fixtureAPI(page);
-  let finish: () => void = () => {};
-  const pending = new Promise<void>((resolve) => {
-    finish = resolve;
-  });
-  await page.route("**/api/v1/projects/project-main/refs", async (route) => {
-    await pending;
-    await route.fulfill({ json: repositoryRefs });
-  });
-  const requested = page.waitForRequest("**/api/v1/projects/project-main/refs");
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  await requested;
-  await page.getByRole("button", { name: "手动输入", exact: true }).click();
-  await page.locator('input[name="ref"]').fill("c".repeat(40));
-  const response = page.waitForResponse("**/api/v1/projects/project-main/refs");
-  finish();
-  await response;
-  await expect(page.locator('input[name="ref"]')).toHaveValue("c".repeat(40));
-  await page.getByRole("button", { name: "分支", exact: true }).click();
-  await expect(
-    page.getByRole("radio", { name: "分支 main", exact: true }),
-  ).not.toBeChecked();
-  await page.getByRole("button", { name: "手动输入", exact: true }).click();
-  await page.getByRole("button", { name: "继续", exact: true }).click();
-  await expect(page.locator(".wizard-summary")).toContainText(
-    "c".repeat(40),
-  );
-  expect(events.writes).toEqual([]);
+test("a late source lookup never replaces an explicit source selection",async({page})=>{
+ const events=await fixtureAPI(page);let finish!:()=>void;const pending=new Promise<void>(resolve=>{finish=resolve;});
+ await page.route("**/api/v1/projects/project-main/refs",async route=>{await pending;await route.fulfill({json:repositoryRefs});});
+ const requested=page.waitForRequest("**/api/v1/projects/project-main/refs");
+ await page.goto(tenantURL("/projects/desktop-client/releases/new"));await requested;
+ await page.locator('input[name="ref"]').fill("c".repeat(40));
+ const response=page.waitForResponse("**/api/v1/projects/project-main/refs");finish();await response;
+ await expect(page.locator('input[name="ref"]')).toHaveValue("c".repeat(40));expect(events.writes).toEqual([]);
 });

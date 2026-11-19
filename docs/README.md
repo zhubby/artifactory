@@ -1,3 +1,9 @@
+<!--
+[INPUT]: 当前模块、部署、接口与历史验收文档。
+[OUTPUT]: 按使用目标提供文档导航。
+[POS]: 文档站首页；区分当前契约与历史证据。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # Artifactory 文档
 
 面向个人与内部可信团队的跨平台应用构建、签名与内部分发平台。
@@ -16,8 +22,10 @@
 | 配置多副本与任务临时存储 | [控制平面高可用](control-ha.md)、[Operator 运维](operator-operations.md) |
 | 了解服务职责和目录布局 | [模块布局与命名](module-layout.md) |
 | 升级节点、查询时序指标 | [Emissary OTA](emissary-ota.md)、[时序观测](telemetry.md) |
-| 集成 HTTP API 或设备协议 | [HTTP API](api.md)、[Emissary 协议](protocol.md)、[Runtime / 源码准备](runtime-protocol.md) |
+| 集成 HTTP API 或设备协议 | [HTTP API](api.md)、[Emissary 协议](protocol.md)、[规划协调器 / 源码准备](planning-protocol.md) |
 | 确认可用范围与实际测试结果 | [实施与验收记录](acceptance.md) |
+
+当前版本只支持全新实例，程序拒绝旧数据库基线。部署边界与身份名称见[规划与源码准备协议](planning-protocol.md#初始化与清理)。安装不会自动删除旧实例资源。
 
 ## 如何使用这份文档
 

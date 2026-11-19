@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """[INPUT]: 本机构建的 Pingora 网关和 Python HTTP/TLS 夹具。
-[OUTPUT]: 验证监听失败退出、统一就绪和写请求禁止重放。
+[OUTPUT]: 验证监听就绪、交付文件名、Manifest 发布围栏和写请求禁止重放。
 [POS]: 使用真实 TCP/TLS 和流式对象；不连接已有集群。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
+import hashlib
 import http.client
 import json
 import os
@@ -23,6 +24,9 @@ DATA = bytes(range(256)) * 32768
 TOKEN = 'isolated-gateway-test-token-' + 'a' * 32
 UPSTREAM_IDLE_TTL = 2
 GATEWAY_IDLE_WAIT = 32
+MANIFEST = b'{"schemaVersion":2,"fixture":"frozen-release"}'
+MANIFEST_DIGEST = 'sha256:' + hashlib.sha256(MANIFEST).hexdigest()
+DELIVERY_FILENAME = 'app-server-1.2.3-linux-amd64.tar.gz'
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
@@ -40,15 +44,31 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/v2/repo/blobs/uploads/':
             self.server.layer = b''
             return self.reply(202, Location='/v2/repo/blobs/uploads/fixture')
+        if self.path == '/internal/registry-manifest-authorize':
+            assert self.headers.get('Authorization') == 'Bearer ' + TOKEN
+            request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            self.server.guard_calls.append(request)
+            if request['authorization'] == 'Bearer expired-release-publisher':
+                return self.reply(401)
+            if request['authorization'] != 'Bearer release-publisher':
+                return self.reply(403)
+            if request['digest'] != MANIFEST_DIGEST or request['reference'] not in ['1.2.3', MANIFEST_DIGEST]:
+                return self.reply(409)
+            return self.reply(200, b'{"authorized":true}', Content_Type='application/json')
         if self.path != '/internal/artifact-resolve' or self.headers.get('Authorization') != 'Bearer ' + TOKEN:
             return self.reply(403)
         request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-        expected = {'get': ['GET', 'HEAD'], 'put': ['PUT'], 'escape': ['GET']}
+        expected = {'get': ['GET', 'HEAD'], 'named': ['GET', 'HEAD'], 'badname': ['GET'], 'put': ['PUT'], 'escape': ['GET']}
         if request.get('method') not in expected.get(request.get('ticket'), []):
             return self.reply(403)
         origin = self.server.origin if request['ticket'] != 'escape' else 'http://127.0.0.1:1'
-        self.reply(200, json.dumps({'url': origin + '/private/object?signature=retained'}).encode(), Content_Type='application/json')
+        resolved = {'url': origin + '/private/object?signature=retained'}
+        if request['ticket'] in ['named', 'badname']:
+            resolved['filename'] = DELIVERY_FILENAME if request['ticket'] == 'named' else 'bad\r\nX:injected'
+        self.reply(200, json.dumps(resolved).encode(), Content_Type='application/json')
     def do_GET(self):
+        if self.path == '/v2/' and not self.headers.get('Authorization') and getattr(self.server, 'challenge_enabled', False):
+            return self.reply(401, WWW_Authenticate='Bearer realm="https://auth.example.invalid/token",service="registry"')
         if self.path == '/api/hold':
             self.server.hold_started.set()
             assert self.server.hold_release.wait(timeout=10)
@@ -74,6 +94,10 @@ class Handler(BaseHTTPRequestHandler):
         self.server.layer += self.rfile.read(int(self.headers['Content-Length']))
         self.reply(202, Location=self.path, Range=f'0-{len(self.server.layer)-1}')
     def do_PUT(self):
+        if '/images/app/manifests/' in self.path:
+            body = self.rfile.read(int(self.headers['Content-Length']))
+            self.server.manifest_writes.append((self.path, body))
+            return self.reply(201, Docker_Content_Digest='sha256:' + hashlib.sha256(body).hexdigest())
         if self.path.startswith('/v2/repo/blobs/uploads/fixture?digest='):
             assert self.server.layer == DATA
             return self.reply(201, Location='/v2/repo/blobs/sha256:fixture')
@@ -352,6 +376,13 @@ def main():
             assert status == 206 and body == DATA[123:4097] and headers['content-range'] == f'bytes 123-4096/{len(DATA)}'
             status, headers, body = request(http_port,'HEAD','/artifacts/object?ticket=get')
             assert status == 200 and not body and int(headers['content-length']) == len(DATA)
+            dispositions = []
+            for method, extra in [('GET', {}), ('HEAD', {}), ('GET', {'Range': 'bytes=1-9'})]:
+                status, headers, _ = request(http_port, method, '/artifacts/object?ticket=named', headers=extra)
+                assert status == (206 if extra else 200)
+                dispositions.append(headers['content-disposition'])
+            assert len(set(dispositions)) == 1 and f'filename="{DELIVERY_FILENAME}"' in dispositions[0]
+            assert request(http_port, 'GET', '/artifacts/object?ticket=badname')[0] == 403
             assert request(http_port,'PUT','/artifacts/object?ticket=put',DATA)[0] == 200 and server.upload == DATA
             assert request(http_port,'PUT','/artifacts/object?ticket=get',b'invalid')[0] == 403
             assert request(http_port,'GET','/artifacts/object?ticket=escape')[0] == 403
@@ -362,6 +393,28 @@ def main():
             for chunk in [DATA[:4096], DATA[4096:]]:
                 assert request(http_port,'PATCH',headers['location'],chunk,{'Authorization':'Bearer registry-token'})[0] == 202
             assert request(http_port,'PUT',headers['location']+'?digest=sha256:fixture',b'')[0] == 201
+            registry.manifest_writes, server.guard_calls = [], []
+            registry.challenge_enabled = True
+            formal = '/v2/tenant/project/images/app/manifests/'
+            publisher = {'Authorization': 'Bearer release-publisher', 'Content-Type': 'application/vnd.oci.image.manifest.v1+json'}
+            assert request(http_port, 'PUT', formal + '1.2.3', MANIFEST, publisher)[0] == 201
+            assert request(http_port, 'PUT', formal + MANIFEST_DIGEST, MANIFEST, publisher)[0] == 201
+            assert len(registry.manifest_writes) == 2
+            assert server.guard_calls[-1]['digest'] == MANIFEST_DIGEST
+            for reference, body, auth, expected_status in [
+                ('latest', MANIFEST, publisher, 409),
+                ('1.2.3', MANIFEST + b' ', publisher, 409),
+                ('1.2.3', MANIFEST, {'Authorization': 'Bearer ordinary-user'}, 403),
+                ('1.2.3', MANIFEST, {}, 401),
+            ]:
+                assert request(http_port, 'PUT', formal + reference, body, auth)[0] == expected_status
+            for authorization in ['Basic cHVibGlzaGVyOmZpeHR1cmU=', 'Bearer expired-release-publisher']:
+                status, headers, _ = request(http_port, 'PUT', formal + '1.2.3', MANIFEST, {'Authorization': authorization})
+                assert status == 401 and headers['www-authenticate'].startswith('Bearer realm=')
+            assert request(http_port, 'PUT', formal + '1.2.3', b'', dict(publisher, **{'Content-Length': str(4*1024*1024+1)}))[0] == 413
+            assert request(http_port, 'PUT', formal.replace('/images/', '/%69mages/') + '1.2.3', MANIFEST, publisher)[0] == 400
+            assert len(registry.manifest_writes) == 2, 'rejected Manifest reached Distribution'
+            registry.challenge_enabled = False
             assert request(internal_port,'GET','/api/v1/images',context=internal_client)[0] == 404
             assert request(internal_port,'POST','/internal/artifact-resolve',json.dumps({'ticket':'get','method':'GET'}),{'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'},context=internal_client)[0] == 200
             client = ssl.create_default_context(cafile=str(root/'ca.pem'))
@@ -392,7 +445,7 @@ def main():
                 pending.join(timeout=10)
             assert held and held[0][0] == 200
             idle_connection_regression(binary, base, service_tls, processes)
-            print('PASS: unified listeners, isolated HTTP budgets, 8 MiB upload, Range, HEAD, ticket scope, origin restriction, identity headers, resumable registry upload, private TLS API and real mTLS passthrough')
+            print('PASS: unified listeners, isolated budgets, filename-bound Range/HEAD, bounded frozen Manifest guard, streaming layers, private TLS API and real mTLS passthrough')
         finally:
             for process in processes:
                 process.terminate()

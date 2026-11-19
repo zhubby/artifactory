@@ -6,9 +6,9 @@
 pub mod query;
 pub mod store;
 
+use artifactory_emissary_protocol::telemetry::{Batch, MAX_BATCH_BYTES};
 use artifactory_emissary_protocol::{TelemetryAck, TelemetryBatch, telemetry_server::Telemetry};
-use artifactory_runtime_protocol::crypto;
-use artifactory_telemetry_model::{Batch, MAX_BATCH_BYTES};
+use artifactory_service_transport::crypto;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use tonic::{
     Request, Response, Status,
@@ -26,7 +26,7 @@ static REJECTED: AtomicU64 = AtomicU64::new(0);
 pub fn metrics() -> String {
     format!(
         "{}# TYPE artifactory_telemetry_accepted_total counter\nartifactory_telemetry_accepted_total {}\n# TYPE artifactory_telemetry_replayed_total counter\nartifactory_telemetry_replayed_total {}\n# TYPE artifactory_telemetry_rejected_total counter\nartifactory_telemetry_rejected_total {}\n# TYPE artifactory_telemetry_ingest_inflight gauge\nartifactory_telemetry_ingest_inflight {}\n",
-        artifactory_runtime_protocol::metrics::render(),
+        artifactory_service_transport::metrics::render(),
         ACCEPTED.load(Relaxed),
         REPLAYED.load(Relaxed),
         REJECTED.load(Relaxed),

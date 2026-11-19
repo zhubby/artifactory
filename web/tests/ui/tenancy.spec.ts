@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证tenancy页面行为。
+ * [OUTPUT]: 验证租户隔离、权限边界及侧栏设置切换。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -13,6 +13,7 @@ import {
   tenantId,
   tenantSlug,
   tenantURL,
+  openNavigation,
 } from "./fixtures";
 
 const secondTenant = "22222222-2222-4222-8222-222222222222";
@@ -299,12 +300,13 @@ test("tenant settings use grouped keyboard navigation and preserve ownership con
     }),
   );
   await page.goto(tenantURL("/settings/security"));
+  await openNavigation(page);
   const navigation = page.getByRole("navigation", { name: "管理分区", exact: true });
   const credentials = navigation.getByRole("link", { name: "Git 凭据", exact: true });
   await credentials.focus();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(tenantURL("/settings/credentials"));
-  await expect(credentials).toHaveAttribute("aria-current", "page");
+  await expect(page.locator('.sidebar a[href$="/settings/credentials"]')).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: "Git 凭据", exact: true }).first()).toBeVisible();
   await expect(page.getByRole("tablist")).toHaveCount(0);
   await page.goto(tenantURL("/settings/members"));

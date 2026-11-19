@@ -1,5 +1,5 @@
 """[INPUT]: 合成 OCI Blob、隔离身份与模拟 Kubernetes 读接口。
-[OUTPUT]: 验证 API 默认化安全语义、真实 RUN、终态保护与 OOM 事件。
+[OUTPUT]: 验证 Release 发布、OCI 元数据、容器隔离和故障证据。
 [POS]: 端到端脚本的离线回归，不连接任何集群。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -12,16 +12,17 @@ import tarfile
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
+import urllib.error
 
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from faults import _confirmed_exit, container_cgroup, container_oom_observed, force_oom, inject, pod_deadline, terminate
 from registry import registry_graph
 from setup import ImageAcceptance, install, safe_namespace
 from node_unreachable import NodeUnreachable, kind_target
-from run import io_diagnostic, observe
+from run import io_diagnostic, observe, publish_release
 
 
-def graph(marker='executed-linux-amd64\n', machine=62, corrupt_layer=False):
+def graph(marker='executed-linux-amd64\n', machine=62, corrupt_layer=False, version=None, revision=None):
     blobs={}
     def put(data,kind):
         digest='sha256:'+hashlib.sha256(data).hexdigest()
@@ -35,7 +36,8 @@ def graph(marker='executed-linux-amd64\n', machine=62, corrupt_layer=False):
             entry=tarfile.TarInfo(name);entry.size=len(value)
             archive.addfile(entry,io.BytesIO(value))
     layer=put(content.getvalue(),'blobs')
-    config=put(json.dumps({'architecture':'amd64','os':'linux'}).encode(),'blobs')
+    config=put(json.dumps({'architecture':'amd64','os':'linux','config':{'Labels':{
+        'org.opencontainers.image.version':version,'org.opencontainers.image.revision':revision}}}).encode(),'blobs')
     manifest=put(json.dumps({'config':config,'layers':[layer]}).encode(),'manifests')
     root=put(json.dumps({'mediaType':'application/vnd.oci.image.index.v1+json','manifests':[
         dict(manifest,platform={'architecture':'amd64','os':'linux'})]}).encode(),'manifests')
@@ -95,6 +97,36 @@ class DeadlineClient:
 
 
 class HarnessTests(unittest.TestCase):
+    def test_release_publication_waits_for_stop_and_existing_publisher(self):
+        client=Mock()
+        release={'status':'published','selected_build_id':'build','version':'1.2.3',
+            'delivery_manifest':{'build_id':'build','version':'1.2.3'}}
+        client.api.side_effect=[urllib.error.HTTPError('https://fixture.invalid',409,'execution stopping',{},None),
+            {'status':'publishing'},release]
+        def wait(callback,seconds):
+            self.assertEqual(seconds,180)
+            for _ in range(3):
+                result=callback()
+                if result:
+                    return result
+            raise TimeoutError('publication did not complete')
+        client.wait=wait
+        self.assertEqual(publish_release(client,'release','build'),release)
+        self.assertEqual(client.api.call_count,3)
+        for call in client.api.call_args_list:
+            self.assertEqual(call.args,('/api/v1/releases/release/publish',{'build_id':'build'}))
+
+    def test_registry_graph_rejects_release_version_or_source_metadata_drift(self):
+        revision='a'*40
+        for version,source,valid in [('1.2.3',revision,True),('1.2.4',revision,False),('1.2.3','b'*40,False),(None,None,False)]:
+            with self.subTest(version=version,source=source):
+                read,digest=graph(version=version,revision=source)
+                if valid:
+                    registry_graph(read,'repository',digest,['linux/amd64'],release_version='1.2.3',commit_sha=revision)
+                else:
+                    with self.assertRaises(AssertionError):
+                        registry_graph(read,'repository',digest,['linux/amd64'],release_version='1.2.3',commit_sha=revision)
+
     def test_observer_accepts_equivalent_api_defaulted_apparmor(self):
         for defaulted in [False, True]:
             with self.subTest(defaulted=defaulted):

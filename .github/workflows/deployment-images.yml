@@ -26,12 +26,12 @@ jobs:
         include:
           - component: control-plane
             file: Dockerfile
-          - component: agent-worker
-            file: packages/agent-worker/Dockerfile
+          - component: planning-worker
+            file: packages/planning-worker/Dockerfile
           - component: web
             file: web/Dockerfile
-          - component: agent-operator
-            file: operators/agent-operator/Dockerfile
+          - component: planning-operator
+            file: operators/planning-operator/Dockerfile
           - component: source-preparer
             file: crates/source-preparer/Dockerfile
           - component: image-operator

@@ -11,6 +11,8 @@ mod images;
 mod lifecycle;
 mod management;
 mod projects;
+mod registry_guard;
+mod releases;
 mod signing;
 mod telemetry;
 mod tenants;
@@ -22,14 +24,14 @@ use axum::{
     routing::{delete, get, patch, post, put},
 };
 
-pub fn mount_planner(
+pub fn mount_planning(
     router: Router,
-    runtime: artifactory_planner_runtime::server::Runtime,
+    coordinator: artifactory_planning_coordinator::server::Coordinator,
     token: String,
 ) -> Router {
     router.nest(
-        "/internal/planner",
-        artifactory_planner_runtime::server::router(runtime, token),
+        "/internal/planning",
+        artifactory_planning_coordinator::server::router(coordinator, token),
     )
 }
 
@@ -218,23 +220,40 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/projects/{id}",
             get(projects::detail).patch(projects::update),
         )
-        .route("/api/v1/projects/{id}/builds", post(builds::create))
+        .route(
+            "/api/v1/projects/{id}/releases",
+            get(releases::project_list).post(releases::create),
+        )
+        .route("/api/v1/projects/{id}/builds", get(builds::project_list))
         .route("/api/v1/projects/{id}/refs", get(projects::refs))
         .route("/api/v1/builds", get(builds::list))
         .route("/api/v1/builds/{id}", get(builds::detail))
         .route("/api/v1/builds/{id}/cancel", post(builds::cancel))
-        .route("/api/v1/builds/{id}/publish", post(builds::publish))
         .route("/api/v1/builds/{id}/events", get(build_logs::events))
         .route("/api/v1/builds/{id}/logs", get(build_logs::history))
         .route("/api/v1/jobs/{id}/retry", post(builds::retry))
         .route("/api/v1/artifacts", get(builds::artifacts))
         .route("/api/v1/artifacts/{id}/download", get(builds::download))
         .route("/api/v1/releases", get(builds::releases))
-        .route("/api/v1/releases/{id}", get(builds::release_detail))
+        .route(
+            "/api/v1/releases/{id}",
+            get(builds::release_detail).patch(releases::update),
+        )
+        .route(
+            "/api/v1/releases/{id}/builds",
+            get(releases::builds).post(releases::create_build),
+        )
+        .route("/api/v1/releases/{id}/publish", post(releases::publish))
+        .route("/api/v1/releases/{id}/manifest", get(releases::manifest))
+        .route("/api/v1/releases/{id}/checksums", get(releases::checksums))
+        .route(
+            "/internal/registry-manifest-authorize",
+            post(registry_guard::authorize),
+        )
         .layer(DefaultBodyLimit::max(512 * 1024))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state.clone())
-        .merge(crate::runtime_bridge::routes(state.clone()))
+        .merge(crate::planning_bridge::routes(state.clone()))
         .merge(crate::source_tasks::routes(state))
 }
 

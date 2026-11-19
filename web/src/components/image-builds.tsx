@@ -1,62 +1,31 @@
 /**
- * [INPUT]: 依赖镜像执行、日志与独立发布 API。
- * [OUTPUT]: 提供包含仓库主机的镜像引用、平台日志和发布操作。
- * [POS]: 构建输出的镜像视图；发布重试保留已有平台结果。
+ * [INPUT]: 依赖镜像执行快照和日志 API。
+ * [OUTPUT]: 提供镜像候选摘要、平台日志和分发状态。
+ * [POS]: 构建输出只读视图；正式镜像分发从已发布 Release 发起。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 import { useEffect, useState } from "react";
 import { useUI } from "@/components/providers";
-import { CopyButton, ErrorBox, Field, Status } from "@/components/common";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Modal } from "@/components/ui/dialog";
-import { SubmitForm } from "@/components/forms";
-import { api, mutation, useRemote } from "@/lib/api";
+import { CopyButton, ErrorBox, Status } from "@/components/common";
+import { api } from "@/lib/api";
 import { asError } from "@/lib/errors";
-import type { ImageExecution, ImageCredential } from "@/lib/types";
+import type { ImageExecution } from "@/lib/types";
 
-export function ImageBuilds({ executions, projectId, registry, editable, reload }: {
-  executions: ImageExecution[]; projectId: string; registry?: string; editable: boolean; reload: () => Promise<unknown>;
-}) {
+export function ImageBuilds({ executions, registry }: { executions: ImageExecution[]; registry?: string }) {
   const { t } = useUI();
-  const [publication, setPublication] = useState<ImageExecution>();
-  const [error, setError] = useState<Error>();
-  const credentials = useRemote<ImageCredential[]>(publication ? `/projects/${projectId}/image-credentials` : null);
-  async function retry(execution: ImageExecution) {
-    setError(undefined);
-    try { await mutation(`/image-executions/${execution.parent_id || execution.id}/publish`, execution.destination_credential ? {credential_id:execution.destination_credential,repository:execution.destination_repository,tags:execution.tags} : {}); await reload(); }
-    catch (error) { setError(asError(error)); }
-  }
-  return <div className="space-y-4 p-5">
-    <ErrorBox message={error} />
-    {executions.map(execution => {
-      const origin = execution.destination_credential ? execution.destination_registry : registry;
-      const ref = `${origin ? `${origin.replace(/^https?:\/\//, "").replace(/\/$/, "")}/` : ""}${execution.destination_repository}${execution.root_digest ? `@${execution.root_digest}` : ""}`;
-      return <article key={execution.id} className="space-y-3 rounded-md border border-border p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2"><strong>{execution.spec.name} · {execution.operation === "publish" ? t("images.publication") : t("images.build")}</strong><Status value={execution.status} /></div>
-        <p className="break-all font-mono text-xs">{ref} {origin && <CopyButton value={ref} />}</p>
-        <p className="text-xs text-muted-foreground">{execution.spec.platforms.join(" · ")}</p>
-        {execution.error && <p role="alert" className="text-sm text-destructive">{execution.error}</p>}
-        <div className="flex flex-wrap gap-2">
-          {editable && execution.status === "publish_failed" && <Button size="sm" onClick={() => void retry(execution)}>{t("images.retry")}</Button>}
-          {editable && execution.operation === "build" && execution.status === "succeeded" && <Button size="sm" variant="secondary" onClick={() => setPublication(execution)}>{t("images.publishExternal")}</Button>}
-        </div>
-        <ImageLogs execution={execution} />
-      </article>;
-    })}
-    <Modal open={!!publication} onOpenChange={open => { if (!open) setPublication(undefined); }} title={t("images.publishExternal")} description={t("images.publishDescription")}>
-      <ErrorBox message={credentials.error} />
-      <SubmitForm label={t("images.publishExternal")} onSubmit={async form => {
-        await mutation(`/image-executions/${publication!.id}/publish`, { credential_id: form.get("credential"), repository: form.get("repository"), tags: String(form.get("tags") || "").split(/[,\s]+/).filter(Boolean) });
-        setPublication(undefined); await reload();
-      }}>
-        <Field label={t("images.credential")}><select name="credential" required className="input">{credentials.data?.filter(c => c.kind === "registry" && c.enabled).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
-        <Field label={t("images.repository")}><Input name="repository" required placeholder="team/application" /></Field>
-        <Field label={t("images.tags")}><Input name="tags" placeholder="v1.0.0" /></Field>
-      </SubmitForm>
-    </Modal>
-  </div>;
+  return <div className="space-y-4 p-5">{executions.map(execution => {
+    const origin = execution.destination_credential ? execution.destination_registry : registry;
+    const ref = `${origin ? `${origin.replace(/^https?:\/\//, "").replace(/\/$/, "")}/` : ""}${execution.destination_repository}${execution.root_digest ? `@${execution.root_digest}` : ""}`;
+    return <article key={execution.id} className="space-y-3 rounded-md border border-border p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2"><strong>{execution.spec.name} · {execution.operation === "publish" ? t("images.publication") : t("images.build")}</strong><Status value={execution.status} /></div>
+      <p className="break-all font-mono text-xs">{ref} {origin && <CopyButton value={ref} />}</p>
+      {!!execution.tags.length && <p className="font-mono text-xs">{execution.tags.join(" · ")}</p>}
+      <p className="text-xs text-muted-foreground">{execution.spec.platforms.join(" · ")}</p>
+      {execution.error && <p role="alert" className="text-sm text-destructive">{execution.error}</p>}
+      <ImageLogs execution={execution} />
+    </article>;
+  })}</div>;
 }
 function ImageLogs({ execution }: { execution: ImageExecution }) {
   const { t } = useUI();

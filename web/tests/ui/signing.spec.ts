@@ -1,11 +1,11 @@
 /**
  * [INPUT]: 依赖控制台浏览器夹具和签名公开接口。
- * [OUTPUT]: 验证签名导航、凭据导入、项目默认方案和制品签名状态。
+ * [OUTPUT]: 验证侧栏签名分区、凭据导入、默认方案和制品证据。
  * [POS]: 托管签名的用户流程验收，后端密码学另行验证。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { expect, test } from "@playwright/test";
-import { artifact, fixtureAPI, project, tenantURL } from "./fixtures";
+import { artifact, fixtureAPI, project, tenantURL, openNavigation } from "./fixtures";
 const metadata = {
   identity: "Android Release",
   subject: "CN=Release",
@@ -70,10 +70,11 @@ test("credential import submits private material once and clears the form", asyn
     });
   });
   await page.goto(tenantURL("/settings/general"));
+  await openNavigation(page);
   await page.getByRole("navigation", { name: "管理分区", exact: true })
-    .getByRole("link", { name: "应用签名", exact: true }).click();
+    .getByRole("link", { name: "签名管理", exact: true }).click();
   await expect(page).toHaveURL(tenantURL("/settings/signing"));
-  await expect(page.getByRole("link", { name: "应用签名", exact: true }))
+  await expect(page.locator('.sidebar a[href$="/settings/signing"]'))
     .toHaveAttribute("aria-current", "page");
   const form = page.locator("form").first();
   await form.getByLabel("凭据名称").fill("Release");
@@ -125,10 +126,11 @@ test("project defaults save profile names and display the fixed identity preview
     },
   );
   await page.goto(tenantURL(`/projects/${project.slug}/settings/general`));
+  await openNavigation(page);
   await page.getByRole("navigation", { name: "管理分区", exact: true })
-    .getByRole("link", { name: "应用签名", exact: true }).click();
+    .getByRole("link", { name: "签名默认值", exact: true }).click();
   await expect(page).toHaveURL(tenantURL(`/projects/${project.slug}/settings/signing`));
-  await expect(page.getByRole("link", { name: "应用签名", exact: true }))
+  await expect(page.locator('.sidebar a[href$="/settings/signing"]'))
     .toHaveAttribute("aria-current", "page");
   await expect(
     page.getByText("Android Release", { exact: false }),

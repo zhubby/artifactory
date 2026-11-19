@@ -1,0 +1,1 @@
+{"startup_id":"00000000-0000-0000-0000-000000000002","metadata":{"custom.site":"lab","emissary.version":"0.2.0","hardware.logical_cpus":8,"system.os":"linux","tools.git":{"available":true,"version":"2.47.0"}},"capabilities":["git","bash"]}

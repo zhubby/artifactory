@@ -1,12 +1,11 @@
 /**
- * [INPUT]: 依赖租户路由、项目 API、签名配置和设置分区。
+ * [INPUT]: 依赖统一设置导航、项目 API 与签名配置。
  * [OUTPUT]: 提供 WorkspaceManagement 工作区设置。
- * [POS]: 将授权设置与生命周期操作组合为分区。
+ * [POS]: 渲染当前设置内容，侧栏独立提供分区导航。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 import { useState } from "react";
-import { Link } from "@/lib/tenant";
 import { useUI } from "@/components/providers";
 import { useRemote, mutation } from "@/lib/api";
 import type {
@@ -26,14 +25,14 @@ import { TenantMembers, ProjectMembers } from "@/components/tenant-members";
 import { ProjectForm, SubmitForm } from "@/components/forms";
 import { PageTitle, Field, ErrorBox, Loading } from "@/components/common";
 import { Input } from "@/components/ui/input";
-import { projectPath } from "@/lib/routes";
+import { canonicalSettingsSection, settingsNavigation } from "@/lib/workspace-navigation";
 
 export function WorkspaceManagement({
   context,
   project,
   projects,
   user,
-  section = "general",
+  section: requestedSection,
   reload,
 }: {
   context: TenantContext;
@@ -48,16 +47,13 @@ export function WorkspaceManagement({
   const admin = project
     ? project.effective_role === "admin"
     : user.role === "admin";
-  const base = project ? `${projectPath(project.slug)}/settings` : "/settings";
+  const navigationContext = { project, tenantAdmin: user.role === "admin" };
+  const section = canonicalSettingsSection(requestedSection, navigationContext);
+  const selected = settingsNavigation(navigationContext)
+    .flatMap(group => group.items).find(item => item.id === section);
   const readOnly =
     context.tenant.status !== "active" ||
     (!!project && project.status !== "active");
-  const resources = ["resources", "ai", "emissary"].includes(section);
-  const current = resources
-    ? "resources"
-    : ["security", "tokens", "credentials", "audit"].includes(section)
-      ? "security"
-      : section;
   const pools = useRemote<Pool[]>(
     project && admin && ["general", "resources"].includes(section)
       ? "/pools"
@@ -68,30 +64,8 @@ export function WorkspaceManagement({
       ? "/credentials"
       : null,
   );
-  const commonSections = ["general", "members"].map((id) => ({ id, label: t(`workspace.section_${id}`) }));
-  const securitySections = [
-    { id: "tokens", label: t("security.tokens") },
-    ...(admin ? [
-      { id: "credentials", label: t("security.credentials") },
-      { id: "audit", label: t("security.audit") },
-    ] : []),
-  ];
-  const groups = project ? [{
-    label: "",
-    items: [...commonSections, ...["resources", "signing", "lifecycle"].map((id) => ({ id, label: t(`workspace.section_${id}`) }))],
-  }] : admin ? [
-    { label: t("workspace.tenant"), items: commonSections },
-    { label: t("workspace.section_resources"), items: [
-      { id: "ai", label: t("ai.settings") },
-      { id: "emissary", label: t("ota.title") },
-      { id: "signing", label: t("workspace.section_signing") },
-    ] },
-    { label: t("workspace.section_security"), items: securitySections },
-    { label: "", items: [{ id: "lifecycle", label: t("workspace.section_lifecycle") }] },
-  ] : [{ label: "", items: securitySections }];
-  const selectedSection = section === "security" ? "tokens" : section === "resources" && !project ? "ai" : section;
   let content;
-  if (current === "signing")
+  if (section === "signing")
     content = project ? (
       <fieldset disabled={readOnly}>
         <ProjectSigning
@@ -107,9 +81,9 @@ export function WorkspaceManagement({
     ) : (
       <p className="notice">{t("workspace.adminRequired")}</p>
     );
-  else if (!admin && !(current === "security" && !project && ["security", "tokens"].includes(section)))
+  else if (!admin && !(!project && section === "tokens"))
     content = <p className="notice">{t("workspace.adminRequired")}</p>;
-  else if (current === "lifecycle")
+  else if (section === "lifecycle")
     content = (
       <LifecycleSettings
         path={project ? `/projects/${project.id}` : "/tenant"}
@@ -121,7 +95,7 @@ export function WorkspaceManagement({
         onChange={reload}
       />
     );
-  else if (current === "members")
+  else if (section === "members")
     content = (
       <fieldset disabled={readOnly}>
         {project ? (
@@ -164,7 +138,7 @@ export function WorkspaceManagement({
         )}
       </section>
     );
-  else if (current === "general")
+  else if (section === "general")
     content = (
       <section className="panel management-section">
         <h2>{t("workspace.tenantIdentity")}</h2>
@@ -192,7 +166,7 @@ export function WorkspaceManagement({
         </fieldset>
       </section>
     );
-  else if (resources)
+  else if (["ai", "emissary"].includes(section))
     content = (
         <fieldset disabled={readOnly}>
           {section === "emissary" ? (
@@ -208,34 +182,19 @@ export function WorkspaceManagement({
         <Settings
           user={user}
           projects={projects}
-          section={section === "security" ? "tokens" : section}
+          section={section}
         />
       </fieldset>
     );
-  if (project && current === "resources") content = <>{content}<ImageCredentials projectId={project.id} editable={admin && !readOnly} /></>;
+  if (project && section === "resources") content = <>{content}<ImageCredentials projectId={project.id} editable={admin && !readOnly} /></>;
   return (
     <>
       <PageTitle
         eyebrow={t(project ? "workspace.project" : "workspace.tenant")}
-        title={t(
-          project ? "workspace.manageProject" : "workspace.manageTenant",
-        )}
+        title={t(selected?.label || (project ? "workspace.manageProject" : "workspace.manageTenant"))}
         description={project?.name || context.tenant.name}
       />
-      <div className="management-layout">
-      <nav
-        className="management-tabs"
-        aria-label={t("workspace.managementSections")}
-      >
-        {groups.map((group, index) => <div className="management-nav-group" key={index}>
-          {group.label && <p>{group.label}</p>}
-          {group.items.map((item) => <Link key={item.id} href={`${base}/${item.id}`} aria-current={selectedSection === item.id ? "page" : undefined}>
-            {item.label}
-          </Link>)}
-        </div>)}
-      </nav>
       <div className="management-content">{content}</div>
-      </div>
     </>
   );
 }

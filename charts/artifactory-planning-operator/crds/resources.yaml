@@ -1,0 +1,342 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: planningpools.planning.artifactory.dev
+spec:
+  group: planning.artifactory.dev
+  names:
+    kind: PlanningPool
+    plural: planningpools
+    singular: planningpool
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for PlanningPoolSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              controlUrl:
+                type: string
+              coordinatorUrl:
+                type: string
+              cpu:
+                default: 250m
+                type: string
+              ephemeralStorage:
+                default: 10Gi
+                type: string
+              image:
+                type: string
+              imagePullPolicy:
+                default: IfNotPresent
+                type: string
+              maxActive:
+                format: uint32
+                maximum: 1000.0
+                minimum: 0.0
+                type: integer
+              maxPerProject:
+                format: uint32
+                maximum: 1000.0
+                minimum: 1.0
+                type: integer
+              memory:
+                default: 512Mi
+                type: string
+              proxy:
+                description: 管理员为执行池指定出口；内部服务必须显式列入直连清单。
+                nullable: true
+                properties:
+                  httpProxy:
+                    nullable: true
+                    pattern: ^https?://[^\s\x00-\x1f\x7f]+$
+                    type: string
+                  httpsProxy:
+                    nullable: true
+                    pattern: ^https?://[^\s\x00-\x1f\x7f]+$
+                    type: string
+                  noProxy:
+                    maxLength: 8192
+                    minLength: 1
+                    pattern: ^[^\x00-\x1f\x7f]+$
+                    type: string
+                required:
+                - noProxy
+                type: object
+              sourcePreparerImage:
+                type: string
+              tlsSecretName:
+                default: ''
+                type: string
+            required:
+            - controlUrl
+            - coordinatorUrl
+            - image
+            - maxActive
+            - maxPerProject
+            - sourcePreparerImage
+            type: object
+          status:
+            nullable: true
+            properties:
+              execution:
+                description: 先预留名称，再记录创建意图和 UID；停机证据先于 finalizer 移除落盘。
+                nullable: true
+                properties:
+                  attempt:
+                    format: uint32
+                    maximum: 3.0
+                    minimum: 1.0
+                    type: integer
+                  createStarted:
+                    type: boolean
+                  deadlineMs:
+                    format: int64
+                    type: integer
+                  name:
+                    type: string
+                  nodeName:
+                    nullable: true
+                    type: string
+                  stopped:
+                    type: boolean
+                  uid:
+                    nullable: true
+                    type: string
+                required:
+                - attempt
+                - createStarted
+                - deadlineMs
+                - name
+                - stopped
+                type: object
+              message:
+                nullable: true
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                type: string
+            required:
+            - observedGeneration
+            - phase
+            type: object
+        required:
+        - spec
+        title: PlanningPool
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: sourcetasks.planning.artifactory.dev
+spec:
+  group: planning.artifactory.dev
+  names:
+    kind: SourceTask
+    plural: sourcetasks
+    singular: sourcetask
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for SourceTaskSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              cancelRequested:
+                default: false
+                type: boolean
+              pool:
+                type: string
+              projectId:
+                type: string
+              purpose:
+                enum:
+                - resolve
+                - refs
+                type: string
+              taskId:
+                type: string
+              tenantId:
+                type: string
+              timeoutSeconds:
+                default: 900
+                format: uint32
+                maximum: 900.0
+                minimum: 1.0
+                type: integer
+            required:
+            - pool
+            - projectId
+            - purpose
+            - taskId
+            - tenantId
+            type: object
+            x-kubernetes-validations:
+            - message: source task context is immutable
+              rule: self.taskId == oldSelf.taskId && self.tenantId == oldSelf.tenantId && self.projectId == oldSelf.projectId && self.purpose == oldSelf.purpose && self.pool == oldSelf.pool && self.timeoutSeconds == oldSelf.timeoutSeconds
+            - message: cancellation is irreversible
+              rule: '!oldSelf.cancelRequested || self.cancelRequested'
+          status:
+            nullable: true
+            properties:
+              execution:
+                description: 先预留名称，再记录创建意图和 UID；停机证据先于 finalizer 移除落盘。
+                nullable: true
+                properties:
+                  attempt:
+                    format: uint32
+                    maximum: 3.0
+                    minimum: 1.0
+                    type: integer
+                  createStarted:
+                    type: boolean
+                  deadlineMs:
+                    format: int64
+                    type: integer
+                  name:
+                    type: string
+                  nodeName:
+                    nullable: true
+                    type: string
+                  stopped:
+                    type: boolean
+                  uid:
+                    nullable: true
+                    type: string
+                required:
+                - attempt
+                - createStarted
+                - deadlineMs
+                - name
+                - stopped
+                type: object
+              message:
+                nullable: true
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                type: string
+            required:
+            - observedGeneration
+            - phase
+            type: object
+        required:
+        - spec
+        title: SourceTask
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: planningruns.planning.artifactory.dev
+spec:
+  group: planning.artifactory.dev
+  names:
+    kind: PlanningRun
+    plural: planningruns
+    singular: planningrun
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for PlanningRunSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              generation:
+                format: int64
+                minimum: 1.0
+                type: integer
+              pool:
+                type: string
+              projectId:
+                type: string
+              runId:
+                type: string
+              sourceDigest:
+                nullable: true
+                type: string
+              sourceManifestId:
+                nullable: true
+                type: string
+            required:
+            - generation
+            - pool
+            - projectId
+            - runId
+            type: object
+            x-kubernetes-validations:
+            - message: execution context is immutable
+              rule: self == oldSelf
+          status:
+            nullable: true
+            properties:
+              execution:
+                description: 先预留名称，再记录创建意图和 UID；停机证据先于 finalizer 移除落盘。
+                nullable: true
+                properties:
+                  attempt:
+                    format: uint32
+                    maximum: 3.0
+                    minimum: 1.0
+                    type: integer
+                  createStarted:
+                    type: boolean
+                  deadlineMs:
+                    format: int64
+                    type: integer
+                  name:
+                    type: string
+                  nodeName:
+                    nullable: true
+                    type: string
+                  stopped:
+                    type: boolean
+                  uid:
+                    nullable: true
+                    type: string
+                required:
+                - attempt
+                - createStarted
+                - deadlineMs
+                - name
+                - stopped
+                type: object
+              message:
+                nullable: true
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                type: string
+            required:
+            - observedGeneration
+            - phase
+            type: object
+        required:
+        - spec
+        title: PlanningRun
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

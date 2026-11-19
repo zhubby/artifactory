@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 独立 kind 节点、异步 Pod 状态、数据库及 DNS 服务与私有 PKI。
-[OUTPUT]: 验证失联撤权和物理停机，只记录命令退出码与 HTTP 状态。
+[OUTPUT]: 经 Release 验证失联撤权和停机，保存白名单证据。
 [POS]: 保留故障节点的数据库及 DNS 端点，最终恢复 Pi、kubelet 和服务原值。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -61,13 +61,13 @@ def run(args):
         assert not any(p['metadata']['namespace'] not in [a.ns, 'kube-system', 'local-path-storage'] for p in pods), 'Unrelated workloads found on fault target'
         assert docker(args.node_container, 'systemctl', 'is-active', 'kubelet').stdout.strip() == b'active'
         a.resume()
-        assert a.sql('planner', "SELECT count(*) FROM runtime_runs WHERE status IN ('running','provisioning','queued')") == '0', 'Drain this test namespace first'
-        original_pool = json.loads(a.kubectl('get', 'agentpool', 'default', '-o', 'json'))['spec']
-        a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': {'maxActive': 1}}))
+        assert a.sql('planning', "SELECT count(*) FROM planning_runs WHERE status IN ('running','provisioning','queued')") == '0', 'Drain this test namespace first'
+        original_pool = json.loads(a.kubectl('get', 'planningpool', 'default', '-o', 'json'))['spec']
+        a.kubectl('patch', 'planningpool', 'default', '--type=merge', '-p', json.dumps({'spec': {'maxActive': 1}}))
         pods = json.loads(a.kubectl('get', 'pods', '-o', 'json'))['items']
         evidence['operator_images'] = [{'uid': p['metadata']['uid'], 'containers': [
             {key: c.get(key) for key in ['image', 'imageID']} for c in p['status'].get('containerStatuses', [])]}
-            for p in pods if p['metadata'].get('labels', {}).get('app.kubernetes.io/name') == 'artifactory-agent-operator']
+            for p in pods if p['metadata'].get('labels', {}).get('app.kubernetes.io/name') == 'artifactory-planning-operator']
         control = next(p for p in pods if p['metadata'].get('labels', {}).get('app') == 'control-plane')
         upstream = next(p for p in pods if p['metadata'].get('labels', {}).get('app') == 'upstream')
         runtime_id = control['status']['containerStatuses'][0]['containerID'].split('://', 1)[1]
@@ -78,9 +78,9 @@ def run(args):
         def request(role, path, body=None):
             # Credentials enter curl through stdin, never argv or captured headers.
             config = ['silent', 'show-error', 'fail', 'max-time = 15', 'noproxy = "*"']
-            if role in ('control-plane', 'artifactory-runtime'):
-                url = 'http://' + control['status']['podIP'] + ':8080' + ('/internal/planner' if role == 'artifactory-runtime' else '') + path
-                headers = {'Authorization': 'Bearer ' + a.token} if role == 'artifactory-runtime' else {'Cookie': cookie, 'Origin': a.origin, 'x-artifactory-csrf': '1', 'X-Artifactory-Tenant': a.tenant_id}
+            if role in ('control-plane', 'artifactory-planning'):
+                url = 'http://' + control['status']['podIP'] + ':8080' + ('/internal/planning' if role == 'artifactory-planning' else '') + path
+                headers = {'Authorization': 'Bearer ' + a.token} if role == 'artifactory-planning' else {'Cookie': cookie, 'Origin': a.origin, 'x-artifactory-csrf': '1', 'X-Artifactory-Tenant': a.tenant_id}
             else:
                 pod = upstream
                 port = 9443
@@ -102,29 +102,27 @@ def run(args):
         request('upstream', '/test/mode', {'hold': True})
         project = a.api('/api/v1/projects', {'name': 'cleanup-fault-' + uuid.uuid4().hex[:8],
                          'repository_url': 'https://upstream:9443/repo.git',})['id']
-        build = a.api('/api/v1/projects/' + project + '/builds', {
-            'ref': 'v-fixture', 'goal': 'Hold a real model request for node cleanup verification',
-            'target_requirements': [{'os': 'linux', 'arch': a.arch}]})['id']
+        build = a.create_build(project, 'Hold a real model request for node cleanup verification')['id']
         evidence['build_id'] = build
 
         def running():
             runs = a.api('/api/v1/builds/' + build + '/plans')['runs']
             if not runs:
                 return None
-            value = a.sql('planner', "SELECT jsonb_build_object('id',id,'life',lifecycle,'execution',execution) FROM runtime_runs WHERE id='" + runs[0]['id'] + "' AND status='running' AND (lifecycle->>'calls')::int=1")
+            value = a.sql('planning', "SELECT jsonb_build_object('id',id,'life',lifecycle,'execution',execution) FROM planning_runs WHERE id='" + runs[0]['id'] + "' AND status='running' AND (lifecycle->>'calls')::int=1")
             return json.loads(value) if value else None
 
         before = a.wait(running, 180)
         run_id = before['id']
         run_name = 'run-' + run_id + '-g' + str(before['life']['generation'])
         # Verify the independent Runtime path before disabling Kubernetes exec.
-        assert request('artifactory-runtime', '/v1/get', {'run_id': run_id})['status'] == 'running'
+        assert request('artifactory-planning', '/v1/get', {'run_id': run_id})['status'] == 'running'
 
         def started_execution():
             pod = json.loads(a.kubectl('get', 'pod', before['execution']['name'], '-o', 'json'))
             assert pod['metadata']['uid'] == before['execution']['uid'], 'Planning Pod identity changed before fault injection'
             for container in (pod.get('status') or {}).get('containerStatuses') or []:
-                if container.get('name') != 'pi' or 'running' not in (container.get('state') or {}):
+                if container.get('name') != 'planning-worker' or 'running' not in (container.get('state') or {}):
                     continue
                 container_id = (container.get('containerID') or '').partition('://')[2]
                 if container_id:
@@ -134,7 +132,7 @@ def run(args):
         pod, container_id = a.wait(started_execution, 60)
         pod_uid = pod['metadata']['uid']
         evidence.update({'run_id': run_id, 'pod_uid': pod_uid, 'before': before})
-        a.wait(lambda: retained_execution(json.loads(a.kubectl('get', 'agentrun', run_name, '-o', 'json')).get('status', {}), pod), 30)
+        a.wait(lambda: retained_execution(json.loads(a.kubectl('get', 'planningrun', run_name, '-o', 'json')).get('status', {}), pod), 30)
         inspected = json.loads(docker(args.node_container, 'crictl', 'inspect', container_id).stdout)
         container = inspected['status']
         assert (container['id'] == container_id and container['state'] == 'CONTAINER_RUNNING'
@@ -169,14 +167,14 @@ def run(args):
         started = time.monotonic()
         request('control-plane', '/api/v1/builds/' + build + '/cancel', {})
         canceled = True
-        a.wait(lambda: request('artifactory-runtime', '/v1/get', {'run_id': run_id})['status'] == 'canceled', 30)
+        a.wait(lambda: request('artifactory-planning', '/v1/get', {'run_id': run_id})['status'] == 'canceled', 30)
         evidence['authority_revoked_seconds'] = round(time.monotonic() - started, 3)
         a.wait(lambda: json.loads(a.kubectl('get', 'pod', pod['metadata']['name'], '-o', 'json'))['metadata'].get('deletionTimestamp'), 30)
-        a.wait(lambda: json.loads(a.kubectl('get', 'agentrun', run_name, '-o', 'json')).get('status', {}).get('phase') == 'canceled', 30)
+        a.wait(lambda: json.loads(a.kubectl('get', 'planningrun', run_name, '-o', 'json')).get('status', {}).get('phase') == 'canceled', 30)
         # Keep the fault in place across several reconcile attempts and node health checks.
         samples = []
         for _ in range(8):
-            current = json.loads(a.kubectl('get', 'agentrun', run_name, '-o', 'json'))
+            current = json.loads(a.kubectl('get', 'planningrun', run_name, '-o', 'json'))
             physical = docker(args.node_container, 'cat', '/proc/' + str(frozen_pid) + '/stat').stdout.decode().split(') ', 1)[1].split()[0]
             samples.append({'elapsed_seconds': round(time.monotonic() - started, 3),
                             'status': current.get('status', {}), 'process_state': physical})
@@ -213,11 +211,11 @@ def run(args):
                         evidence['service_policies_restored'] = True
                 finally:
                     if original_pool is not None:
-                        a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': original_pool}))
+                        a.kubectl('patch', 'planningpool', 'default', '--type=merge', '-p', json.dumps({'spec': original_pool}))
                     (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
     a.wait(lambda: not json.loads(a.kubectl('get', 'pods', '-l', 'artifactory.dev/run=' + run_id, '-o', 'json'))['items'], 120)
-    a.wait(lambda: (s := json.loads(a.kubectl('get', 'agentrun', run_name, '-o', 'json')).get('status', {})).get('phase') == 'canceled' and s.get('execution') is None and not s.get('message'), 90)
-    after = request('artifactory-runtime', '/v1/get', {'run_id': run_id})
+    a.wait(lambda: (s := json.loads(a.kubectl('get', 'planningrun', run_name, '-o', 'json')).get('status', {})).get('phase') == 'canceled' and s.get('execution') is None and not s.get('message'), 90)
+    after = request('artifactory-planning', '/v1/get', {'run_id': run_id})
     evidence['pod_cleanup_confirmed'] = True
     evidence['status_cleared_after_cleanup'] = True
     evidence['pi_process_exited'] = docker(args.node_container, 'test', '-e', '/proc/' + str(frozen_pid), check=False).returncode == 1

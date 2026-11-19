@@ -1,9 +1,13 @@
+//! [INPUT]: 依赖设备遥测批次、认证摘要和遥测写入池。
+//! [OUTPUT]: 持久化采样、静态清单与幂等回执。
+//! [POS]: 遥测写入边界；在事务内校验并保存批次。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Atomic, idempotent batch persistence and monotonic latest summaries.
 use super::models;
 use crate::internal;
 use artifactory_database::{params, sql};
-use artifactory_runtime_protocol::crypto;
-use artifactory_telemetry_model::Batch;
+use artifactory_emissary_protocol::telemetry::Batch;
+use artifactory_service_transport::crypto;
 use chrono::{DateTime, Utc};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -100,9 +104,10 @@ pub async fn ingest(
         for (index, (attempt, ps)) in grouped.into_iter().enumerate() {
             // Missing process data keeps the aggregate unknown.
             let cpu: Option<f64> = ps.iter().map(|p| p.cpu_percent).sum();
-            let sum = |f: fn(&artifactory_telemetry_model::ProcessSample) -> Option<u64>| {
-                ps.iter().try_fold(0i64, |n, p| n.checked_add(f(p)? as i64))
-            };
+            let sum =
+                |f: fn(&artifactory_emissary_protocol::telemetry::ProcessSample) -> Option<u64>| {
+                    ps.iter().try_fold(0i64, |n, p| n.checked_add(f(p)? as i64))
+                };
             append_values(&mut statement, index, 10);
             parameters.extend(params![
                 b.sampled_at,

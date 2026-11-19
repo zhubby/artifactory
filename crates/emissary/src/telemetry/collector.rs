@@ -1,6 +1,10 @@
+//! [INPUT]: 依赖系统资源、受管任务身份与节点遥测契约。
+//! [OUTPUT]: 生成主机、磁盘、网络和任务进程采样批次。
+//! [POS]: 节点遥测循环的采样器，不建立网络连接。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::managed::{self, Registry};
 use crate::config::Config;
-use artifactory_telemetry_model::{
+use artifactory_emissary_protocol::telemetry::{
     Batch, DiskSample, HostSample, Inventory, MAX_PROCESSES, NetworkSample, ProcessSample,
 };
 use chrono::Utc;

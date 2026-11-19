@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright 路由拦截与控制台业务类型。
- * [OUTPUT]: 提供显式应用分类、租户数据和 HTTP 夹具。
+ * [OUTPUT]: 提供显式应用分类、租户数据、HTTP 夹具和个人设置、侧栏导航入口。
  * [POS]: UI 测试的默认服务响应；专项测试覆盖对应响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -73,7 +73,9 @@ export const build: Build = {
   publish_status: "not_requested",
   publish_error: null,
   error: null,
-  release_version: null,
+  release_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  spec_revision: 1,
+  release_version: "1.2.0-internal",
   created_at: created,
   finished_at: null,
   jobs: [
@@ -279,14 +281,23 @@ export const nodeTelemetry: NodeTelemetry = {
     },
   },
 };
-const release: Release = {
+export const release: Release = {
   project_slug: project.slug,
-  build_number: build.number,
   id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   project_id: project.id,
   project_name: project.name,
-  version: "v1.2.0-internal",
-  build_id: "build-main",
+  version: "1.2.0-internal",
+  status: "draft",
+  requested_ref: "refs/heads/main",
+  goal: "构建桌面客户端并交付已签名安装包",
+  target_requirements: [{kind:"native",key:"macos",os:"darwin",arch:"arm64",application_platform:"macos",artifact_key:"app",format_suffix:".zip"}],
+  targets: ["macos"],
+  spec_revision: 1,
+  source_manifest_id: "source-main",
+  build_count: 2,
+  selected_build_id: null,
+  delivery_manifest: null,
+  publish_error: null,
   commit_sha: build.commit_sha!,
   created_at: created,
   artifact_count: 1,
@@ -444,6 +455,7 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
       },
       "/releases": [release],
       [`/releases/${release.id}`]: release,
+      [`/releases/${release.id}/builds`]: [build, {...build,id:"build-complete",number:127,status:"succeeded",finished_at:created}],
       "/artifacts": [artifact],
       "/images": [],
       "/pools": [{ id: "pool-main", name: "default", is_default: true }],
@@ -498,6 +510,10 @@ export async function openPreferences(page: Page) {
     await page
       .getByRole("menuitem", { name: /^(个人设置|Personal settings)$/ })
       .click();
+    await page
+      .getByRole("navigation", { name: /^(个人设置分区|Personal settings sections)$/ })
+      .getByRole("button", { name: /^(偏好|Preferences)$/, exact: true })
+      .click();
     return;
   }
   const trigger = page.getByRole("button", {
@@ -509,4 +525,13 @@ export async function openPreferences(page: Page) {
 export async function closePreferences(page: Page) {
   if (await page.getByRole("dialog").isVisible())
     await page.keyboard.press("Escape");
+}
+
+export async function openNavigation(page: Page) {
+  const trigger = page.getByRole("button", {
+    name: /^(打开导航|Open navigation)$/,
+    exact: true,
+  });
+  if (await trigger.isVisible() && await trigger.getAttribute("aria-expanded") !== "true")
+    await trigger.click();
 }

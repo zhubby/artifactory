@@ -158,26 +158,8 @@ for (const locale of ["zh-CN", "en"] as const) {
       fullPage: true,
     });
     await page.keyboard.press("Escape");
-    await page.goto(tenantURL("/projects/desktop-client"));
-    await page
-      .getByRole("link", {
-        name: locale === "en" ? "Start build" : "发起构建",
-        exact: true,
-      })
-      .click();
-    await expect(page).toHaveURL(/\/projects\/desktop-client\/builds\/new$/);
-    await expect(
-      page.getByRole("radio", {
-        name: locale === "en" ? "Branch main" : "分支 main",
-        exact: true,
-      }),
-    ).toBeChecked();
-    await page
-      .getByRole("button", {
-        name: locale === "en" ? "Continue" : "继续",
-        exact: true,
-      })
-      .click();
+    await page.goto(tenantURL("/projects/desktop-client/releases/new"));
+    await expect(page.locator('input[name="ref"]')).toHaveValue("refs/heads/main");
     await expect(page.locator('textarea[name="goal"]')).toBeVisible();
     await page
       .locator('textarea[name="goal"]')

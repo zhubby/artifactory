@@ -1,7 +1,10 @@
-//! Startup metadata is durable and cannot be replaced by a retired runtime or connection.
+//! [INPUT]: 依赖 Emissary 元数据快照和当前设备会话。
+//! [OUTPUT]: 持久化节点能力和不可变启动元数据。
+//! [POS]: 数据库拒绝退役会话覆盖节点当前快照。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use artifactory_database::{params, sql};
-use artifactory_telemetry_model::nodes::MetadataSnapshot;
+use artifactory_emissary_protocol::nodes::MetadataSnapshot;
 use serde_json::{Value, json};
 use tonic::Status;
 use uuid::Uuid;

@@ -5,6 +5,7 @@
 mod config;
 mod http;
 mod listener;
+mod registry;
 mod tcp;
 fn add_http(
     server: &mut pingora::server::Server,

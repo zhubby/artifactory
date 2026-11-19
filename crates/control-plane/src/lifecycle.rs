@@ -39,7 +39,7 @@ pub async fn tick(state: &AppState) -> Result<()> {
 
 enum ServiceStep {
     Revoke,
-    Runtime(Uuid),
+    Coordinator(Uuid),
     Telemetry(Vec<Uuid>, Vec<Uuid>),
 }
 
@@ -47,8 +47,8 @@ fn service_steps(lease: &Lease, telemetry: bool) -> Result<Vec<ServiceStep>> {
     let mut steps = vec![ServiceStep::Revoke];
     let projects: Vec<Uuid> = serde_json::from_value(lease.manifest["projects"].clone())?;
     for project in projects {
-        if lease.manifest["runtime"] == true {
-            steps.push(ServiceStep::Runtime(project));
+        if lease.manifest["planning"] == true {
+            steps.push(ServiceStep::Coordinator(project));
         }
     }
     if telemetry {
@@ -78,8 +78,8 @@ async fn purge_service(state: &AppState, lease: &Lease, service: &ServiceStep) -
                 connections.remove(&node);
             }
         }
-        ServiceStep::Runtime(project) => {
-            let _: Value = crate::runtime_bridge::runtime()?
+        ServiceStep::Coordinator(project) => {
+            let _: Value = crate::planning_bridge::coordinator()?
                 .post("/v1/purge", &json!({"project_id":project}))
                 .await?;
         }

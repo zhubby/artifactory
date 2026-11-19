@@ -9,11 +9,13 @@
 
 项目统一版本以根目录 `VERSION` 为准。版本检查、Release 与受限 Kubernetes 试部署见[统一版本与发布](docs/versioning.md)。
 
-自助注册默认开启：访客注册后自动登录为全实例只读用户，可查看和下载全部项目的构建与产物。仅允许管理员分配账号时，设置 `ARTIFACTORY_REGISTRATION_ENABLED=false`；Helm 使用 `auth.registrationEnabled=false`。详情见 [用户自助注册](docs/operations.md#用户自助注册)。
+自助注册默认开启：访客注册后自动登录，新账号没有租户或项目权限，需要创建租户或接受邀请。关闭公开注册时，设置 `ARTIFACTORY_REGISTRATION_ENABLED=false`；Helm 使用 `auth.registrationEnabled=false`。详情见 [用户自助注册](docs/operations.md#用户自助注册)。
 
 面向个人与内部可信团队的跨平台应用构建、签名与内部分发平台。
 
 平台最低支持 **Kubernetes 1.28**。1.28 及以上版本使用同一套 Pod 执行实现。
+
+本版只支持全新实例，业务数据库基线为 `2026112001`，规划数据库基线为 `2026111901`。程序拒绝旧库，不提供旧 CRD、配置或协议兼容层，也不自动删除或重置旧部署。旧实例由管理员独立备份和退役，详见[初始化边界](docs/planning-protocol.md#初始化与清理)。
 
 文档使用 mdBook 按使用、部署、接口、验收与历史设计整理：[文档首页](docs/README.md)。Web 部署后通过同域名 `/docs` 免登录阅读，构建与维护命令见[文档站点](docs/operations.md#文档站点)。
 
@@ -26,7 +28,7 @@
 ## 实现范围
 
 - Rust/Axum/Tonic 控制平面，支持 [多副本部署](docs/control-ha.md)；PostgreSQL 持久化命令、队列、租约与审计，无新增消息中间件。
-- Rust Artifactory Emissary 主动出站接入；Linux/macOS/Windows 原生执行器；独立 Worker、进程树取消、有界日志缓冲。Pi Agent 专注仓库分析和规划。
+- Rust Artifactory Emissary 主动出站接入；Linux/macOS/Windows 原生执行器；独立 Worker、进程树取消、有界日志缓冲。Pi 专注仓库分析和规划。
 - Next.js/React/shadcn 风格 Radix 组件/Tailwind 控制台，项目、构建矩阵、SSE 日志、节点、制品、Release、身份与授权均使用真实 API。
 - HTTPS/SSH Git 凭据加密托管；提交、仓库地址、凭据引用、配置、参数按构建快照固定。
 - 节点证书认证、一次性注册、角色与项目范围 Token、S3 内容校验、签名引用的项目 / 节点双向授权。
@@ -58,7 +60,7 @@ npm ci
 npm run dev
 ```
 
-另开终端加载 `.local/env` 并运行 `cargo run -p artifactory-gateway`，浏览器从 Pingora `http://127.0.0.1:8081` 登录、上传和下载。初始账号及随机密码保存在 `.local/env`。Control 8080 与 Next.js 3000 为内部后端，数据库和 S3 仅绑定本机。已有环境须补充随机 `ARTIFACTORY_GATEWAY_TOKEN` 和对应网关地址，不重新生成主密钥或设备 CA。本地 HTTP 配置不能直接用于生产。
+另开终端加载 `.local/env` 并运行 `cargo run -p artifactory-gateway`，浏览器从 Pingora `http://127.0.0.1:8081` 登录、上传和下载。新安装的初始账号为 `admin / 123456`，同时保存在 `.local/env`。初始账号只在业务库没有用户时创建，重启不覆盖已有密码。Control 8080 与 Next.js 3000 为内部后端，数据库和 S3 仅绑定本机。已有环境须补充随机 `ARTIFACTORY_GATEWAY_TOKEN` 和对应网关地址，不重新生成主密钥或设备 CA。本地 HTTP 配置不能直接用于生产。
 
 Emissary 注册：在控制台创建 15 分钟有效的一次性令牌，以环境变量传递，不写入命令行或仓库。
 
@@ -75,7 +77,7 @@ target/debug/artifactory-emissary run --config .local/emissary/emissary.json
 
 Kubernetes / 本机 kind 使用 [Helm 部署指南](docs/helm.md)。GitHub Release 发布独立服务的 AMD64、ARM64 镜像和四个 Chart。新 AI 构建前需按 [AI 构建指南](docs/ai-builds.md) 配置模型与任务身份。
 
-Kubernetes Pi 由独立 Rust Operator 直接创建临时 Pod。Runtime 保存预算和会话审计，SourceTask 和各任务的 init container 从上游拉取固定源码。原生设备每次 attempt 独立拉取。平台不保存源码工作目录或 Git/LFS 缓存。部署见 [Operator 运维](docs/operator-operations.md)，契约见 [运行协议](docs/runtime-protocol.md)。
+Kubernetes Pi 由独立 Planning Operator 直接创建临时 Pod。Control 内嵌的规划协调器保存预算和会话审计，SourceTask 和各任务的 init container 从上游拉取固定源码。原生设备每次 attempt 独立拉取。平台不保存源码工作目录或 Git/LFS 缓存。部署见 [Operator 运维](docs/operator-operations.md)，契约见 [规划与源码准备协议](docs/planning-protocol.md)。
 
 ## 验证
 
@@ -88,7 +90,7 @@ ARTIFACTORY_TEST_DATABASE_URL=postgres://artifactory:local-test-only@127.0.0.1:1
 cargo test --locked -p artifactory-emissary --all-targets
 sh scripts/cross-build-emissary.sh
 (cd web && npm run typecheck && npm run build)
-(cd packages/agent-worker && npm ci && npm run check && npm test)
+(cd packages/planning-worker && npm ci && npm run check && npm test)
 ```
 
 完整端到端验收需要 Kubernetes，在隔离命名空间启动确定性 Git/模型夹具，验证临时源码、Pi、Rust Emissary 与网关制品交付：
@@ -113,14 +115,14 @@ python3 scripts/compose_acceptance.py
 | 目录 | 内容 |
 |---|---|
 | `crates/control-plane` | 控制平面、SQL 迁移、权限 / 状态 / 数据库测试 |
-| `operators/agent-operator` / `charts/artifactory-agent-operator` | 独立 Agent Operator、AgentRun/SourceTask CRD |
+| `operators/planning-operator` / `charts/artifactory-planning-operator` | 独立 Planning Operator、PlanningRun/SourceTask CRD |
 | `operators/image-operator` / `charts/artifactory-image-operator` | 独立 Image Operator、BuildKit/Publisher Pod |
-| `crates/image-protocol` / `crates/image-registry` | 镜像执行契约、OCI 内容校验与按 digest 复制 |
+| `crates/image-protocol` / `crates/oci-registry-client` | 镜像执行契约、OCI 仓库客户端、内容校验与按 digest 复制 |
 | `crates/gateway` / `charts/artifactory-registry` | Pingora 入口与私有 Distribution 仓库 |
-| `crates/planner-runtime` / `crates/runtime-protocol` | Pi 队列、租约/预算、模型代理和幂等交接 |
+| `crates/planning-coordinator` / `crates/planning-protocol` | Pi 队列、租约/预算、模型代理和幂等交接 |
 | `crates/source-checkout` / `crates/source-preparer` | 固定源码清单、上游检出、临时解析和 init 程序 |
 | `crates/emissary` / `crates/emissary-protocol` | Rust 设备运行程序、独立 Worker、原生服务、OTA 与共享协议 |
-| `packages/agent-worker` | Node 24 Pi SDK 规划进程、只读工具和模型接口 |
+| `packages/planning-worker` | Node 24 Pi SDK 规划进程、只读工具和模型接口 |
 | `packages` | Node.js 模块目录，各模块独立管理依赖与构建 |
 | `proto/artifactory/emissary/v1` | Emissary Protobuf 公共契约 |
 | `schemas` / `examples` | 内部执行配方和历史配置 schema 与目标参考 |

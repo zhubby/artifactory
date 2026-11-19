@@ -1,3 +1,9 @@
+<!--
+[INPUT]: 节点 mTLS、签名版本清单和固定启动器。
+[OUTPUT]: 定义升级信任、排空、确认和失败恢复。
+[POS]: 原生节点升级的发布与运维契约。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # Emissary OTA 自动升级
 
 控制平面管理目标版本，节点通过已有 mTLS 出站连接接收升级命令，使用私有 S3 的短期签名地址下载。普通升级不需要 SSH 或管理员密码。已有节点默认不升级；先安装固定启动器，再由管理员指定节点或节点池目标。

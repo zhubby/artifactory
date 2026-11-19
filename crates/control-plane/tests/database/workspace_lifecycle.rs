@@ -73,8 +73,8 @@ async fn project_archive_fences_admission_and_restore_preserves_the_route() {
             &owner,
             Some(t),
             "POST",
-            &format!("/projects/{p}/builds"),
-            json!({"ref":"main"})
+            &db.release_build_path(p).await,
+            json!({})
         )
         .await
         .0,
@@ -138,8 +138,8 @@ async fn draining_waits_for_existing_work_and_can_be_cancelled() {
         &owner,
         Some(t),
         "POST",
-        &format!("/projects/{p}/builds"),
-        json!({"ref":"main"}),
+        &db.release_build_path(p).await,
+        json!({}),
     )
     .await;
     let (status, op) = request(

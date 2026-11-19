@@ -5,7 +5,7 @@
 use super::ControlStore;
 use anyhow::{Result, ensure};
 use artifactory_database::{params, sql};
-use artifactory_telemetry_model::nodes::{Placement, ResourceIdentity, Resources};
+use artifactory_emissary_protocol::nodes::{Placement, ResourceIdentity, Resources};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 use toasty::stmt::Type;
@@ -56,7 +56,7 @@ impl ControlStore {
             sql::execute(&mut tx,"INSERT INTO placement_rounds(build_id,round,run_id,versions) SELECT $1,coalesce(max(round),0)+1,$2,$3 FROM placement_rounds WHERE build_id=$1",params![build,run,versions]).await?;
         }
         tx.commit().await?;
-        // Expired queued/provisioning Runtime work also consumes its round and cannot
+        // Expired queued/provisioning Coordinator work also consumes its round and cannot
         // accept late results. Do not alter the build or any running job.
         sql::execute(&mut self.pool.clone(),"UPDATE planning_runs SET state='canceled',finished_at=clock_timestamp(),error='placement deadline reached' WHERE purpose='placement' AND state IN ('queued','leased') AND deadline_at<=clock_timestamp()",params![]).await?;
         Ok(())

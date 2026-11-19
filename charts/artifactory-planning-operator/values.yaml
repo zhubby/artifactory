@@ -1,0 +1,50 @@
+# [INPUT]: 独立规划、规划接口、源码初始化镜像和持久身份引用。
+# [OUTPUT]: 规划服务、池预算、显式出口代理和网络隔离参数。
+# [POS]: 镜像构建使用另一个独立 Operator Chart。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+fullnameOverride: ""
+image:
+  repository: ghcr.io/zhubby/artifactory-planning-operator
+  tag: ""
+  pullPolicy: IfNotPresent
+operator:
+  replicas: 2
+telemetry:
+  image:
+    repository: ghcr.io/zhubby/artifactory-control-plane
+    tag: ""
+  enabled: false # Enable only when the main Chart does not deploy telemetry.
+  replicas: 1
+  # DATABASE_URL (dedicated telemetry DB), ARTIFACTORY_BUSINESS_DATABASE_URL,
+  # ARTIFACTORY_TELEMETRY_TOKEN. Business access should be read-only.
+  secretName: ""
+  # Existing device CA and server identity: ca.pem, server.pem, server.key.
+  pkiSecretName: ""
+coordinator:
+  # Contains ARTIFACTORY_SERVICE_TOKEN shared with the control plane.
+  secretName: ""
+  url: ""
+controlUrl: ""
+tls:
+  # ca.crt trusts the internal gateway certificate.
+  secretName: ""
+development:
+  insecureHttp: false
+planningPool:
+  name: default
+  maxActive: 8
+  maxPerProject: 4
+  image: ghcr.io/zhubby/artifactory-planning-worker:0.2.0
+  cpu: 250m
+  memory: 512Mi
+  sourcePreparerImage: ghcr.io/zhubby/artifactory-source-preparer:0.2.0
+  ephemeralStorage: 10Gi
+  # Optional HTTP(S) origins. Set noProxy explicitly for internal services and API IP.
+  # proxy:
+  #   httpProxy: http://egress.example:18443
+  #   httpsProxy: http://egress.example:18443
+  #   noProxy: localhost,127.0.0.1,.svc,.cluster.local,artifactory-gateway-internal,artifactory-registry,kubernetes.default.svc,10.96.0.1
+  proxy: null
+networkPolicy:
+  enabled: true
+  gitPorts: [443, 80, 22]

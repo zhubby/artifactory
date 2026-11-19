@@ -35,7 +35,7 @@ class NetworkProbeTests(unittest.TestCase):
             def kubectl(self, *args):
                 if args[:2] == ('get', 'service'):
                     return json.dumps({'spec': {'clusterIP': '127.0.0.1', 'ports': [{'port': port}]}})
-                if args[:2] == ('get', 'agentpool'):
+                if args[:2] == ('get', 'planningpool'):
                     return json.dumps({'spec': {'image': 'fixture'}})
                 if args[:2] == ('get', 'pod'):
                     return json.dumps({'metadata': {'name': args[2], 'uid': 'cold-probe'},

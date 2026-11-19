@@ -95,7 +95,7 @@ async fn history_memory_is_bounded_with_large_complete_results() {
             .processes(attempt, &range)
             .await
             .unwrap_or_else(|error| match error {
-                artifactory_runtime_protocol::error::ApiError::Internal(error) => {
+                artifactory_service_transport::error::ApiError::Internal(error) => {
                     panic!("{error:#}")
                 }
                 _ => panic!("history query failed"),

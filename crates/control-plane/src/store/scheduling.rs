@@ -1,18 +1,19 @@
 //! [INPUT]: 依赖租户、项目和业务状态。
-//! [OUTPUT]: 持久化调度认领、固定源码和不可变 Release。
+//! [OUTPUT]: 认领任务、汇总构建并在草稿锁内发起重排。
 //! [POS]: 控制平面的业务边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Scheduler persistence. Claim, publish and resolver lock lifetimes are owned here.
 use super::ControlStore;
-use crate::recipe::Recipe;
 
-use anyhow::{Context, Result, ensure};
+use anyhow::Result;
 use artifactory_database::{params, sql};
 use serde_json::Value;
 use toasty::stmt::Type;
 
 use uuid::Uuid;
 pub(crate) struct AssignmentContext {
+    pub release_id: Uuid,
+    pub release_version: String,
     pub target: String,
     pub target_config: Value,
     pub plan_revision_id: Option<Uuid>,
@@ -84,7 +85,8 @@ impl ControlStore {
     pub async fn queue_revisions(&self) -> Result<()> {
         let mut tx_db = self.pool.clone();
         let mut tx = tx_db.transaction().await?;
-        let rows=sql::records(&mut tx, "SELECT id,model_config_snapshot FROM builds b WHERE goal IS NOT NULL AND current_plan_id IS NOT NULL AND status='failed' AND NOT cancel_requested AND revision_count<2 AND (SELECT state FROM planning_runs WHERE build_id=b.id ORDER BY created_at DESC LIMIT 1)='succeeded' AND EXISTS(SELECT 1 FROM jobs j JOIN LATERAL (SELECT failure_kind FROM attempts WHERE job_id=j.id ORDER BY created_at DESC LIMIT 1) a ON true WHERE j.build_id=b.id AND j.status='failed' AND a.failure_kind='execution') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 10", params![], &[("id", Type::Uuid),("model_config_snapshot", Type::String)]).await?;
+        let draft_releases:Vec<Uuid>=sql::scalars(&mut tx,"SELECT id FROM releases WHERE status='draft' AND id IN (SELECT release_id FROM builds WHERE status='failed' AND revision_count<2) ORDER BY id FOR UPDATE SKIP LOCKED",params![]).await?;
+        let rows=sql::records(&mut tx, "SELECT id,model_config_snapshot FROM builds b WHERE b.release_id=ANY($1) AND EXISTS(SELECT 1 FROM releases r WHERE r.id=b.release_id AND r.status='draft') AND goal IS NOT NULL AND current_plan_id IS NOT NULL AND status='failed' AND NOT cancel_requested AND revision_count<2 AND (SELECT state FROM planning_runs WHERE build_id=b.id ORDER BY created_at DESC LIMIT 1)='succeeded' AND EXISTS(SELECT 1 FROM jobs j JOIN LATERAL (SELECT failure_kind FROM attempts WHERE job_id=j.id ORDER BY created_at DESC LIMIT 1) a ON true WHERE j.build_id=b.id AND j.status='failed' AND a.failure_kind='execution') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 10", params![&draft_releases], &[("id", Type::Uuid),("model_config_snapshot", Type::String)]).await?;
         for row in rows {
             let id: Uuid = row.decode("id")?;
             let failed:Vec<String>=sql::scalars(&mut tx, "SELECT j.target FROM jobs j JOIN LATERAL (SELECT failure_kind FROM attempts WHERE job_id=j.id ORDER BY created_at DESC LIMIT 1) a ON true WHERE j.build_id=$1 AND j.status='failed' AND a.failure_kind='execution'", params![id]).await?;
@@ -104,141 +106,8 @@ impl ControlStore {
         Ok(())
     }
 
-    pub(crate) async fn publish_transaction(&self, id: Uuid) -> Result<Uuid> {
-        let mut transaction_db = self.pool.clone();
-        let mut transaction = transaction_db.transaction().await?;
-        let build = sql::record(
-            &mut transaction,
-            "SELECT id,project_id,requested_ref,commit_sha,config_yaml,config_snapshot,parameters,selected_targets,status,error,release_version,publish_status,publish_error,cancel_requested,requested_by,created_at,finished_at,source_repository_url,source_credential_id,goal,target_requirements,planning_context,model_config_snapshot,source_manifest_id,revision_count,clarification,current_plan_id FROM builds WHERE id=$1 FOR UPDATE",
-            params![id],
-            &[
-                ("id", Type::Uuid),
-                ("project_id", Type::Uuid),
-                ("requested_ref", Type::String),
-                ("commit_sha", Type::String),
-                ("config_yaml", Type::String),
-                ("config_snapshot", Type::String),
-                ("parameters", Type::String),
-                ("selected_targets", Type::List(Box::new(Type::String))),
-                ("status", Type::String),
-                ("error", Type::String),
-                ("release_version", Type::String),
-                ("publish_status", Type::String),
-                ("publish_error", Type::String),
-                ("cancel_requested", Type::Bool),
-                ("requested_by", Type::Uuid),
-                ("created_at", Type::Timestamp),
-                ("finished_at", Type::Timestamp),
-                ("source_repository_url", Type::String),
-                ("source_credential_id", Type::Uuid),
-                ("goal", Type::String),
-                ("target_requirements", Type::String),
-                ("planning_context", Type::String),
-                ("model_config_snapshot", Type::String),
-                ("source_manifest_id", Type::Uuid),
-                ("revision_count", Type::I32),
-                ("clarification", Type::String),
-                ("current_plan_id", Type::Uuid),
-            ],
-        )
-        .await?;
-        ensure!(
-            build.decode::<String>("status")? == "succeeded"
-                && !build.decode::<bool>("cancel_requested")?,
-            "only a successful build can be published"
-        );
-        let version: Option<String> = build.decode("release_version")?;
-        let version = version.ok_or_else(|| anyhow::anyhow!("release version is required"))?;
-        let recipe: Recipe = serde_json::from_value(build.decode("config_snapshot")?)?;
-        ensure!(
-            recipe.release.enabled,
-            "publishing is disabled by repository configuration"
-        );
-        let key = format!("build:{id}");
-        let project: Uuid = build.decode("project_id")?;
-        if let Some(existing) = sql::optional_scalar::<Uuid>(
-            &mut transaction,
-            "SELECT id FROM releases WHERE project_id=$1 AND idempotency_key=$2",
-            params![project, &key],
-        )
-        .await?
-        {
-            return Ok(existing);
-        }
-        let artifacts:Vec<Uuid>=sql::scalars(&mut transaction, "SELECT ar.id FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id WHERE j.build_id=$1 AND j.status='succeeded' AND a.status='succeeded' AND a.plan_revision_id IS NOT DISTINCT FROM j.plan_revision_id AND a.source_manifest_id IS NOT DISTINCT FROM (SELECT source_manifest_id FROM builds WHERE id=$1) AND a.id=(SELECT id FROM attempts WHERE job_id=j.id ORDER BY created_at DESC,id DESC LIMIT 1)", params![id]).await?;
-        let jobs: i64 = sql::scalar(
-            &mut transaction,
-            "SELECT count(*) FROM jobs WHERE build_id=$1",
-            params![id],
-        )
-        .await?;
-        let complete:i64=sql::scalar(&mut transaction, "SELECT count(DISTINCT j.id) FROM jobs j JOIN attempts a ON a.job_id=j.id AND a.status='succeeded' JOIN artifacts ar ON ar.attempt_id=a.id WHERE j.build_id=$1 AND j.status='succeeded' AND ar.id=ANY($2)", params![id, &artifacts]).await?;
-        let images:Vec<Uuid>=sql::scalars(&mut transaction,"SELECT i.id FROM image_artifacts i JOIN image_executions e ON e.id=i.execution_id JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id WHERE b.id=$1 AND j.status='succeeded' AND e.status='succeeded' AND e.source_manifest_id=b.source_manifest_id AND e.plan_revision_id IS NOT DISTINCT FROM j.plan_revision_id AND e.id=(SELECT id FROM image_executions WHERE job_id=j.id AND operation='build' ORDER BY created_at DESC,id DESC LIMIT 1)",params![id]).await?;
-        ensure!(
-            jobs > 0 && jobs == complete + images.len() as i64,
-            "every target must have verified artifacts"
-        );
-        let release = Uuid::new_v4();
-        super::models::Release::create()
-            .id(release)
-            .project_id(project)
-            .build_id(id)
-            .version(version)
-            .idempotency_key(key)
-            .commit_sha(build.decode::<String>("commit_sha")?)
-            .exec(&mut transaction)
-            .await
-            .context("release version already exists or publication failed")?;
-        for image in images {
-            sql::execute(
-                &mut transaction,
-                "INSERT INTO release_images(release_id,image_id) VALUES($1,$2)",
-                params![release, image],
-            )
-            .await?;
-        }
-        for artifact in artifacts {
-            super::models::ReleaseArtifact::create()
-                .release_id(release)
-                .artifact_id(artifact)
-                .exec(&mut transaction)
-                .await?;
-        }
-        sql::execute(
-            &mut transaction,
-            "UPDATE builds SET publish_status='succeeded',publish_error=NULL WHERE id=$1",
-            params![id],
-        )
-        .await?;
-        super::models::PublishAttempt::create()
-            .id(Uuid::new_v4())
-            .build_id(id)
-            .status("succeeded")
-            .exec(&mut transaction)
-            .await?;
-        transaction.commit().await?;
-        Ok(release)
-    }
-
-    pub(crate) async fn publication_failed(&self, id: Uuid, error: &str) -> Result<()> {
-        sql::execute(&mut self.pool.clone(), "UPDATE builds SET publish_status='failed',publish_error=$2 WHERE id=$1 AND publish_status<>'succeeded'", params![id, error]).await?;
-        super::models::PublishAttempt::create()
-            .id(Uuid::new_v4())
-            .build_id(id)
-            .status("failed")
-            .error(error)
-            .exec(&mut self.pool.clone())
-            .await?;
-        Ok(())
-    }
-
-    pub(crate) async fn pending_publications(&self) -> Result<Vec<Uuid>> {
-        let pending:Vec<Uuid>=sql::scalars(&mut self.pool.clone(), "SELECT id FROM builds WHERE status='succeeded' AND publish_status='pending' AND NOT cancel_requested LIMIT 10", params![]).await?;
-        Ok(pending)
-    }
-
     pub(crate) async fn assignment_context(&self, job: Uuid) -> Result<AssignmentContext> {
-        let row=sql::record(&mut self.pool.clone(), "SELECT j.target,j.target_config,j.plan_revision_id,b.source_manifest_id,b.id,b.commit_sha,b.config_snapshot,b.parameters FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1", params![job], &[("target", Type::String),("target_config", Type::String),("plan_revision_id", Type::Uuid),("source_manifest_id", Type::Uuid),("id", Type::Uuid),("commit_sha", Type::String),("config_snapshot", Type::String),("parameters", Type::String)]).await?;
+        let row=sql::record(&mut self.pool.clone(), "SELECT j.target,j.target_config,j.plan_revision_id,b.source_manifest_id,b.id,b.release_id,b.release_version,b.commit_sha,b.config_snapshot,b.parameters FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1", params![job], &[("target", Type::String),("target_config", Type::String),("plan_revision_id", Type::Uuid),("source_manifest_id", Type::Uuid),("id", Type::Uuid),("release_id",Type::Uuid),("release_version",Type::String),("commit_sha", Type::String),("config_snapshot", Type::String),("parameters", Type::String)]).await?;
         let plan_id: Option<Uuid> = row.decode("plan_revision_id")?;
         let plan = if let Some(id) = plan_id {
             sql::optional_scalar(
@@ -251,6 +120,8 @@ impl ControlStore {
             None
         };
         Ok(AssignmentContext {
+            release_id: row.decode("release_id")?,
+            release_version: row.decode("release_version")?,
             target: row.decode("target")?,
             target_config: row.decode("target_config")?,
             plan_revision_id: row.decode("plan_revision_id")?,

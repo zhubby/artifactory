@@ -1,10 +1,10 @@
-//! [INPUT]: 依赖发布专属 Secret、池代理、OCI 客户端和临时卷。
-//! [OUTPUT]: 发布完整 OCI Index，失败时保存脱敏日志和摘要。
+//! [INPUT]: 依赖发布 Secret、共享脱敏、OCI 客户端和临时卷。
+//! [OUTPUT]: 发布完整 OCI Index，拒绝不同内容占用版本标签并读回结果。
 //! [POS]: 镜像构建与最终标签之间的独立发布进程，不写源码卷。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::transport::Control;
 use anyhow::{Result, ensure};
-use artifactory_emissary::signing::redact;
+use artifactory_execution_support::redact;
 use artifactory_image_protocol::{PublishTask, Report, index, sha256};
 use std::sync::atomic::AtomicI64;
 use tokio_util::sync::CancellationToken;
@@ -22,7 +22,7 @@ pub async fn run() -> Result<()> {
     let operation = async {
         let results = control.publication().await?;
         let source =
-            artifactory_image_registry::Registry::new(task.registry.clone(), task.insecure)?;
+            artifactory_oci_registry_client::Registry::new(task.registry.clone(), task.insecure)?;
         let digest = if let Some(digest) = &task.root_digest {
             ensure!(
                 artifactory_image_protocol::digest(digest),
@@ -38,10 +38,15 @@ pub async fn run() -> Result<()> {
             digest
         };
         let destination = if let Some(login) = &task.destination {
-            artifactory_image_registry::Registry::new(login.clone(), task.insecure)?
+            artifactory_oci_registry_client::Registry::new(login.clone(), task.insecure)?
         } else {
             source.clone()
         };
+        for tag in &task.tags {
+            destination
+                .ensure_tag_available(&task.destination_repository, tag, &digest)
+                .await?;
+        }
         destination
             .copy(
                 &source,
@@ -52,6 +57,16 @@ pub async fn run() -> Result<()> {
                 std::path::Path::new(TEMPORARY_DIRECTORY),
             )
             .await?;
+        for tag in &task.tags {
+            ensure!(
+                sha256(
+                    &destination
+                        .manifest(&task.destination_repository, tag)
+                        .await?
+                ) == digest,
+                "version tag changed during distribution"
+            );
+        }
         control.report(&Report::Published { digest }).await
     };
     let mut result = tokio::select! { result=operation=>result, _=cancel.cancelled()=>Err(anyhow::anyhow!("publication canceled")) };

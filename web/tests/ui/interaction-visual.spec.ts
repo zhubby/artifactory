@@ -1,19 +1,17 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证interaction-visual页面行为。
+ * [OUTPUT]: 验证切换器键盘访问、窄屏顶栏、短视口侧栏与个人设置。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { expect, test } from "@playwright/test";
-import { fixtureAPI, project, tenantURL, openPreferences } from "./fixtures";
+import { fixtureAPI, project, tenantId, tenantSlug, tenantURL, openPreferences, openNavigation } from "./fixtures";
 
 test("space switchers enter the last result on ArrowUp from search", async ({ page }) => {
   await fixtureAPI(page);
   await page.goto(tenantURL("/projects/desktop-client"));
-  if (page.viewportSize()!.width < 1024)
-    await page.getByRole("button", { name: "打开导航", exact: true }).click();
-
   for (const kind of ["tenant", "project"]) {
+    if (kind === "project") await openNavigation(page);
     const selector = page.locator(`.space-selector.${kind}`);
     const summary = selector.locator("summary");
     await summary.click();
@@ -32,7 +30,12 @@ test("space switchers enter the last result on ArrowUp from search", async ({ pa
     await search.press("Home");
     await expect(search).toBeFocused();
     await search.press("ArrowUp");
-    await expect(results.last()).toBeFocused();
+    if (kind === "tenant") {
+      await expect(selector.getByRole("link", { name: "查看全部租户", exact: true })).toBeFocused();
+    } else {
+      await expect(results).toHaveCount(0);
+      await expect(search).toBeFocused();
+    }
     await page.keyboard.press("Escape");
     await expect(summary).toBeFocused();
   }
@@ -46,12 +49,12 @@ test("short viewports keep the bottom of navigation reachable by scrolling", asy
     await page.getByRole("button", { name: "打开导航", exact: true }).click();
   const sidebar = page.locator(".sidebar");
   const docs = sidebar.getByRole("link", { name: "文档", exact: true });
-  await sidebar.getByRole("link", { name: "交付总览", exact: true }).hover();
+  await sidebar.getByRole("link", { name: "项目概览", exact: true }).hover();
   await page.mouse.wheel(0, 900);
   await expect(docs).toBeInViewport({ ratio: 1 });
   await docs.focus();
   await page.keyboard.press("Shift+Tab");
-  await expect(sidebar.getByRole("link", { name: "租户管理", exact: true })).toBeFocused();
+  await expect(sidebar.getByRole("link", { name: "项目设置", exact: true })).toBeFocused();
   if (page.viewportSize()!.width < 1024) {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "打开导航", exact: true })).toBeFocused();
@@ -79,6 +82,25 @@ test("personal settings keep their close control and form inside short viewports
   }
 });
 
+test("short settings sidebars keep lifecycle links and documentation reachable", async ({ page }, info) => {
+  await page.setViewportSize({ width: info.project.name === "desktop" ? 1280 : 844, height: 390 });
+  await fixtureAPI(page);
+  for (const scope of ["", "/projects/desktop-client"]) {
+    await page.goto(tenantURL(`${scope}/settings/general`));
+    await openNavigation(page);
+    const sidebar = page.locator(".sidebar");
+    const navigation = sidebar.getByRole("navigation", { name: "管理分区", exact: true });
+    const lifecycle = navigation.getByRole("link", { name: "归档与删除", exact: true });
+    await lifecycle.scrollIntoViewIfNeeded();
+    await expect(lifecycle).toBeInViewport({ ratio: 1 });
+    const docs = sidebar.getByRole("link", { name: "文档", exact: true });
+    await docs.scrollIntoViewIfNeeded();
+    await expect(docs).toBeInViewport({ ratio: 1 });
+    await expect(page.locator(".management-tabs")).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  }
+});
+
 test("long space menus keep their last result reachable in landscape", async ({ page }, info) => {
   await page.setViewportSize({ width: info.project.name === "desktop" ? 1280 : 844, height: 390 });
   await fixtureAPI(page);
@@ -92,9 +114,11 @@ test("long space menus keep their last result reachable in landscape", async ({ 
   await selector.locator("summary").click();
   await expect(selector.getByRole("textbox")).toBeFocused();
   await selector.getByRole("textbox").press("ArrowUp");
-  const allProjects = selector.getByRole("link", { name: "全部项目", exact: true });
-  await expect(allProjects).toBeFocused();
-  await expect(allProjects).toBeInViewport({ ratio: 1 });
+  const lastProject = selector.locator(".space-option").last();
+  await expect(lastProject).toContainText("Extra project 11");
+  await expect(lastProject).toBeFocused();
+  await expect(lastProject).toBeInViewport({ ratio: 1 });
+  await expect(selector.getByRole("link", { name: "全部项目", exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(selector.locator("summary")).toBeFocused();
 });
@@ -106,7 +130,7 @@ test("long project names leave quick navigation labels readable and clickable", 
   await page.route("**/api/v1/projects/by-slug/desktop-client", route => route.fulfill({ json: longProject }));
   await page.goto(tenantURL("/projects/desktop-client"));
   await page.getByRole("button", { name: "快捷导航", exact: true }).click();
-  await page.getByRole("combobox", { name: "搜索项目或页面", exact: true }).fill("发起构建");
+  await page.getByRole("combobox", { name: "搜索项目或页面", exact: true }).fill("新建 Release");
   const option = page.getByRole("option");
   await expect(option).toHaveCount(1);
   const size = await option.evaluate(element => ({
@@ -117,8 +141,55 @@ test("long project names leave quick navigation labels readable and clickable", 
   expect(size.content).toBeLessThanOrEqual(size.width + 1);
   expect(size.labelWidth).toBeGreaterThanOrEqual(48);
   await option.click();
-  await expect(page).toHaveURL(tenantURL("/projects/desktop-client/builds/new"));
-  await expect(page.locator(".wizard-steps li")).toHaveCount(3);
+  await expect(page).toHaveURL(tenantURL("/projects/desktop-client/releases/new"));
+  await expect(page.locator('input[name="version"]')).toBeVisible();
+  expect(events.writes).toEqual([]);
+});
+
+test("320px settings topbars keep long scope names and navigation controls usable", async ({ page }) => {
+  const events = await fixtureAPI(page);
+  await page.setViewportSize({ width: 320, height: 640 });
+  const tenant = {
+    id: tenantId, slug: tenantSlug, name: "跨平台构建与交付团队".repeat(8),
+    role: "owner", owner_id: "user-main", status: "active", archived_at: null,
+    created_at: "2026-11-15T00:00:00Z",
+  };
+  const longProject = { ...project, name: "客户端构建与制品交付".repeat(8) };
+  await page.route("**/api/v1/tenants", route => route.fulfill({ json: [tenant] }));
+  await page.route(`**/api/v1/tenants/${tenantSlug}`, route => route.fulfill({ json: tenant }));
+  await page.route("**/api/v1/tenant", route => route.fulfill({ json: {
+    tenant, project_roles: { [project.id]: "admin" },
+  } }));
+  await page.route("**/api/v1/projects", route => route.fulfill({ json: [longProject] }));
+  await page.route(`**/api/v1/projects/by-slug/${project.slug}`, route => route.fulfill({ json: longProject }));
+  for (const path of ["/settings/credentials", `/projects/${project.slug}/settings/resources`]) {
+    await page.goto(tenantURL(path));
+    const selector = page.locator(".workspace-breadcrumb > .space-selector.tenant");
+    const summary = selector.locator("summary");
+    const toggle = page.getByRole("button", { name: "打开导航", exact: true });
+    await expect(summary).toContainText(tenant.name);
+    await expect(summary).toBeInViewport({ ratio: 1 });
+    await expect(toggle).toBeInViewport({ ratio: 1 });
+    const [tenantBounds, toggleBounds] = await Promise.all([summary.boundingBox(), toggle.boundingBox()]);
+    expect(tenantBounds).not.toBeNull();
+    expect(toggleBounds).not.toBeNull();
+    const overlap = tenantBounds!.x < toggleBounds!.x + toggleBounds!.width
+      && tenantBounds!.x + tenantBounds!.width > toggleBounds!.x
+      && tenantBounds!.y < toggleBounds!.y + toggleBounds!.height
+      && tenantBounds!.y + tenantBounds!.height > toggleBounds!.y;
+    expect(overlap).toBe(false);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await summary.click();
+    await expect(selector.getByRole("textbox", { name: "搜索租户", exact: true })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(summary).toBeFocused();
+    await toggle.click();
+    const drawer = page.getByRole("dialog", { name: "主导航", exact: true });
+    await expect(drawer.getByRole("navigation", { name: "管理分区", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(toggle).toBeFocused();
+    await expect(page.locator(".workspace")).not.toHaveAttribute("inert", "");
+  }
   expect(events.writes).toEqual([]);
 });
 

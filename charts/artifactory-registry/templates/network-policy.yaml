@@ -1,0 +1,22 @@
+# [INPUT]: 仓库实例标签与同命名空间 Gateway Pod 标签。
+# [OUTPUT]: 仅允许 Gateway 向 Distribution 的 5000 端口发起连接。
+# [POS]: 防止持有仓库 JWT 的客户端绕过 Manifest 发布围栏。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+{{- $prefix := regexReplaceAll "-+$" (default "artifactory" .Values.fullnameOverride | trunc 46) "" }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $prefix }}-registry
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: artifactory-registry
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.gatewaySelector | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 5000}

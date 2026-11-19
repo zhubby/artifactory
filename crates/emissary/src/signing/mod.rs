@@ -1,8 +1,8 @@
-//! [INPUT]: 依赖固定签名绑定、mTLS 领取、跨平台文件锁和原生工具。
+//! [INPUT]: 依赖固定签名绑定、mTLS 领取、共享脱敏和原生工具。
 //! [OUTPUT]: 提供签名材料、临时 Keychain、显式解锁和清理闭锁。
 //! [POS]: 同一构建节点上的任务签名生命周期；不向源码目录写入密钥。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
-pub mod redact;
+pub use artifactory_execution_support::redact;
 mod verify;
 use crate::{
     client,

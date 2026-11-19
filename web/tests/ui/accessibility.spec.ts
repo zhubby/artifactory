@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证accessibility页面行为。
+ * [OUTPUT]: 验证业务页面、侧栏设置与个人设置的无障碍边界。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -32,8 +32,8 @@ for (const theme of ["light", "dark"]) {
     await page.goto(tenantURL("/projects/desktop-client"));
     await expect(page.getByRole("heading", { name: "Desktop Client", exact: true })).toBeVisible();
     await audit(page);
-    await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-    await expect(page.locator(".wizard-steps li")).toHaveCount(3);
+    await page.goto(tenantURL("/projects/desktop-client/releases/new"));
+    await expect(page.locator('input[name="version"]')).toBeVisible();
     await audit(page);
     await page.goto(tenantURL("/projects/desktop-client/builds/128"));
     await expect(page.getByRole("log")).toContainText("native compilation complete");
@@ -45,10 +45,10 @@ for (const theme of ["light", "dark"]) {
     await audit(page);
     await page.keyboard.press("Escape");
     await page.goto(tenantURL("/settings"));
-    await expect(page.getByRole("heading", { name: "租户管理", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "基本信息", level: 1, exact: true })).toBeVisible();
     await audit(page);
     await page.goto(tenantURL("/settings/credentials"));
-    await expect(page.getByRole("heading", { name: "Git 凭据", exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Git 凭据", level: 1, exact: true })).toBeVisible();
     await audit(page);
     await openPreferences(page);
     await audit(page);

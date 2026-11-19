@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 遥测验收入口和本机白名单状态夹具。
-[OUTPUT]: 验证池准入、超时收尾和 Pod 执行台账的诊断字段隔离。
+[OUTPUT]: 验证 Release 构建超时、池准入和白名单执行诊断。
 [POS]: 不访问集群；拒绝把凭据写入验收证据。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -29,7 +29,7 @@ class TelemetryTests(unittest.TestCase):
         acceptance.kubectl = kubectl
         with tempfile.TemporaryDirectory() as temporary:
             acceptance.run = Path(temporary)
-            with self.assertRaisesRegex(AssertionError, 'admitting AgentPool'):
+            with self.assertRaisesRegex(AssertionError, 'admitting PlanningPool'):
                 TELEMETRY.require_admission(acceptance)
             self.assertTrue(all(call[0] == 'get' for call in calls))
             self.assertEqual(json.loads((acceptance.run / 'evidence.json').read_text())['telemetry_pool']['max_active'], 0)
@@ -43,8 +43,8 @@ class TelemetryTests(unittest.TestCase):
         resources = [{'kind': kind, 'metadata': {'name': name, 'uid': name, 'annotations': {'secret': 'raw-credential'}},
                       'spec': spec, 'status': {'phase': 'Pending', 'message': 'raw-credential'}} for kind, name, spec in [
             ('SourceTask', 'source', {'taskId': 'build', 'secret': 'raw-credential'}),
-            ('AgentRun', 'run', {'runId': run_id, 'leaseToken': 'raw-credential'}),
-            ('AgentPool', 'default', {'maxActive': 0}),
+            ('PlanningRun', 'run', {'runId': run_id, 'leaseToken': 'raw-credential'}),
+            ('PlanningPool', 'default', {'maxActive': 0}),
             ('SourceTask', 'unrelated', {'taskId': 'other'})]]
         resources[1]['status']['execution'] = {'name': 'planning-pod', 'uid': 'planning-uid',
             'nodeName': 'kind-control-plane', 'attempt': 1, 'createStarted': True,
@@ -85,8 +85,9 @@ class TelemetryTests(unittest.TestCase):
                 reads.append('build')
                 return {'id': 'telemetry-build', 'status': 'planning' if reads.count('build') == 1 else 'queued', 'jobs': []}
             fixture.api = api
+            fixture.create_build = lambda *_args, **_kwargs: {'id': 'telemetry-build'}
             def kubectl(*args):
-                if args[:2] == ('get', 'agentpool'):
+                if args[:2] == ('get', 'planningpool'):
                     return json.dumps({'metadata': {'generation': 1}, 'spec': {'maxActive': 2},
                                        'status': {'phase': 'Ready', 'observedGeneration': 1}})
                 return json.dumps({'items': []})

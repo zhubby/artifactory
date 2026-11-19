@@ -127,19 +127,19 @@ resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {cpu: "1", memory: 768Mi}
 
-# Runtime is embedded in the control plane.
+# Planning coordinator is embedded in the control plane.
 # Kubernetes Pod is the only planning backend.
 planning:
-  runtimeUrl: ""
+  coordinatorUrl: ""
   namespace: ""
-  agentPool: default
+  pool: default
   serviceSecretName: ""
   serviceCaSecretName: ""
 
 gateway:
   replicas: 2
   # Optional ca.pem/server.pem/server.key for an existing service CA.
-  # Empty selects the device PKI; Runtime must trust its CA.
+  # Empty selects the device PKI; Planning coordinator must trust its CA.
   internalTlsSecret: ''
   # Secret key token; empty selects <prefix>-gateway.
   secretName: ''

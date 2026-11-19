@@ -96,7 +96,7 @@ helm upgrade --install artifactory charts/artifactory \
 ```
 
 Chart 将 Secret 复制到内存卷，并设置文件模式为 `0600`。
-材料不进入 Web、规划 Worker、Runtime 或 Source 服务。
+材料不进入 Web、规划 Worker、规划协调器或源码准备进程。
 Secret 内容更新后需滚动重启控制平面。
 
 ## 执行和清理

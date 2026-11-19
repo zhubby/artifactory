@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 直接 Pod 台账、异步容器状态、模拟服务端点和节点进程。
-[OUTPUT]: 验证启动等待、失联撤权、物理停机和数据库及 DNS 服务恢复。
+[OUTPUT]: 验证 Release 构建、失联停机和数据库及 DNS 恢复。
 [POS]: 离线执行 cleanup 验收流程，不连接真实集群。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -33,7 +33,7 @@ class CleanupTests(unittest.TestCase):
         execution = {'name': 'pi-pod', 'uid': 'pi-uid'}
         before = {'id': 'planning-run', 'life': life, 'execution': execution}
         pod = {'metadata': {'name': 'pi-pod', 'uid': 'pi-uid'}, 'status': {
-            'containerStatuses': [{'name': 'pi', 'containerID': 'containerd://pi-container',
+            'containerStatuses': [{'name': 'planning-worker', 'containerID': 'containerd://pi-container',
                                    'state': {'running': {'startedAt': '2026-11-19T00:00:00Z'}}}]}}
         ready = lambda: {'metadata': {'name': 'operator-control-plane'}, 'status': {
             'conditions': [{'type': 'Ready', 'status': 'Unknown' if state['isolated'] else 'True'}]}}
@@ -73,9 +73,9 @@ class CleanupTests(unittest.TestCase):
         def kubectl(*args):
             if args[:2] in [('get', 'service'), ('patch', 'service')]:
                 return service('artifact-cleanup', args)
-            if args[:2] == ('get', 'agentpool'):
+            if args[:2] == ('get', 'planningpool'):
                 return json.dumps({'spec': {'maxActive': 8}})
-            if args[:2] == ('patch', 'agentpool'):
+            if args[:2] == ('patch', 'planningpool'):
                 state['pool_capacities'].append(json.loads(args[-1])['spec']['maxActive'])
                 return ''
             if args[:2] == ('get', 'pods'):
@@ -93,7 +93,7 @@ class CleanupTests(unittest.TestCase):
                 if state['canceled']:
                     current['metadata']['deletionTimestamp'] = '2026-11-19T00:00:00Z'
                 return json.dumps(current)
-            if args[:2] == ('get', 'agentrun'):
+            if args[:2] == ('get', 'planningrun'):
                 status = {'phase': 'canceled' if state['canceled'] else 'running',
                           'execution': None, 'message': None}
                 if not state['restored']:
@@ -109,6 +109,9 @@ class CleanupTests(unittest.TestCase):
                 return {'runs': [{'id': before['id']}]}
             if path == '/api/v1/projects':
                 return {'id': 'project'}
+            if path == '/api/v1/projects/project/releases':
+                self.assertEqual(_body['targets'], ['app'])
+                return {'id': 'release', 'version': _body['version']}
             if path.endswith('/builds'):
                 return {'id': 'build'}
             raise AssertionError('Unexpected API call: ' + path)
@@ -165,6 +168,7 @@ class CleanupTests(unittest.TestCase):
             origin='https://control.invalid', tenant_id='tenant', jar=[], token='fixture-token',
             processes=[helper], resume=lambda: None, command=command, kubectl=kubectl, api=api,
             wait=wait, sql=lambda _database, query: '0' if 'count(*)' in query else json.dumps(before))
+        acceptance.create_build = cleanup.Acceptance.create_build.__get__(acceptance)
         patches = [patch.object(cleanup, 'ROOT', Path(directory)),
                    patch.object(cleanup, 'Acceptance', return_value=acceptance),
                    patch.object(cleanup, 'docker', side_effect=docker),
@@ -257,15 +261,15 @@ class CleanupTests(unittest.TestCase):
 
     def test_waits_for_pi_container_startup_before_fault_injection(self):
         statuses = [None, {}, {'containerStatuses': []},
-                    {'containerStatuses': [{'name': 'pi', 'state': {
+                    {'containerStatuses': [{'name': 'planning-worker', 'state': {
                         'waiting': {'reason': 'ContainerCreating'}}}]},
-                    {'containerStatuses': [{'name': 'pi', 'state': {'running': {}}}]},
-                    {'containerStatuses': [{'name': 'pi', 'containerID': 'containerd://old-container',
+                    {'containerStatuses': [{'name': 'planning-worker', 'state': {'running': {}}}]},
+                    {'containerStatuses': [{'name': 'planning-worker', 'containerID': 'containerd://old-container',
                                             'state': {'waiting': {'reason': 'ContainerCreating'}}}]},
                     {'containerStatuses': [
                         {'name': 'sidecar', 'containerID': 'containerd://sidecar',
                          'state': {'running': {}}},
-                        {'name': 'pi', 'containerID': 'containerd://pi-container',
+                        {'name': 'planning-worker', 'containerID': 'containerd://pi-container',
                          'state': {'running': {}}}]}]
         with tempfile.TemporaryDirectory() as directory:
             state, evidence = self.exercise(directory, pod_statuses=statuses)
@@ -273,7 +277,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(state['signal_targets'], ['200', '200'])
 
     def test_pod_replacement_during_startup_is_rejected_before_fault_injection(self):
-        statuses = [{'containerStatuses': [{'name': 'pi', 'state': {
+        statuses = [{'containerStatuses': [{'name': 'planning-worker', 'state': {
                         'waiting': {'reason': 'ContainerCreating'}}}]}]
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(AssertionError, 'Pod identity changed'):
@@ -283,7 +287,7 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(self.latest_state['pool_capacities'], [1, 8])
 
     def test_unstarted_container_times_out_without_fault_injection(self):
-        statuses = [{'containerStatuses': [{'name': 'pi', 'state': {
+        statuses = [{'containerStatuses': [{'name': 'planning-worker', 'state': {
                         'waiting': {'reason': 'ImagePullBackOff'}}}]}]
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(TimeoutError):

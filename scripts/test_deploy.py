@@ -1,5 +1,5 @@
 """[INPUT]: 单机部署清单与私有环境初始化脚本。
-[OUTPUT]: 验证固定网关路径、私有对象源和凭据保留。
+[OUTPUT]: 验证固定初始账号、网关路径和持久凭据保留。
 [POS]: 仅渲染 Compose，不启动容器。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -105,7 +105,6 @@ class ProductionComposeTests(unittest.TestCase):
             ARTIFACTORY_GATEWAY_TOKEN='non-secret-gateway-token-fixture-1234',
             ARTIFACTORY_S3_ACCESS_KEY='non-secret-config-fixture',
             ARTIFACTORY_S3_SECRET_KEY='non-secret-config-fixture',
-            ARTIFACTORY_BOOTSTRAP_PASSWORD='non-secret-config-fixture',
         )
         for enabled in ['true', 'false']:
             with self.subTest(enabled=enabled):
@@ -119,6 +118,14 @@ class ProductionComposeTests(unittest.TestCase):
                     check=True, timeout=30,
                 )
                 manifest = json.loads(result.stdout)
+                self.assertEqual(
+                    manifest['services']['control-plane']['environment']['ARTIFACTORY_BOOTSTRAP_USERNAME'],
+                    'admin',
+                )
+                self.assertEqual(
+                    manifest['services']['control-plane']['environment']['ARTIFACTORY_BOOTSTRAP_PASSWORD'],
+                    '123456',
+                )
                 self.assertEqual(
                     manifest['services']['control-plane']['environment'].get('ARTIFACTORY_REGISTRATION_ENABLED'),
                     enabled,
@@ -156,6 +163,8 @@ class ProductionComposeTests(unittest.TestCase):
             'the size and mode must belong to the same absolute tmpfs mount',
         )
         services = manifest['services']
+        self.assertEqual(services['control-plane']['environment']['ARTIFACTORY_BOOTSTRAP_PASSWORD'],
+                         'non-secret-config-fixture')
         self.assertEqual(services['control-plane']['environment']['ARTIFACTORY_S3_ENDPOINT'], 'http://s3:8333')
         self.assertEqual(services['control-plane']['environment']['ARTIFACTORY_S3_ALLOW_HTTP'], 'true')
         self.assertNotIn('ARTIFACTORY_S3_PUBLIC_ENDPOINT', services['control-plane']['environment'])
@@ -188,11 +197,44 @@ class LocalRegistrationSettingsTests(unittest.TestCase):
                 original = (root / '.local/env').read_bytes()
                 settings = dict(line.split('=', 1) for line in original.decode().splitlines())
                 self.assertEqual(settings.get('ARTIFACTORY_REGISTRATION_ENABLED'), enabled)
+                self.assertEqual(settings['ARTIFACTORY_BOOTSTRAP_USERNAME'], 'admin')
+                self.assertEqual(settings['ARTIFACTORY_BOOTSTRAP_PASSWORD'], '123456')
                 self.assertGreaterEqual(len(settings['ARTIFACTORY_GATEWAY_TOKEN']), 32)
                 self.assertEqual(settings['ARTIFACTORY_PUBLIC_URL'], 'http://127.0.0.1:8081')
                 environment['ARTIFACTORY_REGISTRATION_ENABLED'] = 'false' if enabled == 'true' else 'true'
                 subprocess.run(command, cwd=root, env=environment, check=True, capture_output=True)
                 self.assertEqual((root / '.local/env').read_bytes(), original)
+
+
+class ProductionBootstrapSettingsTests(unittest.TestCase):
+    @unittest.skipIf(hasattr(os, 'getuid') and os.getuid() == 0,
+                     'production initialization requires a non-root deployment account')
+    def test_initial_account_and_random_secrets_preserve_existing_environment(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'scripts').mkdir()
+            shutil.copy(ROOT / 'scripts/init-deploy.sh', root / 'scripts/init-deploy.sh')
+            environment = {key: value for key, value in os.environ.items()
+                           if not key.startswith('ARTIFACTORY_')}
+            environment.update(ARTIFACTORY_DOMAIN='console.example.invalid',
+                               ARTIFACTORY_GRPC_HOST='control.example.invalid')
+            command = ['sh', 'scripts/init-deploy.sh']
+            subprocess.run(command, cwd=root, env=environment, check=True, capture_output=True)
+            before = {path.relative_to(root): path.read_bytes()
+                      for path in (root / '.deploy').rglob('*') if path.is_file()}
+            settings = dict(line.split('=', 1) for line in before[Path('.deploy/env')].decode().splitlines())
+            self.assertEqual(settings['ARTIFACTORY_BOOTSTRAP_USERNAME'], 'admin')
+            self.assertEqual(settings['ARTIFACTORY_BOOTSTRAP_PASSWORD'], '123456')
+            names = ('ARTIFACTORY_DATABASE_PASSWORD', 'ARTIFACTORY_TELEMETRY_DATABASE_PASSWORD',
+                     'ARTIFACTORY_TELEMETRY_TOKEN', 'ARTIFACTORY_MASTER_KEY',
+                     'ARTIFACTORY_GATEWAY_TOKEN', 'ARTIFACTORY_S3_SECRET_KEY')
+            self.assertTrue(all(len(settings[name]) >= 32 for name in names))
+            self.assertEqual(len({settings[name] for name in names}), len(names))
+            repeated = subprocess.run(command, cwd=root, env=environment, capture_output=True, text=True)
+            self.assertNotEqual(repeated.returncode, 0)
+            self.assertIn('refusing to rotate persistent keys', repeated.stderr)
+            self.assertEqual(before, {path.relative_to(root): path.read_bytes()
+                                      for path in (root / '.deploy').rglob('*') if path.is_file()})
 
 
 if __name__ == '__main__':

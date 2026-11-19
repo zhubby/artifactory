@@ -1,8 +1,8 @@
 //! [INPUT]: 依赖租户、项目和业务状态。
-//! [OUTPUT]: 启动业务、规划运行时与调度服务。
-//! [POS]: 控制平面的业务边界。
+//! [OUTPUT]: 首次创建管理员，启动业务、规划运行时与调度服务。
+//! [POS]: 控制平面启动边界；已有账号不受初始密码配置影响。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use artifactory_control_plane::{
     api, auth,
     grpc::EmissaryService,
@@ -53,12 +53,12 @@ async fn main() -> Result<()> {
         let username =
             std::env::var("ARTIFACTORY_BOOTSTRAP_USERNAME").unwrap_or_else(|_| "admin".into());
         let password = std::env::var("ARTIFACTORY_BOOTSTRAP_PASSWORD")
-            .context("ARTIFACTORY_BOOTSTRAP_PASSWORD is required for the first administrator")?;
+            .unwrap_or_else(|_| auth::INITIAL_ADMIN_PASSWORD.into());
         ensure!(
             !username.is_empty() && username.len() <= 100,
             "invalid bootstrap username"
         );
-        let hash = auth::password_hash(&password)?;
+        let hash = auth::bootstrap_password_hash(&password)?;
         store.bootstrap_admin(username, hash).await?;
     }
     let storage = Storage::new(&settings)?;
@@ -74,19 +74,19 @@ async fn main() -> Result<()> {
     };
     scheduler::start(state.clone());
     artifactory_control_plane::images::start(state.clone())?;
-    let runtime = if std::env::var_os("ARTIFACTORY_RUNTIME_URL").is_some() {
+    let coordinator = if std::env::var_os("ARTIFACTORY_PLANNING_URL").is_some() {
         let database_url =
-            artifactory_runtime_protocol::service::required("ARTIFACTORY_RUNTIME_DATABASE_URL")?;
-        let runtime = artifactory_planner_runtime::server::from_env(&database_url).await?;
-        let background = runtime.clone();
+            artifactory_service_transport::service::required("ARTIFACTORY_PLANNING_DATABASE_URL")?;
+        let coordinator = artifactory_planning_coordinator::server::from_env(&database_url).await?;
+        let background = coordinator.clone();
         let stop = state.coordination.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
                     _ = stop.stopped() => break,
-                    result = artifactory_planner_runtime::server::maintain(&background) => {
+                    result = artifactory_planning_coordinator::server::maintain(&background) => {
                         if let Err(error) = result {
-                            tracing::warn!(%error, "runtime reconciliation failed");
+                            tracing::warn!(%error, "coordinator reconciliation failed");
                         }
                     }
                 }
@@ -96,7 +96,7 @@ async fn main() -> Result<()> {
                 }
             }
         });
-        Some(runtime)
+        Some(coordinator)
     } else {
         None
     };
@@ -136,9 +136,9 @@ async fn main() -> Result<()> {
     let listener = tokio::net::TcpListener::bind(&settings.http_bind).await?;
     tracing::info!(http=%settings.http_bind,grpc=%settings.grpc_bind,"artifactory control plane ready");
     let mut router = api::router(state);
-    if let Some(runtime) = runtime {
-        let token = artifactory_runtime_protocol::service::required("ARTIFACTORY_SERVICE_TOKEN")?;
-        router = api::mount_planner(router, runtime, token);
+    if let Some(coordinator) = coordinator {
+        let token = artifactory_service_transport::service::required("ARTIFACTORY_SERVICE_TOKEN")?;
+        router = api::mount_planning(router, coordinator, token);
     }
     let http = axum::serve(listener, router)
         .with_graceful_shutdown(async move { http_stop.stopped().await });

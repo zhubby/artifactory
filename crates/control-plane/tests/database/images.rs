@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离数据库与镜像执行存储。
-//! [OUTPUT]: 验证无设备执行、候选确认、发布幂等和撤销。
+//! [OUTPUT]: 验证无设备执行、候选确认和 Release 外仓分发。
 //! [POS]: 镜像执行状态机的数据库集成验收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
@@ -11,15 +11,14 @@ mod completion;
 mod regressions;
 async fn image(db: &Database) -> (Uuid, Uuid, Uuid, Uuid) {
     let (project, build, job) = db.fixture().await;
-    let snapshot = Uuid::new_v4();
-    db.source(project, snapshot).await;
-    sql::execute(
+    let snapshot = sql::scalar(
         &mut db.pool.clone(),
-        "UPDATE builds SET source_manifest_id=$2 WHERE id=$1",
-        params![build, snapshot],
+        "SELECT source_manifest_id FROM builds WHERE id=$1",
+        params![build],
     )
     .await
     .unwrap();
+    sql::execute(&mut db.pool.clone(), "UPDATE releases SET target_requirements='[{\"kind\":\"image\",\"key\":\"app\",\"platforms\":[\"linux/amd64\",\"linux/arm64\"]}]' WHERE id=(SELECT release_id FROM builds WHERE id=$1)", params![build]).await.unwrap();
     let target = json!({"executor":"buildkit","os":"linux","arch":"amd64","timeout_seconds":600,"image":{"name":"app","platforms":["linux/amd64","linux/arm64"]}});
     sql::execute(
         &mut db.pool.clone(),
@@ -287,11 +286,20 @@ async fn confirm_image(store: &artifactory_control_plane::store::ControlStore, i
     store.complete_image(id, &uid).await.unwrap();
 }
 
+// 外仓测试只模拟已完成的正式推广；真实仓库推广由 OCI 与集群验收覆盖。
+async fn freeze_published_image(db: &Database, build: Uuid, execution: Uuid) -> String {
+    let repository: String = sql::scalar(&mut db.pool.clone(), "SELECT b.tenant_id::text||'/'||b.project_id::text||'/images/app' FROM builds b WHERE b.id=$1",params![build]).await.unwrap();
+    sql::execute(&mut db.pool.clone(),"INSERT INTO release_deliveries(release_id,build_id,source_manifest_id,spec_revision,manifest) SELECT release_id,id,source_manifest_id,spec_revision,'{}' FROM builds WHERE id=$1",params![build]).await.unwrap();
+    sql::execute(&mut db.pool.clone(),"INSERT INTO release_images(release_id,image_id,repository,version,root_digest,manifest_digests) SELECT b.release_id,i.id,$3,b.release_version,i.digest,jsonb_build_array(i.digest) FROM image_artifacts i JOIN jobs j ON j.id=i.job_id JOIN builds b ON b.id=j.build_id WHERE b.id=$1 AND i.execution_id=$2",params![build,execution,&repository]).await.unwrap();
+    sql::execute(&mut db.pool.clone(),"UPDATE releases SET status='published',published_at=now() WHERE id=(SELECT release_id FROM builds WHERE id=$1)",params![build]).await.unwrap();
+    repository
+}
+
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
-async fn failed_publication_retries_without_building_and_external_failure_preserves_result() {
+async fn unpublished_candidates_cannot_distribute_and_external_failure_preserves_result() {
     let db = Database::with_tenant().await;
-    let (project, _, job, _) = image(&db).await;
+    let (project, build, job, _) = image(&db).await;
     let store = publication_store(&db, project);
     let id = Uuid::new_v4();
     store
@@ -308,11 +316,6 @@ async fn failed_publication_retries_without_building_and_external_failure_preser
         1200
     );
     let digest = platform_results(&store, id).await;
-    store.finish_image(id, "failed").await.unwrap();
-    assert_eq!(
-        store.image_execution(id).await.unwrap().status,
-        "publish_failed"
-    );
     assert!(
         store
             .request_image_publication(
@@ -326,28 +329,22 @@ async fn failed_publication_retries_without_building_and_external_failure_preser
             .await
             .is_err()
     );
-    let retry = Uuid::new_v4();
-    store
-        .request_image_publication(id, retry, None, None, &[], "retry")
-        .await
-        .unwrap();
-    let execution = store.image_execution(retry).await.unwrap();
-    assert_eq!(execution.operation, "publish");
-    assert_eq!(execution.parent_id, Some(id));
-    assert_eq!(execution.results.len(), 2);
+    assert!(
+        store
+            .request_image_publication(id, Uuid::new_v4(), None, None, &[], "retry")
+            .await
+            .is_err()
+    );
     assert!(
         !store
             .claim_image(job, Uuid::new_v4(), "other", "other")
             .await
             .unwrap()
     );
-    store
-        .save_image_task(retry, "sealed-publisher")
-        .await
-        .unwrap();
+    store.save_image_task(id, "sealed-publisher").await.unwrap();
     store
         .image_report(
-            retry,
+            id,
             true,
             &Report::Published {
                 digest: digest.clone(),
@@ -356,10 +353,37 @@ async fn failed_publication_retries_without_building_and_external_failure_preser
         )
         .await
         .unwrap();
-    confirm_image(&store, retry).await;
+    confirm_image(&store, id).await;
     assert_eq!(store.image_execution(id).await.unwrap().status, "succeeded");
     let credential = Uuid::new_v4();
     sql::execute(&mut db.pool.clone(),"INSERT INTO image_credentials(id,tenant_id,project_id,name,kind,envelope,registry_origin) VALUES($1,'00000000-0000-0000-0000-000000000001',$2,'destination','registry','sealed','https://external.example.com:5443')",params![credential,project]).await.unwrap();
+    assert!(
+        store
+            .request_image_publication(
+                id,
+                Uuid::new_v4(),
+                Some(credential),
+                Some("external/app"),
+                &[],
+                "unpublished"
+            )
+            .await
+            .is_err()
+    );
+    let formal_repository = freeze_published_image(&db, build, id).await;
+    assert!(
+        store
+            .request_image_publication(
+                id,
+                Uuid::new_v4(),
+                Some(credential),
+                Some("external/app"),
+                &["other".into()],
+                "override"
+            )
+            .await
+            .is_err()
+    );
     let external = Uuid::new_v4();
     store
         .request_image_publication(
@@ -367,21 +391,22 @@ async fn failed_publication_retries_without_building_and_external_failure_preser
             external,
             Some(credential),
             Some("external/app"),
-            &["v1".into()],
+            &[],
             "external",
         )
         .await
         .unwrap();
     let execution = store.image_execution(external).await.unwrap();
     assert_eq!(execution.root_digest.as_ref(), Some(&digest));
-    assert_eq!(
-        execution.candidate_repository,
-        store
-            .image_execution(id)
-            .await
-            .unwrap()
-            .destination_repository
-    );
+    assert_eq!(execution.candidate_repository, formal_repository);
+    let version: String = sql::scalar(
+        &mut db.pool.clone(),
+        "SELECT release_version FROM builds WHERE id=$1",
+        params![build],
+    )
+    .await
+    .unwrap();
+    assert_eq!(execution.tags, vec![version]);
     store
         .save_image_task(external, "sealed-external")
         .await
@@ -415,7 +440,7 @@ async fn failed_publication_retries_without_building_and_external_failure_preser
             external_retry,
             Some(credential),
             Some("external/app"),
-            &["v1".into()],
+            &[],
             "retry-external",
         )
         .await
@@ -680,12 +705,20 @@ async fn disabled_namespace_rejects_image_retry_but_preserves_native_retry_and_a
         .unwrap(),
         "queued"
     );
-    let input: artifactory_control_plane::store::BuildInput =
-        serde_json::from_value(json!({"ref":"main"})).unwrap();
+    let input = serde_json::from_value(json!({"parameters":{}})).unwrap();
+    let release: Uuid = sql::scalar(
+        &mut db.pool.clone(),
+        "SELECT release_id FROM builds WHERE id=$1",
+        params![native_build],
+    )
+    .await
+    .unwrap();
+    sql::execute(&mut db.pool.clone(),"INSERT INTO model_profiles(id,tenant_id,name,api,base_url,model,key_ciphertext,is_default) VALUES($1,$2,'test','openai-responses','https://example.com','test','unused',true)",params![Uuid::new_v4(),tenant]).await.unwrap();
     let build = db
         .state
         .store
-        .create_build(native_project, owner, &input, "native build".into())
+        .for_auth(&auth)
+        .create_release_build(release, owner, &input)
         .await
         .unwrap();
     let context: serde_json::Value = sql::scalar(

@@ -1,464 +1,158 @@
 /**
- * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证build-wizard页面行为。
- * [POS]: 使用模拟 API 的界面浏览器回归入口。
+ * [INPUT]: 依赖 Release、目标修订与构建 HTTP 夹具。
+ * [OUTPUT]: 验证版本入口、严格 SemVer、合同修订和冻结交付。
+ * [POS]: Release 中心交付流程的浏览器回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
-import { expect, test, type Page } from "@playwright/test";
-import {
-  fixtureAPI,
-  project,
-  repositoryRefs,
-  openPreferences,
-  closePreferences,
-  tenantURL,
-} from "./fixtures";
+import { expect, test } from "@playwright/test";
+import { build, fixtureAPI, project, release, tenantURL, openNavigation } from "./fixtures";
+import { compareReleaseVersions, isReleaseVersion } from "../../src/lib/releases";
+const path = `/projects/${project.slug}/releases/${release.id}`;
 
-async function next(page: Page) {
-  await page.getByRole("button", { name: "继续", exact: true }).click();
-}
+test("strict SemVer rejects normalization and orders prerelease identifiers numerically", () => {
+  for (const version of ["1.2.0","1.2.0-rc.1","0.0.0","1.0.0-0","1.0.0-01a"]) expect(isReleaseVersion(version),version).toBe(true);
+  for (const version of ["v1.2.0","01.2.0","1.02.0","1.2.03","1.2.0-01","1.2.0+abc","1.2","1.2.0 ","1.2.0-中文","1.2.0-"+"a".repeat(100)]) expect(isReleaseVersion(version),version).toBe(false);
+  const versions = ["2.0.0","1.2.0-rc.10","1.2.0-rc.2","1.2.0","1.2.0-alpha","1.2.0-rc.1"];
+  expect(versions.sort(compareReleaseVersions)).toEqual(["1.2.0-alpha","1.2.0-rc.1","1.2.0-rc.2","1.2.0-rc.10","1.2.0","2.0.0"]);
+});
 
-async function reachReview(page: Page) {
-  await expect(
-    page.getByRole("radio", { name: "分支 main", exact: true }),
-  ).toBeChecked();
-  await next(page);
-  await page
-    .getByRole("radio", { name: "构建并收集产物", exact: true })
-    .check();
-  await expect(
-    page.getByRole("radio", { name: "自动选择平台", exact: true }),
-  ).toBeChecked();
-  await next(page);
-  await expect(
-    page.getByRole("heading", { name: "确认后即可发起构建", exact: true }),
-  ).toBeVisible();
-}
-
-test("all build entry points open the dedicated wizard without treating new as a build ID", async ({
-  page,
-}) => {
+test("project navigation centers Releases and creates a version with explicit targets", async ({page}) => {
   const events = await fixtureAPI(page);
-  const detailRequests: string[] = [];
-  page.on("request", (request) => {
-    if (new URL(request.url()).pathname === "/api/v1/builds/new")
-      detailRequests.push(request.url());
+  let payload: Record<string,unknown> | undefined;
+  await page.route(`**/api/v1/projects/${project.id}/releases`, async route => {
+    payload = route.request().postDataJSON(); await route.fulfill({json:release});
   });
-  for (const path of [
-    `/projects/${project.slug}`,
-    `/projects/${project.slug}/builds`,
-  ]) {
-    await page.goto(tenantURL(path));
-    await page.getByRole("link", { name: "发起构建", exact: true }).click();
-    await expect(page).toHaveURL(/\/projects\/desktop-client\/builds\/new$/);
-    await expect(
-      page.getByRole("heading", { name: "要构建哪份源码？", exact: true }),
-    ).toBeVisible();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-  }
-  expect(detailRequests).toEqual([]);
+  await page.goto(tenantURL(`/projects/${project.slug}`));
+  await openNavigation(page);
+  await expect(page.locator(".sidebar .nav-item")).toHaveText(["项目概览","Release 版本","项目设置","文档"]);
+  if (page.viewportSize()!.width < 1024) await page.keyboard.press("Escape");
+  await page.getByRole("link",{name:"新建 Release",exact:true}).click();
+  await expect(page.locator('input[name="ref"]')).toHaveValue("refs/heads/main");
+  await page.locator('input[name="version"]').fill("v1.2.0");
+  await page.locator('textarea[name="goal"]').fill("Build signed packages");
+  await page.getByRole("button",{name:"新建 Release",exact:true}).click();
+  await expect(page.locator(".error-box")).toContainText("严格 SemVer");
+  expect(payload).toBeUndefined();
+  await page.locator('input[name="version"]').fill("1.2.0-rc.1");
+  await page.getByRole("button",{name:"新建 Release",exact:true}).click();
+  await expect(page).toHaveURL(tenantURL(path));
+  expect(payload).toEqual({version:"1.2.0-rc.1",ref:"refs/heads/main",goal:"Build signed packages",targets:["linux-amd64"],target_requirements:[{kind:"native",key:"linux-amd64",os:"linux",arch:"amd64",application_platform:"linux",artifact_key:"app",format_suffix:".tar.gz"}]});
   expect(events.writes).toEqual([]);
 });
 
-test("only final confirmation creates a build with the existing request contract", async ({
-  page,
-}) => {
-  const events = await fixtureAPI(page);
-  const requests: Record<string, unknown>[] = [];
-  await page.route("**/api/v1/projects/project-main/builds", async (route) => {
-    requests.push(route.request().postDataJSON());
-    await route.fulfill({
-      json: { id: "build-main", project_slug: project.slug, number: 128 },
-    });
-  });
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  await reachReview(page);
-  expect(events.writes).toEqual([]);
-  expect(requests).toEqual([]);
-  await page.getByRole("button", { name: "发起构建", exact: true }).click();
-  await expect(page).toHaveURL(/\/projects\/desktop-client\/builds\/128$/);
-  expect(requests).toEqual([
-    {
-      ref: "refs/heads/main",
-      goal: "构建本项目，并收集所选平台的可分发产物。",
-      target_requirements: [],
-      parameters: {},
-      release_version: null,
-    },
-  ]);
-});
-
-test("viewer cannot operate the wizard even through a direct URL", async ({
-  page,
-}) => {
-  await fixtureAPI(page, "viewer");
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  await expect(
-    page.getByText("当前账号没有发起构建的权限。", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "继续", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "发起构建", exact: true }),
-  ).toHaveCount(0);
-});
-
-test("tags, manual platforms, release and parameters keep the existing payload and failed drafts", async ({
-  page,
-}) => {
+test("draft edits preserve version and ref and submit the expected target revision",async({page})=>{
   await fixtureAPI(page);
-  const requests: Record<string, unknown>[] = [];
-  await page.route("**/api/v1/projects/project-main/builds", async (route) => {
-    requests.push(route.request().postDataJSON());
-    await route.fulfill({
-      status: 403,
-      json: { error: "Release permission denied [fixture]" },
-    });
+  let saved = release;
+  const writes: unknown[]=[];
+  await page.route(`**/api/v1/releases/${release.id}`,async route=>{
+    if(route.request().method()==="PATCH") { const body=route.request().postDataJSON();writes.push(body);saved={...saved,...body,spec_revision:2}; }
+    await route.fulfill({json:saved});
   });
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  await page.getByRole("button", { name: "标签", exact: true }).click();
-  await page.getByRole("searchbox", { name: "搜索分支或标签" }).fill("1.2");
-  await page.getByRole("radio", { name: "标签 v1.2.0", exact: true }).check();
-  await next(page);
-  await page
-    .getByRole("radio", { name: "构建、测试并收集产物", exact: true })
-    .check();
-  await page
-    .locator('textarea[name="goal"]')
-    .fill("Build and test the desktop application");
-  await page.getByRole("radio", { name: "指定目标平台", exact: true }).check();
-  await next(page);
-  await expect(page.locator(".error-box[role=alert]")).toContainText(
-    "请至少选择一个目标平台",
-  );
-  await page
-    .getByRole("checkbox", { name: "macOS · ARM64", exact: true })
-    .check();
-  await page
-    .getByRole("checkbox", { name: "Linux · x64", exact: true })
-    .check();
-  await next(page);
-  await page.locator('input[name="publish"]').check();
-  await page.getByRole("button", { name: "发起构建", exact: true }).click();
-  await expect(page.locator(".error-box[role=alert]")).toContainText(
-    "Release 版本",
-  );
-  expect(requests).toEqual([]);
-  await page.locator('input[name="release_version"]').fill("v1.2.0-preview");
-  await page.getByText("高级参数（可选）", { exact: true }).click();
-  for (const value of [
-    '{"unfinished":',
-    "[]",
-    '{"BUILD_MODE":1}',
-    '{"invalid-key":"release"}',
-  ]) {
-    await page.locator('textarea[name="parameters"]').fill(value);
-    await page.getByRole("button", { name: "发起构建", exact: true }).click();
-    await expect(page.locator(".error-box[role=alert]")).toBeVisible();
-    expect(requests).toEqual([]);
-  }
-  await page
-    .locator('textarea[name="parameters"]')
-    .fill('{"BUILD_MODE":"release"}');
-  await page.getByRole("button", { name: "发起构建", exact: true }).click();
-  await expect(page.locator(".error-box[role=alert]")).toContainText(
-    "Release permission denied [fixture]",
-  );
-  await expect(page.locator('input[name="release_version"]')).toHaveValue(
-    "v1.2.0-preview",
-  );
-  await expect(page.locator('textarea[name="parameters"]')).toHaveValue(
-    '{"BUILD_MODE":"release"}',
-  );
-  expect(requests).toEqual([
-    {
-      ref: "refs/tags/v1.2.0",
-      goal: "Build and test the desktop application",
-      target_requirements: [
-        { os: "darwin", arch: "arm64" },
-        { os: "linux", arch: "amd64" },
-      ],
-      parameters: { BUILD_MODE: "release" },
-      release_version: "v1.2.0-preview",
-    },
-  ]);
+  await page.goto(tenantURL(path));
+  await page.getByRole("button",{name:"编辑草稿",exact:true}).click();
+  const dialog=page.getByRole("dialog");
+  await expect(dialog.locator('input[name="version"]')).toHaveAttribute("readonly","");
+  await expect(dialog.locator('input[name="ref"]')).toHaveAttribute("readonly","");
+  await dialog.locator('textarea[name="goal"]').fill("Deliver packages and verification evidence");
+  await dialog.getByRole("button",{name:"保存草稿",exact:true}).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText("目标修订 2",{exact:true}).first()).toBeVisible();
+  expect(writes).toEqual([{spec_revision:1,goal:"Deliver packages and verification evidence",target_requirements:release.target_requirements,targets:release.targets}]);
 });
 
-test("source failures allow retry or explicit manual input without silently using HEAD", async ({
-  page,
-}) => {
-  const events = await fixtureAPI(page);
-  let queries = 0;
-  await page.route("**/api/v1/projects/project-main/refs", async (route) => {
-    queries++;
-    await route.fulfill({
-      status: 504,
-      json: { error: "Reference query timed out [fixture]" },
-    });
-  });
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  await expect(page.locator(".error-box[role=alert]")).toContainText(
-    "Reference query timed out [fixture]",
-  );
-  await next(page);
-  await expect(
-    page.getByRole("heading", { name: "要构建哪份源码？", exact: true }),
-  ).toBeVisible();
-  const beforeRefresh = queries;
-  await page.getByRole("button", { name: "刷新引用列表", exact: true }).click();
-  await expect.poll(() => queries).toBeGreaterThan(beforeRefresh);
-  await page.getByRole("button", { name: "手动输入", exact: true }).click();
-  await page.locator('input[name="ref"]').fill("-invalid");
-  await next(page);
-  await expect(
-    page.locator(".wizard-current > .error-box[role=alert]"),
-  ).toContainText("请选择有效的源码引用");
-  await page.locator('input[name="ref"]').fill("a".repeat(40));
-  await next(page);
-  await expect(
-    page.getByRole("heading", { name: "这次要构建什么？", exact: true }),
-  ).toBeVisible();
-  expect(events.writes).toEqual([]);
-});
-
-test("empty or unknown default branches are never guessed and refresh discovers new references", async ({
-  page,
-}) => {
-  const events = await fixtureAPI(page);
-  let populated = false;
-  await page.route("**/api/v1/projects/project-main/refs", async (route) => {
-    await route.fulfill({
-      json: populated
-        ? { ...repositoryRefs, default_ref: null }
-        : { default_ref: null, branches: [], tags: [] },
-    });
-  });
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  await expect(
-    page.getByText(
-      "没有找到匹配的引用。可尝试其他分类，或手动输入引用与 commit。",
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await next(page);
-  await expect(page.locator(".error-box[role=alert]")).toContainText(
-    "请选择有效的源码引用",
-  );
-  populated = true;
-  await page.getByRole("button", { name: "刷新引用列表", exact: true }).click();
-  const main = page.getByRole("radio", { name: "分支 main", exact: true });
-  await expect(main).toBeVisible();
-  await expect(main).not.toBeChecked();
-  await main.check();
-  await next(page);
-  await expect(
-    page.getByRole("heading", { name: "这次要构建什么？", exact: true }),
-  ).toBeVisible();
-  expect(events.writes).toEqual([]);
-});
-
-test("submission is guarded against repeated form submissions and never automatically retries", async ({
-  page,
-}) => {
+test("polling a newer revision preserves an unsaved draft and submits its original revision",async({page})=>{
   await fixtureAPI(page);
-  let requests = 0;
-  let finish: () => void = () => {};
-  const pending = new Promise<void>((resolve) => {
-    finish = resolve;
+  let saved = release;
+  const writes:unknown[]=[];
+  await page.route(`**/api/v1/releases/${release.id}`,async route=>{
+    if(route.request().method()==="PATCH") {
+      writes.push(route.request().postDataJSON());
+      return route.fulfill({status:409,json:{error:"release draft revision changed"}});
+    }
+    await route.fulfill({json:saved});
   });
-  await page.route("**/api/v1/projects/project-main/builds", async (route) => {
-    requests++;
-    await pending;
-    await route.fulfill({
-      status: 502,
-      json: { error: "Build request rejected [fixture]" },
-    });
-  });
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  await reachReview(page);
-  await page.getByRole("button", { name: "发起构建", exact: true }).click();
-  await expect(page.locator('button[type="submit"]')).toBeDisabled();
-  await page.locator(".wizard-current form").evaluate((form) => {
-    (form as HTMLFormElement).requestSubmit();
-    (form as HTMLFormElement).requestSubmit();
-  });
-  expect(requests).toBe(1);
-  finish();
-  await expect(page.locator(".error-box[role=alert]")).toContainText(
-    "Build request rejected [fixture]",
-  );
-  await expect(
-    page.getByRole("button", { name: "发起构建", exact: true }),
-  ).toBeEnabled();
-  expect(requests).toBe(1);
+  await page.goto(tenantURL(path));
+  await page.getByRole("button",{name:"编辑草稿",exact:true}).click();
+  const dialog=page.getByRole("dialog");
+  await dialog.locator('textarea[name="goal"]').fill("Keep my unsaved requirements");
+  saved={...release,spec_revision:2,goal:"Another editor saved this"};
+  await expect(page.getByText("目标修订 2",{exact:true}).first()).toBeVisible({timeout:10000});
+  await expect(dialog.locator('textarea[name="goal"]')).toHaveValue("Keep my unsaved requirements");
+  await dialog.getByRole("button",{name:"保存草稿",exact:true}).click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  expect(writes).toEqual([{spec_revision:1,goal:"Keep my unsaved requirements",target_requirements:release.target_requirements,targets:release.targets}]);
+  await expect(dialog.locator('textarea[name="goal"]')).toHaveValue("Keep my unsaved requirements");
 });
 
-test("UTF-8 byte limits are validated before advancing or sending a request", async ({
-  page,
-}) => {
-  const events = await fixtureAPI(page);
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  await page.getByRole("button", { name: "手动输入", exact: true }).click();
-  await page.locator('input[name="ref"]').fill("中".repeat(100));
-  await next(page);
-  await expect(page.locator(".error-box[role=alert]")).toContainText(
-    "1–255 字节",
-  );
-  await page.locator('input[name="ref"]').fill("refs/heads/main");
-  await next(page);
-  await next(page);
-  await expect(page.locator(".error-box[role=alert]")).toContainText(
-    "请填写 1–16000 字节的构建目标",
-  );
-  await page.locator('textarea[name="goal"]').fill("中".repeat(6000));
-  await next(page);
-  await expect(page.locator(".error-box[role=alert]")).toContainText(
-    "请填写 1–16000 字节的构建目标",
-  );
+test("a build inherits release identity and cannot override injected version parameters",async({page})=>{
+  const events=await fixtureAPI(page);
+  const writes:unknown[]=[];
+  await page.route(`**/api/v1/releases/${release.id}/builds`,async route=>{
+    if(route.request().method()==="POST") {writes.push(route.request().postDataJSON());return route.fulfill({json:build});}
+    return route.fulfill({json:[build]});
+  });
+  await page.goto(tenantURL(path));
+  await page.getByRole("button",{name:"发起构建",exact:true}).click();
+  const dialog=page.getByRole("dialog");
+  await expect(dialog.locator('input[name="version"]')).toHaveCount(0);
+  await expect(dialog.getByText(release.version,{exact:true})).toBeVisible();
+  await dialog.locator('textarea[name="parameters"]').fill('{"ARTIFACTORY_RELEASE_VERSION":"2.0.0"}');
+  await dialog.getByRole("button",{name:"发起构建",exact:true}).click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  expect(writes).toEqual([]);
+  await dialog.locator('textarea[name="parameters"]').fill('{"PROFILE":"production"}');
+  await dialog.getByRole("button",{name:"发起构建",exact:true}).click();
+  await expect(page).toHaveURL(tenantURL(`${path}/builds/${build.number}`));
+  await expect(page.getByRole("link",{name:`返回 Release ${release.version}`,exact:true})).toHaveAttribute("href",tenantURL(path));
+  expect(writes).toEqual([{parameters:{PROFILE:"production"}}]);
   expect(events.writes).toEqual([]);
 });
 
-test("preference changes preserve answers and keyboard navigation honors reduced motion", async ({
-  page,
-}) => {
-  const events = await fixtureAPI(page);
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  const main = page.getByRole("radio", { name: "分支 main", exact: true });
-  await expect(main).toBeChecked();
-  await main.focus();
-  await page.keyboard.press("ArrowDown");
-  await expect(
-    page.getByRole("radio", { name: "分支 release/v1", exact: true }),
-  ).toBeChecked();
-  await page.getByRole("button", { name: "继续", exact: true }).focus();
-  await page.keyboard.press("Enter");
-  await expect(
-    page.getByRole("heading", { name: "这次要构建什么？", exact: true }),
-  ).toBeFocused();
-  await page
-    .locator('textarea[name="goal"]')
-    .fill("Keep this exact draft · 保留");
-  await openPreferences(page);
-  await page
-    .getByRole("combobox", { name: "界面语言", exact: true })
-    .selectOption("en");
-  await page
-    .getByRole("combobox", { name: "Theme", exact: true })
-    .selectOption("light");
-  await closePreferences(page);
-  await expect(page.locator('textarea[name="goal"]')).toHaveValue(
-    "Keep this exact draft · 保留",
-  );
-  await expect(page.locator(".wizard-summary")).toContainText(
-    "refs/heads/release/v1",
-  );
-  await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
-  await expect(
-    page.getByRole("radio", {
-      name: "Choose platforms automatically",
-      exact: true,
-    }),
-  ).toBeChecked();
-  expect(events.writes).toEqual([]);
+test("publication accepts only a current-revision successful build and never a new version",async({page})=>{
+  await fixtureAPI(page);
+  const current={...build,id:"build-current",number:131,status:"succeeded",spec_revision:2};
+  const previous={...build,id:"build-old",number:130,status:"succeeded",spec_revision:1};
+  let saved={...release,spec_revision:2}; const writes:unknown[]=[];
+  await page.route(`**/api/v1/releases/${release.id}`,route=>route.fulfill({json:saved}));
+  await page.route(`**/api/v1/releases/${release.id}/builds`,route=>route.fulfill({json:[current,previous,{...build,id:"failed-current",number:132,status:"failed",spec_revision:2}]}));
+  await page.route(`**/api/v1/releases/${release.id}/publish`,async route=>{writes.push(route.request().postDataJSON());saved={...saved,status:"published",selected_build_id:current.id};await route.fulfill({json:saved});});
+  await page.goto(tenantURL(path));
+  await page.getByRole("button",{name:"正式发布",exact:true}).click();
+  const dialog=page.getByRole("dialog");
+  await expect(dialog.getByRole("option")).toHaveText(["#131 · 目标修订 2"]);
+  await expect(dialog.getByRole("textbox")).toHaveCount(0);
+  await dialog.getByRole("button",{name:"确认正式发布",exact:true}).click();
+  await expect(page.getByRole("button",{name:"编辑草稿",exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"发起构建",exact:true})).toHaveCount(0);
+  expect(writes).toEqual([{build_id:current.id}]);
 });
 
-for (const locale of ["zh-CN", "en"] as const) {
-  for (const theme of ["light", "dark"] as const) {
-    test(`${locale} ${theme}: three-step review has no overflow and retains editable answers`, async ({
-      page,
-    }, info) => {
-      const events = await fixtureAPI(page);
-      const failures: string[] = [];
-      page.on("pageerror", (error) => failures.push(error.message));
-      await page.context().addCookies([
-        {
-          name: "artifactory-locale",
-          value: locale,
-          url: "http://127.0.0.1:3100",
-        },
-      ]);
-      await page.addInitScript(
-        (value) => localStorage.setItem("artifactory-theme", value),
-        theme,
-      );
-      await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-      await expect(
-        page.getByRole("radio", {
-          name: locale === "en" ? "Branch main" : "分支 main",
-          exact: true,
-        }),
-      ).toBeChecked();
-      const continueButton = page.getByRole("button", {
-        name: locale === "en" ? "Continue" : "继续",
-        exact: true,
-      });
-      await continueButton.click();
-      await page
-        .getByRole("radio", {
-          name:
-            locale === "en" ? "Build and collect artifacts" : "构建并收集产物",
-          exact: true,
-        })
-        .check();
-      await continueButton.click();
-      await expect(
-        page.getByRole("heading", {
-          name:
-            locale === "en"
-              ? "Ready to start your build?"
-              : "确认后即可发起构建",
-          exact: true,
-        }),
-      ).toBeVisible();
-      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-      expect(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth + 1,
-        ),
-      ).toBeTruthy();
-      await page.screenshot({
-        path: info.outputPath(`${locale}-${theme}-build-wizard.png`),
-        fullPage: true,
-        animations: "disabled",
-      });
-      expect(events.writes).toEqual([]);
-      expect(failures).toEqual([]);
-    });
-  }
-}
+test("failed publication retries the same selected delivery",async({page})=>{
+  await fixtureAPI(page); const writes:unknown[]=[];
+  const failed={...release,status:"publish_failed",selected_build_id:"build-frozen",publish_error:"registry temporarily unavailable"};
+  await page.route(`**/api/v1/releases/${release.id}`,route=>route.fulfill({json:failed}));
+  await page.route(`**/api/v1/releases/${release.id}/publish`,async route=>{writes.push(route.request().postDataJSON());await route.fulfill({json:{...failed,status:"publishing"}});});
+  await page.goto(tenantURL(path));
+  await page.getByRole("button",{name:"重试正式发布",exact:true}).click();
+  await expect(page.getByRole("dialog").getByRole("combobox")).toHaveCount(0);
+  await page.getByRole("button",{name:"确认正式发布",exact:true}).click();
+  await expect(page.getByText("正在冻结并发布交付物。版本、源码与目标合同已锁定。",{exact:true})).toBeVisible();
+  expect(writes).toEqual([{build_id:"build-frozen"}]);
+});
 
-test("cancelling and refreshing discard the in-memory draft without persistence", async ({
-  page,
-}) => {
-  const events = await fixtureAPI(page);
-  page.on("dialog", (dialog) => dialog.accept());
-  await page.goto(tenantURL("/projects/desktop-client/builds/new"));
-  await expect(
-    page.getByRole("radio", { name: "分支 main", exact: true }),
-  ).toBeChecked();
-  await next(page);
-  await page.locator('textarea[name="goal"]').fill("Do not persist this draft");
-  await page.getByRole("button", { name: "取消并返回", exact: true }).click();
-  await expect(page).toHaveURL(/\/projects\/desktop-client\/builds$/);
-  await page.getByRole("link", { name: "发起构建", exact: true }).click();
-  await expect(page.locator(".wizard-summary")).not.toContainText(
-    "Do not persist this draft",
-  );
-  await expect(
-    page.getByRole("radio", { name: "分支 main", exact: true }),
-  ).toBeChecked();
-  await next(page);
-  await page
-    .locator('textarea[name="goal"]')
-    .fill("Refresh should discard this too");
-  await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "要构建哪份源码？", exact: true }),
-  ).toBeVisible();
-  await expect(page.locator(".wizard-summary")).not.toContainText(
-    "Refresh should discard this too",
-  );
+test("Release list sorts SemVer instead of creation dates",async({page})=>{
+  await fixtureAPI(page);
+  await page.route("**/api/v1/releases?*",route=>route.fulfill({json:[{...release,id:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",version:"1.2.0-rc.10"},{...release,id:"cccccccc-cccc-4ccc-8ccc-cccccccccccc",version:"1.2.0"},{...release,version:"1.2.0-rc.2"}]}));
+  await page.goto(tenantURL(`/projects/${project.slug}/releases`));
+  await expect(page.locator("tbody tr td:first-child")).toHaveText(["1.2.0","1.2.0-rc.10","1.2.0-rc.2"]);
+});
+
+for (const role of ["viewer","archived"] as const) test(`${role} contexts expose no release mutation`,async({page})=>{
+  const events=await fixtureAPI(page,role === "viewer" ? "viewer" : "admin");
+  if(role === "archived") await page.route(`**/api/v1/projects/by-slug/${project.slug}`,route=>route.fulfill({json:{...project,status:"archived"}}));
+  await page.goto(tenantURL(path));
+  for(const name of ["编辑草稿","发起构建","正式发布"]) await expect(page.getByRole("button",{name,exact:true})).toHaveCount(0);
+  await page.goto(tenantURL(`/projects/${project.slug}/releases/new`));
+  await expect(page.locator('input[name="version"]')).toHaveCount(0);
   expect(events.writes).toEqual([]);
 });

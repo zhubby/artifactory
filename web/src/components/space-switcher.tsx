@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖租户 API、项目路由及 UI 词条。
- * [OUTPUT]: 提供 SpaceSwitcher 租户和项目切换器。
- * [POS]: 保留栏目并拒绝切换后的迟到响应。
+ * [OUTPUT]: 分别提供顶栏租户切换器与侧栏项目切换器。
+ * [POS]: 切换器只选择工作范围；项目列表切换保留栏目，其他页面回到项目概览。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -11,14 +11,13 @@ import {
   ChevronDown,
   FolderGit2,
   Search,
-  Settings2,
   ArrowLeft,
   Check,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useRemote } from "@/lib/api";
 import { Link } from "@/lib/tenant";
-import { projectPath, projectSwitchPath } from "@/lib/routes";
+import { projectSwitchPath } from "@/lib/routes";
 import { useUI } from "@/components/providers";
 import type { Tenant, Project } from "@/lib/types";
 
@@ -147,20 +146,10 @@ function Selector({
     </details>
   );
 }
-export function SpaceSwitcher({
-  tenant,
-  project,
-  projects,
-}: {
-  tenant: Tenant;
-  project?: Project;
-  projects: Project[];
-}) {
+export function TenantSwitcher({ tenant }: { tenant: Tenant }) {
   const { t } = useUI();
   const tenants = useRemote<Tenant[]>("/tenants", 30000);
-  const pathname = usePathname();
   return (
-    <div className="space-switchers">
       <Selector kind="tenant" label={tenant.name}>
         {(query) => (
           <>
@@ -189,23 +178,30 @@ export function SpaceSwitcher({
                 </Link>
               ))}
             <div className="space-menu-actions">
-              {["owner", "admin"].includes(tenant.role) && (
-                <Link href="/settings">
-                  <Settings2 size={15} />
-                  {t("workspace.manageTenant")}
-                </Link>
-              )}
               <Link href="/tenants">
                 <ArrowLeft size={15} />
-                {t("tenants.choose")}
+                {t("workspace.viewAllTenants")}
               </Link>
             </div>
           </>
         )}
       </Selector>
+  );
+}
+
+export function ProjectSwitcher({
+  project,
+  projects,
+}: {
+  project: Project;
+  projects: Project[];
+}) {
+  const { t } = useUI();
+  const pathname = usePathname();
+  return (
       <Selector
         kind="project"
-        label={project?.name || t("workspace.allProjects")}
+        label={project.name}
       >
         {(query) => (
           <>
@@ -230,21 +226,12 @@ export function SpaceSwitcher({
                   {item.id === project?.id && <Check size={14} />}
                 </Link>
               ))}
-            <div className="space-menu-actions">
-              {project?.effective_role === "admin" && (
-                <Link href={`${projectPath(project.slug)}/settings`}>
-                  <Settings2 size={15} />
-                  {t("workspace.manageProject")}
-                </Link>
-              )}
-              <Link href="/">
-                <ArrowLeft size={15} />
-                {t("workspace.allProjects")}
-              </Link>
-            </div>
+            {!projects.some((item) =>
+                item.name.toLowerCase().includes(query.toLowerCase()) ||
+                item.slug.includes(query.toLowerCase()),
+              ) && <p className="p-3 text-xs text-muted-foreground">{t("workspace.noResults")}</p>}
           </>
         )}
       </Selector>
-    </div>
   );
 }
