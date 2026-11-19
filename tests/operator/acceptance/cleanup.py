@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """[INPUT]: 独立 kind 节点、已保存的命名空间与私有 PKI。
-[OUTPUT]: 显式传递会话租户，验证节点失联时的撤权与清理。
-[POS]: 创建私有证据目录，暂停 Pi 并最终恢复 Pi 与 kubelet。
+[OUTPUT]: 按直接 Pod 台账验证失联撤权、身份保留和物理停机。
+[POS]: 创建私有证据目录；确认执行身份后暂停 Pi，最终恢复 Pi 与 kubelet。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import argparse
@@ -11,6 +11,13 @@ import time
 import uuid
 
 from run import Acceptance, ROOT
+
+
+def retained_execution(status, pod):
+    execution = status.get('execution') or {}
+    return (execution.get('name') == pod['metadata']['name']
+            and execution.get('uid') == pod['metadata']['uid']
+            and execution.get('stopped') is False)
 
 
 def docker(node, *args, data=None, check=True):
@@ -108,10 +115,15 @@ def run(args):
         pod = json.loads(a.kubectl('get', 'pod', before['execution']['name'], '-o', 'json'))
         pod_uid = pod['metadata']['uid']
         assert pod_uid == before['execution']['uid']
-        a.wait(lambda: json.loads(a.kubectl('get', 'agentrun', run_name, '-o', 'json')).get('status', {}).get('podUid') == pod_uid, 30)
-        container_id = pod['status']['containerStatuses'][0]['containerID'].split('://', 1)[1]
-        frozen_pid = json.loads(docker(args.node_container, 'crictl', 'inspect', container_id).stdout)['info']['pid']
         evidence.update({'run_id': run_id, 'pod_uid': pod_uid, 'before': before})
+        a.wait(lambda: retained_execution(json.loads(a.kubectl('get', 'agentrun', run_name, '-o', 'json')).get('status', {}), pod), 30)
+        container_id = pod['status']['containerStatuses'][0]['containerID'].split('://', 1)[1]
+        inspected = json.loads(docker(args.node_container, 'crictl', 'inspect', container_id).stdout)
+        container = inspected['status']
+        assert (container['id'] == container_id and container['state'] == 'CONTAINER_RUNNING'
+                and container.get('labels', {}).get('io.kubernetes.pod.uid') == pod_uid), 'CRI identity differs from the live planning Pod'
+        frozen_pid = inspected['info']['pid']
+        assert isinstance(frozen_pid, int) and frozen_pid > 1, 'Invalid planning container PID'
         docker(args.node_container, 'kill', '-STOP', str(frozen_pid))
         # Mark first so a partially successful systemctl command still triggers recovery.
         kubelet_stopped = True
@@ -141,7 +153,7 @@ def run(args):
         evidence['isolated_samples'] = samples
         node = json.loads(a.command(['kubectl', '--context', a.context, 'get', 'node', args.node_container, '-o', 'json']))
         evidence['isolated_node_ready'] = next(c['status'] for c in node['status']['conditions'] if c['type'] == 'Ready')
-        evidence['pending_identity_preserved'] = all(s['status'].get('podUid') == pod_uid and
+        evidence['pending_identity_preserved'] = all(retained_execution(s['status'], pod) and
             s['status'].get('message', '').startswith('CleanupPending:') and s['status'].get('phase') == 'canceled'
             and s['process_state'] == 'T' for s in samples)
         assert not request('control-plane', '/api/v1/builds/' + build)['jobs'], 'Cancel created device jobs'
@@ -166,7 +178,7 @@ def run(args):
                 a.kubectl('patch', 'agentpool', 'default', '--type=merge', '-p', json.dumps({'spec': original_pool}))
             (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
     a.wait(lambda: not json.loads(a.kubectl('get', 'pods', '-l', 'artifactory.dev/run=' + run_id, '-o', 'json'))['items'], 120)
-    a.wait(lambda: (s := json.loads(a.kubectl('get', 'agentrun', run_name, '-o', 'json')).get('status', {})).get('phase') == 'canceled' and not s.get('podUid') and not s.get('message'), 90)
+    a.wait(lambda: (s := json.loads(a.kubectl('get', 'agentrun', run_name, '-o', 'json')).get('status', {})).get('phase') == 'canceled' and s.get('execution') is None and not s.get('message'), 90)
     after = request('artifactory-runtime', '/v1/get', {'run_id': run_id})
     evidence['pod_cleanup_confirmed'] = True
     evidence['status_cleared_after_cleanup'] = True

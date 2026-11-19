@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 遥测验收入口和本机白名单状态夹具。
-[OUTPUT]: 验证池准入、超时收尾与诊断字段隔离。
+[OUTPUT]: 验证池准入、超时收尾和 Pod 执行台账的诊断字段隔离。
 [POS]: 不访问集群；拒绝把凭据写入验收证据。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -46,6 +46,9 @@ class TelemetryTests(unittest.TestCase):
             ('AgentRun', 'run', {'runId': run_id, 'leaseToken': 'raw-credential'}),
             ('AgentPool', 'default', {'maxActive': 0}),
             ('SourceTask', 'unrelated', {'taskId': 'other'})]]
+        resources[1]['status']['execution'] = {'name': 'planning-pod', 'uid': 'planning-uid',
+            'nodeName': 'kind-control-plane', 'attempt': 1, 'createStarted': True,
+            'deadlineMs': 123456, 'stopped': False, 'secret': 'raw-credential'}
         with tempfile.TemporaryDirectory() as temporary:
             acceptance = SimpleNamespace(run=Path(temporary), evidence={},
                 api=lambda path: {'runs': [{'id': run_id, 'status': 'queued', 'secret': 'raw-credential'}]},
@@ -59,6 +62,10 @@ class TelemetryTests(unittest.TestCase):
             self.assertEqual(snapshot['jobs'][0]['attempts'][0]['failure_kind'], 'source')
             self.assertEqual(snapshot['current_run']['status'], 'queued')
             self.assertEqual(len(snapshot['resources']), 3)
+            execution = snapshot['resources'][1]['status']['execution']
+            self.assertEqual(execution, {'name': 'planning-pod', 'uid': 'planning-uid',
+                'nodeName': 'kind-control-plane', 'attempt': 1, 'createStarted': True,
+                'deadlineMs': 123456, 'stopped': False})
 
     def test_timeout_records_last_observation_and_finally_snapshot(self):
         with tempfile.TemporaryDirectory() as temporary:

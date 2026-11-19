@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 已保存的隔离命名空间与遥测服务。
-[OUTPUT]: 验证离线重放，保存白名单构建与准入诊断。
+[OUTPUT]: 验证离线重放，保存白名单构建、准入与 Pod 执行台账诊断。
 [POS]: 只改变遥测副本；准入检查保留原池容量。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -53,11 +53,17 @@ def record_build(a, build, detail=None):
             if (value['kind'] != 'AgentPool' and spec.get('taskId') != build and
                     spec.get('runId') not in run_ids):
                 continue
+            status = value.get('status', {})
+            summary = {key: status.get(key) for key in ('phase', 'observedGeneration')}
+            execution = status.get('execution')
+            summary['execution'] = ({key: execution.get(key) for key in
+                ('name', 'uid', 'nodeName', 'attempt', 'createStarted', 'deadlineMs', 'stopped')}
+                if isinstance(execution, dict) else None)
             snapshot['resources'].append({
                 'kind': value['kind'],
                 'metadata': {key: value.get('metadata', {}).get(key) for key in ('name', 'uid', 'generation', 'deletionTimestamp')},
                 'spec': {key: spec.get(key) for key in ('taskId', 'runId', 'generation', 'pool', 'maxActive', 'cancelRequested') if key in spec},
-                'status': {key: value.get('status', {}).get(key) for key in ('phase', 'observedGeneration', 'podUid')},
+                'status': summary,
             })
     except (OSError, RuntimeError, ValueError, KeyError):
         snapshot['resources_unavailable'] = True
