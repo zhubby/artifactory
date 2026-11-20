@@ -15,7 +15,7 @@ api.md: 定义 HTTP API 输入、权限和返回值。
 artifactory-rename-2026-11-11.md: 记录产品命名迁移。
 signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。
 configuration.md: 定义任务执行计划的结构与限制。
-design-system.md: 定义中性色、字体、工作区布局、设备识别和自定义下拉控件边界。
+design-system.md: 定义中性色、浏览器图标、字体、工作区布局、设备识别和自定义下拉控件边界。
 direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、启动等待和故障依赖隔离的验证边界。
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。

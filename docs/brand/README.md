@@ -1,3 +1,9 @@
+<!--
+[INPUT]: 依赖装配 A 原始资产、控制台中性色和浏览器图标文件。
+[OUTPUT]: 提供品牌资产入口、轮廓规范与各入口的配色约定。
+[POS]: 品牌规范入口，区分原始品牌包与当前控制台配色。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
 # Artifactory · 装配 A
 
 2026-11-12 选定第 1 款「装配 A」。平顶大写 A 的横梁右侧保留装配切口，表达构建与连接。
@@ -20,6 +26,8 @@
 SVG 图文组合中的文字已转为路径，不依赖安装字体。字标基于 IBM Plex Sans 600，调整字距后轮廓化；SIL Open Font License 1.1 见 [字体许可](IBM-Plex-Sans-OFL.txt)。
 
 ## 配色与使用
+
+控制台采用[界面设计规范](../design-system.md)中的中性色。浏览器图标使用 `#202020` 深灰底和 `#FFFFFF` 白色 A，SVG 与 ICO 保持同色。以下配色保留在原始品牌包、品牌展示与主屏幕应用图标中。
 
 | 名称 | HEX | 用途 |
 |---|---|---|

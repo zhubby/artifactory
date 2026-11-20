@@ -1,1 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Artifactory favicon"><title>Artifactory favicon</title><rect width="256" height="256" rx="48" fill="#e1ba75"/><g transform="translate(8.05 4.05) scale(0.93714)"><path fill="#101312" d="M16 224 112 32H144L240 224H192L128 96 96 160H128L144 192H80L64 224Z"/></g></svg>
+<!--
+[INPUT]: 依赖装配 A 的小尺寸轮廓和控制台浅色主题的主色。
+[OUTPUT]: 提供深灰底、白色 A 的浏览器图标，作为 favicon.ico 的栅格源。
+[POS]: App Router 自动发现的 SVG 图标，与 ICO 回退保持同色。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Artifactory favicon"><title>Artifactory favicon</title><rect width="256" height="256" rx="48" fill="#202020"/><g transform="translate(8.05 4.05) scale(0.93714)"><path fill="#ffffff" d="M16 224 112 32H144L240 224H192L128 96 96 160H128L144 192H80L64 224Z"/></g></svg>

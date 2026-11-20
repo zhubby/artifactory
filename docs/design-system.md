@@ -1,6 +1,6 @@
 <!--
-[INPUT]: 当前界面变量、工作区导航、节点摘要与共享选择控件。
-[OUTPUT]: 定义排版、设备识别和自定义下拉交互规则。
+[INPUT]: 当前界面变量、浏览器图标、工作区导航、节点摘要与共享选择控件。
+[OUTPUT]: 定义中性色、浏览器图标、排版、设备识别和自定义下拉交互规则。
 [POS]: 控制台视觉与交互的统一设计规范。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -23,6 +23,8 @@
 | 失败 / 危险操作 | `#B4232D` | `#F29B9B` |
 
 颜色变量集中于 `web/src/styles/tokens.css`，组件使用语义变量。成功、警告、失败同时显示图标与文字；构建和发布分别呈现状态。Artifactory 名称和 assembly A 标志沿用现有资产，应用内使用单色。
+
+浏览器图标使用 `#202020` 深灰底与 `#FFFFFF` 白色 A，与浅色主题的品牌标志一致。`web/src/app/icon.svg` 保留小尺寸轮廓，`favicon.ico` 从该 SVG 导出 16、32、48px，确保浏览器选择任一格式时配色相同。
 
 `artifactory-theme` 保存 `system`、`light`、`dark`，默认跟随系统。控制台与文档共享这一偏好，并响应其他标签页的修改。语言保存在 `artifactory-locale` Cookie，中英词条必须成对更新。偏好切换不重新挂载业务页面。
 
