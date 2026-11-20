@@ -1,9 +1,10 @@
 /**
- * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
  * [OUTPUT]: 验证多语言工作台、侧栏设置与个人设置布局。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+import { chooseOption } from "./select-helpers";
 import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
@@ -144,9 +145,7 @@ test("personal preferences preserve list filters and the SSE subscription", asyn
     .getByRole("textbox", { name: "筛选当前列表", exact: true })
     .fill("main");
   await openPreferences(page);
-  await page
-    .getByRole("combobox", { name: "界面语言", exact: true })
-    .selectOption("en");
+  await chooseOption(page.getByRole("combobox", { name: "界面语言", exact: true }), "en");
   await closePreferences(page);
   await expect(
     page.getByRole("textbox", { name: "Filter current list", exact: true }),
@@ -157,9 +156,7 @@ test("personal preferences preserve list filters and the SSE subscription", asyn
   );
   const before = events.streams;
   await openPreferences(page);
-  await page
-    .getByRole("combobox", { name: "Theme", exact: true })
-    .selectOption("light");
+  await chooseOption(page.getByRole("combobox", { name: "Theme", exact: true }), "light");
   await closePreferences(page);
   await expect(page.getByRole("log")).toContainText("原始构建日志");
   expect(events.streams).toBe(before);

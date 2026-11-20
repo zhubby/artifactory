@@ -1,6 +1,6 @@
 "use client";
 /**
- * [INPUT]: 依赖租户会话、签名公开 API、通知和统一表单。
+ * [INPUT]: 依赖租户会话、签名公开 API、通知、统一表单和 Select。
  * [OUTPUT]: 提供凭据导入、版本停用、方案和项目默认方案。
  * [POS]: 租户与项目共用界面；方案加载后初始化默认选择。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -11,6 +11,7 @@ import { useUI } from "@/components/providers";
 import { Field, ErrorBox, Loading } from "@/components/common";
 import { SubmitForm } from "@/components/forms";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import type { Project, SigningBinding, SigningMetadata } from "@/lib/types";
 import { asError } from "@/lib/errors";
@@ -164,7 +165,7 @@ export function SigningSettings() {
             }}
           >
             <Field label={t("signing.importMode")}>
-              <select
+              <Select
                 value={rotate}
                 onChange={(event) => {
                   setRotate(event.target.value);
@@ -177,7 +178,7 @@ export function SigningSettings() {
                     {t("signing.rotate")}: {value.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </Field>
             {!rotate && (
               <>
@@ -185,7 +186,7 @@ export function SigningSettings() {
                   <Input name="name" required maxLength={100} />
                 </Field>
                 <Field label={t("signing.platform")}>
-                  <select
+                  <Select
                     value={platform}
                     onChange={(event) => {
                       setPlatform(event.target.value);
@@ -194,7 +195,7 @@ export function SigningSettings() {
                   >
                     <option value="android">Android</option>
                     <option value="macos">macOS</option>
-                  </select>
+                  </Select>
                 </Field>
               </>
             )}
@@ -229,12 +230,12 @@ export function SigningSettings() {
                   label={t("signing.purpose")}
                   hint={t("signing.identityHint")}
                 >
-                  <select name="purpose">
+                  <Select name="purpose">
                     <option value="application">
                       {t("signing.applicationKey")}
                     </option>
                     <option value="upload">{t("signing.uploadKey")}</option>
-                  </select>
+                  </Select>
                 </Field>
               </>
             ) : (
@@ -358,7 +359,7 @@ export function SigningSettings() {
               />
             </Field>
             <Field label={t("signing.credentials")}>
-              <select name="credential" required>
+              <Select name="credential" required>
                 <option value="">{t("signing.select")}</option>
                 {credentials.data?.credentials
                   .filter((value) => value.enabled)
@@ -367,7 +368,7 @@ export function SigningSettings() {
                       {value.name} · {value.platform}
                     </option>
                   ))}
-              </select>
+              </Select>
             </Field>
             <label className="flex items-center gap-2">
               <input type="checkbox" name="notarize" />
@@ -443,7 +444,7 @@ export function ProjectSigning({
           >
             {["macos", "android"].map((platform) => (
               <Field key={platform} label={platform}>
-                <select
+                <Select
                   name={platform}
                   defaultValue={project.signing_defaults?.[platform] || ""}
                 >
@@ -465,7 +466,7 @@ export function ProjectSigning({
                         </option>
                       );
                     })}
-                </select>
+                </Select>
               </Field>
             ))}
           </SubmitForm>

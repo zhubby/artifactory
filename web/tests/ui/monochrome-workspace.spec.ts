@@ -1,9 +1,10 @@
 /**
- * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
  * [OUTPUT]: 验证快捷导航、业务草稿保护与日志状态保持。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+import { chooseOption } from "./select-helpers";
 import { expect, test } from "@playwright/test";
 import { fixtureAPI, build, project, tenantURL, openPreferences, closePreferences } from "./fixtures";
 
@@ -73,11 +74,13 @@ test("quick navigation shortcuts preserve the active modal and still toggle the 
 test("Release target forms keep host and application platforms consistent", async ({page})=>{
  await fixtureAPI(page);await page.goto(tenantURL("/projects/desktop-client/releases/new"));
  const target=page.locator("fieldset").first();
- await target.getByRole("combobox",{name:"构建宿主系统",exact:true}).selectOption("darwin");
- await expect(target.getByRole("combobox",{name:"应用平台",exact:true})).toHaveValue("");
- await expect(target.getByRole("combobox",{name:"应用平台",exact:true}).getByRole("option")).toHaveText(["非应用目标","macos","ios","android"]);
- await target.getByRole("combobox",{name:"应用平台",exact:true}).selectOption("ios");
- await expect(target.getByRole("combobox",{name:"应用平台",exact:true})).toHaveValue("ios");
+ await chooseOption(target.getByRole("combobox",{name:"构建宿主系统",exact:true}), "darwin");
+ const application = target.getByRole("combobox",{name:"应用平台",exact:true});
+ await expect(application).toHaveAttribute("data-value", "");
+ await application.click();
+ await expect(page.getByRole("listbox").getByRole("option")).toHaveText(["非应用目标","macos","ios","android"]);
+ await page.getByRole("option", { name: "ios", exact: true }).click();
+ await expect(application).toHaveAttribute("data-value", "ios");
 });
 
 test("detail tabs and preferences preserve the live subscription and the log position", async ({ page }) => {
@@ -102,7 +105,7 @@ test("detail tabs and preferences preserve the live subscription and the log pos
   await expect(log).toBeVisible();
   expect(await log.evaluate(node => node.scrollTop)).toBe(120);
   await openPreferences(page);
-  await page.getByRole("combobox", { name: "主题", exact: true }).selectOption("light");
+  await chooseOption(page.getByRole("combobox", { name: "主题", exact: true }), "light");
   await closePreferences(page);
   expect(events.streams).toBe(before);
   expect(await log.evaluate(node => node.scrollTop)).toBe(120);
@@ -157,7 +160,7 @@ test("returning to execution follows background log updates while paused readers
 test("status and text filters compose, and the empty result does not hide the toolbar", async ({ page }) => {
   await fixtureAPI(page);
   await page.goto(tenantURL("/projects/desktop-client/builds"));
-  await page.getByRole("combobox", { name: "按状态筛选", exact: true }).selectOption("succeeded");
+  await chooseOption(page.getByRole("combobox", { name: "按状态筛选", exact: true }), "succeeded");
   await expect(page.locator("tbody tr")).toHaveCount(1);
   await expect(page.locator("tbody")).toContainText("#127");
   await page.getByRole("textbox", { name: "筛选当前列表", exact: true }).fill("no-result");

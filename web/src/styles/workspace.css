@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖主题变量、工作区范围导航和账户面板类名。
- * [OUTPUT]: 提供租户卡片大厅、页首切换和响应式工作区样式。
+ * [OUTPUT]: 提供租户卡片、页首切换与响应式偏好入口。
  * [POS]: 统一业务与设置侧栏，固定文档入口并保留账户面板布局。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -150,10 +150,15 @@
 .account-profile-heading h3 { font-size: 14px; font-weight: 500; }
 .account-profile-heading p { margin-top: 4px; color: var(--muted-foreground); font-size: 12px; }
 .preferences-controls, .preference-fields { display: flex; align-items: center; gap: 8px; }
-.preference-select { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--card); color: var(--muted-foreground); }
-.preference-select select { width: 100%; min-width: 0; border: 0; outline: 0; background: var(--card); color: var(--foreground); font: inherit; font-size: 12px; }
+.preference-select { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--card); color: var(--muted-foreground); }
+.preference-select > svg { flex-shrink: 0; }
+.preference-select .select-trigger { width: 100%; min-width: 0; min-height: 36px; padding: 6px 0; border: 0; box-shadow: none; color: var(--foreground); font-size: 12px; }
+.preference-select .select-trigger:not(:disabled) { background: transparent; }
+.preference-select:focus-within { outline: 2px solid var(--ring); outline-offset: 2px; }
+.preference-select .select-trigger:focus-visible { outline: 0; }
 .preference-fields.expanded { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-.expanded .preference-select { padding: 10px 12px; min-height: 42px; }
+.expanded .preference-select { padding: 0 12px; min-height: 42px; }
+.expanded .preference-select .select-trigger { min-height: 42px; }
 .preferences-mobile { display: none; }
 
 /* Authentication and workspace selection use the same quiet surfaces. */
@@ -221,6 +226,8 @@
 .error-page h1 { font-size: 24px; font-weight: 550; }
 .error-page p { color: var(--muted-foreground); font-size: 13px; }
 @media (max-width: 1023px) {
+  .preferences-desktop { display: none; }
+  .preferences-mobile { display: inline-flex; }
   .sidebar { display: none; translate: -100% 0; transition: translate .15s; width: 272px; padding-bottom: 20px; z-index: 50; }
   .sidebar.open { display: flex; translate: 0; }
   @starting-style { .sidebar.open { translate: -100% 0; } }
@@ -269,8 +276,6 @@
   .login-story .story-body, .login-story > footer { display: none; }
   .login-form { padding: 48px 24px; align-items: start; }
   .login-preferences { top: 18px; right: 20px; }
-  .preferences-desktop { display: none; }
-  .preferences-mobile { display: inline-flex; }
   .global-account { top: 18px; right: 16px; }
   .global-account .account-trigger-name, .global-account .account-trigger > svg { display: none; }
   .hall-header { min-height: 76px; padding: 16px 76px 16px 16px; gap: 16px; }
@@ -286,4 +291,5 @@
   .tenant-card-top > .status { margin-top: 12px; }
   .tenant-card-footer { padding-top: 8px; }
   .preference-select { min-height: 44px; }
+  .preference-select .select-trigger, .expanded .preference-select .select-trigger { min-height: 44px; }
 }

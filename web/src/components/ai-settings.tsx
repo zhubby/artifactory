@@ -1,10 +1,12 @@
 /**
- * [INPUT]: 依赖租户模型配置、统一通知和表单。
+ * [INPUT]: 依赖共享 Select、租户模型配置、统一通知和表单。
  * [OUTPUT]: 提供模型方案配置。
  * [POS]: Kubernetes 规划只配置模型；Worker 由 Operator 调度。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
+
+import { Select } from "@/components/ui/select";
 
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
@@ -65,7 +67,7 @@ function ModelForm({profile, defaultModel, done}: {profile?: ModelProfile; defau
     }, profile ? "PATCH" : "POST"); done();
   }}>
     <Field label={t("common.name")}><Input name="name" required maxLength={100} defaultValue={profile?.name} /></Field>
-    <Field label={t("ai.api")}><select className="input" value={api} onChange={(event) => {setApi(event.target.value); if (!profile) setEndpoint(event.target.value === "anthropic-messages" ? "https://api.anthropic.com" : "https://api.openai.com/v1");}}><option value="openai-completions">OpenAI Chat Completions</option><option value="openai-responses">OpenAI Responses</option><option value="anthropic-messages">Anthropic Messages</option></select></Field>
+    <Field label={t("ai.api")}><Select className="input" value={api} onChange={(event) => {setApi(event.target.value); if (!profile) setEndpoint(event.target.value === "anthropic-messages" ? "https://api.anthropic.com" : "https://api.openai.com/v1");}}><option value="openai-completions">OpenAI Chat Completions</option><option value="openai-responses">OpenAI Responses</option><option value="anthropic-messages">Anthropic Messages</option></Select></Field>
     <Field label={t("ai.endpoint")}><Input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} required type="url" /></Field>
     <Field label={t("ai.model")}><Input name="model" required maxLength={200} defaultValue={profile?.model} /></Field>
     <Field label="API Key" hint={t("ai.keyHint")}><Input name="api_key" type="password" autoComplete="new-password" required={!profile} /></Field>
@@ -76,7 +78,7 @@ function ModelForm({profile, defaultModel, done}: {profile?: ModelProfile; defau
       <Field label={t("ai.maxTokens")}><Input name="max_tokens" type="number" required min={256} defaultValue={profile?.parameters.max_tokens || 8192} /></Field>
       <Field label={t("ai.rpm")} hint={t("ai.rpmHint")}><Input name="requests_per_minute" type="number" min={1} max={600} defaultValue={profile?.parameters.requests_per_minute} /></Field>
     </div>
-    <Field label={t("ai.thinking")}><select className="input" name="thinking_level" defaultValue={profile?.parameters.thinking_level || "off"}>{["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((level) => <option key={level} value={level}>{level}</option>)}</select></Field>
+    <Field label={t("ai.thinking")}><Select className="input" name="thinking_level" defaultValue={profile?.parameters.thinking_level || "off"}>{["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((level) => <option key={level} value={level}>{level}</option>)}</Select></Field>
     <label className="flex gap-2 text-sm"><input type="checkbox" name="enabled" defaultChecked={profile?.enabled ?? true} />{t("ai.enabled")}</label>
     <label className="flex gap-2 text-sm"><input type="checkbox" name="is_default" defaultChecked={profile?.is_default ?? defaultModel} />{t("ai.makeDefault")}</label>
   </SubmitForm>;

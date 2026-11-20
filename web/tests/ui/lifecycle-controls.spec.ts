@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、工作区夹具和生命周期 API。
- * [OUTPUT]: 验证隐藏操作历史及当前范围的撤销、重试入口。
+ * [OUTPUT]: 验证 HTTP 操作入口、幂等重试和当前范围恢复入口。
  * [POS]: 生命周期设置的浏览器回归；后端排空仍由服务测试验证。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -17,6 +17,40 @@ function operation(overrides: Partial<LifecycleOperation> = {}): LifecycleOperat
     ...overrides,
   };
 }
+
+test("ordinary HTTP lifecycle requests preserve a retry key and renew it for a new action", async ({ page, context, baseURL }) => {
+  const origin = "http://artifactory-http.test";
+  await context.route(`${origin}/**`, async route => {
+    const url = new URL(route.request().url());
+    await route.fulfill({ response: await route.fetch({ url: `${baseURL}${url.pathname}${url.search}` }) });
+  });
+  await fixtureAPI(page);
+  const keys: string[] = [];
+  await page.route("**/api/v1/projects/project-main/lifecycle", route => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { projects: 1, builds: 12, artifacts: 4, devices: 0 } });
+    keys.push(route.request().postDataJSON().idempotency_key);
+    return keys.length === 1
+      ? route.fulfill({ status: 503, json: { error: "Please retry" } })
+      : route.fulfill({ status: 202, json: operation({ action: "archive" }) });
+  });
+  await page.goto(`${origin}${tenantURL("/projects/desktop-client/settings/lifecycle")}`);
+  expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+  const archive = page.getByRole("button", { name: "归档", exact: true });
+  await archive.click();
+  const dialog = page.getByRole("dialog", { name: "归档", exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "归档", exact: true }).click();
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("Please retry");
+  await dialog.getByRole("button", { name: "归档", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await archive.click();
+  await dialog.getByRole("button", { name: "归档", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(keys).toHaveLength(3);
+  for (const key of keys) expect(key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  expect(keys[1]).toBe(keys[0]);
+  expect(keys[2]).not.toBe(keys[0]);
+});
 
 test("entry pages and lifecycle settings hide operation history", async ({ page }) => {
   await fixtureAPI(page);

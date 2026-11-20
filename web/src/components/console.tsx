@@ -1,10 +1,12 @@
 /**
- * [INPUT]: 依赖租户 API、项目路由及业务页面。
+ * [INPUT]: 依赖共享 Select、租户 API、项目路由及业务页面。
  * [OUTPUT]: 提供 Console 项目控制台。
  * [POS]: 组合工作区数据与业务页面。独立组件呈现导航与面包屑；工作区错误桥固定挂载。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
+
+import { Select } from "@/components/ui/select";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
@@ -577,13 +579,13 @@ function ProjectWorkspace({
         <>
           <ListToolbar query={query} onQueryChange={setQuery}
             count={column === "builds" ? visibleBuilds?.length : column === "artifacts" ? visibleArtifacts?.length : visibleReleases?.length}>
-            {["builds","releases"].includes(column) && <select className="input" aria-label={t("redesign.filterStatus")} value={status} onChange={event => setStatus(event.target.value)}>
+            {["builds","releases"].includes(column) && <Select className="input" aria-label={t("redesign.filterStatus")} value={status} onChange={event => setStatus(event.target.value)}>
               <option value="">{t("redesign.allStatus")}</option>
               {Array.from(new Set((column === "builds" ? builds.data : releases.data)?.map(item => item.status))).map(value => <option key={value} value={value}>{t("status." + value)}</option>)}
-            </select>}
-            <select className="input" aria-label={t("redesign.order")} value={order} onChange={event => setOrder(event.target.value)}>
+            </Select>}
+            <Select className="input" aria-label={t("redesign.order")} value={order} onChange={event => setOrder(event.target.value)}>
               <option value="newest">{t(column === "releases" ? "releaseFlow.versionDescending" : "redesign.newest")}</option><option value="oldest">{t(column === "releases" ? "releaseFlow.versionAscending" : "redesign.oldest")}</option>
-            </select>
+            </Select>
           </ListToolbar>
           <ErrorBox
             message={builds.error || artifacts.error || releases.error}

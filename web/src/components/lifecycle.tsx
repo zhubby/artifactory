@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖生命周期 API、统一表单和全局通知。
+ * [INPUT]: 依赖生命周期 API、共享幂等键、统一表单和通知。
  * [OUTPUT]: 提供归档、恢复、删除及当前操作的撤销、重试入口。
  * [POS]: 设置仅展示当前范围的必要操作；请求反馈通过顶部通知展示。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -23,6 +23,7 @@ import { SubmitForm } from "@/components/forms";
 import { ErrorBox, Field, Loading, Status } from "@/components/common";
 import { asError } from "@/lib/errors";
 import { notify } from "@/lib/notify";
+import { createIdempotencyKey } from "@/lib/idempotency";
 
 function latestOperation(rows: LifecycleOperation[] | undefined, tenant: string, project?: string) {
   return rows?.filter(op => op.tenant_id === tenant && op.project_id === (project ?? null))
@@ -61,7 +62,7 @@ export function LifecycleSettings({
     10000,
   );
   function begin(action: "archive" | "restore" | "delete") {
-    setKey(crypto.randomUUID());
+    setKey(createIdempotencyKey());
     setAction(action);
   }
   async function recover(verb: "cancel" | "retry") {

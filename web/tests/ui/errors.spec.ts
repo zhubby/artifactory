@@ -1,9 +1,10 @@
 /**
- * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
  * [OUTPUT]: 验证全局错误通知、本地化切换与草稿保留。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+import { chooseOption } from "./select-helpers";
 import { expect, test } from "@playwright/test";
 import {
   fixtureAPI,
@@ -26,9 +27,7 @@ test("local network failures translate live without clearing the login draft", a
     "无法连接服务，请检查网络后重试",
   );
   await openPreferences(page);
-  await page
-    .getByRole("combobox", { name: "界面语言", exact: true })
-    .selectOption("en");
+  await chooseOption(page.getByRole("combobox", { name: "界面语言", exact: true }), "en");
   await closePreferences(page);
   await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "Cannot connect to the service. Check your network and try again.",
@@ -56,9 +55,7 @@ test("server error details remain verbatim when changing language", async ({
     "账户已停用 · account locked [E403]",
   );
   await openPreferences(page);
-  await page
-    .getByRole("combobox", { name: "界面语言", exact: true })
-    .selectOption("en");
+  await chooseOption(page.getByRole("combobox", { name: "界面语言", exact: true }), "en");
   await closePreferences(page);
   await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "账户已停用 · account locked [E403]",

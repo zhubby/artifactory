@@ -1,9 +1,10 @@
 /**
- * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
  * [OUTPUT]: 验证租户隔离、权限边界、创建反馈与侧栏切换。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+import { chooseOption } from "./select-helpers";
 import { expect, test } from "@playwright/test";
 import {
   build,
@@ -361,15 +362,15 @@ test("device authorization preserves both modes and saves explicit empty grants"
   const mode = dialog.getByRole("combobox", {
     name: /^设备授权方式/,
   });
-  await mode.selectOption("nodes");
+  await chooseOption(mode, "nodes");
   await dialog
     .getByRole("checkbox", { name: nodes[0].name, exact: true })
     .check();
-  await mode.selectOption("pools");
+  await chooseOption(mode, "pools");
   await expect(
     dialog.getByRole("checkbox", { name: "default", exact: true }),
   ).toBeChecked();
-  await mode.selectOption("nodes");
+  await chooseOption(mode, "nodes");
   await expect(
     dialog.getByRole("checkbox", { name: nodes[0].name, exact: true }),
   ).toBeChecked();
@@ -439,7 +440,7 @@ test("project administrators can edit configuration while device and credential 
   await expect(
     dialog.getByRole("combobox", { name: /^设备授权方式/ }),
   ).toBeDisabled();
-  await expect(dialog.locator('select[name="credential_id"]')).toBeDisabled();
+  await expect(dialog.locator('[role="combobox"][data-name="credential_id"]')).toBeDisabled();
   await expect(dialog.locator('input[name="signing_profiles"]')).toBeDisabled();
   await page.goto(tenantURL(`/projects/${project.slug}/settings/general`));
   await dialog.locator('input[name="name"]').fill("Updated App");

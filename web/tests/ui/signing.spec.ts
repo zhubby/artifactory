@@ -1,9 +1,10 @@
 /**
- * [INPUT]: 依赖控制台浏览器夹具和签名公开接口。
+ * [INPUT]: 依赖控制台浏览器夹具和签名公开接口和共享 Select 交互助手。
  * [OUTPUT]: 验证侧栏签名分区、凭据导入、默认方案和制品证据。
  * [POS]: 托管签名的用户流程验收，后端密码学另行验证。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+import { chooseOption } from "./select-helpers";
 import { expect, test } from "@playwright/test";
 import { artifact, fixtureAPI, project, tenantURL, openNavigation } from "./fixtures";
 const metadata = {
@@ -135,7 +136,7 @@ test("project defaults save profile names and display the fixed identity preview
   await expect(
     page.getByText("Android Release", { exact: false }),
   ).toBeVisible();
-  await page.locator('select[name="android"]').selectOption("managed:release");
+  await chooseOption(page.locator('[role="combobox"][data-name="android"]'), "managed:release");
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect.poll(() => saved).toBe(true);
 });
@@ -200,7 +201,8 @@ test("existing defaults survive an asynchronously loaded profile list", async ({
     page.getByRole("heading", { name: "默认签名方案", exact: true }),
   ).toBeVisible();
   releaseProfiles();
-  await expect(page.locator('select[name="android"]')).toHaveValue(
+  await expect(page.locator('[role="combobox"][data-name="android"]')).toHaveAttribute(
+    "data-value",
     binding.profile,
   );
   await page.getByRole("button", { name: "保存", exact: true }).click();
@@ -238,7 +240,8 @@ test("an unavailable current default stays explicit until the user clears it", a
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.locator('select[name="android"]')).toHaveValue(
+  await expect(page.locator('[role="combobox"][data-name="android"]')).toHaveAttribute(
+    "data-value",
     binding.profile,
   );
   await page.getByRole("button", { name: "保存", exact: true }).click();

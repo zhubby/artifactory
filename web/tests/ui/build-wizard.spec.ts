@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 Release、目标修订、构建夹具与全局通知。
+ * [INPUT]: 依赖 Release、目标修订、构建夹具、Select 列表与通知。
  * [OUTPUT]: 验证版本入口、严格 SemVer、合同修订和冻结交付。
  * [POS]: Release 中心交付流程的浏览器回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -119,7 +119,11 @@ test("publication accepts only a current-revision successful build and never a n
   await page.goto(tenantURL(path));
   await page.getByRole("button",{name:"正式发布",exact:true}).click();
   const dialog=page.getByRole("dialog");
-  await expect(dialog.getByRole("option")).toHaveText(["#131 · 目标修订 2"]);
+  const delivery = dialog.getByRole("combobox");
+  await delivery.click();
+  await expect(page.getByRole("listbox").getByRole("option")).toHaveText(["#131 · 目标修订 2"]);
+  await page.getByRole("option", { name: "#131 · 目标修订 2", exact: true }).click();
+  await expect(delivery).toHaveAttribute("data-value", current.id);
   await expect(dialog.getByRole("textbox")).toHaveCount(0);
   await dialog.getByRole("button",{name:"确认正式发布",exact:true}).click();
   await expect(page.getByRole("button",{name:"编辑草稿",exact:true})).toHaveCount(0);

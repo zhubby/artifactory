@@ -1,3 +1,10 @@
+/**
+ * [INPUT]: 依赖 Playwright 和共享 Select 交互助手。
+ * [OUTPUT]: 验证语言、主题持久化与登录草稿保留。
+ * [POS]: 认证页偏好字段的浏览器回归。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+import { chooseOption } from "./select-helpers";
 import { expect, test, type Page } from "@playwright/test";
 
 async function openPreferences(page: Page) {
@@ -14,9 +21,7 @@ test("language preference preserves a login draft and renders the saved locale o
   await page.locator('input[name="username"]').fill("retained-user");
   await page.locator('input[name="password"]').fill("retained-password");
   await openPreferences(page);
-  await page
-    .getByRole("combobox", { name: "界面语言", exact: true })
-    .selectOption("en");
+  await chooseOption(page.getByRole("combobox", { name: "界面语言", exact: true }), "en");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   if (await page.getByRole("dialog").isVisible())
     await page.keyboard.press("Escape");
@@ -44,9 +49,7 @@ test("theme selection persists and system mode reacts without losing the login d
   await page.goto("/login");
   await page.locator('input[name="username"]').fill("theme-draft");
   await openPreferences(page);
-  await page
-    .getByRole("combobox", { name: "主题", exact: true })
-    .selectOption("light");
+  await chooseOption(page.getByRole("combobox", { name: "主题", exact: true }), "light");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(page.locator('input[name="username"]')).toHaveValue(
     "theme-draft",
@@ -54,9 +57,7 @@ test("theme selection persists and system mode reacts without losing the login d
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await openPreferences(page);
-  await page
-    .getByRole("combobox", { name: "主题", exact: true })
-    .selectOption("system");
+  await chooseOption(page.getByRole("combobox", { name: "主题", exact: true }), "system");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.emulateMedia({ colorScheme: "light" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");

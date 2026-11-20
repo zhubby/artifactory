@@ -34,11 +34,13 @@ test("login failure and native validation notify without moving the form", async
   await expect(page.locator('input[name="username"]')).toBeFocused();
   await expect(form.locator('[role="alert"]')).toHaveCount(0);
   expect(await form.boundingBox()).toEqual(before);
-  if (page.viewportSize()!.width <= 640) {
-    const preferences = page.getByRole("button", { name: "界面偏好", exact: true });
+  const preferences = page.getByRole("button", { name: "界面偏好", exact: true });
+  if (await preferences.isVisible()) {
     const control = (await preferences.boundingBox())!;
     const notice = (await errors(page).boundingBox())!;
-    expect(notice.y).toBeGreaterThanOrEqual(control.y + control.height + 8);
+    const separated = notice.y >= control.y + control.height + 8
+      || notice.x + notice.width <= control.x - 8;
+    expect(separated).toBe(true);
     await preferences.click({ timeout: 2000 });
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(errors(page)).toBeVisible();

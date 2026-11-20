@@ -1,9 +1,10 @@
 /**
- * [INPUT]: 依赖镜像执行、发布和凭据 HTTP 夹具。
+ * [INPUT]: 依赖镜像执行、发布和凭据 HTTP 夹具和共享 Select 交互助手。
  * [OUTPUT]: 验证完整外部引用复制、发布重试和秘密输入清空。
  * [POS]: 镜像控制台的浏览器流程回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+import { chooseOption } from "./select-helpers";
 import { expect, test } from "@playwright/test";
 import { artifact, build, fixtureAPI, project, release, tenantURL } from "./fixtures";
 import type { ImageExecution } from "../../src/lib/types";
@@ -43,7 +44,7 @@ test("published Release images distribute a fixed version and show independent p
   const dialog=page.getByRole("dialog");
   await expect(dialog.getByLabel("版本标签（固定）")).toHaveValue(release.version);
   await expect(dialog.getByLabel("版本标签（固定）")).toHaveAttribute("readonly","");
-  await dialog.getByRole("combobox",{name:"仓库凭据",exact:true}).selectOption(credential.id);
+  await chooseOption(dialog.getByRole("combobox",{name:"仓库凭据",exact:true}), credential.id);
   await dialog.getByLabel("目标仓库路径").fill("release/application");
   await dialog.getByRole("button",{name:"推送到外部仓库",exact:true}).click();
   await expect(dialog).not.toBeVisible();

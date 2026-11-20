@@ -1,0 +1,30 @@
+/**
+ * [INPUT]: 依赖语义颜色、Radix 浮层尺寸和共享 input 样式。
+ * [OUTPUT]: 提供下拉触发器、选项浮层和隐藏表单字段样式。
+ * [POS]: 由 globals.css 加载；统一页面和弹窗的单选交互。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.select-ui { display: contents; }
+.select-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left; cursor: pointer; }
+.select-trigger:not(:disabled) { background: var(--background); color: var(--foreground); }
+.select-trigger:hover:not(:disabled), .select-trigger[data-state="open"] { border-color: var(--placeholder); }
+.select-trigger:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.select-trigger:disabled { cursor: default; background: var(--quiet); color: var(--muted-foreground); }
+.select-trigger[aria-invalid="true"] { border-color: var(--destructive); }
+.select-trigger > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.select-value { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.select-chevron { display: flex; flex-shrink: 0; align-items: center; color: var(--muted-foreground); transition: rotate .15s ease; }
+.select-trigger[data-state="open"] .select-chevron { rotate: 180deg; }
+.select-content { z-index: 200; min-width: var(--radix-select-trigger-width); max-width: min(440px, calc(100vw - 24px)); max-height: min(340px, var(--radix-select-content-available-height)); overflow: hidden; border: 1px solid var(--border); border-radius: 7px; background: var(--card); color: var(--foreground); box-shadow: 0 10px 32px #00000020; transform-origin: var(--radix-select-content-transform-origin); animation: select-appear .12s ease-out; }
+.select-viewport { padding: 4px; }
+.select-option { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 34px; padding: 7px 9px; border-radius: 4px; font-size: 13px; line-height: 1.5; cursor: pointer; outline: none; user-select: none; }
+.select-option > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.select-option[data-state="checked"] { font-weight: 500; }
+.select-option[data-highlighted] { background: var(--accent); }
+.select-option[data-disabled] { opacity: .4; cursor: default; }
+.select-option-indicator { display: flex; flex-shrink: 0; margin-left: auto; }
+.select-group-label { padding: 8px 9px 4px; color: var(--muted-foreground); font-size: 11px; }
+.select-scroll { display: flex; align-items: center; justify-content: center; height: 24px; background: var(--card); color: var(--muted-foreground); }
+.select-native { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; clip-path: inset(50%); overflow: hidden; white-space: nowrap; pointer-events: none; }
+@keyframes select-appear { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 767px) { .select-trigger, .select-option { min-height: 44px; } .select-content { max-height: min(360px, var(--radix-select-content-available-height)); } }

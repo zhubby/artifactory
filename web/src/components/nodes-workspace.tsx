@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖节点 API、统一通知、列表工具栏和节点侧面板。
+ * [INPUT]: 依赖节点 API、通知、Select、工具栏和节点侧面板。
  * [OUTPUT]: 提供 NodesWorkspace 设备工作区。
  * [POS]: 衔接节点筛选、列表与详情交互。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -16,6 +16,7 @@ import { NodeDetailDialog } from "@/components/node-detail-dialog";
 import { SecretDialog, SubmitForm } from "@/components/forms";
 import { Modal } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { ListToolbar } from "@/components/ui/list-toolbar";
 import {
   PageTitle,
@@ -140,13 +141,13 @@ export function NodesWorkspace({
           }}
         >
           <Field label={t("nodes.joinPool")}>
-            <select name="pool_id" className="input">
+            <Select name="pool_id" className="input">
               {pools.data?.map((pool) => (
                 <option key={pool.id} value={pool.id}>
                   {pool.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
         </SubmitForm>
       </Modal>

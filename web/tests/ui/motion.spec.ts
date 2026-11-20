@@ -1,9 +1,10 @@
 /**
- * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
  * [OUTPUT]: 验证默认动效、系统减少动态适配及无动效开关的偏好界面。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+import { chooseOption } from "./select-helpers";
 import { expect, test, type Locator } from "@playwright/test";
 import { fixtureAPI, openPreferences, closePreferences, tenantURL } from "./fixtures";
 
@@ -151,7 +152,7 @@ test("the login form works without graphics contexts and retains its draft acros
   await page.getByRole("textbox", { name: "用户名", exact: true }).fill("retained-draft");
   await openPreferences(page);
   await expect(page.getByRole("button", { name: /界面动效|Turn (on|off) animations/ })).toHaveCount(0);
-  await page.getByRole("combobox", { name: "界面语言", exact: true }).selectOption("en");
+  await chooseOption(page.getByRole("combobox", { name: "界面语言", exact: true }), "en");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.locator("html")).toHaveAttribute("data-motion", "off");
   await expect(page.getByRole("button", { name: /界面动效|Turn (on|off) animations/ })).toHaveCount(0);
@@ -170,7 +171,7 @@ test("polling and locale updates preserve the title element without an entrance 
   const original = await title.elementHandle();
   await page.waitForTimeout(5100);
   await openPreferences(page);
-  await page.getByRole("combobox", { name: "界面语言", exact: true }).selectOption("en");
+  await chooseOption(page.getByRole("combobox", { name: "界面语言", exact: true }), "en");
   await closePreferences(page);
   expect(await title.evaluate((node, previous) => node === previous, original)).toBe(true);
   await expect(title).toHaveCSS("transform", "none");

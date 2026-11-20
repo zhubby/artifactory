@@ -1,0 +1,22 @@
+/**
+ * [INPUT]: 依赖全局语义变量与 Combobox 的选项状态。
+ * [OUTPUT]: 提供输入附属浮层、建议列表和加载骨架样式。
+ * [POS]: 可编辑建议入口的局部样式，不改变共享输入合同。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.root { position: relative; min-width: 0; }
+.input { padding-right: 32px; }
+.chevron { position: absolute; top: 50%; right: 10px; transform: translateY(-50%); color: var(--muted-foreground); pointer-events: none; }
+.popup { position: fixed; z-index: 90; overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; padding: 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--foreground); box-shadow: var(--shadow); }
+.option { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 46px; padding: 8px; border: 0; border-radius: 4px; text-align: left; font-size: 12px; cursor: pointer; }
+.option:hover, .option[data-active="true"] { background: var(--secondary); }
+.option > svg { flex-shrink: 0; }
+.copy { display: grid; min-width: 0; gap: 3px; }
+.copy > span { font-weight: 500; overflow-wrap: anywhere; }
+.copy > code { color: var(--muted-foreground); font-size: 10px; overflow-wrap: anywhere; }
+.message { padding: 10px 8px; color: var(--muted-foreground); font-size: 12px; line-height: 1.7; }
+.loading { display: grid; gap: 12px; padding: 14px 8px; }
+.skeleton { display: block; width: 70%; height: 10px; border-radius: 3px; background: var(--secondary); animation: pulse 1.6s ease-in-out infinite; }
+.skeleton:last-child { width: 46%; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

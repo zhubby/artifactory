@@ -1,9 +1,10 @@
 /**
- * [INPUT]: 依赖 Playwright、真实控制面与活跃快照夹具。
+ * [INPUT]: 依赖 Playwright、真实控制面与活跃快照夹具和共享 Select 交互助手。
  * [OUTPUT]: 验证业务链路、通知反馈、节点导航与脱敏焦点证据。
  * [POS]: 需要可用后端的端到端浏览器入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+import { chooseOption } from "./ui/select-helpers";
 import { expect, request, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -450,9 +451,7 @@ test("real repository references and the build wizard preserve model configurati
   await page
     .locator('input[name="repository_url"]')
     .fill(source.repository_url);
-  await page
-    .locator('select[name="credential_id"]')
-    .selectOption(source.credential_id);
+  await chooseOption(page.locator('[role="combobox"][data-name="credential_id"]'), source.credential_id);
   await page
     .locator('input[name="signing_profiles"]')
     .fill(source.signing_profiles.join(","));

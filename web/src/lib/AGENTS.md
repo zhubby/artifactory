@@ -5,6 +5,7 @@ api.ts: 发送租户与 CSRF 请求，前台计数覆盖授权解析和响应，
 build-state.ts: 定义日志事件类型与构建终态判断。
 errors.ts: 转换本地化错误并判定轮询错误等价。
 events.ts: 订阅构建事件，维护游标并在 complete 后停止重连。
+idempotency.ts: 使用 HTTP 可用的随机源生成 UUID v4，请求重试复用表单键。
 notify.ts: 隔离提示来源，统一四类操作通知，单次恢复跨整页跳转的成功文案。
 preferences.ts: 定义语言、主题类型与存储键，动画没有持久化开关。
 progress.ts: 保存前台并发计数，向请求和导航提供幂等结束函数及订阅入口。

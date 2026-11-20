@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 OTA API、统一通知、表单和节点类型。
+ * [INPUT]: 依赖 OTA API、统一通知、表单、Select 和节点类型。
  * [OUTPUT]: 提供 NodeOTA 与 EmissarySettings。
  * [POS]: 连接节点更新操作和 OTA 设置。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -12,6 +12,7 @@ import { ErrorBox, Field, SectionTitle, Loading } from "@/components/common";
 import { SubmitForm } from "@/components/forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/dialog";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
@@ -64,9 +65,9 @@ export function NodeOTA({ node, user, releases, updates, reload, actionsReady = 
         await mutation(`/nodes/${node.id}/emissary-update`, { release_id: form.get("release") || null }, "PATCH");
         setOpen(false); await reload();
       }}>
-        <Field label={t("ota.target")}><select className="input" name="release" defaultValue={node.emissary_target_release || ""}>
+        <Field label={t("ota.target")}><Select className="input" name="release" defaultValue={node.emissary_target_release || ""}>
           <option value="">{t("ota.inherit")}</option>{releases.map(r => <option value={r.id} key={r.id}>{r.version}</option>)}
-        </select></Field>
+        </Select></Field>
       </SubmitForm>}
     </Modal>
   </div>;
@@ -95,7 +96,7 @@ export function EmissarySettings({ user }: { user: User }) {
         {admin ? <SubmitForm onSubmit={async form => {
           await mutation(`/pools/${pool.id}/emissary-update`, { release_id: form.get("release") || null, concurrency: Number(form.get("concurrency")), paused: form.get("paused") === "on" }, "PATCH"); await reload();
         }}>
-          <Field label={t("ota.target")}><select className="input" name="release" defaultValue={pool.emissary_target_release || ""}><option value="">{t("ota.disabled")}</option>{releases.data?.map(r => <option key={r.id} value={r.id}>{r.version}</option>)}</select></Field>
+          <Field label={t("ota.target")}><Select className="input" name="release" defaultValue={pool.emissary_target_release || ""}><option value="">{t("ota.disabled")}</option>{releases.data?.map(r => <option key={r.id} value={r.id}>{r.version}</option>)}</Select></Field>
           <Field label={t("ota.concurrency")}><Input name="concurrency" type="number" required min={1} max={32} defaultValue={pool.emissary_update_concurrency || 1} /></Field>
           <label className="flex gap-2 text-xs"><input type="checkbox" name="paused" defaultChecked={pool.emissary_updates_paused} />{t("ota.pause")}</label>
         </SubmitForm> : <p className="text-xs">{releases.data?.find(r => r.id === pool.emissary_target_release)?.version || t("ota.disabled")} · {pool.emissary_updates_paused ? t("ota.pause") : t("ota.stages.idle")}</p>}

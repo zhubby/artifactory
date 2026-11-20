@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、租户入口和确定性 API 夹具。
- * [OUTPUT]: 验证租户卡片布局、搜索、权限入口和读取失败重试。
+ * [OUTPUT]: 验证租户卡片、HTTP 创建入口、幂等重试和读取失败恢复。
  * [POS]: 租户大厅的交互与响应式回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -12,6 +12,39 @@ const tenants: Tenant[] = [
   { id: tenantId, slug: tenantSlug, name: "Build Team", role: "owner", status: "active", archived_at: null, owner_id: "user-main", created_at: "2026-11-10T08:30:00Z" },
   { id: "tenant-beta", slug: "beta-library", name: "Beta 团队工作空间".repeat(5), role: "member", status: "archived", archived_at: "2026-11-19T08:30:00Z", owner_id: "other", created_at: "2026-11-10T08:30:00Z" },
 ];
+
+for (const entry of ["hall-heading", "hall-empty"]) {
+  test(`${entry}: tenant creation works on an ordinary HTTP origin and keeps retries idempotent`, async ({ page, context, baseURL }) => {
+    const origin = "http://artifactory-http.test";
+    await context.route(`${origin}/**`, async route => {
+      const url = new URL(route.request().url());
+      await route.fulfill({ response: await route.fetch({ url: `${baseURL}${url.pathname}${url.search}` }) });
+    });
+    await fixtureAPI(page);
+    const keys: string[] = [];
+    await page.route("**/api/v1/tenants", async route => {
+      if (route.request().method() === "GET") return route.fulfill({ json: [] });
+      keys.push(route.request().postDataJSON().idempotency_key);
+      if (keys.length === 1) return route.abort("failed");
+      return route.fulfill({ json: { id: tenantId, slug: tenantSlug } });
+    });
+    await page.goto(`${origin}/tenants`);
+    expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
+    expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe("undefined");
+    await page.locator(`.${entry}`).getByRole("button", { name: "创建租户", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "创建租户", exact: true });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("textbox", { name: "租户名称", exact: true }).fill("HTTP Team");
+    await dialog.getByRole("button", { name: "创建租户", exact: true }).click();
+    await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("无法连接服务");
+    await expect(dialog.getByRole("textbox")).toHaveValue("HTTP Team");
+    await dialog.getByRole("button", { name: "创建租户", exact: true }).click();
+    await expect(page).toHaveURL(`${origin}/tenants/${tenantSlug}`);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(keys[1]).toBe(keys[0]);
+  });
+}
 
 test("tenant hall uses compact responsive cards and keeps management independent", async ({ page }, info) => {
   await fixtureAPI(page);

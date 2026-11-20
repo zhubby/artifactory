@@ -1,9 +1,10 @@
 /**
- * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
+ * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
  * [OUTPUT]: 验证作用域侧栏、顶栏租户切换、设置分区与草稿保护。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+import { chooseOption } from "./select-helpers";
 import { expect, test, type Page } from "@playwright/test";
 import {
   fixtureAPI,
@@ -295,12 +296,8 @@ test("personal overlay preserves business drafts while profile writes are accoun
   );
   await expect(page.locator(".account-trigger")).toContainText("Alex Chen");
   await openPreferences(page);
-  await page
-    .getByRole("combobox", { name: "界面语言", exact: true })
-    .selectOption("en");
-  await page
-    .getByRole("combobox", { name: "Theme", exact: true })
-    .selectOption("light");
+  await chooseOption(page.getByRole("combobox", { name: "界面语言", exact: true }), "en");
+  await chooseOption(page.getByRole("combobox", { name: "Theme", exact: true }), "light");
   await closePreferences(page);
   await expect(page.locator('textarea[name="goal"]')).toHaveValue(
     "Keep the exact build goal",

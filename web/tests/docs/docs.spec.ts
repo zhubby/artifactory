@@ -1,9 +1,10 @@
 /**
- * [INPUT]: 依赖 Playwright 与构建后的 mdBook 资产。
+ * [INPUT]: 依赖 Playwright 与构建后的 mdBook 资产和共享 Select 交互助手。
  * [OUTPUT]: 验证公开文档的导航、主题和字体。
  * [POS]: Web 生产构建后的文档浏览器入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+import { chooseOption } from "../ui/select-helpers";
 import { expect, test } from "@playwright/test";
 import { resolve } from "node:path";
 import { mkdirSync } from "node:fs";
@@ -140,7 +141,7 @@ test("docs and console share explicit, system and cross-tab theme preferences", 
   await page.goto(tenantURL("/projects/desktop-client/builds"));
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await openPreferences(page);
-  await page.getByRole("combobox", { name: "主题", exact: true }).selectOption("light");
+  await chooseOption(page.getByRole("combobox", { name: "主题", exact: true }), "light");
   await closePreferences(page);
   await page.goto("/docs/telemetry.html");
   await expect(page.locator("html")).toHaveClass(/light/);

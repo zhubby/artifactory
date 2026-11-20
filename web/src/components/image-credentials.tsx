@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖项目权限、镜像凭据 API 和统一通知。
+ * [INPUT]: 依赖项目权限、镜像凭据 API、Select 和统一通知。
  * [OUTPUT]: 提供仓库凭据与 BuildKit Secret 引用配置。
  * [POS]: 输入秘密只提交一次；列表只展示元数据。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -11,6 +11,7 @@ import { CopyButton, ErrorBox, Field, SectionTitle } from "@/components/common";
 import { SubmitForm } from "@/components/forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
 import { notify } from "@/lib/notify";
@@ -27,7 +28,7 @@ export function ImageCredentials({ projectId, editable }: { projectId: string; e
       const material = kind === "registry" ? { kind, name, login: { endpoint: form.get("endpoint"), username: form.get("username"), password: form.get("password") } } : { kind, name, value: form.get("value") };
       await mutation(`/projects/${projectId}/image-credentials`, material); setFormVersion(value => value + 1); await remote.reload();
     }}>
-      <Field label={t("images.kind")}><select value={kind} onChange={event => setKind(event.target.value)} className="input"><option value="registry">{t("images.registryCredential")}</option><option value="secret">BuildKit Secret</option></select></Field>
+      <Field label={t("images.kind")}><Select value={kind} onChange={event => setKind(event.target.value)} className="input"><option value="registry">{t("images.registryCredential")}</option><option value="secret">BuildKit Secret</option></Select></Field>
       <Field label={t("images.name")}><Input name="name" required maxLength={100} autoComplete="off" /></Field>
       {kind === "registry" ? <><Field label={t("images.endpoint")}><Input name="endpoint" type="url" required placeholder="https://registry.example.com" /></Field><Field label={t("images.username")}><Input name="username" required autoComplete="off" /></Field><Field label={t("images.password")}><Input name="password" type="password" required autoComplete="new-password" /></Field></> : <Field label={t("images.secret")}><Input name="value" type="password" required autoComplete="new-password" /></Field>}
     </SubmitForm></div>}

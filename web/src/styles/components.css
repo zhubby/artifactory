@@ -20,7 +20,6 @@
 .input::placeholder { color: var(--placeholder); }
 .input:disabled, .input:read-only { background: var(--quiet); color: var(--muted-foreground); }
 textarea.input { resize: vertical; line-height: 1.7; }
-select.input { padding-right: 28px; }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--foreground); width: 15px; height: 15px; flex-shrink: 0; }
 .form-stack { display: grid; gap: 20px; }
 .form-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--border); padding-top: 16px; margin-top: 4px; }

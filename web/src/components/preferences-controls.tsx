@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖语言上下文、主题状态和共享弹窗。
+ * [INPUT]: 依赖语言上下文、主题状态、Select 和共享弹窗。
  * [OUTPUT]: 为登录页和个人设置提供语言、外观选择。
  * [POS]: 两处入口复用同一组偏好字段；动画不提供用户开关。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -16,6 +16,7 @@ import {
   Sun,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/dialog";
 import { usePreferences, useUI } from "@/components/providers";
 import { isLocale } from "@/lib/preferences";
@@ -37,7 +38,7 @@ export function PreferenceFields({ expanded = false }: { expanded?: boolean }) {
       <label className="preference-select">
         <Globe2 size={15} />
         <span className="sr-only">{t("preferences.language")}</span>
-        <select
+        <Select
           aria-label={t("preferences.language")}
           value={locale}
           onChange={(event) => {
@@ -46,12 +47,12 @@ export function PreferenceFields({ expanded = false }: { expanded?: boolean }) {
         >
           <option value="zh-CN">简体中文</option>
           <option value="en">English</option>
-        </select>
+        </Select>
       </label>
       <label className="preference-select">
         <ThemeIcon size={15} />
         <span className="sr-only">{t("preferences.theme")}</span>
-        <select
+        <Select
           aria-label={t("preferences.theme")}
           value={ready ? theme : "system"}
           onChange={(event) => setTheme(event.target.value)}
@@ -59,7 +60,7 @@ export function PreferenceFields({ expanded = false }: { expanded?: boolean }) {
           <option value="system">{t("preferences.system")}</option>
           <option value="dark">{t("preferences.dark")}</option>
           <option value="light">{t("preferences.light")}</option>
-        </select>
+        </Select>
       </label>
     </div>
   );

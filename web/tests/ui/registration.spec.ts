@@ -1,9 +1,10 @@
 /**
- * [INPUT]: 依赖注册 API 夹具、语言切换与全局通知。
+ * [INPUT]: 依赖注册 API 夹具、语言切换与全局通知和共享 Select 交互助手。
  * [OUTPUT]: 验证注册校验、重复提交、失败重试与草稿保留。
  * [POS]: 公开认证入口的浏览器回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
+import { chooseOption } from "./select-helpers";
 import { expect, test, type Page } from "@playwright/test";
 import {closePreferences, fixtureAPI, openPreferences, tenantURL } from "./fixtures";
 
@@ -90,12 +91,12 @@ test("duplicate errors and drafts survive locale and theme changes", async ({ pa
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
   await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("该用户名已被使用");
   await openPreferences(page);
-  await page.getByRole("combobox", { name: "主题", exact: true }).selectOption("light");
+  await chooseOption(page.getByRole("combobox", { name: "主题", exact: true }), "light");
   await closePreferences(page);
   await page.screenshot({ path: testInfo.outputPath("register-zh-light.png"), fullPage: true });
   await openPreferences(page);
-  await page.getByRole("combobox", { name: "界面语言", exact: true }).selectOption("en");
-  await page.getByRole("combobox", { name: "Theme", exact: true }).selectOption("dark");
+  await chooseOption(page.getByRole("combobox", { name: "界面语言", exact: true }), "en");
+  await chooseOption(page.getByRole("combobox", { name: "Theme", exact: true }), "dark");
   await closePreferences(page);
   await expect(page.getByRole("heading", { name: "Create a workspace account", exact: true })).toBeVisible();
   await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("This username is already in use.");

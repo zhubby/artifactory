@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖成员与邀请 API、统一表单和全局通知。
+ * [INPUT]: 依赖成员与邀请 API、统一表单、Select 和全局通知。
  * [OUTPUT]: 提供租户成员、邀请和项目成员编辑界面。
  * [POS]: 成员变更反馈通过通知展示，列表保留成员状态。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -18,6 +18,7 @@ import { SubmitForm } from "@/components/forms";
 import { useUI } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/dialog";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
@@ -81,10 +82,10 @@ export function TenantMembers({ user }: { user: User }) {
               <Input name="username" required maxLength={100} />
             </Field>
             <Field label={t("common.role")}>
-              <select className="input" name="role">
+              <Select className="input" name="role">
                 <option value="member">{t("tenants.member")}</option>
                 <option value="admin">{t("tenants.admin")}</option>
-              </select>
+              </Select>
             </Field>
           </div>
         </SubmitForm>
@@ -107,7 +108,7 @@ export function TenantMembers({ user }: { user: User }) {
                     <label className="sr-only" htmlFor={`role-${member.id}`}>
                       {member.username} {t("common.role")}
                     </label>
-                    <select
+                    <Select
                       id={`role-${member.id}`}
                       className="input w-auto"
                       value={member.role}
@@ -121,7 +122,7 @@ export function TenantMembers({ user }: { user: User }) {
                     >
                       <option value="member">{t("tenants.member")}</option>
                       <option value="admin">{t("tenants.admin")}</option>
-                    </select>
+                    </Select>
                     <Button
                       variant="ghost"
                       onClick={() => setConfirm({ kind: "remove", member })}
@@ -160,10 +161,10 @@ export function TenantMembers({ user }: { user: User }) {
           }}
         >
           <Field label={t("common.role")}>
-            <select name="role" className="input">
+            <Select name="role" className="input">
               <option value="member">{t("tenants.member")}</option>
               <option value="admin">{t("tenants.admin")}</option>
-            </select>
+            </Select>
           </Field>
         </SubmitForm>
         {link && (
@@ -284,21 +285,21 @@ export function ProjectMembers({ project }: { project: Project; user: User }) {
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={t("tenants.members")}>
-            <select className="input" name="user" required>
+            <Select className="input" name="user" required>
               <option value="">{t("common.select")}</option>
               {options.data?.map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.username}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field label={t("common.role")}>
-            <select className="input" name="role">
+            <Select className="input" name="role">
               <option value="viewer">{t("security.viewer")}</option>
               <option value="operator">{t("security.operator")}</option>
               <option value="admin">{t("security.admin")}</option>
-            </select>
+            </Select>
           </Field>
         </div>
       </SubmitForm>

@@ -1,10 +1,12 @@
 /**
- * [INPUT]: 依赖 Release、冻结交付、外仓分发 API 与统一通知。
+ * [INPUT]: 依赖共享 Select、 Release、冻结交付、外仓分发 API 与统一通知。
  * [OUTPUT]: 提供版本工作台与固定修订的编辑草稿，轮询不覆盖未保存输入。
  * [POS]: 项目版本工作台；正式发布选择完整成功构建并冻结合同。错误桥跨加载分支保持挂载。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
+
+import { Select } from "@/components/ui/select";
 import { useState } from "react";
 import { ArrowLeft, Download, Pencil, Play, ShieldCheck } from "lucide-react";
 import { useUI } from "@/components/providers";
@@ -88,7 +90,7 @@ export function ReleaseDetail({ id, project, readOnly = false }: { id: string; p
     <Modal open={dialog === "edit"} onOpenChange={open => {if (!open) setDialog(undefined);}} title={t("releaseFlow.editDraft")} description={t("releaseFlow.editHint")}>{editing && <ReleaseForm key={editing.spec_revision} project={project} release={editing} done={saved => {remote.setData(saved);setDialog(undefined);}} />}</Modal>
     <Modal open={dialog === "build" && draft} onOpenChange={open => {if (!open) setDialog(undefined);}} title={t("builds.start")} description={t("releaseFlow.buildInherits")}><BuildWizard release={release} /></Modal>
     <Modal open={dialog === "publish" && (draft || release.status === "publish_failed")} onOpenChange={open => {if (!open) setDialog(undefined);}} title={t("releaseFlow.publish")} description={t("releaseFlow.publishHint")}>
-      {draft ? <Field label={t("releaseFlow.selectBuild")}><select className="input" value={chosen} onChange={event => setSelectedBuild(event.target.value)}>{candidates.map(build => <option key={build.id} value={build.id}>#{build.number} · {t("releaseFlow.revision", {number:build.spec_revision})}</option>)}</select></Field> : <p className="text-sm">{t("releaseFlow.retryHint")}</p>}
+      {draft ? <Field label={t("releaseFlow.selectBuild")}><Select className="input" value={chosen} onChange={event => setSelectedBuild(event.target.value)}>{candidates.map(build => <option key={build.id} value={build.id}>#{build.number} · {t("releaseFlow.revision", {number:build.spec_revision})}</option>)}</Select></Field> : <p className="text-sm">{t("releaseFlow.retryHint")}</p>}
       <Button className="mt-5" disabled={pending || !chosen} onClick={() => void publish()}>{pending ? t("common.processing") : t("releaseFlow.confirmPublish")}</Button>
     </Modal>
   </>;
@@ -109,6 +111,6 @@ function ReleaseImages({ release, builds, editable }: {release:Release;builds:Bu
     {!!buildRemote.data?.image_executions?.some(execution => execution.operation === "publish") && <ImageBuilds executions={buildRemote.data.image_executions.filter(execution => execution.operation === "publish")} registry={release.image_registry || undefined} />}
     <Modal open={!!publication} onOpenChange={open => {if (!open) setPublication(undefined);}} title={t("images.publishExternal")} description={t("releaseFlow.externalHint")}><ErrorBox message={credentials.error} /><SubmitForm label={t("images.publishExternal")} onSubmit={async form => {
       await mutation(`/image-executions/${publication!.execution_id}/publish`,{credential_id:form.get("credential"),repository:form.get("repository")});setPublication(undefined);await buildRemote.reload();
-    }}><Field label={t("images.credential")}><select className="input" required name="credential"><option value="">{t("releaseFlow.chooseCredential")}</option>{credentials.data?.filter(item => item.kind === "registry" && item.enabled).map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</select></Field><Field label={t("images.repository")}><Input name="repository" required placeholder="team/application" /></Field><Field label={t("images.tags")}><Input value={release.version} readOnly /></Field></SubmitForm></Modal>
+    }}><Field label={t("images.credential")}><Select className="input" required name="credential"><option value="">{t("releaseFlow.chooseCredential")}</option>{credentials.data?.filter(item => item.kind === "registry" && item.enabled).map(item => <option value={item.id} key={item.id}>{item.name}</option>)}</Select></Field><Field label={t("images.repository")}><Input name="repository" required placeholder="team/application" /></Field><Field label={t("images.tags")}><Input value={release.version} readOnly /></Field></SubmitForm></Modal>
   </section>;
 }

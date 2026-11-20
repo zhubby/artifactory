@@ -1,16 +1,18 @@
 /**
- * [INPUT]: 依赖项目引用、Release 合同、租户变更 API 与统一通知。
+ * [INPUT]: 依赖项目引用、Release 合同、自定义选择控件与统一通知。
  * [OUTPUT]: 提供 Release 创建页及草稿目标合同编辑表单。
- * [POS]: 版本与源码仅在创建时填写；构建继承此处保存的合同。引用与提交错误桥固定挂载。
+ * [POS]: 版本与源码仅在创建时填写；建议保留自由输入，构建继承合同。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { ErrorBox, Field, PageTitle } from "@/components/common";
 import { useUI } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Combobox } from "@/components/ui/combobox";
 import { mutation } from "@/lib/api";
 import { asError, LocalizedError } from "@/lib/errors";
 import { notify } from "@/lib/notify";
@@ -33,7 +35,6 @@ export function ReleaseCreate({ project }: { project: Project }) {
 export function ReleaseForm({ project, release, done }: { project: Project; release?: Release; done: (release: Release) => void }) {
   const { t } = useUI();
   const refs = useRepositoryRefs(release ? "" : project.id);
-  const refList = useId();
   const [version, setVersion] = useState(release?.version || "");
   const [source, setSource] = useState(release?.requested_ref || "");
   const [sourceTouched, setSourceTouched] = useState(false);
@@ -66,8 +67,11 @@ export function ReleaseForm({ project, release, done }: { project: Project; rele
     <ErrorBox message={release ? undefined : refs.error} />
     <div className="grid gap-5 md:grid-cols-2">
       <Field label={t("releaseFlow.version")}><Input aria-label={t("releaseFlow.version")} name="version" value={version} readOnly={!!release} required maxLength={100} placeholder="1.2.0-rc.1" onChange={event => setVersion(event.target.value)} /><p className="mt-2 text-xs text-muted-foreground">{t("releaseFlow.versionHint")}</p></Field>
-      <Field label={t("releaseFlow.source")}><Input aria-label={t("releaseFlow.source")} name="ref" list={refList} value={source} readOnly={!!release} required onChange={event => {setSourceTouched(true); setSource(event.target.value);}} placeholder="refs/heads/main" />
-        <datalist id={refList}>{[...(refs.data?.branches || []), ...(refs.data?.tags || [])].map(ref => <option key={ref.ref} value={ref.ref}>{ref.name}</option>)}</datalist>
+      <Field label={t("releaseFlow.source")}><Combobox aria-label={t("releaseFlow.source")} name="ref" value={source} readOnly={!!release} required
+        onValueChange={value => {setSourceTouched(true); setSource(value); setDirty(true);}}
+        options={[...(refs.data?.branches || []), ...(refs.data?.tags || [])].map(ref => ({value:ref.ref,label:ref.name}))}
+        loading={!release && refs.loading} error={!release && !!refs.error}
+        emptyLabel={t("wizard.noRefs")} loadingLabel={t("common.loading")} errorLabel={t("common.requestFailed")} placeholder="refs/heads/main" />
         <p className="mt-2 text-xs text-muted-foreground">{t("releaseFlow.sourceHint")}</p>
         {!release && refs.error && <div className="mt-2"><Button type="button" variant="ghost" onClick={refs.reload}>{t("common.retry")}</Button></div>}
       </Field>
@@ -79,13 +83,13 @@ export function ReleaseForm({ project, release, done }: { project: Project; rele
         <legend className="px-1 text-xs">{t("releaseFlow.targetNumber", {number:index + 1})}</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={t("releaseFlow.targetKey")}><Input required maxLength={63} value={target.key} onChange={event => changeTarget(index, {...target, key:event.target.value})} /></Field>
-          <Field label={t("releaseFlow.targetKind")}><select className="input" value={target.kind} onChange={event => changeTarget(index, event.target.value === "image" ? {kind:"image",key:target.key,platforms:["linux/amd64", "linux/arm64"]} : {kind:"native",key:target.key,os:"linux",arch:"amd64",application_platform:"linux"})}><option value="native">{t("releaseFlow.native")}</option><option value="image">{t("releaseFlow.image")}</option></select></Field>
+          <Field label={t("releaseFlow.targetKind")}><Select className="input" value={target.kind} onChange={event => changeTarget(index, event.target.value === "image" ? {kind:"image",key:target.key,platforms:["linux/amd64", "linux/arm64"]} : {kind:"native",key:target.key,os:"linux",arch:"amd64",application_platform:"linux"})}><option value="native">{t("releaseFlow.native")}</option><option value="image">{t("releaseFlow.image")}</option></Select></Field>
         </div>
         {target.kind === "native" ? <>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label={t("releaseFlow.hostOS")}><select className="input" value={target.os} onChange={event => changeTarget(index, {...target,os:event.target.value as "linux"|"darwin"|"windows",application_platform:null})}><option value="linux">Linux</option><option value="darwin">macOS</option><option value="windows">Windows</option></select></Field>
-            <Field label={t("releaseFlow.arch")}><select className="input" value={target.arch} onChange={event => changeTarget(index, {...target,arch:event.target.value as "amd64"|"arm64"})}><option value="amd64">amd64</option><option value="arm64">arm64</option></select></Field>
-            <Field label={t("releaseFlow.application")}><select className="input" value={target.application_platform || ""} onChange={event => changeTarget(index, {...target,application_platform:(event.target.value || null) as ApplicationPlatform|null})}><option value="">{t("builds.nonApplication")}</option>{(target.os === "darwin" ? ["macos","ios","android"] : target.os === "linux" ? ["linux","android"] : ["windows"]).map(platform => <option key={platform} value={platform}>{platform}</option>)}</select></Field>
+            <Field label={t("releaseFlow.hostOS")}><Select className="input" value={target.os} onChange={event => changeTarget(index, {...target,os:event.target.value as "linux"|"darwin"|"windows",application_platform:null})}><option value="linux">Linux</option><option value="darwin">macOS</option><option value="windows">Windows</option></Select></Field>
+            <Field label={t("releaseFlow.arch")}><Select className="input" value={target.arch} onChange={event => changeTarget(index, {...target,arch:event.target.value as "amd64"|"arm64"})}><option value="amd64">amd64</option><option value="arm64">arm64</option></Select></Field>
+            <Field label={t("releaseFlow.application")}><Select className="input" value={target.application_platform || ""} onChange={event => changeTarget(index, {...target,application_platform:(event.target.value || null) as ApplicationPlatform|null})}><option value="">{t("builds.nonApplication")}</option>{(target.os === "darwin" ? ["macos","ios","android"] : target.os === "linux" ? ["linux","android"] : ["windows"]).map(platform => <option key={platform} value={platform}>{platform}</option>)}</Select></Field>
           </div>
           <div className="grid gap-4 sm:grid-cols-2"><Field label={t("releaseFlow.artifactKey")}><Input value={target.artifact_key || ""} maxLength={63} placeholder={target.key} onChange={event => changeTarget(index,{...target,artifact_key:event.target.value || undefined})} /></Field><Field label={t("releaseFlow.suffix")}><Input value={target.format_suffix || ""} maxLength={32} placeholder=".tar.gz" onChange={event => changeTarget(index,{...target,format_suffix:event.target.value || undefined})} /></Field></div>
         </> : <div className="flex flex-wrap gap-5">{(["linux/amd64","linux/arm64"] as const).map(platform => <label key={platform} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={target.platforms.includes(platform)} onChange={event => changeTarget(index,{...target,platforms:event.target.checked ? [...target.platforms,platform] : target.platforms.filter(item => item !== platform)})} />{platform}</label>)}</div>}

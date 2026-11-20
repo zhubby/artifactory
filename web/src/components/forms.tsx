@@ -1,10 +1,12 @@
 /**
- * [INPUT]: 依赖业务 API、全局通知、UI 词条和输入控件。
+ * [INPUT]: 依赖共享 Select、业务 API、全局通知、UI 词条和输入控件。
  * [OUTPUT]: 提供带统一提交通知的业务表单与密钥查看弹窗。
  * [POS]: 收集业务输入；提交反馈不占用表单布局。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
+
+import { Select } from "@/components/ui/select";
 
 import { useUI } from "@/components/providers";
 
@@ -215,7 +217,7 @@ export function ProjectForm({
       {resources && (
         <fieldset disabled={!canManageResources} className="form-stack">
           <Field label={t("projects.credential")}>
-            <select
+            <Select
               name="credential_id"
               className="input"
               defaultValue={project?.credential_id || ""}
@@ -226,13 +228,13 @@ export function ProjectForm({
                   {credential.name} · {credential.kind}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field
             label={t("tenants.deviceMode")}
             hint={t("tenants.deviceDetail")}
           >
-            <select
+            <Select
               className="input"
               value={accessMode}
               onChange={(event) =>
@@ -241,7 +243,7 @@ export function ProjectForm({
             >
               <option value="pools">{t("projects.pools")}</option>
               <option value="nodes">{t("navigation.nodes")}</option>
-            </select>
+            </Select>
           </Field>
           {accessMode === "nodes" && (
             <Field label={t("search.label")}>
@@ -337,7 +339,7 @@ export function ProjectForm({
       {general && (
         <>
           <Field label={t("ai.modelProfile")} hint={t("ai.projectModelHint")}>
-            <select
+            <Select
               className="input"
               value={model}
               onChange={(event) => setModel(event.target.value)}
@@ -348,7 +350,7 @@ export function ProjectForm({
                   {profile.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field
             label={t("ai.projectContext")}
@@ -388,7 +390,7 @@ export function ProjectForm({
                 required
               />
               <div className="flex gap-2">
-                <select
+                <Select
                   className="input min-w-0 flex-1"
                   aria-label={t("projects.credential")}
                   required
@@ -409,7 +411,7 @@ export function ProjectForm({
                       {credential.name}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <Button
                   type="button"
                   variant="ghost"
@@ -472,13 +474,13 @@ export function NodeForm({
       }}
     >
       <Field label={t("nodes.pool")}>
-        <select className="input" name="pool_id" defaultValue={node.pool_id}>
+        <Select className="input" name="pool_id" defaultValue={node.pool_id}>
           {pools.map((pool) => (
             <option value={pool.id} key={pool.id}>
               {pool.name}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
       <Field label={t("nodes.concurrency")} hint={t("nodes.concurrencyHint")}>
         <Input
@@ -532,14 +534,14 @@ export function CredentialForm({ done }: { done: () => void }) {
         <Input name="name" required maxLength={100} />
       </Field>
       <Field label={t("credentials.method")}>
-        <select
+        <Select
           className="input"
           value={kind}
           onChange={(event) => setKind(event.target.value)}
         >
           <option value="https">{t("credentials.https")}</option>
           <option value="ssh">{t("credentials.ssh")}</option>
-        </select>
+        </Select>
       </Field>
       {kind === "https" && (
         <Field label={t("credentials.username")}>

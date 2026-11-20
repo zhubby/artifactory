@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖账户上下文、租户 API、共享表单与全局通知。
+ * [INPUT]: 依赖账户、租户 API、共享幂等键、表单与通知。
  * [OUTPUT]: 提供租户卡片选择、创建与邀请页面。
  * [POS]: 登录后的工作区入口；首次读取使用卡片骨架，失败提供重试。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
 import { notify } from "@/lib/notify";
+import { createIdempotencyKey } from "@/lib/idempotency";
 import type { Account, Tenant } from "@/lib/types";
 
 export function TenantChooser() {
@@ -42,6 +43,10 @@ export function TenantChooser() {
     `${tenant.name} ${tenant.slug}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
   const hallError = account.error || tenants.error;
+  function beginCreate() {
+    setKey(createIdempotencyKey());
+    setCreating(true);
+  }
   return (
     <div className="tenant-hall">
       <header className="hall-header">
@@ -64,12 +69,7 @@ export function TenantChooser() {
             </h1>
             <p>{t("workspace.hallDescription")}</p>
           </div>
-          <Button
-            onClick={() => {
-              setKey(crypto.randomUUID());
-              setCreating(true);
-            }}
-          >
+          <Button onClick={beginCreate}>
             <Plus />
             {t("tenants.create")}
           </Button>
@@ -123,12 +123,7 @@ export function TenantChooser() {
                 )}
               </p>
               {!tenants.data?.length && (
-                <Button
-                  onClick={() => {
-                    setKey(crypto.randomUUID());
-                    setCreating(true);
-                  }}
-                >
+                <Button onClick={beginCreate}>
                   <Plus />
                   {t("tenants.create")}
                 </Button>
