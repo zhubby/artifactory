@@ -28,6 +28,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "artifactory.fullname" . }}-web
+                name: {{ include "artifactory.fullname" . }}-gateway
                 port: {number: 80}
 {{- end }}

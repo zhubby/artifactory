@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 设备 mTLS、统一网关与独立 TimescaleDB 遥测服务。
-[OUTPUT]: 定义采集、持久重放、访问权限和部署地址。
+[OUTPUT]: 定义采集、持久重放、访问权限和双端口私有入口。
 [POS]: 设备观测协议与遥测服务的部署契约。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -56,7 +56,9 @@ AI 查询和分配另以 `startup_resources` 保存每个节点／启动的最�
 
 ## 传输、故障与权限
 
-注册回复包含 `telemetry_endpoint`，使用设备现有的 pinned CA 和 mTLS 身份，连接独立端口 8444。主 Helm Chart 通过统一 Gateway 的 `<prefix>-grpc:8444` 透传到 Telemetry，TLS 在 Telemetry 终止。该端口与设备控制 8443、内部 HTTPS 8445 使用独立监听和连接预算。外部设备使用可达域名或直接选择该 Service 的持久隧道；配置地址须匹配后端证书 SAN。Telemetry 每次验证证书指纹、过期和撤销；只读查询业务库确认 process attempt 属于该设备，允许已完成/已取消任务离线补报，不取得任何构建执行权。
+注册回复包含 `telemetry_endpoint`，使用设备现有的 pinned CA 和 mTLS 身份，连接独立端口 8444。主 Helm Chart 通过统一 Gateway 的 `<prefix>-gateway:8444` 透传到私有 `<prefix>-telemetry:8444`，TLS 在 Telemetry 终止。公开网关的 HTTP、控制和遥测共用一个 Service；该端口与设备控制 8443、内部 HTTPS 8445 使用独立监听和连接预算。外部设备使用可达域名或直接选择该 Service 的持久隧道；配置地址须匹配后端证书 SAN。Telemetry 每次验证证书指纹、过期和撤销；只读查询业务库确认 process attempt 属于该设备，允许已完成/已取消任务离线补报，不取得任何构建执行权。
+
+私有 `<prefix>-telemetry` Service 同时提供查询 8093 和写入 8444，不再创建 telemetry-grpc Service。查询仍要求内部 token 与 TLS；写入仍要求设备 mTLS。该 Service 固定为 ClusterIP，设备入口通过 `gateway.service` 发布。Service 端口合并不改变两种协议或认证方式。
 
 批次有 UUID、进程内 session、单调计时、UTC 采样时间；新版 Emissary 的 `session_id` 与 metadata 的 `startup_id` 相同。服务器在事务提交后 ACK；节点与批次 ID 构成幂等键，内容不一致的重复 ID 被拒绝。发送端在 ACK ID 匹配后才删除本地记录。重放窗口为 48 小时；超过窗口或未来超过 5 分钟的记录永久拒收并记为缺口，需要设备修正系统时间。
 

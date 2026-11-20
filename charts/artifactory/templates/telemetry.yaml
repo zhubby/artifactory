@@ -1,9 +1,9 @@
 # [INPUT]: 遥测预算、服务身份与统一网关入口。
-# [OUTPUT]: 遥测工作负载、TimescaleDB 初始化配置与私有后端 Service。
+# [OUTPUT]: 遥测工作负载、数据库初始化与查询写入共用的私有 Service。
 # [POS]: 遥测后端只接收集群流量；设备入口由统一网关提供。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 {{- if or (ne .Values.telemetry.service.type "ClusterIP") .Values.telemetry.service.nodePort }}
-{{- fail "telemetry.service must remain ClusterIP without nodePort; configure the device entry with grpc.service instead" }}
+{{- fail "telemetry.service must remain ClusterIP without nodePort; configure the device entry with gateway.service instead" }}
 {{- end }}
 apiVersion: v1
 kind: ConfigMap
@@ -61,7 +61,7 @@ spec:
             - {name: ARTIFACTORY_TELEMETRY_READ_CONNECTIONS, value: {{ .Values.telemetry.readConnections | quote }}}
             - {name: ARTIFACTORY_TELEMETRY_AUTH_CONNECTIONS, value: {{ .Values.telemetry.authorizationConnections | quote }}}
             {{- $secret := include "artifactory.credentials" . }}
-            {{- range $env,$key := dict "DATABASE_URL" "telemetry-database-url" "ARTIFACTORY_BUSINESS_DATABASE_URL" "database-url" "ARTIFACTORY_TELEMETRY_TOKEN" "telemetry-token" }}
+            {{- range $env,$key := dict "DATABASE_URL" "telemetry-database-url" "ARTIFACTORY_BUSINESS_DATABASE_URL" .Values.telemetry.businessDatabaseSecretKey "ARTIFACTORY_TELEMETRY_TOKEN" "telemetry-token" }}
             - name: {{ $env }}
               valueFrom:
                 secretKeyRef: {name: {{ $secret }}, key: {{ $key }}}
@@ -89,20 +89,11 @@ kind: Service
 metadata:
   name: {{ include "artifactory.fullname" . }}-telemetry
 spec:
-  selector:
-    {{- include "artifactory.selector" . | nindent 4 }}
-    app.kubernetes.io/component: telemetry
-  ports: [{name: query, port: 8093, targetPort: query}]
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ include "artifactory.fullname" . }}-telemetry-grpc
-spec:
   type: ClusterIP
   selector:
     {{- include "artifactory.selector" . | nindent 4 }}
     app.kubernetes.io/component: telemetry
   ports:
+    - {name: query, port: 8093, targetPort: query}
     - {name: ingest, port: 8444, targetPort: ingest}
 {{- end }}

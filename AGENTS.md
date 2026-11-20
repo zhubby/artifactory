@@ -31,6 +31,8 @@ book.toml - mdBook 文档构建。
 内建 OCI 仓库由 Distribution 提供，使用独立私有 S3 Bucket。
 统一 Pingora 双副本网关反向代理内建仓库与制品。
 公开、内部和设备入口使用独立端口。设备连接透传 mTLS。
+公网协议共用网关 Service，内部 HTTPS 保留独立 ClusterIP。
+遥测查询与写入共用私有 Service。
 HTTP 仓库只在用户指定该协议时接入。
 项目 Release 固定 SemVer、源码和目标修订。
 Release 只交付一次完整构建，正式版本不可覆盖。

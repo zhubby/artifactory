@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 独立镜像 Operator、池代理、监督型 BuildKit 与私有仓库。
-[OUTPUT]: 定义最低 Kubernetes 1.28 的镜像生命周期、出口和交付边界。
+[OUTPUT]: 定义最低 Kubernetes 1.28 的镜像生命周期、整合入口和交付边界。
 [POS]: 镜像构建与统一网关的部署入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -21,13 +21,14 @@ Image Operator 在 Kubernetes 中启动 BuildKit。平台固定源码清单后�
 | Pingora HTTP | 控制入口、仓库反向代理、制品票据流转 | 无本地制品副本 |
 | Pingora TCP | 在建连时选择 Control，透传 TLS 字节 | 原有设备 mTLS 会话 |
 
-主 Chart 只创建一个 Gateway Deployment，默认两个副本。每个 Pod 同时提供公开 HTTP、设备控制、设备遥测和内部 HTTPS 四个监听端口。公开 API、仓库和制品共享 HTTP 连接预算；内部请求、设备控制和遥测各有独立预算。三个 Service 分别选择同一组 Pod 的对应端口。
+主 Chart 只创建一个 Gateway Deployment，默认两个副本。每个 Pod 同时提供公开 HTTP、设备控制、设备遥测和内部 HTTPS 四个监听端口。公开 API、仓库和制品共享 HTTP 连接预算；内部请求、设备控制和遥测各有独立预算。两个 Service 按公开和内部边界选择同一组 Pod。
 
 | Service | Pod 端口 | 访问边界 |
 |---|---|---|
-| `<prefix>-web` | 8080 | 控制台、API、仓库与制品；拒绝 `/internal/*` |
-| `<prefix>-grpc` | 8443、8444 | 控制与遥测的端到端设备 mTLS 透传 |
+| `<prefix>-gateway` | 8080、8443、8444 | Service 80 提供控制台、API、仓库与制品并拒绝 `/internal/*`；8443/8444 透传设备 mTLS |
 | `<prefix>-gateway-internal` | 8445 | 仅内部 HTTPS API 与健康检查 |
+
+公开入口类型和三个 NodePort 统一使用 `gateway.service.type` 与 `gateway.service.nodePorts.http/grpc/telemetry`。内部 Service 固定为 ClusterIP，不能并入公开 NodePort。遥测后端的查询 8093、写入 8444 共用私有 `<prefix>-telemetry` Service。整合配置与已有端口迁移步骤见 [Helm 指南](helm.md#整合已有-service)。
 
 Gateway NetworkPolicy 将 8445 限制为 Control、planning.namespace 和 imageBuilds.namespace 中的 Pod。`gateway.networkPolicy.publicFrom` 和 `deviceFrom` 接受 Kubernetes 网络来源列表；空列表允许任意来源。设置这些列表时同步检查其他 NetworkPolicy，相加规则仍能放行相同流量。设备长连接在建立时选择后端，网关不重放设备消息。新增 Control 副本接纳新连接，已有连接通过排空和客户端重连迁移。
 

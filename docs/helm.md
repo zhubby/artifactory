@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 主 Chart、独立 Operator Chart 与持久身份。
-[OUTPUT]: 定义最低 Kubernetes 1.28 的安装、临时存储与统一网关。
+[OUTPUT]: 定义最低 Kubernetes 1.28 的安装、端口整合与统一网关。
 [POS]: Kubernetes 部署操作入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -12,7 +12,7 @@
 
 Control 使用 `emptyDir`。源码解析任务和每个执行 Pod 直接向上游仓库拉取源码。源码目录、Git 对象、LFS 和 BuildKit 状态只存在于任务临时卷。平台只持久化固定 commit、manifest、AI 对话、计划、日志、制品与最终镜像。详见 [Operator 运维](operator-operations.md) 和 [镜像构建](image-builds.md)。
 
-当前版本只支持全新实例，不提供旧数据库、CRD 或 values 的兼容和迁移入口。业务数据库基线为 `2026112001`，规划数据库基线为 `2026111901`；程序拒绝旧库，不会自动重置数据库或删除旧 Deployment、CRD、Pod、PVC。新旧实例使用独立命名空间和持久身份，旧实例由管理员另行备份和退役。
+当前版本只支持全新数据库实例，不提供旧数据库或 CRD 的兼容和迁移入口。业务数据库基线为 `2026112001`，规划数据库基线为 `2026111901`；程序拒绝旧库，不会自动重置数据库或删除旧 Deployment、CRD、Pod、PVC。新旧数据库实例使用独立命名空间和持久身份，旧实例由管理员另行备份和退役。下文的 Service 整合仅适用于同一数据库基线内的部署，不迁移业务数据。
 
 `auth.registrationEnabled` 默认 `true`，访客注册后没有租户或项目权限，需要创建租户或接受邀请。关闭公开注册时设置 `--set auth.registrationEnabled=false`；该开关映射到 control-plane 的 `ARTIFACTORY_REGISTRATION_ENABLED`，不会停用已有账号或会话。
 
@@ -60,6 +60,8 @@ Chart 引用已有 Secret。默认资源前缀为 `artifactory`，与 Helm relea
 
 默认数据库镜像为 `timescale/timescaledb:2.32.0-pg17`。新卷自动初始化独立遥测库与非管理员应用角色；`credentials.json` 另包含 `telemetry-database-password`、`telemetry-database-url` 和 `telemetry-token`。`telemetry.endpoint` 应填写 Emissary 可访问、证书 SAN 覆盖的 HTTPS 8444 地址；8093 只供 Control 内部查询。已有 PostgreSQL 卷不自动转换，部署配置与 TimescaleDB 恢复步骤见 [时序观测](telemetry.md)。
 
+新生成的服务器证书包含 `<prefix>-gateway`、`<prefix>-gateway.<namespace>.svc`、内部网关和遥测 Service 的 SAN，并保留旧 gRPC Service 的 SAN。已有部署通过原公开域名或 IP 访问时，Service 整合不要求更换 CA 或服务器证书。首次使用新 Service DNS 连接设备端口前，先核验证书包含该 DNS。
+
 CA 有效期十年，gRPC 服务器证书一年；到期前使用原 CA 为正确 SAN 续签，更新 PKI Secret 并安排 control-plane 重启。不要重新初始化整个目录来续签，亦不要替换已有部署的 master key。
 
 ## 生产配置
@@ -96,15 +98,44 @@ helm upgrade --install artifactory charts/artifactory \
 
 示例版本必须已发布；Chart 不会自动创建域名、Ingress Controller 或 TLS Secret。公开控制台要求 HTTPS。内建 S3 默认使用固定私有 ClusterIP HTTP，Chart 为该地址显式启用 `ARTIFACTORY_S3_ALLOW_HTTP`。外部 `s3.endpoint` 默认要求 HTTPS；私有 HTTP 端点须显式设置 `s3.allowHttp=true`，不会放宽公开入口。客户端通过 Gateway 下载制品。Chart 不创建 S3 Ingress，S3 Service 固定为 ClusterIP。组织内部 S3 CA 需加入 Control 镜像内的系统信任库，不能只在宿主安装。
 
-Web Service 指向统一 Pingora 的 8080 端口；它将 `/api/*` 转发给 Control、`/v2/*` 转发给内建仓库、`/artifacts/object` 转发给私有对象，并将页面转发给 Next.js。Gateway Deployment 默认两个副本。设备 Service 使用同一组 Pod 的 8443/8444 端口，内部 ClusterIP 使用 8445 端口。各端口保持独立协议和路由边界。Ingress 必须关闭响应缓冲并允许实际制品和镜像层大小。
+公开 Service `<prefix>-gateway` 选择统一 Pingora Pod。Service 80 端口转发至 Pod 8080，将 `/api/*` 转发给 Control、`/v2/*` 转发给内建仓库、`/artifacts/object` 转发给私有对象，并将页面转发给 Next.js。同一个 Service 的 8443、8444 端口分别透传设备控制和遥测。Gateway Deployment 默认两个副本。内部 `<prefix>-gateway-internal:8445` 保持独立 ClusterIP。各端口保持独立协议和路由边界。Ingress 指向公开网关 80 端口，必须关闭响应缓冲并允许实际制品和镜像层大小。
+
+启用内建数据库、S3、遥测和独立仓库时，共有以下八个 Service：
+
+| Service | 端口 | 访问边界 |
+|---|---|---|
+| `<prefix>-gateway` | 80、8443、8444 | 网页、API、仓库、制品和设备入口 |
+| `<prefix>-gateway-internal` | 8445 | 集群内部 HTTPS |
+| `<prefix>-control-plane` | 8080、8443 | 私有控制后端 |
+| `<prefix>-web-internal` | 3000 | 私有 Next.js 后端 |
+| `<prefix>-telemetry` | 8093、8444 | 私有遥测查询和写入 |
+| `<prefix>-timescaledb` | 5432 | 私有数据库 |
+| `<prefix>-seaweedfs` | 8333 | 私有制品存储 |
+| `<prefix>-registry` | 5000 | 私有 OCI 仓库 |
+
+同一组 Pod 的端口可以共用 Service。不同后端需要独立 Service；一个 selector 不能按端口选择不同的 Pod。内部 8445 不能并入公开 NodePort，否则 Kubernetes 会为它分配外部入口。
 
 Web 镜像同时包含由 mdBook 生成的完整静态文档，安装后访问控制台同域名的 `/docs`，无需登录，也不需要额外的 Service、PVC 或 Ingress 路径。文档随 Web 镜像一起升级和回滚；构建与维护说明见[文档站点](operations.md#文档站点)。
 
-gRPC 使用独立的 `<prefix>-grpc:8443` Service，连接 Pingora 设备网关。它转发至私有 Control Service 8443，保留服务器 TLS 与节点 mTLS。通过受信网络的 TCP LoadBalancer、NodePort 或 TLS passthrough 暴露，确保 Agent 访问的主机名/IP 在证书 SAN 中。不要使用普通 HTTP Ingress 终止这条私有 CA 认证连接，也不要公开数据库或 SeaweedFS 内部管理端口。
+gRPC 使用 `<prefix>-gateway:8443`，转发至私有 Control Service 8443，保留服务器 TLS 与节点 mTLS。通过受信网络的 TCP LoadBalancer、NodePort 或 TLS passthrough 暴露，确保 Agent 访问的主机名/IP 在证书 SAN 中。不要使用普通 HTTP Ingress 终止这条私有 CA 认证连接，也不要公开数据库或 SeaweedFS 内部管理端口。
+
+公开入口统一配置为 `gateway.service`。使用 NodePort 时，例如：
+
+```yaml
+gateway:
+  service:
+    type: NodePort
+    nodePorts:
+      http: 31080
+      grpc: 31443
+      telemetry: 31444
+```
+
+三个固定 NodePort 必须互不相同。省略某个值时，由 Kubernetes 分配该端口。`console.publicUrl` 和 `telemetry.endpoint` 仍分别填写浏览器、设备实际可达的外部地址。
 
 ## 本机 kind
 
-本机 profile 显式启用 HTTP 开发模式；gRPC 仍校验私有 CA。默认端口为控制台和制品 31080、gRPC 31443。S3 保持集群内部地址。先确认端口未被其他 Service 使用。
+本机 profile 显式启用 HTTP 开发模式；gRPC 仍校验私有 CA。默认端口为控制台和制品 31080、设备控制 31443、设备遥测 31444。S3 保持集群内部地址。先确认端口未被其他 Service 使用。
 
 ```sh
 python3 scripts/init-helm.py \
@@ -136,16 +167,32 @@ helm upgrade --install artifactory charts/artifactory \
 
 如果 kind 已配置本地 registry，也可把镜像推入该 registry，并在 Helm values 设置对应 repository。不要重建已有集群来加载镜像。
 
-macOS 常规 kind 网络不能直接访问节点 NodePort。默认 values 使用 loopback，分别在两个终端运行：
+macOS 常规 kind 网络不能直接访问节点 NodePort。默认 values 使用 loopback，在同一个终端转发三个公开端口：
 
 ```sh
-kubectl --context YOUR_KIND_CONTEXT -n artifactory port-forward service/artifactory-web 31080:80
-kubectl --context YOUR_KIND_CONTEXT -n artifactory port-forward service/artifactory-grpc 31443:8443
+kubectl --context YOUR_KIND_CONTEXT -n artifactory port-forward \
+  service/artifactory-gateway 31080:80 31443:8443 31444:8444
 ```
 
 浏览器访问 `http://127.0.0.1:31080`。Agent 注册使用 `127.0.0.1:31443`、本次 `pki/ca.pem`，并仅在这个开发环境添加 `--allow-http-uploads`。使用实际节点 IP 时，更新 `console.publicUrl`，并将该 IP 加入 `--grpc-host`。浏览器和制品票据使用同一个公开网关地址；不要随意切换 localhost / IP。
 
 ## 检查与升级
+
+### 整合已有 Service
+
+旧 Chart 分别创建 `<prefix>-web`、`<prefix>-grpc` 和 `<prefix>-telemetry-grpc`。当前 Chart 将前两个合并为 `<prefix>-gateway`，将遥测写入端口并入 `<prefix>-telemetry`。旧 `console.service`、`grpc.service` 配置会触发渲染错误，必须先迁移到 `gateway.service`，不能直接沿用 `--reuse-values`。
+
+1. 将当前 Helm values、manifest、Service UID 与端口、PVC 和 Secret UID 保存到私有目录。确认目标命名空间 UID，并保留所有固定镜像摘要和现场覆盖。
+2. 将旧公开 HTTP、gRPC、遥测 NodePort 分别写入 `gateway.service.nodePorts.http/grpc/telemetry`，设置统一的 `gateway.service.type`。删除 `console.service` 和 `grpc.service`，保留 `console.publicUrl`、设备外部地址及其他部署参数。`telemetry.businessDatabaseSecretKey` 指定已有凭据 Secret 中的业务库连接键，默认 `database-url`；已有部署使用独立只读身份时保留该参数。使用 `--reset-values -f <migrated-values>`，防止旧默认值重新进入配置。
+3. 渲染并比较全部资源。只允许本次 Service 整合、网关遥测后端地址及 Ingress 引用发生变化。提前给现有 telemetry Service 增加 8444 端口，并创建新 gateway ClusterIP；新 Service 的 selector、Helm 所属标签和 release 注解必须与渲染结果一致。确认 EndpointSlice 已包含就绪后端。
+4. 保持旧公开 Service 和 telemetry-grpc Service 可用。先将现有 Gateway Deployment 的 `ARTIFACTORY_GATEWAY_TELEMETRY` 改为 `<prefix>-telemetry:8444`，执行滚动更新并等待所有副本就绪。核验公开入口与遥测连接后，继续转移端口。
+5. 先将旧公开 Service 转为 ClusterIP，释放原 NodePort，再将新 gateway Service 切换为目标类型并接管这些端口。不同 Service 不能同时占用同一 NodePort，此步骤会有短暂入口切换。不要先直接创建占用原 NodePort 的新 Service。
+6. 确认新入口就绪后，执行已核验的 Helm 升级。新 Service 由同一 Helm release 接管，旧公开 Service 和 telemetry-grpc Service 此时才移除。不要依赖同一次 Helm 升级先完成 Pod 排空再删除旧 Service。
+7. 核验八个 Service、公开端口、设备 TLS、内部 HTTPS、登录和文档。对照快照确认数据库、PVC、Secret、CA 和非目标工作负载保留。失败时按已保存的 Service 端口和 Helm 历史恢复；恢复旧 NodePort 前先释放新 Service 对它们的占用。
+
+Service 整合不删除命名空间，不重建数据库，不重新初始化凭据或 CA。
+
+### 常规核验
 
 ```sh
 kubectl --context YOUR_CONTEXT -n artifactory get pods,pvc,services

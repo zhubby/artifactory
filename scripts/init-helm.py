@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""[INPUT]: 新部署命名空间、资源前缀和设备入口 SAN。
+"""[INPUT]: 新部署命名空间、资源前缀与统一网关的设备入口 SAN。
 [OUTPUT]: 固定初始账号、随机持久凭据、设备 PKI 和仓库签名密钥。
 [POS]: 只初始化新目录；已有部署必须保留主密钥和设备 CA。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -73,7 +73,9 @@ def main():
             "-out", "ca.pem", "-sha256", "-days", "3650", "-subj", "/CN=artifactory Emissary Issuer")
     openssl("req", "-newkey", "rsa:3072", "-nodes", "-keyout", "server.key",
             "-out", "server.csr", "-subj", "/CN=artifactory Control")
-    hosts = args.grpc_host + ["DNS:" + prefix + "-grpc",
+    hosts = args.grpc_host + ["DNS:" + prefix + "-gateway",
+                             f"DNS:{prefix}-gateway.{args.namespace}.svc",
+                             "DNS:" + prefix + "-grpc",
                              f"DNS:{prefix}-grpc.{args.namespace}.svc",
                              "DNS:" + prefix + "-gateway-internal",
                              f"DNS:{prefix}-gateway-internal.{args.namespace}.svc",

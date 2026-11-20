@@ -6,13 +6,13 @@ development:
   insecureHttp: true
 console:
   publicUrl: http://127.0.0.1:31080
+gateway:
   service:
     type: NodePort
-    nodePort: 31080
-grpc:
-  service:
-    type: NodePort
-    nodePort: 31443
+    nodePorts:
+      http: 31080
+      grpc: 31443
+      telemetry: 31444
 persistence:
   storageClass: standard
   postgres: 1Gi

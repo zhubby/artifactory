@@ -56,15 +56,6 @@ auth:
 
 console:
   publicUrl: https://build.example.com
-  service:
-    type: ClusterIP
-    nodePort: null
-
-grpc:
-  service:
-    type: ClusterIP
-    nodePort: null
-    telemetryNodePort: null
 
 telemetry:
   enabled: true
@@ -72,9 +63,11 @@ telemetry:
   writeConnections: 12
   readConnections: 4
   authorizationConnections: 4
+  # 授权查询复用现有 Secret；生产部署选择只读业务库身份键。
+  businessDatabaseSecretKey: database-url
   # Device-reachable TLS endpoint. Include this host in init-helm.py --grpc-host.
   endpoint: https://build.example.com:8444
-  # Backend only. Publish devices through grpc.service; other values are rejected.
+  # 私有查询和写入共用 Service；设备入口由 gateway.service 提供。
   service:
     type: ClusterIP
     nodePort: null
@@ -138,6 +131,13 @@ planning:
 
 gateway:
   replicas: 2
+  # 公开 HTTP、设备控制与设备遥测共用一个 Service。
+  service:
+    type: ClusterIP
+    nodePorts:
+      http: null
+      grpc: null
+      telemetry: null
   # Optional ca.pem/server.pem/server.key for an existing service CA.
   # Empty selects the device PKI; Planning coordinator must trust its CA.
   internalTlsSecret: ''

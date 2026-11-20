@@ -82,11 +82,11 @@ helm upgrade --install artifactory charts/artifactory \
 
 ```sh
 kubectl --kubeconfig "$PRIVATE_KUBECONFIG" -n artifactory \
-  port-forward --address 127.0.0.1 service/artifactory-web 38100:80
+  port-forward --address 127.0.0.1 service/artifactory-gateway 38100:80
 kubectl --kubeconfig "$PRIVATE_KUBECONFIG" -n artifactory \
   port-forward --address 127.0.0.1 service/artifactory-seaweedfs 38333:8333
 ```
 
-控制台为 `http://127.0.0.1:38100`，文档为同域 `/docs`。验收包含每个控制副本的 `/readyz`、实际登录、CSRF、项目读取和文档；未经 Agent 注册及构建 / 下载验证，不得称为设备或完整构建链路验收。
+当前源码 Chart 的公开入口为 `artifactory-gateway`；历史 0.2.0 Helm 包的入口仍为 `artifactory-web`，使用历史包时按其 manifest 选择 Service。控制台为 `http://127.0.0.1:38100`，文档为同域 `/docs`。验收包含每个控制副本的 `/readyz`、实际登录、CSRF、项目读取和文档；未经 Agent 注册及构建 / 下载验证，不得称为设备或完整构建链路验收。
 
 失败时只使用本命名空间内的 Helm 历史与回滚；不得删除其他命名空间或集群组件。PVC 与外部 Secret 保留，禁止以删除整个命名空间作为例行回滚。保留初始非目标工作负载规格摘要并在部署后复核，区分他人的并发变更与本次操作。

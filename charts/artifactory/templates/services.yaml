@@ -1,37 +1,60 @@
-# [INPUT]: 固定服务端口和入口类型。
-# [OUTPUT]: 私有业务服务和统一网关的公开入口。
-# [POS]: 公开 HTTP 与设备透传使用独立 Service 和端口。
+# [INPUT]: 网关多端口入口类型与私有后端端口。
+# [OUTPUT]: 单个公开网关 Service 和按 Pod 分离的后端 Service。
+# [POS]: 公开协议共用网关地址；内部 HTTPS 保持独立 ClusterIP。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
-{{- if and (eq .Values.grpc.service.type "NodePort") .Values.grpc.service.nodePort .Values.grpc.service.telemetryNodePort }}
-{{- if eq (.Values.grpc.service.nodePort | toString) (.Values.grpc.service.telemetryNodePort | toString) }}
-{{- fail "grpc.service.nodePort and grpc.service.telemetryNodePort must differ" }}
+{{- if or (hasKey .Values.console "service") (hasKey (.Values.grpc | default dict) "service") }}
+{{- fail "console.service and grpc.service were replaced by gateway.service; migrate values before upgrading" }}
+{{- end }}
+{{- $settings := .Values.gateway.service }}
+{{- if not (has $settings.type (list "ClusterIP" "NodePort" "LoadBalancer")) }}
+{{- fail "gateway.service.type must be ClusterIP, NodePort or LoadBalancer" }}
+{{- end }}
+{{- $seen := dict }}
+{{- range $port := list $settings.nodePorts.http $settings.nodePorts.grpc $settings.nodePorts.telemetry }}
+{{- if $port }}
+{{- if eq $settings.type "ClusterIP" }}
+{{- fail "gateway.service.nodePorts require NodePort or LoadBalancer" }}
+{{- end }}
+{{- $key := $port | toString }}
+{{- if hasKey $seen $key }}
+{{- fail "gateway.service.nodePorts.http, grpc and telemetry must differ" }}
+{{- end }}
+{{- $_ := set $seen $key true }}
 {{- end }}
 {{- end }}
-{{- $components := list "control-plane" "web" "grpc" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "artifactory.fullname" . }}-gateway
+  labels:
+    {{- include "artifactory.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  type: {{ $settings.type }}
+  ports:
+    {{- range $entry := list (dict "name" "http" "port" 80) (dict "name" "grpc" "port" 8443) (dict "name" "telemetry" "port" 8444) }}
+    - port: {{ $entry.port }}
+      targetPort: {{ $entry.name }}
+      name: {{ $entry.name }}
+      {{- with index $settings.nodePorts $entry.name }}
+      nodePort: {{ . }}
+      {{- end }}
+    {{- end }}
+  selector:
+    {{- include "artifactory.selector" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+{{- $components := list "control-plane" }}
 {{- if .Values.postgres.enabled }}{{- $components = append $components "timescaledb" }}{{- end }}
 {{- if .Values.s3.enabled }}{{- $components = append $components "seaweedfs" }}{{- end }}
 {{- range $component := $components }}
-{{- $settings := dict "type" "ClusterIP" }}
 {{- $port := 5432 }}
 {{- $target := "postgres" }}
-{{- $selector := $component }}
 {{- if eq $component "seaweedfs" }}
-{{- $settings = dict "type" "ClusterIP" }}
 {{- $port = 8333 }}
 {{- $target = "s3" }}
 {{- else if eq $component "control-plane" }}
 {{- $port = 8080 }}
 {{- $target = "http" }}
-{{- else if eq $component "web" }}
-{{- $settings = $.Values.console.service }}
-{{- $port = 80 }}
-{{- $target = "http" }}
-{{- $selector = "gateway" }}
-{{- else if eq $component "grpc" }}
-{{- $settings = $.Values.grpc.service }}
-{{- $port = 8443 }}
-{{- $target = "grpc" }}
-{{- $selector = "gateway" }}
 {{- end }}
 ---
 apiVersion: v1
@@ -42,26 +65,15 @@ metadata:
     {{- include "artifactory.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $component }}
 spec:
-  type: {{ $settings.type }}
+  type: ClusterIP
   ports:
     - port: {{ $port }}
       targetPort: {{ $target }}
       name: {{ $target }}
-      {{- if and (eq $settings.type "NodePort") $settings.nodePort }}
-      nodePort: {{ $settings.nodePort }}
-      {{- end }}
     {{- if eq $component "control-plane" }}
     - {port: 8443, targetPort: grpc, name: grpc}
     {{- end }}
-    {{- if eq $component "grpc" }}
-    - port: 8444
-      targetPort: telemetry
-      name: telemetry
-      {{- if and (eq $settings.type "NodePort") $settings.telemetryNodePort }}
-      nodePort: {{ $settings.telemetryNodePort }}
-      {{- end }}
-    {{- end }}
   selector:
     {{- include "artifactory.selector" $ | nindent 4 }}
-    app.kubernetes.io/component: {{ $selector }}
+    app.kubernetes.io/component: {{ $component }}
 {{- end }}

@@ -11,8 +11,8 @@ ingress.yaml: 单域名接入统一 Pingora HTTP 入口。
 persistence.yaml: 只创建数据库和对象存储的 PVC。
 postgres.yaml: 部署 TimescaleDB 和数据库持久卷。
 s3.yaml: 部署 SeaweedFS 和对象存储持久卷。
-services.yaml: 定义集群与设备服务地址。
-telemetry.yaml: 部署遥测私有后端，拒绝绕过网关的公开入口。
+services.yaml: 统一公网 HTTP 与设备多端口 Service，校验旧参数和端口冲突。
+telemetry.yaml: 查询和写入共用私有 Service，授权查询使用指定 Secret 身份。
 web.yaml: 部署独立控制台与静态文档。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

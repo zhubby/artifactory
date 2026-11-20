@@ -6,8 +6,9 @@ Console: {{ .Values.console.publicUrl }}
 Artifact gateway: {{ .Values.console.publicUrl }}/artifacts/object
 S3 remains private; clients receive gateway tickets.
 Unified Gateway replicas: {{ .Values.gateway.replicas }}
-Device TLS service: {{ include "artifactory.fullname" . }}-grpc:8443
-Telemetry TLS service: {{ include "artifactory.fullname" . }}-grpc:8444
+Public HTTP service: {{ include "artifactory.fullname" . }}-gateway:80
+Device TLS service: {{ include "artifactory.fullname" . }}-gateway:8443
+Telemetry TLS service: {{ include "artifactory.fullname" . }}-gateway:8444
 Internal service TLS: {{ include "artifactory.fullname" . }}-gateway-internal:8445 (ClusterIP only)
 
 Credentials and PKI are external Secrets; Helm never rotates them.

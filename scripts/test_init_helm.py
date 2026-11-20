@@ -1,5 +1,5 @@
 """[INPUT]: Helm 模板与独立 Secret 初始化脚本。
-[OUTPUT]: 验证固定初始账号、资源命名、网关和持久凭据。
+[OUTPUT]: 验证固定初始账号、合并服务边界、端口迁移和持久凭据。
 [POS]: 部署契约回归；不连接 Kubernetes。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -19,6 +19,15 @@ SCRIPT = Path(__file__).with_name("init-helm.py")
 
 
 class HelmBootstrapTests(unittest.TestCase):
+    def services(self, rendered):
+        services = {}
+        for document in rendered.split('\n---\n'):
+            if re.search(r'^kind: Service$', document, re.MULTILINE):
+                name = re.search(r'^metadata:(?: \{ *|\n +)name: ([^\s,}]+)', document, re.MULTILINE)
+                self.assertIsNotNone(name, document)
+                services[name.group(1)] = document
+        return services
+
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_registry_ingress_cannot_inherit_the_trial_namespace_allow_rule(self):
         root = SCRIPT.parents[1]
@@ -271,13 +280,16 @@ class HelmBootstrapTests(unittest.TestCase):
         for old in ['gateway-edge', 'gateway-device', 'gateway-data']:
             self.assertNotIn(old, rendered)
         self.assertIn('port: 8445, targetPort: https', rendered)
-        services = rendered.split('kind: Service\n')[1:]
-        for name in ['custom-web', 'custom-grpc', 'custom-gateway-internal']:
-            service = next(value.split('---')[0] for value in services
-                           if f'name: {name}\n' in value or f'name: {name}}}' in value)
+        services = self.services(rendered)
+        for name in ['custom-gateway', 'custom-gateway-internal']:
+            self.assertIn(name, set(services))
+            service = services[name]
             self.assertIn('app.kubernetes.io/component: gateway\n', service)
-        internal = next(value.split('---')[0] for value in services if 'name: custom-gateway-internal}' in value)
+        internal = services['custom-gateway-internal']
         self.assertIn('type: ClusterIP', internal)
+        self.assertNotIn('custom-web', set(services))
+        self.assertNotIn('custom-grpc', set(services))
+        self.assertIn('ARTIFACTORY_GATEWAY_TELEMETRY, value: "custom-telemetry:8444"', deployment)
         self.assertIn('secretKeyRef: {name: custom-gateway, key: token}', rendered)
         self.assertIn('secretName: custom-registry-signing', rendered)
         self.assertIn('ARTIFACTORY_S3_ENDPOINT: "http://custom-seaweedfs:8333"', rendered)
@@ -285,6 +297,11 @@ class HelmBootstrapTests(unittest.TestCase):
         self.assertNotIn('type: NodePort', rendered)
         ingress = rendered.split('# Source: artifactory/templates/ingress.yaml')[1].split('---')[0]
         self.assertNotIn('custom-seaweedfs', ingress)
+        self.assertIn('name: custom-gateway\n', ingress)
+        notes = (chart / 'templates/NOTES.txt').read_text()
+        self.assertIn('-gateway:8443', notes)
+        self.assertIn('-gateway:8444', notes)
+        self.assertNotIn('-grpc:8443', notes)
         image_chart = SCRIPT.parents[1] / 'charts/artifactory-image-operator'
         image = subprocess.run(['helm', 'template', 'images', str(image_chart)],
                                check=True, capture_output=True, text=True).stdout
@@ -300,19 +317,27 @@ class HelmBootstrapTests(unittest.TestCase):
     def test_gateway_nodeports_and_network_sources_preserve_internal_boundary(self):
         chart = SCRIPT.parents[1] / 'charts/artifactory'
         command = ['helm', 'template', 'boundary', str(chart), '--set',
-                   'fullnameOverride=boundary,grpc.service.type=NodePort,grpc.service.nodePort=30843,grpc.service.telemetryNodePort=30844,gateway.internalTlsSecret=service-tls',
+                   'fullnameOverride=boundary,gateway.service.type=NodePort,gateway.service.nodePorts.http=30820,gateway.service.nodePorts.grpc=30843,gateway.service.nodePorts.telemetry=30844,gateway.internalTlsSecret=service-tls',
                    '--set-json', 'gateway.networkPolicy.publicFrom=[{"ipBlock":{"cidr":"10.169.1.0/24"}}]',
                    '--set-json', 'gateway.networkPolicy.deviceFrom=[{"ipBlock":{"cidr":"10.233.0.0/16"}}]']
         rendered = subprocess.run(command, check=True, capture_output=True, text=True).stdout
-        grpc = next(document.split('---')[0] for document in rendered.split('kind: Service\n')[1:]
-                    if 'name: boundary-grpc\n' in document)
-        control, telemetry = grpc.split('    - port: ')[1:]
+        services = self.services(rendered)
+        self.assertIn('boundary-gateway', set(services))
+        gateway = services['boundary-gateway']
+        self.assertIn('type: NodePort', gateway)
+        http, control, telemetry = gateway.split('    - port: ')[1:]
+        self.assertTrue(http.startswith('80\n'))
+        self.assertIn('targetPort: http', http)
+        self.assertIn('nodePort: 30820', http)
         self.assertTrue(control.startswith('8443\n'))
         self.assertIn('targetPort: grpc', control)
         self.assertIn('nodePort: 30843', control)
         self.assertTrue(telemetry.startswith('8444\n'))
         self.assertIn('targetPort: telemetry', telemetry)
         self.assertIn('nodePort: 30844', telemetry)
+        self.assertNotIn('8445', gateway)
+        self.assertIn('type: ClusterIP', services['boundary-gateway-internal'])
+        self.assertNotIn('nodePort:', services['boundary-gateway-internal'])
         self.assertIn('secretName: service-tls', rendered)
         policy = next(document for document in rendered.split('---') if 'kind: NetworkPolicy\n' in document)
         public, devices, internal = policy.split('    - ports: ')[1:]
@@ -325,10 +350,85 @@ class HelmBootstrapTests(unittest.TestCase):
         self.assertIn('port: 8445', internal)
         self.assertIn('namespaceSelector:', internal)
         self.assertIn('values: ["default"]', internal)
-        invalid = subprocess.run(command + ['--set', 'grpc.service.telemetryNodePort=30843'],
-                                 capture_output=True, text=True)
-        self.assertNotEqual(invalid.returncode, 0)
-        self.assertIn('must differ', invalid.stderr)
+        for duplicate in ['gateway.service.nodePorts.telemetry=30843',
+                          'gateway.service.nodePorts.http=30843',
+                          'gateway.service.nodePorts.http=30844']:
+            with self.subTest(duplicate=duplicate):
+                invalid = subprocess.run(command + ['--set', duplicate], capture_output=True, text=True)
+                self.assertNotEqual(invalid.returncode, 0)
+                self.assertIn('must differ', invalid.stderr)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_gateway_nodeports_can_be_automatically_allocated(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        for assigned in (False, True):
+            with self.subTest(http_explicit=assigned):
+                settings = 'gateway.service.type=NodePort'
+                if assigned:
+                    settings += ',gateway.service.nodePorts.http=30820'
+                rendered = subprocess.run(['helm', 'template', 'automatic', str(chart), '--set', settings],
+                                          check=True, capture_output=True, text=True).stdout
+                services = self.services(rendered)
+                self.assertIn('artifactory-gateway', set(services))
+                gateway = services['artifactory-gateway']
+                self.assertIn('type: NodePort', gateway)
+                self.assertEqual(gateway.count('nodePort:'), int(assigned))
+                if assigned:
+                    self.assertIn('nodePort: 30820', gateway)
+                self.assertEqual(len(gateway.split('    - port: ')[1:]), 3)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_clusterip_gateway_rejects_nodeports(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        for port in ('http', 'grpc', 'telemetry'):
+            with self.subTest(port=port):
+                result = subprocess.run(['helm', 'template', 'private', str(chart), '--set',
+                                         f'gateway.service.type=ClusterIP,gateway.service.nodePorts.{port}=30820'],
+                                        capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('gateway.service.nodePorts require NodePort or LoadBalancer', result.stderr)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_loadbalancer_gateway_keeps_three_explicit_nodeports(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        rendered = subprocess.run(['helm', 'template', 'loadbalancer', str(chart), '--set',
+                                   'gateway.service.type=LoadBalancer,gateway.service.nodePorts.http=30820,gateway.service.nodePorts.grpc=30843,gateway.service.nodePorts.telemetry=30844'],
+                                  check=True, capture_output=True, text=True).stdout
+        gateway = self.services(rendered)['artifactory-gateway']
+        self.assertIn('type: LoadBalancer', gateway)
+        self.assertEqual(gateway.count('nodePort:'), 3)
+        for port, nodeport in zip(gateway.split('    - port: ')[1:], (30820, 30843, 30844), strict=True):
+            self.assertIn('nodePort: ' + str(nodeport), port)
+        self.assertNotIn('8445', gateway)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_legacy_public_service_settings_require_explicit_migration(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        command = ['helm', 'template', 'legacy', str(chart)]
+        for legacy in ['console.service.type=NodePort,console.service.nodePort=30820',
+                       'console.service.type=ClusterIP', 'grpc.service.type=ClusterIP',
+                       'grpc.service.type=NodePort,grpc.service.nodePort=30843',
+                       'grpc.service.telemetryNodePort=30844',
+                       'gateway.service.type=NodePort,console.service.nodePort=30820']:
+            with self.subTest(legacy=legacy):
+                invalid = subprocess.run(command + ['--set', legacy], capture_output=True, text=True)
+                self.assertNotEqual(invalid.returncode, 0)
+                self.assertIn('gateway.service', invalid.stderr)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_telemetry_authorization_database_can_use_existing_readonly_identity(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        for key in ('database-url', 'telemetry-business-database-url'):
+            with self.subTest(secret_key=key):
+                command = ['helm', 'template', 'authorization', str(chart)]
+                if key != 'database-url':
+                    command += ['--set', 'telemetry.businessDatabaseSecretKey=' + key]
+                rendered = subprocess.run(command, check=True, capture_output=True, text=True).stdout
+                telemetry = next(document for document in rendered.split('\n---\n')
+                                 if 'kind: Deployment\n' in document
+                                 and '  name: artifactory-telemetry\n' in document)
+                authorization = telemetry.split('- name: ARTIFACTORY_BUSINESS_DATABASE_URL\n', 1)[1].split('\n            -', 1)[0]
+                self.assertIn('key: ' + key + '}', authorization)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_source_and_image_namespaces_have_identity_access_and_internal_gateway_route(self):
@@ -348,16 +448,38 @@ class HelmBootstrapTests(unittest.TestCase):
         chart = SCRIPT.parents[1] / 'charts/artifactory'
         command = ['helm', 'template', 'boundary', str(chart), '--set', 'fullnameOverride=boundary']
         rendered = subprocess.run(command, check=True, capture_output=True, text=True).stdout
-        backend = next(document.split('---')[0] for document in rendered.split('kind: Service\n')[1:]
-                       if 'name: boundary-telemetry-grpc\n' in document)
+        services = self.services(rendered)
+        backend = services['boundary-telemetry']
         self.assertIn('type: ClusterIP', backend)
         self.assertNotIn('nodePort:', backend)
+        self.assertIn('name: query, port: 8093, targetPort: query', backend)
+        self.assertIn('name: ingest, port: 8444, targetPort: ingest', backend)
+        self.assertNotIn('boundary-telemetry-grpc', services)
         for legacy in ['telemetry.service.type=NodePort,telemetry.service.nodePort=30844',
                        'telemetry.service.type=LoadBalancer', 'telemetry.service.nodePort=30844']:
             with self.subTest(legacy=legacy):
                 invalid = subprocess.run(command + ['--set', legacy], capture_output=True, text=True)
                 self.assertNotEqual(invalid.returncode, 0)
-                self.assertIn('grpc.service', invalid.stderr)
+                self.assertIn('gateway.service', invalid.stderr)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_service_set_tracks_optional_telemetry_and_external_storage(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        command = ['helm', 'template', 'services', str(chart)]
+        base = {'artifactory-control-plane', 'artifactory-web-internal',
+                'artifactory-gateway', 'artifactory-gateway-internal'}
+        for enabled in (True, False):
+            for storage in (True, False):
+                with self.subTest(telemetry=enabled, embedded_storage=storage):
+                    settings = ['--set', 'telemetry.enabled=' + str(enabled).lower()]
+                    if not storage:
+                        settings += ['--set', 'postgres.enabled=false,s3.enabled=false,s3.endpoint=https://objects.example.com']
+                    rendered = subprocess.run(command + settings, check=True,
+                                              capture_output=True, text=True).stdout
+                    expected = base | ({'artifactory-telemetry'} if enabled else set())
+                    if storage:
+                        expected |= {'artifactory-timescaledb', 'artifactory-seaweedfs'}
+                    self.assertEqual(set(self.services(rendered)), expected)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_private_external_http_requires_explicit_permission(self):
@@ -436,6 +558,13 @@ class HelmBootstrapTests(unittest.TestCase):
             subprocess.run(["openssl", "verify", "-CAfile", str(output / "pki/ca.pem"),
                             "-verify_hostname", f"{truncated}-telemetry", str(output / "pki/server.pem")],
                            check=True, capture_output=True)
+            for hostname in (f'{truncated}-gateway', f'{truncated}-gateway.test-builds.svc',
+                             f'{truncated}-grpc', f'{truncated}-grpc.test-builds.svc'):
+                with self.subTest(hostname=hostname):
+                    verified = subprocess.run(['openssl', 'verify', '-CAfile', str(output / 'pki/ca.pem'),
+                                               '-verify_hostname', hostname, str(output / 'pki/server.pem')],
+                                              capture_output=True)
+                    self.assertEqual(verified.returncode, 0, 'certificate SAN missing: ' + hostname)
             if os.name != "nt":
                 for path in output.rglob("*"):
                     self.assertEqual(path.stat().st_mode & 0o077, 0, str(path))

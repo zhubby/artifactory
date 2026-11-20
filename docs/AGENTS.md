@@ -20,8 +20,8 @@ direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、启
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。
 frontend-experience.md: 定义语言、主题、系统动效适配与前端验证入口。
-helm.md: 定义最低 Kubernetes 1.28 的新实例安装、初始账号与临时源码验收。
-image-builds.md: 定义普通容器镜像生命周期、池级出口代理和交付边界。
+helm.md: 定义最低 Kubernetes 1.28 的安装、Service 整合迁移与持久身份保留。
+image-builds.md: 定义普通容器镜像生命周期、整合网关、池级出口代理和交付边界。
 image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像、独立 Operator、网关迁移与空闲连接验收。
 image-builds-kubernetes-128-acceptance-2026-11-18.md: 记录 1.28 生命周期、正式部署与原生设备验收。
 local-macmini-acceptance-2026-11-11.md: 记录本机和 Mac mini 的验收。
@@ -37,7 +37,7 @@ ephemeral-source-acceptance-2026-11-18.md: 记录临时源码验证、存储回�
 substrate-scheduling-assessment-2026-11-12.md: 评估可选调度后端的适用边界。
 tasknotes-application-acceptance-2026-11-18.md: 记录 TaskNotes 真实应用的构建、网关下载、运行证据和环境阻塞。
 tasknotes-platform-fixes-2026-11-18.md: 罗列 TaskNotes 暴露的平台缺陷、修复验证与剩余能力边界。
-telemetry.md: 定义主机与构建的时序观测。
+telemetry.md: 定义主机与构建的时序观测、私有双端口 Service 和设备 mTLS。
 toasty-acceptance-2026-11-13.md: 记录 Toasty 数据迁移验收。
 versioning.md: 定义统一版本与交付约束。
 release-delivery.md: 定义项目 Release、固定源码、完整目标和不可变交付。
