@@ -284,7 +284,7 @@ class HelmBootstrapTests(unittest.TestCase):
         for name in ['custom-gateway', 'custom-gateway-internal']:
             self.assertIn(name, set(services))
             service = services[name]
-            self.assertIn('app.kubernetes.io/component: gateway\n', service)
+            self.assertIn('    app.kubernetes.io/component: gateway', service.splitlines())
         internal = services['custom-gateway-internal']
         self.assertIn('type: ClusterIP', internal)
         self.assertNotIn('custom-web', set(services))
