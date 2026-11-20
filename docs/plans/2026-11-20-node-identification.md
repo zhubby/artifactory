@@ -72,6 +72,10 @@
 - [x] Task 1 控制平面和名称校验。
 - [x] Task 2 Emissary。
 - [x] Task 3 Web。
-- [ ] Task 4 集成和交付。
+- [x] Task 4 集成和交付。
+
+交付源码为 `e0d56c1d90aa55aab7e6dbd2b3fc01405f1e68e3`。
+Helm revision 10、双设备升级与清理已验收。
+详细结果见[设备识别上线记录](../releases/2026-11-20-node-identification-kubernetes.md)。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

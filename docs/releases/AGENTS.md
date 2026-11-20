@@ -12,5 +12,6 @@
 2026-11-20-release-delivery-kubernetes.md: 记录 Release 实现、固定镜像与真实交付验收边界。
 2026-11-20-loading-tenant-kubernetes.md: 记录骨架加载、顶部进度和租户大厅的固定镜像与真实页面验收。
 2026-11-20-dropdown-http-kubernetes.md: 记录自定义下拉等宽对齐、HTTP 弹窗修复与固定镜像验收。
+2026-11-20-node-identification-kubernetes.md: 记录设备识别固定镜像、身份保留、原生升级与页面验收边界。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

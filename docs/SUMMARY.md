@@ -104,6 +104,7 @@
 - [Release 中心版本交付 Kubernetes 记录 · 2026-11-20](releases/2026-11-20-release-delivery-kubernetes.md)
 - [加载反馈与租户大厅 Kubernetes 上线记录 · 2026-11-20](releases/2026-11-20-loading-tenant-kubernetes.md)
 - [自定义下拉与 HTTP 操作 Kubernetes 上线记录 · 2026-11-20](releases/2026-11-20-dropdown-http-kubernetes.md)
+- [设备识别 Kubernetes 上线记录 · 2026-11-20](releases/2026-11-20-node-identification-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)
 
