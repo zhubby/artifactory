@@ -11,5 +11,6 @@
 2026-11-19-module-boundaries-kubernetes.md: 记录模块改名后的独立实例、初始账号修正、验证与网络限制。
 2026-11-20-release-delivery-kubernetes.md: 记录 Release 实现、固定镜像与真实交付验收边界。
 2026-11-20-loading-tenant-kubernetes.md: 记录骨架加载、顶部进度和租户大厅的固定镜像与真实页面验收。
+2026-11-20-dropdown-http-kubernetes.md: 记录自定义下拉等宽对齐、HTTP 弹窗修复与固定镜像验收。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md
