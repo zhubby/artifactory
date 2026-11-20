@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖注册 API、AuthShell 和共享表单。
+ * [INPUT]: 依赖注册 API、AuthShell、共享表单和全局通知。
  * [OUTPUT]: 提供 Register 注册页面。
- * [POS]: 校验注册输入并衔接账户创建结果。
+ * [POS]: 校验注册输入；错误桥跨配置与表单分支保持挂载。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { mutation, useRemote } from "@/lib/api";
 import { asError, LocalizedError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import type { AuthConfig } from "@/lib/types";
 
 export default function Register() {
@@ -58,6 +59,7 @@ export default function Register() {
     try {
       await mutation("/auth/register", { username, password });
       const invite = new URLSearchParams(window.location.search).get("invite");
+      notify.success(translate("common.operationSucceeded"), { persist: true });
       window.location.assign(invite ? `/join/${encodeURIComponent(invite)}` : "/tenants");
     } catch (error) {
       setError(asError(error, "register.failed"));
@@ -73,9 +75,9 @@ export default function Register() {
       description={translate("register.description")}
       notice={translate("register.notice")}
     >
+      <ErrorBox message={config.error || (config.data?.registration_enabled ? error : undefined)} />
       {config.error ? (
         <>
-          <ErrorBox message={config.error} />
           <Button variant="secondary" className="w-full" onClick={() => void config.reload()}>
             <RefreshCw />
             {translate("register.retryConfig")}
@@ -89,7 +91,6 @@ export default function Register() {
         </p>
       ) : (
         <>
-          <ErrorBox message={error} />
           <form onSubmit={submit} className="form-stack" aria-busy={busy}>
             <Field label={translate("login.username")} hint={translate("register.usernameHint")}>
               <Input

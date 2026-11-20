@@ -1,0 +1,52 @@
+/**
+ * [INPUT]: 依赖主题色、系统安全区域及通知语义类型。
+ * [OUTPUT]: 提供顶部居中浮层，手机避开顶栏和抽屉导航。
+ * [POS]: 根样式入口加载；浮层留白透传指针，通知独立滚动。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.notification-viewport {
+  --notification-top: max(16px, env(safe-area-inset-top));
+  position: fixed;
+  top: var(--notification-top);
+  left: 50%;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - var(--notification-top) - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  translate: -50% 0;
+  pointer-events: none;
+}
+.notification {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 10px 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 8px 32px #00000026;
+  pointer-events: auto;
+  animation: notification-enter .18s ease-out;
+}
+.notification-icon { flex: none; margin-top: 2px; }
+.notification[data-kind="success"] .notification-icon { color: var(--success); }
+.notification[data-kind="error"] .notification-icon { color: var(--destructive); }
+.notification[data-kind="warning"] .notification-icon { color: var(--warning); }
+.notification[data-kind="info"] .notification-icon { color: var(--muted-foreground); }
+.notification-content { flex: 1; min-width: 0; max-height: min(30dvh, 240px); overflow: auto; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; }
+.notification-content strong { display: block; margin-bottom: 2px; font-weight: 500; }
+.notification-content p { margin: 0; white-space: pre-wrap; }
+.notification-close { display: grid; place-items: center; flex: none; width: 28px; height: 28px; margin: -3px 0; border-radius: 5px; color: var(--muted-foreground); }
+.notification-close:hover { background: var(--secondary); color: var(--foreground); }
+@media (max-width: 640px) {
+  .notification-viewport { --notification-top: max(72px, calc(env(safe-area-inset-top) + 64px), var(--notification-clearance, 0px)); width: calc(100vw - 24px); }
+  .notification-close { width: 36px; height: 36px; margin: -6px 0; }
+}
+@keyframes notification-enter { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }

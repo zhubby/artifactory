@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖账户 API、Radix 弹窗和未保存保护。
+ * [INPUT]: 依赖账户 API、统一表单通知、Radix 弹窗和未保存保护。
  * [OUTPUT]: 提供 AccountProvider 与 useAccount。
- * [POS]: 统一个人设置入口，面板内分区管理资料、安全和偏好，保留业务页面状态。
+ * [POS]: 统一个人设置入口，分区配置资料、安全和偏好。保留业务页面状态；退出错误桥独立于菜单开关。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -21,7 +21,6 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   X,
-  Check,
 } from "lucide-react";
 import { useRemote, mutation } from "@/lib/api";
 import type { Account } from "@/lib/types";
@@ -35,6 +34,8 @@ import { cn } from "@/lib/utils";
 import { UnsavedChanges, confirmLeave } from "@/lib/unsaved";
 import { tenantFromPath } from "@/lib/routes";
 import { asError } from "@/lib/errors";
+import { isNotificationTarget, notify } from "@/lib/notify";
+import { NotificationFocusBranch } from "@/components/notifications";
 
 const Context = createContext<ReturnType<typeof useRemote<Account>> | null>(
   null,
@@ -72,7 +73,6 @@ function AccountMenu({
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState(false);
   const [section, setSection] = useState("profile");
-  const [saved, setSaved] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<Error>();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -84,11 +84,11 @@ function AccountMenu({
   function open() {
     setSection("profile");
     setMenu(false);
-    setSaved(false);
     setPanel(true);
   }
   return (
     <>
+      <ErrorBox message={logoutError} />
       <div className={cn("account-anchor", tenantFromPath(pathname) ? "workspace-account" : "global-account")}>
         {menu && (
           <>
@@ -148,6 +148,7 @@ function AccountMenu({
                   setLogoutError(undefined);
                   try {
                     await mutation("/auth/logout", {});
+                    notify.success(t("common.operationSucceeded"), { persist: true });
                     window.location.assign("/login");
                   } catch (error) {
                     setLogoutError(asError(error));
@@ -159,7 +160,6 @@ function AccountMenu({
                 <LogOut />
                 {t("navigation.logout")}
               </button>
-              <ErrorBox message={logoutError} />
             </div>
           </>
         )}
@@ -197,11 +197,15 @@ function AccountMenu({
           <Dialog.Content
             aria-modal="true"
             className="account-panel"
+            onInteractOutside={(event) => {
+              if (isNotificationTarget(event.target)) event.preventDefault();
+            }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
               trigger.current?.focus();
             }}
           >
+            <NotificationFocusBranch />
             <header>
               <div>
                 <p className="eyebrow">ARTIFACTORY ACCOUNT</p>
@@ -239,7 +243,6 @@ function AccountMenu({
                     )
                       return;
                     setSection(item.id);
-                    setSaved(false);
                   }}
                 >
                   <item.icon size={16} />
@@ -248,15 +251,6 @@ function AccountMenu({
               ))}
             </nav>
             <div className="account-panel-content" key={section}>
-              {saved && (
-                <p
-                  className="notice mb-5 flex items-center gap-2"
-                  role="status"
-                >
-                  <Check size={16} />
-                  {t("account.saved")}
-                </p>
-              )}
               {section === "profile" ? (
                 <>
                   <div className="account-profile-heading">
@@ -269,6 +263,7 @@ function AccountMenu({
                     </div>
                   </div>
                   <SubmitForm
+                    successMessage={t("account.saved")}
                     onSubmit={async (form) => {
                       const value = await mutation<Account>(
                         "/auth/me",
@@ -276,7 +271,6 @@ function AccountMenu({
                         "PATCH",
                       );
                       update(value);
-                      setSaved(true);
                     }}
                   >
                     <Field label={t("account.displayName")}>
@@ -303,6 +297,7 @@ function AccountMenu({
               ) : section === "security" ? (
                 <SubmitForm
                   label={t("account.changePassword")}
+                  successMessage={false}
                   onSubmit={async (form, markSaved) => {
                     const password = String(form.get("new_password"));
                     if (password !== form.get("confirm_password"))
@@ -312,6 +307,7 @@ function AccountMenu({
                       new_password: password,
                     });
                     markSaved();
+                    notify.success(t("common.operationSucceeded"), { persist: true });
                     window.location.assign("/login");
                   }}
                 >

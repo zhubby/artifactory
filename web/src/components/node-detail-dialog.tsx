@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖节点 API、元数据、遥测及 OTA 控件。
+ * [INPUT]: 依赖节点 API、统一通知、元数据、遥测及 OTA 控件。
  * [OUTPUT]: 提供 NodeDetailDialog 节点详情。
  * [POS]: 在侧面板展示设备信息与授权操作。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import type {
   EmissaryRelease,
   EmissaryUpdate,
@@ -504,6 +505,7 @@ function Operations({
         "PATCH",
       );
       setRevoking(false);
+      notify.success(t("common.operationSucceeded"));
       await refresh();
     } catch (cause) {
       setError(asError(cause));

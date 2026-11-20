@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖镜像执行快照和日志 API。
- * [OUTPUT]: 提供镜像候选摘要、平台日志和分发状态。
+ * [OUTPUT]: 提供镜像候选摘要、平台日志和持久失败详情。
  * [POS]: 构建输出只读视图；正式镜像分发从已发布 Release 发起。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -22,7 +22,7 @@ export function ImageBuilds({ executions, registry }: { executions: ImageExecuti
       <p className="break-all font-mono text-xs">{ref} {origin && <CopyButton value={ref} />}</p>
       {!!execution.tags.length && <p className="font-mono text-xs">{execution.tags.join(" · ")}</p>}
       <p className="text-xs text-muted-foreground">{execution.spec.platforms.join(" · ")}</p>
-      {execution.error && <p role="alert" className="text-sm text-destructive">{execution.error}</p>}
+      {execution.error && <p className="whitespace-pre-wrap break-words text-sm text-destructive" role="status" aria-atomic="true">{execution.error}</p>}
       <ImageLogs execution={execution} />
     </article>;
   })}</div>;

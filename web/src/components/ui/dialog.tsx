@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 Radix Dialog、UI 词条及 cn 工具。
+ * [INPUT]: 依赖 Radix Dialog、通知焦点与导航边界、UI 词条及 cn 工具。
  * [OUTPUT]: 提供 Modal 弹窗与侧面板。
  * [POS]: 统一焦点约束、关闭恢复和入场布局。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -12,6 +12,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { createContext, useContext, useRef, type ReactNode, type RefObject } from "react";
 import { cn } from "@/lib/utils";
+import { isNotificationTarget } from "@/lib/notify";
+import { NotificationFocusBranch } from "@/components/notifications";
 
 const modalClosers = new WeakMap<HTMLElement, () => void>();
 const ModalDepth = createContext(0);
@@ -75,6 +77,9 @@ export function Modal({
                 ? "flex h-[90dvh] max-w-[960px] flex-col overflow-hidden sm:h-[min(760px,90dvh)]"
                 : "max-w-xl overflow-auto p-6",
             )}
+            onInteractOutside={(event) => {
+              if (isNotificationTarget(event.target)) event.preventDefault();
+            }}
             onEscapeKeyDown={(event) => {
               // Radix registers its top layer in an effect. A fast Escape can arrive
               // after a child is visible but before that registration has finished.
@@ -103,7 +108,9 @@ export function Modal({
                 previousFocus.current.focus();
             }}
           >
+            <NotificationFocusBranch />
             <div
+              data-notification-heading={placement === "side" ? "" : undefined}
               className={cn(
                 size === "wide" && "shrink-0 px-5 pt-5 pb-4 sm:px-6",
               )}
@@ -121,7 +128,7 @@ export function Modal({
             >
               <X size={18} />
             </Dialog.Close>
-            {navigation}
+            {navigation && <div data-notification-clearance={placement === "side" ? "" : undefined} className="shrink-0">{navigation}</div>}
             <div
               className={cn(
                 size === "wide"

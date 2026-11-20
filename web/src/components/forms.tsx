@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖业务 API、UI 词条和输入控件。
- * [OUTPUT]: 提供项目、节点、凭据及密钥表单。
- * [POS]: 收集业务输入并呈现提交反馈。
+ * [INPUT]: 依赖业务 API、全局通知、UI 词条和输入控件。
+ * [OUTPUT]: 提供带统一提交通知的业务表单与密钥查看弹窗。
+ * [POS]: 收集业务输入；提交反馈不占用表单布局。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -15,6 +15,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Modal } from "@/components/ui/dialog";
 import { mutation, useRemote } from "@/lib/api";
 import { asError, LocalizedError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import type {
   Credential,
   ModelProfile,
@@ -28,11 +29,13 @@ export function SubmitForm({
   onSubmit,
   label,
   onCancel,
+  successMessage,
 }: {
   children: ReactNode;
   onSubmit: (form: FormData, markSaved: () => void) => Promise<void>;
   label?: string;
   onCancel?: () => void;
+  successMessage?: string | false;
 }) {
   const { t } = useUI();
   const [error, setError] = useState<Error>();
@@ -49,6 +52,8 @@ export function SubmitForm({
         element.dataset.dirty = "false";
       });
       element.dataset.dirty = "false";
+      if (successMessage !== false)
+        notify.success(successMessage ?? t("common.operationSucceeded"));
     } catch (error) {
       setError(
         error instanceof SyntaxError
@@ -206,6 +211,7 @@ export function ProjectForm({
           </Field>
         </>
       )}
+      <ErrorBox message={models.error} />
       {resources && (
         <fieldset disabled={!canManageResources} className="form-stack">
           <Field label={t("projects.credential")}>

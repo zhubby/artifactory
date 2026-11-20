@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖业务夹具、可控事件流和浏览器时钟。
- * [OUTPUT]: 验证终态静态读取、历史分页与尾部日志。
+ * [OUTPUT]: 验证终态静态读取、历史分页、尾部日志与发布状态轮询。
  * [POS]: 构建详情的数据生命周期回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -146,9 +146,12 @@ test("publication polls only while pending and leaves historical logs untouched"
   await page.clock.install();
   let details = 0;
   let logs = 0;
+  const statuses: string[] = [];
   await page.route("**/api/v1/projects/by-slug/desktop-client/builds/128", route => {
     details++;
-    return route.fulfill({ json: { ...complete, publish_status: details === 1 ? "pending" : "succeeded" } });
+    const publishStatus = details === 1 ? "pending" : "succeeded";
+    statuses.push(publishStatus);
+    return route.fulfill({ json: { ...complete, publish_status: publishStatus } });
   });
   await page.route("**/api/v1/builds/build-main/logs?*", route => {
     logs++;
@@ -160,7 +163,8 @@ test("publication polls only while pending and leaves historical logs untouched"
   await log.evaluate(node => { node.scrollTop = 120; });
   await page.clock.fastForward(3000);
   await expect.poll(() => details).toBe(2);
-  await expect(page.locator(".build-meta")).toContainText("成功");
+  expect(statuses).toEqual(["pending", "succeeded"]);
+  await expect(page.locator(".page-actions .status-succeeded")).toContainText("成功");
   await page.clock.fastForward(65000);
   expect(details).toBe(2);
   expect(logs).toBe(1);

@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖租户 API、项目路由及 UI 词条。
+ * [INPUT]: 依赖租户 API、全局错误通知、项目路由及 UI 词条。
  * [OUTPUT]: 分别提供顶栏租户切换器与侧栏项目切换器。
  * [POS]: 切换器只选择工作范围；项目列表切换保留栏目，其他页面回到项目概览。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -20,6 +20,7 @@ import { Link } from "@/lib/tenant";
 import { projectSwitchPath } from "@/lib/routes";
 import { useUI } from "@/components/providers";
 import type { Tenant, Project } from "@/lib/types";
+import { ErrorBox } from "@/components/common";
 
 function Selector({
   kind,
@@ -150,6 +151,8 @@ export function TenantSwitcher({ tenant }: { tenant: Tenant }) {
   const { t } = useUI();
   const tenants = useRemote<Tenant[]>("/tenants", 30000);
   return (
+    <>
+      <ErrorBox message={tenants.error} />
       <Selector kind="tenant" label={tenant.name}>
         {(query) => (
           <>
@@ -186,6 +189,7 @@ export function TenantSwitcher({ tenant }: { tenant: Tenant }) {
           </>
         )}
       </Selector>
+    </>
   );
 }
 

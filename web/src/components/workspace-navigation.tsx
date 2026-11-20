@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖当前租户、项目、路由及统一导航定义。
+ * [INPUT]: 依赖当前租户、项目、全局错误通知和统一导航定义。
  * [OUTPUT]: 提供工作区侧栏与顶栏面包屑。
  * [POS]: 同一侧栏在业务和设置之间切换；跨租户选择留在顶栏，项目选择留在侧栏。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -17,6 +17,7 @@ import { projectPath } from "@/lib/routes";
 import { useRemote } from "@/lib/api";
 import type { Project, Release, Tenant } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { ErrorBox } from "@/components/common";
 import {
   canonicalSettingsSection,
   isNavigationItemActive,
@@ -132,6 +133,7 @@ export function WorkspaceBreadcrumb(context: WorkspaceContext) {
   const settingsLabel = state.navigation.settings?.label || (project ? "workspace.manageProject" : "workspace.manageTenant");
   return (
     <nav className="workspace-breadcrumb" aria-label={t("redesign.navigation")}>
+      <ErrorBox message={release.error} />
       {tenant ? <TenantSwitcher tenant={tenant} /> : <span>Artifactory</span>}
       {project && <><ChevronRight aria-hidden="true" /><Link href={state.base} title={project.name}>{project.name}</Link></>}
       {state.settings ? (

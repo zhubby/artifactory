@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖节点事实、全局错误通知与格式化词条。
+ * [OUTPUT]: 提供节点字段、时间、失败重试空态和原始数据视图。
+ * [POS]: 节点详情共用展示；稳定错误桥在请求恢复时清除通知。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import type { ReactNode } from "react";
@@ -46,18 +52,19 @@ export function NodeDataError({
   retry: () => Promise<unknown>;
 }) {
   const { t } = useUI();
-  if (!error) return null;
   return (
-    <div className="space-y-3">
+    <>
+      <ErrorBox message={error} />
+      {error && <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
         {t("nodes.dataUnavailable")}
       </p>
-      <ErrorBox message={error} />
       <Button size="sm" variant="secondary" onClick={() => void retry()}>
         <RefreshCw size={14} />
         {t("nodes.retryData")}
       </Button>
-    </div>
+      </div>}
+    </>
   );
 }
 

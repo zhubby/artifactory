@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户作用域、CSRF 边界与 React 生命周期。
- * [OUTPUT]: 提供请求、变更、附件下载和可停止轮询的 useRemote。
+ * [OUTPUT]: 提供请求、变更、附件下载及失败去重和显式重试的 useRemote。
  * [POS]: 控制台远端数据的请求与取消边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -15,7 +15,7 @@ import {
 } from "react";
 import { assertTenant, currentTenant, tenantHeaders } from "@/lib/tenant";
 import { projectFromPath } from "@/lib/routes";
-import { asError, LocalizedError } from "@/lib/errors";
+import { asError, LocalizedError, sameError } from "@/lib/errors";
 
 const scopedRequests = new Map<AbortController, string>();
 function currentScope() {
@@ -193,11 +193,15 @@ export function useRemote<Type>(
         !controller.signal.aborted &&
         currentPath.current === path
       )
-        setSnapshot((previous) => ({
-          path,
-          data: previous.path === path ? previous.data : undefined,
-          error: asError(error, "common.requestFailed"),
-        }));
+        setSnapshot((previous) => {
+          const failure = asError(error, "common.requestFailed");
+          return {
+            path,
+            data: previous.path === path ? previous.data : undefined,
+            error: previous.path === path && sameError(previous.error, failure)
+              ? previous.error : failure,
+          };
+        });
     } finally {
       requests.current.delete(controller);
     }
@@ -211,6 +215,10 @@ export function useRemote<Type>(
     };
   }, [reload]);
   const data = snapshot.path === path ? snapshot.data : undefined;
+  const retry = useCallback(() => {
+    setSnapshot(previous => previous.path === path ? { ...previous, error: undefined } : previous);
+    return reload();
+  }, [path, reload]);
   const delay = typeof interval === "function" ? interval(data) : interval;
   useEffect(() => {
     if (!path || delay === false || delay <= 0) return;
@@ -220,7 +228,7 @@ export function useRemote<Type>(
   return {
     data,
     error: snapshot.path === path ? snapshot.error : undefined,
-    reload,
+    reload: retry,
     setData,
   };
 }

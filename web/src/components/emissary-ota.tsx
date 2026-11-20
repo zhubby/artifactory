@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 OTA API、表单和节点类型。
+ * [INPUT]: 依赖 OTA API、统一通知、表单和节点类型。
  * [OUTPUT]: 提供 NodeOTA 与 EmissarySettings。
  * [POS]: 连接节点更新操作和 OTA 设置。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/dialog";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import type { EmissaryRelease, EmissaryUpdate, Node, Pool, User } from "@/lib/types";
 
 const retryable = (u: EmissaryUpdate) => ["failed", "rolled_back", "canceled"].includes(u.status);
@@ -26,7 +27,7 @@ function UpdateActions({ update, reload }: { update: EmissaryUpdate; reload: () 
   const [error, setError] = useState<Error>();
   async function act(action: string) {
     setBusy(true); setError(undefined);
-    try { await mutation(`/emissary-updates/${update.id}/${action}`, {}); await reload(); }
+    try { await mutation(`/emissary-updates/${update.id}/${action}`, {}); notify.success(t("common.operationSucceeded")); await reload(); }
     catch (e) { setError(asError(e)); } finally { setBusy(false); }
   }
   return <div className="space-y-2"><div className="flex gap-2">

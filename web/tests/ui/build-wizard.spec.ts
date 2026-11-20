@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 Release、目标修订与构建 HTTP 夹具。
+ * [INPUT]: 依赖 Release、目标修订、构建夹具与全局通知。
  * [OUTPUT]: 验证版本入口、严格 SemVer、合同修订和冻结交付。
  * [POS]: Release 中心交付流程的浏览器回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -31,7 +31,7 @@ test("project navigation centers Releases and creates a version with explicit ta
   await page.locator('input[name="version"]').fill("v1.2.0");
   await page.locator('textarea[name="goal"]').fill("Build signed packages");
   await page.getByRole("button",{name:"新建 Release",exact:true}).click();
-  await expect(page.locator(".error-box")).toContainText("严格 SemVer");
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("严格 SemVer");
   expect(payload).toBeUndefined();
   await page.locator('input[name="version"]').fill("1.2.0-rc.1");
   await page.getByRole("button",{name:"新建 Release",exact:true}).click();
@@ -79,7 +79,7 @@ test("polling a newer revision preserves an unsaved draft and submits its origin
   await expect(page.getByText("目标修订 2",{exact:true}).first()).toBeVisible({timeout:10000});
   await expect(dialog.locator('textarea[name="goal"]')).toHaveValue("Keep my unsaved requirements");
   await dialog.getByRole("button",{name:"保存草稿",exact:true}).click();
-  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("release draft revision changed");
   expect(writes).toEqual([{spec_revision:1,goal:"Keep my unsaved requirements",target_requirements:release.target_requirements,targets:release.targets}]);
   await expect(dialog.locator('textarea[name="goal"]')).toHaveValue("Keep my unsaved requirements");
 });
@@ -98,7 +98,7 @@ test("a build inherits release identity and cannot override injected version par
   await expect(dialog.getByText(release.version,{exact:true})).toBeVisible();
   await dialog.locator('textarea[name="parameters"]').fill('{"ARTIFACTORY_RELEASE_VERSION":"2.0.0"}');
   await dialog.getByRole("button",{name:"发起构建",exact:true}).click();
-  await expect(dialog.getByRole("alert")).toBeVisible();
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("参数必须为字符串键值 JSON 对象，且不能覆盖平台 Release 变量。");
   expect(writes).toEqual([]);
   await dialog.locator('textarea[name="parameters"]').fill('{"PROFILE":"production"}');
   await dialog.getByRole("button",{name:"发起构建",exact:true}).click();
@@ -129,9 +129,9 @@ test("publication accepts only a current-revision successful build and never a n
 
 test("failed publication retries the same selected delivery",async({page})=>{
   await fixtureAPI(page); const writes:unknown[]=[];
-  const failed={...release,status:"publish_failed",selected_build_id:"build-frozen",publish_error:"registry temporarily unavailable"};
+  let failed={...release,status:"publish_failed",selected_build_id:"build-frozen",publish_error:"registry temporarily unavailable"};
   await page.route(`**/api/v1/releases/${release.id}`,route=>route.fulfill({json:failed}));
-  await page.route(`**/api/v1/releases/${release.id}/publish`,async route=>{writes.push(route.request().postDataJSON());await route.fulfill({json:{...failed,status:"publishing"}});});
+  await page.route(`**/api/v1/releases/${release.id}/publish`,async route=>{writes.push(route.request().postDataJSON());failed={...failed,status:"publishing"};await route.fulfill({json:failed});});
   await page.goto(tenantURL(path));
   await page.getByRole("button",{name:"重试正式发布",exact:true}).click();
   await expect(page.getByRole("dialog").getByRole("combobox")).toHaveCount(0);

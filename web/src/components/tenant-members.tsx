@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖成员与邀请 API、统一表单和全局通知。
+ * [OUTPUT]: 提供租户成员、邀请和项目成员编辑界面。
+ * [POS]: 成员变更反馈通过通知展示，列表保留成员状态。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import { useState } from "react";
@@ -15,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/dialog";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import type {
   Invitation,
   Project,
@@ -38,6 +45,7 @@ export function TenantMembers({ user }: { user: User }) {
     try {
       await mutation(path, body, method);
       await Promise.all([members.reload(), invites.reload()]);
+      notify.success(t("common.operationSucceeded"));
     } catch (error) {
       setError(asError(error));
     }
@@ -219,10 +227,12 @@ export function TenantMembers({ user }: { user: User }) {
         <SubmitForm
           children={null}
           label={t("common.confirm")}
+          successMessage={confirm?.kind === "transfer" ? false : undefined}
           onSubmit={async () => {
             if (!confirm) return;
             if (confirm.kind === "transfer") {
               await mutation("/tenant/owner", { user_id: confirm.member.id });
+              notify.success(t("common.operationSucceeded"), { persist: true });
               window.location.reload();
             } else {
               await mutation(

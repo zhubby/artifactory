@@ -1,6 +1,6 @@
 "use client";
 /**
- * [INPUT]: 依赖租户会话、签名公开 API 和统一表单组件。
+ * [INPUT]: 依赖租户会话、签名公开 API、通知和统一表单。
  * [OUTPUT]: 提供凭据导入、版本停用、方案和项目默认方案。
  * [POS]: 租户与项目共用界面；方案加载后初始化默认选择。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { Project, SigningBinding, SigningMetadata } from "@/lib/types";
 import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 
 type Version = { id: string; metadata: SigningMetadata; enabled: boolean };
 type Credential = {
@@ -102,6 +103,7 @@ export function SigningSettings() {
         { enabled },
         "PATCH",
       );
+      notify.success(t("common.operationSucceeded"));
       await Promise.all([credentials.reload(), profiles.reload()]);
     } catch (error) {
       setError(asError(error));

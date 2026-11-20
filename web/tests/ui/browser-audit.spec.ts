@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证侧栏设置切换的草稿保护与退出重试。
+ * [OUTPUT]: 验证侧栏草稿保护、全局错误通知与退出重试。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -86,7 +86,7 @@ test("failed logout stays in the menu with a visible error and can be retried", 
   await page.getByRole("button", { name: "个人菜单", exact: true }).click();
   const logout = page.getByRole("menuitem", { name: "退出登录", exact: true });
   await logout.click();
-  await expect(page.getByRole("menu").getByRole("alert")).toContainText("网络");
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("网络");
   await expect(logout).toBeEnabled();
   await expect(page).toHaveURL(tenantURL("/"));
   expect(errors).toEqual([]);

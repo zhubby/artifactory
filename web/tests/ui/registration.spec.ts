@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖注册 API 夹具、语言切换与全局通知。
+ * [OUTPUT]: 验证注册校验、重复提交、失败重试与草稿保留。
+ * [POS]: 公开认证入口的浏览器回归。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { expect, test, type Page } from "@playwright/test";
 import {closePreferences, fixtureAPI, openPreferences, tenantURL } from "./fixtures";
 
@@ -61,16 +67,16 @@ test("password confirmation and UTF-8 validation never send invalid credentials"
   await fillRegistration(page);
   await page.locator('input[name="confirmPassword"]').fill("different-password");
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
-  await expect(page.locator(".error-box[role=alert]")).toContainText("两次输入的密码不一致。");
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("两次输入的密码不一致。");
   await page.locator('input[name="password"]').fill("too-short");
   await page.locator('input[name="confirmPassword"]').fill("too-short");
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
-  await expect(page.locator(".error-box[role=alert]")).toContainText("密码长度必须为 12–256 字节。");
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("密码长度必须为 12–256 字节。");
   expect(writes).toBe(0);
   await page.locator('input[name="password"]').fill("密密密密");
   await page.locator('input[name="confirmPassword"]').fill("密密密密");
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
-  await expect(page.locator(".error-box[role=alert]")).toContainText("该用户名已被使用");
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("该用户名已被使用");
   expect(writes).toBe(1);
 });
 
@@ -82,7 +88,7 @@ test("duplicate errors and drafts survive locale and theme changes", async ({ pa
   await page.goto(tenantURL("/register"));
   await fillRegistration(page, "retained-reader");
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
-  await expect(page.locator(".error-box[role=alert]")).toContainText("该用户名已被使用");
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("该用户名已被使用");
   await openPreferences(page);
   await page.getByRole("combobox", { name: "主题", exact: true }).selectOption("light");
   await closePreferences(page);
@@ -92,7 +98,7 @@ test("duplicate errors and drafts survive locale and theme changes", async ({ pa
   await page.getByRole("combobox", { name: "Theme", exact: true }).selectOption("dark");
   await closePreferences(page);
   await expect(page.getByRole("heading", { name: "Create a workspace account", exact: true })).toBeVisible();
-  await expect(page.locator(".error-box[role=alert]")).toContainText("This username is already in use.");
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("This username is already in use.");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.locator('input[name="username"]')).toHaveValue("retained-reader");
   await expect(page.locator('input[name="password"]')).toHaveValue("reader-password");
@@ -119,7 +125,7 @@ test("configuration failures hide registration without preventing login and allo
   await page.getByRole("button", { name: "进入工作空间", exact: true }).click();
   await expect(page).toHaveURL(/\/tenants$/);
   await page.goto(tenantURL("/register"));
-  await expect(page.locator(".error-box[role=alert]")).toContainText("无法读取注册设置");
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("无法读取注册设置");
   await expect(page.locator('input[name="username"]')).toHaveCount(0);
   configAvailable = true;
   await page.getByRole("button", { name: "重新加载注册设置", exact: true }).click();
@@ -146,12 +152,12 @@ test("registration errors stay on the form and can be retried after a network fa
   await fillRegistration(page);
   for (const failure of failures) {
     await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
-    await expect(page.locator(".error-box[role=alert]")).toContainText(failure.message);
+    await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(failure.message);
     await expect(page).toHaveURL(/\/register$/);
     await expect(page.locator('input[name="password"]')).toHaveValue("reader-password");
   }
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
-  await expect(page.locator(".error-box[role=alert]")).toContainText("无法连接服务");
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("无法连接服务");
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
   await expect(page).toHaveURL(/\/tenants$/);
 });
@@ -182,7 +188,7 @@ test("registration is keyboard accessible and suppresses repeated submissions", 
   await page.locator("form").dispatchEvent("submit");
   expect(submissions).toBe(1);
   release!();
-  await expect(page.locator(".error-box[role=alert]")).toContainText("该用户名已被使用");
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("该用户名已被使用");
 });
 
 test("a transient config refresh failure preserves the registration draft after retry", async ({ page }) => {
@@ -198,7 +204,7 @@ test("a transient config refresh failure preserves the registration draft after 
   await fillRegistration(page, "refresh-draft");
   available = false;
   await page.clock.fastForward(60000);
-  await expect(page.locator(".error-box[role=alert]")).toContainText("无法连接服务");
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("无法连接服务");
   available = true;
   await page.getByRole("button", { name: "重新加载注册设置", exact: true }).click();
   await expect(page.locator('input[name="username"]')).toHaveValue("refresh-draft");

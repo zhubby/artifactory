@@ -92,7 +92,7 @@ for (const locale of ["zh-CN", "en"] as const)
           page.getByRole("heading", { name: heading, level: 1, exact: true }),
         ).toBeVisible();
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-        await expect(page.locator(".error-box[role=alert]")).toHaveCount(0);
+        await expect(page.locator('[data-notify][data-kind="error"]')).toHaveCount(0);
         await expect(page.locator(".account-trigger")).toBeVisible();
         await expect(page.locator(".workspace-atmosphere")).toHaveCount(0);
         await expect(page.locator("canvas")).toHaveCount(0);

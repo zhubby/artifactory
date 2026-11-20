@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖项目引用、Release 目标合同和租户变更 API。
+ * [INPUT]: 依赖项目引用、Release 合同、租户变更 API 与统一通知。
  * [OUTPUT]: 提供 Release 创建页及草稿目标合同编辑表单。
- * [POS]: 版本与源码仅在创建时填写；构建继承此处保存的合同。
+ * [POS]: 版本与源码仅在创建时填写；构建继承此处保存的合同。引用与提交错误桥固定挂载。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { mutation } from "@/lib/api";
 import { asError, LocalizedError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import { useRepositoryRefs } from "@/lib/repository-refs";
 import { isReleaseVersion, validReleaseTargets } from "@/lib/releases";
 import { projectPath, releasePath } from "@/lib/routes";
@@ -57,16 +58,18 @@ export function ReleaseForm({ project, release, done }: { project: Project; rele
     try {
       const contract = { goal, target_requirements: targets, targets: targets.map(target => target.key) };
       const saved = await mutation<Release>(release ? `/releases/${release.id}` : `/projects/${project.id}/releases`, release ? {spec_revision: release.spec_revision, ...contract} : {version, ref:source, ...contract}, release ? "PATCH" : "POST");
+      notify.success(t("common.operationSucceeded"));
       form.removeAttribute("data-dirty"); setDirty(false); done(saved);
     } catch (error) { setError(asError(error)); } finally { setPending(false); }
   }}>
     <ErrorBox message={error} />
+    <ErrorBox message={release ? undefined : refs.error} />
     <div className="grid gap-5 md:grid-cols-2">
       <Field label={t("releaseFlow.version")}><Input aria-label={t("releaseFlow.version")} name="version" value={version} readOnly={!!release} required maxLength={100} placeholder="1.2.0-rc.1" onChange={event => setVersion(event.target.value)} /><p className="mt-2 text-xs text-muted-foreground">{t("releaseFlow.versionHint")}</p></Field>
       <Field label={t("releaseFlow.source")}><Input aria-label={t("releaseFlow.source")} name="ref" list={refList} value={source} readOnly={!!release} required onChange={event => {setSourceTouched(true); setSource(event.target.value);}} placeholder="refs/heads/main" />
         <datalist id={refList}>{[...(refs.data?.branches || []), ...(refs.data?.tags || [])].map(ref => <option key={ref.ref} value={ref.ref}>{ref.name}</option>)}</datalist>
         <p className="mt-2 text-xs text-muted-foreground">{t("releaseFlow.sourceHint")}</p>
-        {!release && refs.error && <div className="mt-2"><ErrorBox message={refs.error} /><Button type="button" variant="ghost" onClick={refs.reload}>{t("common.retry")}</Button></div>}
+        {!release && refs.error && <div className="mt-2"><Button type="button" variant="ghost" onClick={refs.reload}>{t("common.retry")}</Button></div>}
       </Field>
     </div>
     <Field label={t("releaseFlow.goal")}><Textarea name="goal" value={goal} maxLength={16000} required onChange={event => setGoal(event.target.value)} placeholder={t("releaseFlow.goalPlaceholder")} /></Field>

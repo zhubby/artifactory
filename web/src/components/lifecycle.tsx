@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖生命周期 API、统一表单和全局通知。
+ * [OUTPUT]: 提供工作区归档、恢复、删除及操作历史。
+ * [POS]: 保留持久操作状态；请求反馈通过固定通知桥展示。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 import { useState } from "react";
 import {
@@ -18,6 +24,7 @@ import { Modal } from "@/components/ui/dialog";
 import { SubmitForm } from "@/components/forms";
 import { ErrorBox, Field, Loading, Status } from "@/components/common";
 import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import { Link } from "@/lib/tenant";
 
 export function OperationHistory({
@@ -36,20 +43,22 @@ export function OperationHistory({
       (!project || op.project_id === project),
   );
   async function action(op: LifecycleOperation, verb: string) {
+    setError(undefined);
     try {
       await mutation(`/operations/${op.id}/${verb}`, {});
       await operations.reload();
+      notify.success(t("common.operationSucceeded"));
     } catch (error) {
       setError(asError(error));
     }
   }
-  if (!rows?.length && !operations.error) return null;
-  return (
+  const feedback = <ErrorBox key="operation-feedback" message={error || operations.error} />;
+  if (!rows?.length && !operations.error && !error) return <>{feedback}</>;
+  const history = (
     <section className="panel operation-history">
       <div className="section-title">
         <h2>{t("lifecycle.operations")}</h2>
       </div>
-      <ErrorBox message={error || operations.error} />
       {rows?.map((op) => (
         <article key={op.id} className="operation-row">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -97,7 +106,7 @@ export function OperationHistory({
             </ul>
           )}
           {op.error && (
-            <p role="alert" className="mt-3 text-sm text-destructive">
+            <p className="mt-3 text-sm text-destructive" role="status" aria-atomic="true">
               {t("lifecycle.failedNotice")}
             </p>
           )}
@@ -126,6 +135,7 @@ export function OperationHistory({
       ))}
     </section>
   );
+  return <>{feedback}{history}</>;
 }
 export function LifecycleSettings({
   path,

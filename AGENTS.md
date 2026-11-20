@@ -35,5 +35,6 @@ HTTP 仓库只在用户指定该协议时接入。
 项目 Release 固定 SemVer、源码和目标修订。
 Release 只交付一次完整构建，正式版本不可覆盖。
 镜像执行只写隔离候选，正式推广受发布租约与摘要准入约束。
+界面操作反馈统一使用顶部居中 notify，不占页面布局。
 变更后检查文件契约、模块地图与项目地图。
 [PROTOCOL]: Update this header on change, then check AGENTS.md

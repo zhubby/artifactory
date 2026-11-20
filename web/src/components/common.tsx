@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖租户下载 API、UI 词条和带验签证据的制品类型。
- * [OUTPUT]: 提供应用与宿主标签、状态反馈和制品验签表。
+ * [INPUT]: 依赖租户下载 API、全局通知和带验签证据的制品类型。
+ * [OUTPUT]: 提供应用与宿主标签、通知错误桥和制品验签表。
  * [POS]: 业务页面复用的展示与反馈边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -10,8 +10,6 @@ import { api } from "@/lib/api";
 import { useUI } from "@/components/providers";
 
 import {
-  AlertTriangle,
-  Check,
   CheckCircle2,
   Circle,
   CircleDashed,
@@ -27,7 +25,9 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Artifact, ApplicationPlatform, TargetPlatform } from "@/lib/types";
 import { bytes, short } from "@/lib/utils";
-import { LocalizedError, asError } from "@/lib/errors";
+import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
+import { ErrorNotification } from "@/components/notifications";
 
 export function TargetPlatformLabel({ target }: { target: TargetPlatform }) {
   const { t } = useUI();
@@ -132,23 +132,7 @@ export function Loading() {
   );
 }
 export function ErrorBox({ message }: { message?: string | Error | null }) {
-  const { t } = useUI();
-  if (!message) return null;
-  return (
-    <div role="alert" className="error-box">
-      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-      <span>
-        <strong className="mb-1 block font-medium">
-          {t("common.requestFailed")}
-        </strong>
-        {message instanceof LocalizedError
-          ? t(message.key, message.values)
-          : message instanceof Error
-            ? message.message
-            : message}
-      </span>
-    </div>
-  );
+  return <ErrorNotification message={message} />;
 }
 export function Field({
   label,
@@ -234,20 +218,21 @@ export function SectionTitle({
 }
 export function CopyButton({ value }: { value: string }) {
   const { t } = useUI();
-  const [copied, setCopied] = useState(false);
   return (
     <Button
       variant="ghost"
       size="icon"
       aria-label={t("common.copy")}
-      onClick={() => {
-        void navigator.clipboard.writeText(value).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        });
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          notify.success(t("common.copied"));
+        } catch (error) {
+          notify.error(asError(error));
+        }
       }}
     >
-      {copied ? <Check /> : <Copy />}
+      <Copy />
     </Button>
   );
 }
@@ -322,7 +307,10 @@ export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
                         void api<{ url: string }>(
                           `/artifacts/${artifact.id}/download`,
                         )
-                          .then((result) => window.location.assign(result.url))
+                          .then((result) => {
+                            notify.success(t("common.downloadStarted"));
+                            window.location.assign(result.url);
+                          })
                           .catch((error) => setError(asError(error)));
                       }}
                       aria-label={t("artifacts.download", {

@@ -5,7 +5,7 @@ ai-builds.spec.ts: 验证应用与宿主分类、规划、澄清和重开终态�
 accessibility.spec.ts: 验证共享页面的 WCAG 自动检查。
 browser-audit.spec.ts: 验证侧栏设置草稿保护与退出重试。
 build-source-edge.spec.ts: 验证 Release 源码引用默认值和迟到响应隔离。
-build-history.spec.ts: 验证终态静态日志、分页锚点与尾部事件。
+build-history.spec.ts: 验证终态静态日志、分页锚点、尾部事件与发布状态轮询。
 build-wizard.spec.ts: 验证严格 SemVer、Release 创建与修订、继承构建、选定交付、失败重试和权限。
 console-visual.spec.ts: 验证多语言工作台、侧栏设置与个人设置布局。
 emissary-ota.spec.ts: 验证节点升级配置。
@@ -16,6 +16,7 @@ images.spec.ts: 验证已发布 Release 固定版本分发、正式下载名、m
 monochrome-workspace.spec.ts: 验证中性色工作台、项目切换和导航状态。
 motion.spec.ts: 验证默认动效、系统减少动态适配、历史开关忽略及偏好界面无动效控制。
 node-details.spec.ts: 验证节点详情布局、分区查询和管理操作。
+notifications.spec.ts: 验证浮层布局、顶栏访问、字段校验、弹窗焦点、计时暂停、来源隔离与轮询恢复。
 node-pagination.spec.ts: 验证节点分页和筛选。
 peripheral-visual.spec.ts: 验证认证页、邀请页和错误页的视觉边界。
 preferences.spec.ts: 验证用户视觉和语言偏好。

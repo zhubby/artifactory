@@ -4,7 +4,7 @@
 成员列表
 AGENTS.md: 本目录职责、成员和依赖入口。
 apple-icon.png: PNG；apple-icon配置或静态资源。
-error.tsx: 显示故障反馈并允许用户重试或返回。
+error.tsx: 通知安全故障文案并保留重试和返回入口。
 favicon.ico: ICO；favicon配置或静态资源。
 globals.css: 加载统一样式并在减少动效时禁用动画。
 icon.svg: SVG；icon配置或静态资源。
@@ -15,7 +15,7 @@ page.tsx: TypeScript；提供 Page。
 
 子目录
 docs/: 独立路由或子模块。
-join/: 独立路由或子模块。
+join/: 见 join/AGENTS.md。
 login/: 见 login/AGENTS.md。
 register/: 见 register/AGENTS.md。
 tenants/: 见 tenants/AGENTS.md。

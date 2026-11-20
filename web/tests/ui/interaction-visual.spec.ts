@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证切换器键盘访问、窄屏顶栏、短视口侧栏与个人设置。
+ * [OUTPUT]: 验证切换器键盘、窄屏布局、个人设置与全局通知。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -207,7 +207,7 @@ for (const locale of ["zh-CN", "en"]) {
     await name.fill("项".repeat(34)); // 34 characters, 102 UTF-8 bytes.
     await dialog.locator('input[name="repository_url"]').fill("https://git.example.com/team/app.git");
     await dialog.getByRole("button", { name: locale === "en" ? "Save" : "保存", exact: true }).click();
-    await expect(dialog.getByRole("alert")).toContainText(locale === "en"
+    await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(locale === "en"
       ? "Project name is too long. Shorten it and try again."
       : "项目名称过长，请缩短后重试。");
     expect(events.writes).toEqual([]);

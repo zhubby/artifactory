@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖设置 API、表单及 UI 词条。
+ * [INPUT]: 依赖设置 API、统一通知、表单及 UI 词条。
  * [OUTPUT]: 提供 Settings 设置分区。
  * [POS]: 在工作区内编辑凭据、令牌和审计设置。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -23,6 +23,7 @@ import { Modal } from "@/components/ui/dialog";
 import { CredentialForm, SecretDialog, SubmitForm } from "@/components/forms";
 import { api, mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import type { Audit, Credential, Project, Token, User } from "@/lib/types";
 import { short } from "@/lib/utils";
 
@@ -195,14 +196,17 @@ export function Settings({
                                   aria-label={t("security.revokeToken", {
                                     name: token.name,
                                   })}
-                                  onClick={() => {
-                                    void api(`/tokens/${token.id}`, {
-                                      method: "DELETE",
-                                    })
-                                      .then(() => remote.reload())
-                                      .catch((error) =>
-                                        setError(asError(error)),
-                                      );
+                                  onClick={async () => {
+                                    setError(undefined);
+                                    try {
+                                      await api(`/tokens/${token.id}`, {
+                                        method: "DELETE",
+                                      });
+                                      notify.success(t("common.operationSucceeded"));
+                                      await remote.reload();
+                                    } catch (error) {
+                                      setError(asError(error));
+                                    }
                                   }}
                                 >
                                   <Trash2 />

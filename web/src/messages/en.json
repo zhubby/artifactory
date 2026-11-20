@@ -69,7 +69,14 @@
     "live": "Live",
     "retry": "Retry",
     "confirm": "Confirm",
-    "select": "Select"
+    "select": "Select",
+    "operationSucceeded": "Operation completed",
+    "copied": "Copied",
+    "downloadStarted": "Download started",
+    "notifications": "Notifications (press F8 to focus)",
+    "dismissNotification": "Dismiss notification",
+    "previous": "Previous",
+    "next": "Next"
   },
   "status": {
     "resolving": "Resolving source",

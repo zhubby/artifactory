@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖项目管理员权限与加密镜像凭据 API。
+ * [INPUT]: 依赖项目权限、镜像凭据 API 和统一通知。
  * [OUTPUT]: 提供仓库凭据与 BuildKit Secret 引用配置。
  * [POS]: 输入秘密只提交一次；列表只展示元数据。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import type { ImageCredential } from "@/lib/types";
 export function ImageCredentials({ projectId, editable }: { projectId: string; editable: boolean }) {
   const { t } = useUI();
@@ -20,7 +21,7 @@ export function ImageCredentials({ projectId, editable }: { projectId: string; e
   const [kind, setKind] = useState("registry"); const [error, setError] = useState<Error>();
   const [formVersion, setFormVersion] = useState(0);
   return <section className="panel"><SectionTitle title={t("images.credentials")} /><ErrorBox message={remote.error || error} />
-    <div className="space-y-3 p-5">{remote.data?.map(credential => <div key={credential.id} className="flex flex-wrap items-center gap-3 text-sm"><span>{credential.name} · {credential.kind}</span><code className="text-xs">{credential.id}</code><CopyButton value={credential.id} />{editable && credential.enabled && <Button size="sm" variant="secondary" onClick={async () => { try { await mutation(`/projects/${projectId}/image-credentials/${credential.id}`, {}, "DELETE"); await remote.reload(); } catch (error) { setError(asError(error)); } }}>{t("images.disable")}</Button>}{!credential.enabled && <span>{t("images.disabled")}</span>}</div>)}</div>
+    <div className="space-y-3 p-5">{remote.data?.map(credential => <div key={credential.id} className="flex flex-wrap items-center gap-3 text-sm"><span>{credential.name} · {credential.kind}</span><code className="text-xs">{credential.id}</code><CopyButton value={credential.id} />{editable && credential.enabled && <Button size="sm" variant="secondary" onClick={async () => { setError(undefined); try { await mutation(`/projects/${projectId}/image-credentials/${credential.id}`, {}, "DELETE"); notify.success(t("common.operationSucceeded")); await remote.reload(); } catch (error) { setError(asError(error)); } }}>{t("images.disable")}</Button>}{!credential.enabled && <span>{t("images.disabled")}</span>}</div>)}</div>
     {editable && <div className="border-t border-border p-5"><SubmitForm key={formVersion} label={t("images.addCredential")} onSubmit={async form => {
       const name = String(form.get("name"));
       const material = kind === "registry" ? { kind, name, login: { endpoint: form.get("endpoint"), username: form.get("username"), password: form.get("password") } } : { kind, name, value: form.get("value") };

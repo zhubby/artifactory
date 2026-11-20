@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖租户 API、项目路由及业务页面。
  * [OUTPUT]: 提供 Console 项目控制台。
- * [POS]: 组合工作区数据与业务页面；范围导航和面包屑交给独立工作区组件。
+ * [POS]: 组合工作区数据与业务页面。独立组件呈现导航与面包屑；工作区错误桥固定挂载。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -216,8 +216,8 @@ function Workspace({
           </div>
         </header>
         <main className="main" id="workspace-content">
+          <ErrorBox message={workspaceError} />
           {workspaceError && <div className="mb-5">
-            <ErrorBox message={workspaceError} />
             <Button variant="secondary" onClick={() => {
               void account.reload();
               void context.reload();
@@ -316,6 +316,7 @@ function TenantHome({
   );
   return (
     <>
+      <ErrorBox message={activity.error} />
       <PageTitle
         eyebrow={t("workspace.tenantWorkbench")}
         title={context.tenant.name}

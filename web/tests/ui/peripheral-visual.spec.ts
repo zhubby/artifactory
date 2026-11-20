@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证peripheral-visual页面行为。
+ * [OUTPUT]: 验证入口边界、全局错误通知与构建阶段布局。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -66,7 +66,7 @@ for (const locale of ["zh-CN", "en"] as const)
       await page.unroute("**/api/v1/projects");
       await page.route("**/api/v1/projects", route => route.fulfill({ status: 403, json: { error: "Access to this workspace is unavailable" } }));
       await page.reload();
-      await expect(page.locator(".error-box[role=alert]")).toContainText("Access to this workspace is unavailable");
+      await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("Access to this workspace is unavailable");
       await expect(page.locator(".loading-state")).toHaveCount(0);
       await capture("request-denied");
 

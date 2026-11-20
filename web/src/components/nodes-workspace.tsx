@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖节点 API、列表工具栏和节点侧面板。
+ * [INPUT]: 依赖节点 API、统一通知、列表工具栏和节点侧面板。
  * [OUTPUT]: 提供 NodesWorkspace 设备工作区。
  * [POS]: 衔接节点筛选、列表与详情交互。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { useRemote, mutation } from "@/lib/api";
+import { notify } from "@/lib/notify";
 import type { Node, Pool, User } from "@/lib/types";
 import { NodeCard } from "@/components/node-card";
 import { NodeDetailDialog } from "@/components/node-detail-dialog";
@@ -37,7 +38,6 @@ export function NodesWorkspace({
   const [selection, setSelection] = useState<string>();
   const [enroll, setEnroll] = useState(false);
   const [secret, setSecret] = useState<string>();
-  const [removed, setRemoved] = useState(false);
   const nodes = useRemote<Node[]>(
     `/nodes?limit=100&offset=${offset}&q=${encodeURIComponent(query)}`,
   );
@@ -45,14 +45,13 @@ export function NodesWorkspace({
   const selected = nodes.data?.find((node) => node.id === selection);
   useEffect(() => {
     setSelection(undefined);
-    setRemoved(false);
   }, [query, offset]);
   useEffect(() => {
     if (selection && nodes.data && !selected) {
       setSelection(undefined);
-      setRemoved(true);
+      notify.info(t("nodes.noLongerListed"));
     }
-  }, [selection, nodes.data, selected]);
+  }, [selection, nodes.data, selected, t]);
   return (
     <>
       <PageTitle
@@ -73,12 +72,7 @@ export function NodesWorkspace({
             setOffset(0);
           }}
       />
-      <ErrorBox message={nodes.error} />
-      {removed && (
-        <p className="notice" role="status">
-          {t("nodes.noLongerListed")}
-        </p>
-      )}
+      <ErrorBox message={nodes.error || pools.error} />
       {!nodes.data ? (
         <Loading />
       ) : !nodes.data.length ? (
@@ -92,7 +86,6 @@ export function NodesWorkspace({
               key={node.id}
               node={node}
               onDetails={() => {
-                setRemoved(false);
                 setSelection(node.id);
               }}
             />

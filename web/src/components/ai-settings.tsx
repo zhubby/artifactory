@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖租户模型配置和统一表单。
+ * [INPUT]: 依赖租户模型配置、统一通知和表单。
  * [OUTPUT]: 提供模型方案配置。
  * [POS]: Kubernetes 规划只配置模型；Worker 由 Operator 调度。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/dialog";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import type { ModelProfile } from "@/lib/types";
 
 export function AISettings() {
@@ -25,7 +26,7 @@ export function AISettings() {
   const [error, setError] = useState<Error>();
   async function action(path: string, body: unknown, method = "POST") {
     setError(undefined);
-    try { await mutation(path, body, method); await models.reload(); }
+    try { await mutation(path, body, method); notify.success(t("common.operationSucceeded")); await models.reload(); }
     catch (error) { setError(asError(error)); }
   }
   return <div className="space-y-6">

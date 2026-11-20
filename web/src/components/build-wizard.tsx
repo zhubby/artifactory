@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖固定的 Release 合同与构建创建 API。
+ * [INPUT]: 依赖固定的 Release 合同、构建创建 API 与统一通知。
  * [OUTPUT]: 提供 Release 内的构建启动表单。
  * [POS]: 只提交本次目标和参数；版本、源码与平台由 Release 继承。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { mutation } from "@/lib/api";
 import { asError, LocalizedError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import { buildPath } from "@/lib/routes";
 import { useRouter } from "@/lib/tenant";
 import type { Build, Release } from "@/lib/types";
@@ -34,6 +35,7 @@ export function BuildWizard({ release }: { release: Release }) {
       if (!values || typeof values !== "object" || Array.isArray(values) || Object.entries(values).some(([key,value]) => key.startsWith("ARTIFACTORY_RELEASE_") || typeof value !== "string")) throw new LocalizedError("wizard.invalidParameters");
       if (goal.length > 16000) throw new LocalizedError("wizard.invalidGoal");
       const build = await mutation<Build>(`/releases/${release.id}/builds`, {parameters:values, ...(goal.trim() ? {goal} : {})});
+      notify.success(t("common.operationSucceeded"));
       form.removeAttribute("data-dirty"); setDirty(false);
       router.push(buildPath(release.project_slug, build.number, release.id));
     } catch (error) { setError(asError(error)); } finally { setPending(false); }

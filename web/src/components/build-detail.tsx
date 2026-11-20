@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 Release 归属、构建 API、事件订阅和共享控件。
- * [OUTPUT]: 提供含应用分类与宿主的构建详情。
- * [POS]: Release 内的构建详情；候选结果在版本工作台冻结交付。
+ * [INPUT]: 依赖 Release 归属、构建 API、事件订阅、共享控件与统一通知。
+ * [OUTPUT]: 提供构建详情、操作通知与可访问持久状态。
+ * [POS]: Release 内的构建详情；历史错误保留正文，候选由版本工作台交付。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -43,6 +43,7 @@ import { BuildLogHistory } from "@/components/build-log-history";
 import { isBuildTerminal, type BuildLog } from "@/lib/build-state";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import type { Build, Release, User } from "@/lib/types";
 import { releasePath } from "@/lib/routes";
 import { cn, elapsed, short } from "@/lib/utils";
@@ -128,6 +129,7 @@ export function BuildDetail({
     setError(undefined);
     try {
       await mutation(path, body);
+      notify.success(t("common.operationSucceeded"));
       await remote.reload();
     } catch (error) {
       setError(asError(error));
@@ -136,12 +138,12 @@ export function BuildDetail({
   if (!build || !id)
     return (
       <>
-        <ErrorBox message={remote.error} />
+        <ErrorBox key="build-feedback" message={remote.error} />
         <Loading />
       </>
     );
   if (releaseId && releaseId !== build.release_id)
-    return <ErrorBox message={t("common.notFound")} />;
+    return <><ErrorBox key="build-feedback" message={t("common.notFound")} /></>;
   const job = build.jobs?.find((job) => job.id === selected) || build.jobs?.[0];
   const attempt = job?.attempts.at(-1);
   const displayed = logs.filter(
@@ -193,7 +195,8 @@ export function BuildDetail({
           </Button>
         )}
       </PageTitle>
-      <ErrorBox message={error || remote.error || build.error} />
+      <ErrorBox key="build-feedback" message={error || remote.error || release.error} />
+      {build.error && <p className="mb-5 whitespace-pre-wrap break-words text-sm text-destructive" role="status" aria-atomic="true">{build.error}</p>}
       <div className="build-meta">
         <span className="meta-item">
           <GitBranch size={14} />
@@ -328,7 +331,7 @@ export function BuildDetail({
             )}
             {attempt?.error && (
               <div className="p-4">
-                <ErrorBox message={attempt.error} />
+                <p className="whitespace-pre-wrap break-words text-sm text-destructive" role="status" aria-atomic="true">{attempt.error}</p>
               </div>
             )}
             {job &&

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、真实控制面与活跃快照夹具。
- * [OUTPUT]: 验证业务链路、构建节点导航与脱敏焦点证据。
+ * [OUTPUT]: 验证业务链路、通知反馈、节点导航与脱敏焦点证据。
  * [POS]: 需要可用后端的端到端浏览器入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -239,7 +239,7 @@ test("real console, native logs, artifact download and immutable release", async
     await expect(
       page.getByRole("heading", { name: title, level: 1, exact: true }),
     ).toBeVisible();
-    await expect(page.locator(".error-box[role=alert]")).toHaveCount(0);
+    await expect(page.locator('[data-notify][data-kind="error"]')).toHaveCount(0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth + 1,
@@ -482,9 +482,7 @@ test("real repository references and the build wizard preserve model configurati
   // This regression server seeds pre-migration builds and has no model key.
   // Real-provider execution is covered by scripts/ai_acceptance.py.
   await expect(page).toHaveURL(/\/builds\/[^/]+$/);
-  await expect(page.locator(".error-box[role=alert]")).toContainText(
-    /model profile/i,
-  );
+  await expect(page.getByRole("status").filter({ hasText: /model profile/i })).toBeVisible();
   await page.getByRole("tab", { name: "计划", exact: true }).click();
   await expect(
     page.getByText("Build the native C application and collect dist/app", {

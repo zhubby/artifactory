@@ -288,7 +288,7 @@ test("personal overlay preserves business drafts while profile writes are accoun
     .getByRole("textbox", { name: "显示名称", exact: true })
     .fill("Alex Chen");
   await page.getByRole("button", { name: "保存", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("修改已保存");
+  await expect(page.locator('[data-notify][data-kind="success"]')).toContainText("修改已保存");
   await page.keyboard.press("Escape");
   await expect(page.locator('textarea[name="goal"]')).toHaveValue(
     "Keep the exact build goal",
@@ -331,7 +331,7 @@ test("wrong current password preserves the security form and business position",
   await page
     .getByRole("button", { name: "修改密码并退出全部会话", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText(
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "Current password is incorrect",
   );
   await expect(page.locator('input[name="current_password"]')).toHaveValue(
@@ -435,7 +435,7 @@ test("lifecycle deletion displays impact and keeps a retryable confirmation form
     .locator('input[name="current_password"]')
     .fill("incorrect-password");
   await dialog.getByRole("button", { name: "永久删除", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toContainText(
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "Current password is incorrect",
   );
   await expect(dialog.locator('input[name="slug"]')).toHaveValue(

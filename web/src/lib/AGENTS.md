@@ -1,10 +1,11 @@
 # web/src/lib/
 > L2 | Parent: ../AGENTS.md
 
-api.ts: 发送带租户和 CSRF 边界的请求、下载附件并维护可停止轮询的查询。
+api.ts: 发送租户与 CSRF 请求，下载附件，去重轮询错误并允许显式重试。
 build-state.ts: 定义日志事件类型与构建终态判断。
-errors.ts: 转换失败为本地化错误。
+errors.ts: 转换本地化错误并判定轮询错误等价。
 events.ts: 订阅构建事件，维护游标并在 complete 后停止重连。
+notify.ts: 隔离提示来源，统一四类操作通知，单次恢复跨整页跳转的成功文案。
 preferences.ts: 定义语言、主题类型与存储键，动画没有持久化开关。
 repository-refs.ts: 查询项目引用，取消过期请求并隔离迟到响应。
 releases.ts: 校验严格 SemVer 和目标合同，按 SemVer 比较版本。

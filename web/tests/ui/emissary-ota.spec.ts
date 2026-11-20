@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖节点、升级 API 夹具与全局通知。
+ * [OUTPUT]: 验证 OTA 权限、升级目标与导入失败反馈。
+ * [POS]: 运维设置和节点升级界面的浏览器回归。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { expect, test } from "@playwright/test";
 import { fixtureAPI, nodes, tenantURL } from "./fixtures";
 
@@ -53,7 +59,7 @@ for (const role of ["admin", "viewer"] as const) {
         .fill("v-test");
       await page.getByRole("button", { name: "导入版本", exact: true }).click();
       await expect(
-        page.getByTestId("emissary-settings").getByRole("alert"),
+        page.locator('[data-notify][data-kind="error"]'),
       ).toContainText("UI fixtures do not accept writes");
       expect(events.writes).toEqual(["POST /emissary-releases"]);
     } else expect(events.writes).toEqual([]);

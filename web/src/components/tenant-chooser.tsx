@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖账户上下文、租户 API 与共享表单。
+ * [INPUT]: 依赖账户上下文、租户 API、共享表单与全局通知。
  * [OUTPUT]: 提供租户选择、创建与邀请页面。
  * [POS]: 登录后的工作区入口；复用控制台统一样式。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import type { Account, Tenant } from "@/lib/types";
 
 export function TenantChooser() {
@@ -169,12 +170,14 @@ export function TenantChooser() {
         <SubmitForm
           key={key}
           label={t("tenants.create")}
+          successMessage={false}
           onSubmit={async (form, markSaved) => {
             const result = await mutation<{ id: string; slug: string }>(
               "/tenants",
               { name: form.get("name"), idempotency_key: key },
             );
             markSaved();
+            notify.success(t("common.operationSucceeded"), { persist: true });
             window.location.assign(`/tenants/${result.slug}`);
           }}
         >
@@ -261,6 +264,7 @@ export function InvitationJoin({ token }: { token: string }) {
                     tenant_id: string;
                     tenant_slug: string;
                   }>(`/invitations/${encodeURIComponent(token)}/accept`, {});
+                  notify.success(t("common.operationSucceeded"), { persist: true });
                   window.location.assign(`/tenants/${result.tenant_slug}`);
                 } catch (error) {
                   setError(asError(error));

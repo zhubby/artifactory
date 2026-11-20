@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证节点详情布局、分区查询及管理操作。
+ * [OUTPUT]: 验证节点详情布局、分区查询、全局通知及管理操作。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -295,7 +295,7 @@ test("missing and expired resource values stay unknown and failed data can be re
   );
   await page.goto(tenantURL("/nodes"));
   const dialog = await openDetails(page);
-  await expect(dialog.getByRole("alert")).toContainText(
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "Telemetry temporarily unavailable",
   );
   await expect(dialog.getByText("node-main", { exact: true })).toBeVisible();
@@ -313,7 +313,7 @@ test("missing and expired resource values stay unknown and failed data can be re
     "Unknown",
     "Unknown",
   ]);
-  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(page.locator('[data-notify][data-kind="error"]')).toHaveCount(0);
 });
 
 test("old nodes and unavailable metadata preserve the other detail tabs", async ({
@@ -335,15 +335,26 @@ test("old nodes and unavailable metadata preserve the other detail tabs", async 
   await page.getByRole("tab", { name: "Resources", exact: true }).click();
   await expect(dialog).toContainText("No resource samples have been received");
   await page.getByRole("tab", { name: "Metadata", exact: true }).click();
-  await expect(dialog.getByRole("alert")).toContainText(
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "Metadata endpoint unavailable",
   );
-  await page.getByRole("tab", { name: "Toolchain", exact: true }).click();
+  if (page.viewportSize()!.width <= 640) {
+    const navigation = (await dialog.getByRole("tablist").boundingBox())!;
+    await expect.poll(async () => (await page.locator('[data-notify][data-kind="error"]').boundingBox())!.y)
+      .toBeGreaterThanOrEqual(navigation.y + navigation.height + 8);
+  }
+  await page.getByRole("tab", { name: "Toolchain", exact: true }).click({ timeout: 2000 });
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("Metadata endpoint unavailable");
   await expect(dialog.getByText("gcc", { exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "Operations", exact: true }).click();
   await expect(
     dialog.getByRole("button", { name: "Configure", exact: true }),
   ).toBeVisible();
+  if (page.viewportSize()!.width <= 640) {
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(async () => (await page.locator('[data-notify][data-kind="error"]').boundingBox())!.y).toBe(72);
+  }
 });
 
 for (const role of ["viewer", "operator"] as const) {

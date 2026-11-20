@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证租户隔离、权限边界及侧栏设置切换。
+ * [OUTPUT]: 验证租户隔离、权限边界、创建反馈与侧栏切换。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -80,7 +80,7 @@ test("tenant creation retries with the same idempotency key", async ({
     .click();
   await page.locator('input[name="name"]').fill("New Team");
   await page.getByRole("button", { name: "创建租户", exact: true }).click();
-  await expect(page.locator(".error-box[role=alert]")).toBeVisible();
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("无法连接服务");
   await page.getByRole("button", { name: "创建租户", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/tenants/${tenantSlug}$`));
   expect(keys).toHaveLength(2);

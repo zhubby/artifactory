@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证errors页面行为。
+ * [OUTPUT]: 验证全局错误通知、本地化切换与草稿保留。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -16,12 +16,13 @@ import {
 test("local network failures translate live without clearing the login draft", async ({
   page,
 }) => {
+  await fixtureAPI(page);
   await page.route("**/api/v1/auth/login", (route) => route.abort("failed"));
   await page.goto(tenantURL("/login"));
   await page.locator('input[name="username"]').fill("network-draft");
   await page.locator('input[name="password"]').fill("retained-password");
   await page.getByRole("button", { name: "进入工作空间", exact: true }).click();
-  await expect(page.locator(".error-box")).toContainText(
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "无法连接服务，请检查网络后重试",
   );
   await openPreferences(page);
@@ -29,7 +30,7 @@ test("local network failures translate live without clearing the login draft", a
     .getByRole("combobox", { name: "界面语言", exact: true })
     .selectOption("en");
   await closePreferences(page);
-  await expect(page.locator(".error-box")).toContainText(
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "Cannot connect to the service. Check your network and try again.",
   );
   await expect(page.locator('input[name="username"]')).toHaveValue(
@@ -40,6 +41,7 @@ test("local network failures translate live without clearing the login draft", a
 test("server error details remain verbatim when changing language", async ({
   page,
 }) => {
+  await fixtureAPI(page);
   await page.route("**/api/v1/auth/login", (route) =>
     route.fulfill({
       status: 403,
@@ -50,7 +52,7 @@ test("server error details remain verbatim when changing language", async ({
   await page.locator('input[name="username"]').fill("locked-user");
   await page.locator('input[name="password"]').fill("retained-password");
   await page.getByRole("button", { name: "进入工作空间", exact: true }).click();
-  await expect(page.locator(".error-box")).toContainText(
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "账户已停用 · account locked [E403]",
   );
   await openPreferences(page);
@@ -58,10 +60,10 @@ test("server error details remain verbatim when changing language", async ({
     .getByRole("combobox", { name: "界面语言", exact: true })
     .selectOption("en");
   await closePreferences(page);
-  await expect(page.locator(".error-box")).toContainText(
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "账户已停用 · account locked [E403]",
   );
-  await expect(page.locator(".error-box strong")).toHaveText(
+  await expect(page.locator('[data-notify][data-kind="error"] strong')).toHaveText(
     "The request could not be completed",
   );
 });
@@ -75,7 +77,7 @@ test("invalid JSON is a localized form error and never reaches the backend", asy
   const dialog=page.getByRole("dialog");
   await dialog.locator('textarea[name="parameters"]').fill('{"unfinished":');
   await dialog.getByRole("button",{name:"发起构建",exact:true}).click();
-  await expect(page.locator(".error-box")).toContainText(
+  await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "JSON 格式无效，请检查后重试",
   );
   await expect(page.locator('textarea[name="parameters"]')).toHaveValue(

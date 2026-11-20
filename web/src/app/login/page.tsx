@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖认证 API、AuthShell 和共享表单。
+ * [INPUT]: 依赖认证 API、AuthShell、共享表单和全局通知。
  * [OUTPUT]: 提供 Login 登录页面。
- * [POS]: 保留登录草稿并呈现本地化请求错误。
+ * [POS]: 保留登录草稿；认证反馈通过全局通知展示。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { ErrorBox, Field } from "@/components/common";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import type { AuthConfig } from "@/lib/types";
 
 export default function Login() {
@@ -34,6 +35,7 @@ export default function Login() {
     try {
       await mutation("/auth/login", Object.fromEntries(values));
       const invite = new URLSearchParams(window.location.search).get("invite");
+      notify.success(t("common.operationSucceeded"), { persist: true });
       window.location.assign(invite ? `/join/${encodeURIComponent(invite)}` : "/tenants");
     } catch (error) {
       setError(asError(error, "login.failed"));
@@ -47,7 +49,7 @@ export default function Login() {
       description={t(registrationEnabled ? "register.loginDescription" : "login.description")}
       notice={t(registrationEnabled ? "register.notice" : "login.notice")}
     >
-      <ErrorBox message={error} />
+      <ErrorBox message={error || config.error} />
       <form onSubmit={submit} className="form-stack">
         <Field label={t("login.username")}>
           <Input
