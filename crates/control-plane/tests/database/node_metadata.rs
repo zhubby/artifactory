@@ -1,5 +1,5 @@
 //! [INPUT]: 隔离数据库、节点元数据和 mTLS 规划夹具。
-//! [OUTPUT]: 验证节点快照与租户查询，提供候选和工具夹具。
+//! [OUTPUT]: 验证快照、改名持久性与租户查询。
 //! [POS]: placement 和 tools 子模块复用本模块的隔离服务。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 #[path = "node_placement.rs"]
@@ -89,6 +89,34 @@ async fn startup_ack_reconnect_replace_and_retired_process_fencing() {
         original_commands.message().await.unwrap().unwrap().kind,
         "metadata_ack"
     );
+    let admin = Uuid::new_v4();
+    let cookie = "artifactory_session=node-identity-lifecycle";
+    sql::execute(&mut database.pool.clone(), "INSERT INTO users(id,username,password_hash,role) VALUES($1,'rename-admin','unused','admin')", params![admin]).await.unwrap();
+    sql::execute(
+        &mut database.pool.clone(),
+        "INSERT INTO sessions VALUES($1,$2,now()+interval '1 hour')",
+        params![crypto::hash("node-identity-lifecycle"), admin],
+    )
+    .await
+    .unwrap();
+    let response = api::router(database.state.clone())
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/nodes/{}/name", device.id))
+                .header("cookie", cookie)
+                .header("x-artifactory-csrf", "1")
+                .header(
+                    "x-artifactory-tenant",
+                    "00000000-0000-0000-0000-000000000001",
+                )
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"name":"持久设备名"}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
     events
         .send(pb::EmissaryEvent {
             emissary_id: device.id.to_string(),
@@ -102,6 +130,17 @@ async fn startup_ack_reconnect_replace_and_retired_process_fencing() {
     assert_eq!(
         original_commands.message().await.unwrap().unwrap().kind,
         "emissary_health"
+    );
+    assert_eq!(
+        sql::scalar::<String>(
+            &mut database.pool.clone(),
+            "SELECT name FROM nodes WHERE id=$1",
+            params![device.id]
+        )
+        .await
+        .unwrap(),
+        "持久设备名",
+        "heartbeats must retain the administrator name"
     );
     assert_eq!(
         sql::scalar::<Value>(
@@ -146,6 +185,17 @@ async fn startup_ack_reconnect_replace_and_retired_process_fencing() {
         "metadata_ack"
     );
     assert_eq!(
+        sql::scalar::<String>(
+            &mut database.pool.clone(),
+            "SELECT name FROM nodes WHERE id=$1",
+            params![device.id]
+        )
+        .await
+        .unwrap(),
+        "持久设备名",
+        "same startup reconnects must retain the administrator name"
+    );
+    assert_eq!(
         database
             .state
             .store
@@ -166,6 +216,17 @@ async fn startup_ack_reconnect_replace_and_retired_process_fencing() {
     assert_eq!(
         commands.message().await.unwrap().unwrap().kind,
         "metadata_ack"
+    );
+    assert_eq!(
+        sql::scalar::<String>(
+            &mut database.pool.clone(),
+            "SELECT name FROM nodes WHERE id=$1",
+            params![device.id]
+        )
+        .await
+        .unwrap(),
+        "持久设备名",
+        "new startups must retain the administrator name"
     );
     let metadata = database
         .state

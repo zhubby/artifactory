@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户 HTTP 处理器、统一鉴权和请求限制。
-//! [OUTPUT]: 组合业务路由、规划运行时和独立正文上限。
+//! [OUTPUT]: 组合含设备改名的业务路由及规划运行时。
 //! [POS]: 控制平面 HTTP 接口入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub(crate) mod ai_management;
@@ -170,6 +170,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/v1/nodes", get(management::nodes))
         .route("/api/v1/nodes/{id}", patch(management::update_node))
+        .route("/api/v1/nodes/{id}/name", patch(management::rename_node))
         .route(
             "/api/v1/nodes/{id}/metadata",
             get(management::node_metadata),

@@ -3,10 +3,10 @@
 
 mod.rs: 组合持久化接口、租户作用域和迁移。
 auth.rs: 查询登录账户并维护认证状态。
-dto.rs: 定义公开业务响应和验签证据投影。
+dto.rs: 定义公开业务响应、节点识别摘要和验签证据投影。
 errors.rs: 转换数据库约束为业务错误。
 models.rs: 定义 Toasty 私有 CRUD 投影。
-management.rs: 写入凭据、节点、设备池和 API 令牌。
+management.rs: 事务改名并审计，投影可见识别摘要与节点搜索。
 projects.rs: 写入项目配置和源码授权。
 signing.rs: 写入凭据版本、默认方案并投影方案当前可用性。
 signing_execution.rs: 锁定当前授权并执行材料领取及最终证据登记。

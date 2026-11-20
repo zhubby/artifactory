@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖 mTLS 会话、节点协议元数据和持久化事件队列。
-//! [OUTPUT]: 提供任务领取、租约续期和 Worker 监督。
+//! [INPUT]: 依赖 mTLS 会话、固定主机诊断、遥测缓存和持久化事件队列。
+//! [OUTPUT]: 提供任务领取、携带主机识别的租约心跳和 Worker 监督。
 //! [POS]: 节点主进程；向 Worker 仅交付被授权的本机方案。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -208,10 +208,15 @@ impl State {
             .retain(|_, at| now.saturating_duration_since(*at) < Duration::from_secs(120));
         self.anchors.insert(id.clone(), now);
         let mut metrics = json!({});
+        let mut network_interfaces = None;
         if let Some(snapshot) = self.telemetry.as_ref().and_then(|h| h.snapshot()) {
             metrics = snapshot.metrics;
+            network_interfaces = snapshot.network_interfaces;
         }
-        let mut diagnostics = json!({"emissary_version": self.diagnostics["emissary_version"]});
+        let mut diagnostics = json!({"emissary_version": self.diagnostics["emissary_version"],"hostname": self.diagnostics["hostname"]});
+        if let Some(network_interfaces) = network_interfaces {
+            diagnostics["network_interfaces"] = network_interfaces;
+        }
         diagnostics["metrics"] = metrics;
         diagnostics["buffered_log_bytes"] = json!(self.spool.bytes);
         pb::EmissaryEvent{emissary_id:self.cfg.emissary_id.clone(),kind:kind.into(),command_id:id,protocol_major:1,payload_json:json!({"active_attempts":self.tasks.iter().map(|(id,t)|json!({"attempt_id":id,"lease_token":t.token})).collect::<Vec<_>>(),"startup":if kind=="hello" {self.startup.as_ref()} else {None},"diagnostics":diagnostics,"ota":ota}).to_string(),..Default::default()}

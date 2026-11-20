@@ -7,7 +7,8 @@ planning_basics.rs: 验证模型配置、注册和规划状态边界。
 account_settings.rs: 验证个人设置和项目资源权限。
 build_logs.rs: 验证历史日志分页、过滤、授权和终态流结束。
 device_load.rs: 验证三个控制平面的设备群连接、续租和调度预算。
-node_metadata.rs: 验证节点元数据和 Coordinator 查询范围，提供候选夹具。
+node_metadata.rs: 验证启动、心跳和重连保留名称及节点查询范围。
+node_identity.rs: 验证注册改名、识别摘要、任务租约与列表预算。
 node_placement.rs: 验证候选准入、资源时钟和设备槽位。
 node_tools.rs: 验证内嵌 Coordinator 前缀、服务鉴权及真实 MCP SDK 节点工具。
 readable_routes.rs: 验证 slug 路由与对象权限。

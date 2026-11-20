@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖节点遥测批次、磁盘额度和私有原子记录。
-//! [OUTPUT]: 持久化有界发送队列，确认后删除批次。
+//! [OUTPUT]: 持久化有界发送队列，原字节重放旧批次并确认删除。
 //! [POS]: 节点遥测断线缓冲边界，独占锁阻止重复发送器。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::config::{atomic_json, private_dir, read_json};
@@ -158,6 +158,30 @@ mod tests {
             processes: vec![],
             inventory: None,
         }
+    }
+    #[test]
+    fn old_offline_batch_reopens_with_original_bytes_and_digest() {
+        use sha2::{Digest, Sha256};
+        const ORIGINAL: &[u8] =
+            include_bytes!("../../../emissary-protocol/tests/fixtures/telemetry-batch.json");
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("00000000000000000000-original.batch");
+        fs::write(&path, ORIGINAL).unwrap();
+        for _ in 0..2 {
+            let spool = Spool::open(directory.path().into(), 1 << 20).unwrap();
+            let (_, bytes) = spool.first().unwrap().unwrap();
+            assert_eq!(bytes, ORIGINAL);
+            assert_eq!(
+                format!("{:x}", Sha256::digest(&bytes)),
+                "132f630ebbcaa6195a712c3e17cd9b178ef8f5ee3ad96a4b9bb518bd30f1d6f0"
+            );
+            let batch: Batch = serde_json::from_slice(&bytes).unwrap();
+            batch.validate().unwrap();
+            assert_eq!(serde_json::to_vec(&batch).unwrap(), ORIGINAL);
+        }
+        let mut spool = Spool::open(directory.path().into(), 1 << 20).unwrap();
+        spool.ack(&path).unwrap();
+        assert!(spool.first().unwrap().is_none());
     }
     #[cfg(unix)]
     #[test]

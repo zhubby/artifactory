@@ -8,5 +8,6 @@
 2026-11-18-001-refactor-kubernetes-128-build-plan.md: 记录 1.28 双普通容器、进程监督和上线结果。
 2026-11-19-module-boundaries.md: 跟踪四项模块边界重构、规划身份与验证清单。
 2026-11-20-release-centered-delivery.md: 跟踪 Release 目标合同、固定源码、不可变交付与限定实例部署。
+2026-11-20-node-identification.md: 跟踪稳定设备名称、主机识别信息、重命名和双平台上线验收。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

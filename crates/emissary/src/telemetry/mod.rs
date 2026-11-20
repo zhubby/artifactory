@@ -1,11 +1,14 @@
-//! [INPUT]: 依赖节点遥测契约、mTLS 通道和有界磁盘队列。
-//! [OUTPUT]: 采集启动元数据并异步发送遥测批次。
+//! [INPUT]: 依赖固定主机诊断、Product 型号、平台接口枚举与有界磁盘队列。
+//! [OUTPUT]: 固定启动元数据，缓存动态诊断并异步发送遥测批次。
 //! [POS]: 独立于任务租约和构建日志的节点遥测循环。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod collector;
 mod inventory;
 mod managed;
+mod network;
 mod spool;
+#[cfg(any(windows, test))]
+mod windows_network;
 
 use crate::{
     client,
@@ -83,6 +86,12 @@ pub async fn startup(
     for (key, value) in &cfg.metadata {
         metadata.insert(format!("custom.{key}"), value.clone());
     }
+    identity_metadata(
+        &mut metadata,
+        diagnostics,
+        sysinfo::Product::name(),
+        sysinfo::Product::vendor_name(),
+    );
     let snapshot = artifactory_emissary_protocol::nodes::MetadataSnapshot::new(
         startup_id,
         metadata,
@@ -91,9 +100,30 @@ pub async fn startup(
     Ok((snapshot, inventory))
 }
 
+fn identity_metadata(
+    metadata: &mut std::collections::BTreeMap<String, Value>,
+    diagnostics: &Value,
+    model: Option<String>,
+    vendor: Option<String>,
+) {
+    for (key, value) in [
+        (
+            "system.hostname",
+            diagnostics["hostname"].as_str().map(str::to_owned),
+        ),
+        ("hardware.device_model", model),
+        ("hardware.device_vendor", vendor),
+    ] {
+        if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
+            metadata.insert(key.into(), json!(value));
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Snapshot {
     pub metrics: Value,
+    pub network_interfaces: Option<Value>,
 }
 pub struct Handle {
     pub registry: Registry,
@@ -109,7 +139,10 @@ impl Handle {
     ) -> Self {
         let registry = Registry::default();
         let cancel = CancellationToken::new();
-        let snapshot = Arc::new(RwLock::new(Snapshot { metrics: json!({}) }));
+        let snapshot = Arc::new(RwLock::new(Snapshot {
+            metrics: json!({}),
+            network_interfaces: None,
+        }));
         let spool = Arc::new(Mutex::new(None::<Spool>));
         let notify = Arc::new(Notify::new());
         let collect_cfg = cfg.clone();
@@ -141,7 +174,7 @@ impl Handle {
                     (collector, data)
                 })
                 .await;
-                let Ok((next, (mut batch, metrics))) = result else {
+                let Ok((next, (mut batch, observations))) = result else {
                     break;
                 };
                 collector = next;
@@ -149,7 +182,7 @@ impl Handle {
                     host.accelerators = tokio::select! {_=collect_cancel.cancelled()=>break,v=inventory::accelerator_samples(&collect_cfg,&cards)=>v};
                 }
                 if let Ok(mut snapshot) = collect_snapshot.write() {
-                    snapshot.metrics = metrics;
+                    *snapshot = observations;
                 }
                 index = index.saturating_add(1);
                 if batch.host.is_none() && batch.processes.is_empty() && batch.inventory.is_none() {
@@ -316,5 +349,42 @@ impl Handle {
 impl Drop for Handle {
     fn drop(&mut self) {
         self.cancel.cancel();
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn cached_test_handle(snapshot: Snapshot) -> Handle {
+    Handle {
+        registry: Registry::default(),
+        snapshot: Arc::new(RwLock::new(snapshot)),
+        cancel: CancellationToken::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identity_metadata_preserves_raw_product_model_and_omits_missing_values() {
+        let diagnostics = json!({"hostname":"build-host.local"});
+        let mut metadata = std::collections::BTreeMap::new();
+        identity_metadata(
+            &mut metadata,
+            &diagnostics,
+            Some("Mac16,7".into()),
+            Some("Apple Inc.".into()),
+        );
+        assert_eq!(metadata["system.hostname"], "build-host.local");
+        assert_eq!(metadata["hardware.device_model"], "Mac16,7");
+        assert_eq!(metadata["hardware.device_vendor"], "Apple Inc.");
+        let mut missing = std::collections::BTreeMap::new();
+        identity_metadata(
+            &mut missing,
+            &json!({"hostname":""}),
+            None,
+            Some(" ".into()),
+        );
+        assert!(missing.is_empty());
     }
 }

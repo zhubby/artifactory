@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖节点启动身份、有界元数据和 UTC 时间。
-//! [OUTPUT]: 导出元数据摘要、资源新鲜度和有序选机契约。
+//! [OUTPUT]: 导出名称校验、有界心跳解码、元数据摘要与选机契约。
 //! [POS]: 节点协议的分配边界；隔离旧启动采样与当前选机。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
@@ -12,8 +12,50 @@ use uuid::Uuid;
 
 /// Maximum encoded startup snapshot, including capabilities and startup identity.
 pub const MAX_METADATA_BYTES: usize = 64 * 1024;
+/// 网络诊断的完整 JSON 预算，不进入严格遥测契约。
+pub const MAX_NETWORK_INTERFACES_BYTES: usize = 8 * 1024;
+/// 完整 hello/heartbeat：64 KiB 启动、8 KiB 网络、24 KiB 运行信封。
+/// 运行信封包含最多 32 项租约、OTA、指标及全部 JSON 字段开销。
+/// 原有 72 KiB 信封加完整网络字段仍低于此上限。
+pub const MAX_HEARTBEAT_BYTES: usize =
+    MAX_METADATA_BYTES + MAX_NETWORK_INTERFACES_BYTES + 24 * 1024;
 /// Maximum encoded node tool response, including pagination and timestamps.
 pub const MAX_QUERY_BYTES: usize = 128 * 1024;
+
+/// 在 JSON 解码前限制完整心跳，并保留旧节点能力数组校验。
+///
+/// # Errors
+/// 拒绝超额信封、无效 JSON 或超过 256 项的能力数组。
+pub fn decode_heartbeat(payload_json: &str) -> Result<Value> {
+    ensure!(
+        payload_json.len() <= MAX_HEARTBEAT_BYTES,
+        "oversized heartbeat"
+    );
+    let payload: Value =
+        serde_json::from_str(payload_json).map_err(|_| anyhow::anyhow!("invalid heartbeat"))?;
+    if let Some(capabilities) = payload.get("capabilities") {
+        ensure!(
+            capabilities
+                .as_array()
+                .is_some_and(|values| values.len() <= 256),
+            "invalid capabilities"
+        );
+    }
+    Ok(payload)
+}
+
+/// 统一注册与改名输入；长度按 UTF-8 字节计算。
+///
+/// # Errors
+/// 名称去除首尾空白后为空、超过 100 字节或包含控制字符时拒绝。
+pub fn normalize_node_name(name: &str) -> Result<String> {
+    let name = name.trim();
+    ensure!(
+        !name.is_empty() && name.len() <= 100 && !name.chars().any(char::is_control),
+        "node name must contain 1..100 UTF-8 bytes without control characters"
+    );
+    Ok(name.to_owned())
+}
 
 /// An authorized node and the current runtime identity whose resources may be used.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

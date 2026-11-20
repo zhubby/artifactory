@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖 mTLS 身份、节点会话和持久化授权。
-//! [OUTPUT]: 提供节点任务、材料领取和验签证据 RPC。
+//! [INPUT]: 依赖 mTLS 身份、共享名称和心跳预算校验与持久化授权。
+//! [OUTPUT]: 提供名称归一化注册、节点任务与材料 RPC。
 //! [POS]: 节点与控制平面的认证传输边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -17,6 +17,10 @@ use tonic::{
     transport::server::{TcpConnectInfo, TlsConnectInfo},
 };
 use uuid::Uuid;
+
+#[cfg(test)]
+#[path = "grpc_tests.rs"]
+mod tests;
 
 #[derive(Clone)]
 pub struct EmissaryService(pub AppState);
@@ -54,19 +58,19 @@ impl protocol::enrollment_server::Enrollment for EmissaryService {
             return Err(Status::failed_precondition("unsupported protocol major"));
         }
         if input.token.len() != 64
-            || input.name.is_empty()
-            || input.name.len() > 100
             || !["linux", "darwin", "windows"].contains(&input.os.as_str())
             || !["amd64", "arm64"].contains(&input.arch.as_str())
         {
             return Err(Status::invalid_argument("invalid enrollment request"));
         }
+        let name = artifactory_emissary_protocol::nodes::normalize_node_name(&input.name)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
         let enrolled = state
             .store
             .enroll_node(
                 crate::store::NodeEnrollment {
                     token: &input.token,
-                    name: &input.name,
+                    name: &name,
                     os: &input.os,
                     arch: &input.arch,
                 },
@@ -510,16 +514,8 @@ impl protocol::control_server::Control for EmissaryService {
 }
 
 fn heartbeat_payload(event: &EmissaryEvent) -> Result<Value, Status> {
-    if event.payload_json.len() > 72 * 1024 {
-        return Err(Status::invalid_argument("oversized heartbeat"));
-    }
-    let payload: Value = serde_json::from_str(&event.payload_json)
-        .map_err(|_| Status::invalid_argument("invalid heartbeat"))?;
-    let capabilities = payload.get("capabilities").cloned().unwrap_or(json!([]));
-    if !capabilities.is_array() || capabilities.as_array().unwrap().len() > 256 {
-        return Err(Status::invalid_argument("invalid capabilities"));
-    }
-    Ok(payload)
+    artifactory_emissary_protocol::nodes::decode_heartbeat(&event.payload_json)
+        .map_err(|error| Status::invalid_argument(error.to_string()))
 }
 
 pub(crate) fn ordinary_health(payload: &Value) -> Option<&Value> {

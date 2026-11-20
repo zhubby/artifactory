@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供 Release 目标合同、构建归属与冻结交付类型。
+ * [OUTPUT]: 提供 Release 合同、构建归属、节点身份与接口快照类型。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -226,6 +226,13 @@ export interface NodeTool {
 export interface Node {
   id: string;
   name: string;
+  identity?: {
+    hostname?: string;
+    device_model?: string;
+    device_vendor?: string;
+    cpu_model?: string;
+    memory_total_bytes?: number;
+  };
   os: string;
   arch: string;
   pool_id: string;
@@ -250,6 +257,11 @@ export interface Node {
   ota_draining?: boolean;
   diagnostics: {
     hostname?: string;
+    network_interfaces?: {
+      sampled_at: string;
+      interfaces: { name: string; addresses: string[] }[];
+      truncated: boolean;
+    };
     emissary_version?: string;
     emissary_commit?: string;
     protocol_major?: number;

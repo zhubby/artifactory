@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖节点类型、状态组件及 UI 词条。
+ * [INPUT]: 依赖节点快照、身份摘要、状态组件及 UI 词条。
  * [OUTPUT]: 提供 NodeCard 与节点状态格式函数。
- * [POS]: 设备列表的资源行展示入口。
+ * [POS]: 设备列表资源行；名称、身份与硬件直接消费列表快照。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -11,6 +11,7 @@ import { Status } from "@/components/common";
 import { useUI } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import type { Node } from "@/lib/types";
+import { nodeHardware, nodeHostname } from "@/lib/node-identity";
 
 export const nodePlatform = (os: string) => ({ darwin: "macOS", linux: "Linux", windows: "Windows" })[os] || os;
 export const nodeStatus = (node: Node) => node.revoked ? "revoked" : node.draining || node.ota_draining ? "draining" : node.online ? "online" : "offline";
@@ -18,12 +19,16 @@ export const nodeStatus = (node: Node) => node.revoked ? "revoked" : node.draini
 export function NodeCard({ node, onDetails }: { node: Node; onDetails: () => void }) {
   const { t, number } = useUI();
   const utilization = node.slots > 0 ? Math.min(100, Math.max(0, node.active_jobs / node.slots * 100)) : 0;
+  const hostname = nodeHostname(node);
+  const identity = [hostname && hostname !== node.name ? hostname : undefined, `${nodePlatform(node.os)} / ${node.arch}`, node.id.slice(0, 8)].filter(Boolean).join(" · ");
+  const hardware = nodeHardware(node);
   return <article className="node-card" aria-label={node.name}>
     <div className="node-identity">
       <span className="node-icon"><Monitor size={17} aria-hidden="true" /></span>
       <div className="min-w-0">
         <h2 className="truncate text-sm font-medium" title={node.name}>{node.name}</h2>
-        <p className="mt-1 font-mono text-[11px] text-muted-foreground">{nodePlatform(node.os)} / {node.arch}</p>
+        <p className="node-identity-line mt-1 font-mono text-[11px] text-muted-foreground" title={identity}>{identity}</p>
+        {!!hardware.length && <p className="node-identity-line mt-1 text-[11px] text-muted-foreground" title={hardware.join(" · ")}>{hardware.join(" · ")}</p>}
       </div>
     </div>
     <div className="node-status"><Status small value={nodeStatus(node)} /></div>

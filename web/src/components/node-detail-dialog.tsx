@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖节点 API、内容骨架、通知、遥测及 OTA 控件。
+ * [INPUT]: 依赖节点 API、身份与网络快照、重命名、遥测及 OTA 控件。
  * [OUTPUT]: 提供 NodeDetailDialog 节点详情。
  * [POS]: 在侧面板展示设备信息与授权操作。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -28,6 +28,9 @@ import {
   NodeTimestamp,
 } from "@/components/node-detail-parts";
 import { NodeMetadata } from "@/components/node-metadata";
+import { NodeRename } from "@/components/node-rename";
+import { NodeNetworkAddresses } from "@/components/node-network-addresses";
+import { nodeHostname } from "@/lib/node-identity";
 import { useUI } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
@@ -92,7 +95,7 @@ function Overview({
         <NodeFacts
           entries={[
             [t("nodes.nodeId"), node.id],
-            [t("nodes.hostname"), node.diagnostics.hostname],
+            [t("nodes.hostname"), nodeHostname(node)],
             [t("nodes.pool"), node.pool_name],
             [t("nodes.poolId"), node.pool_id],
             [t("nodes.capacity"), `${node.active_jobs} / ${node.slots}`],
@@ -114,13 +117,16 @@ function Overview({
           ]}
         />
       </NodeSection>
+      <NodeNetworkAddresses node={node} />
       <NodeSection title={t("nodes.hardware")}>
         <NodeFacts
           entries={[
             [t("nodes.platform"), `${nodePlatform(node.os)} / ${node.arch}`],
+            [t("nodes.model"), node.identity?.device_model],
+            [t("nodes.vendor"), node.identity?.device_vendor],
             [t("nodes.osVersion"), machine?.os_version],
             [t("nodes.kernel"), machine?.kernel_version],
-            [t("nodes.cpuModel"), machine?.cpu_model],
+            [t("nodes.cpuModel"), node.identity?.cpu_model || machine?.cpu_model],
             [
               t("nodes.cpus"),
               machine?.logical_cpus ?? node.diagnostics.metrics?.logical_cpus,
@@ -128,7 +134,7 @@ function Overview({
             [t("nodes.physicalCores"), machine?.physical_cores],
             [
               t("nodes.physicalMemory"),
-              formatBytes(machine?.physical_memory_bytes),
+              formatBytes(node.identity?.memory_total_bytes ?? machine?.physical_memory_bytes),
             ],
             [t("nodes.cpuLimit"), machine?.effective_cpu_limit],
             [
@@ -694,6 +700,7 @@ export function NodeDetailDialog({
         <span className="flex flex-wrap items-center gap-3">
           <span className="min-w-0 break-all">{node.name}</span>
           <Status small value={nodeStatus(node)} />
+          {user.role === "admin" && <NodeRename node={node} reload={refresh} />}
         </span>
       }
       description={`${nodePlatform(node.os)} / ${node.arch} · ${node.pool_name}`}

@@ -1,6 +1,6 @@
 <!--
-[INPUT]: 节点启动快照、独立遥测和规划工具通道。
-[OUTPUT]: 定义元数据查询、候选排序和分配围栏。
+[INPUT]: 节点启动快照、心跳诊断、独立遥测和规划工具通道。
+[OUTPUT]: 定义节点识别、网络诊断、元数据查询与选机围栏。
 [POS]: 节点协议与 AI 选机之间的授权契约。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -16,8 +16,8 @@ Emissary 在进程启动时探测一次静态信息，控制平面持久化快�
 
 | 命名空间 | 内容 |
 | --- | --- |
-| `system.*` | OS、架构、内核、系统启动时间、容器与虚拟化信息 |
-| `hardware.*` | CPU、内存、有效资源上限、加速器 |
+| `system.*` | 主机名、OS、架构、内核、系统启动时间、容器与虚拟化信息 |
+| `hardware.*` | 系统报告的型号与厂商、CPU、内存、有效资源上限、加速器 |
 | `tools.*` | 工具是否可用及版本 |
 | `emissary.*` | Emissary 版本及采集器支持情况 |
 | `custom.*` | 节点配置的自定义值 |
@@ -25,6 +25,20 @@ Emissary 在进程启动时探测一次静态信息，控制平面持久化快�
 节点 JSON 配置可增加 `"metadata": {"site": "lab", "rack": "A3"}`，上报为 `custom.site`、`custom.rack`；即使配置键使用 `system.os`，它也只会生成 `custom.system.os`。管理员 labels、签名授权和 slots 独立管理，不接受元数据覆盖。
 
 整个编码后的启动快照最多 64 KiB。自动探测不收集环境变量值、凭证或全主机进程清单。Inventory 历史复用同一静态快照，在本进程中缓冲一次并可靠投递；不再每 15 分钟重探测，也不再周期性发送全量静态信息。普通心跳保留任务、在线、OTA 和少量运行指标。
+
+`system.hostname` 复用启动时的系统主机名。`hardware.device_model` 和 `hardware.device_vendor` 使用系统产品信息；缺失时省略，不推测营销型号，不采集序列号。控制台列表只投影这三个字段与已有 CPU、物理内存字段。项目范围沿用诊断信息的可见条件。
+
+## 名称与网络诊断
+
+注册默认使用系统主机名，探测失败回退 `emissary`。名称保存为独立别名。心跳、新启动和重连只更新观测信息，不覆盖名称。租户管理员通过名称专用接口修改别名，或选择当前主机名；节点 UUID、证书和调度关系保持不变。
+
+每次心跳保留启动时缓存的 `diagnostics.hostname`。后台采集器定期更新 `diagnostics.network_interfaces`，包含 UTC `sampled_at`、`interfaces:[{name,addresses}]` 与 `truncated`。网络重连读取缓存，不在心跳发送路径同步探测硬件。
+
+接口名与地址稳定排序并去重。地址过滤回环和未指定地址，保留私网、VPN 与 IPv6；不发送 MAC。最多16个接口、每接口8个地址，JSON最多8 KiB。超过128个 UTF-8 字节的接口名跳过。任一截断均设置 `truncated=true`。页面按接口展示最近采样，服务端连接地址不代表设备接口地址。
+
+Windows 的地址来源使用 IP Helper 完整单播枚举。无 MAC 或零链路速率的 VPN 接口仍进入诊断；严格网络计数继续使用 sysinfo。hello 的完整信封预算为 96 KiB，容纳启动快照、网络诊断与运行状态；两份快照各自的 64 KiB 和 8 KiB 上限不变。
+
+此扩展只使用启动元数据和心跳诊断。Telemetry Batch、Inventory、NetworkSample 及既有离线队列的原始字节与摘要保持不变。
 
 ## 资源与 MCP 查询
 

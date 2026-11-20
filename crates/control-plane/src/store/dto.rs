@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖公开 JSON 字段和数据库解码。
-//! [OUTPUT]: 提供 Release 修订、构建归属及正式制品名称投影。
+//! [OUTPUT]: 提供节点识别摘要与公开业务响应投影。
 //! [POS]: HTTP 响应的数据边界；不包含秘密信封。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Explicit API projections. These types never contain ORM models or database handles.
@@ -84,6 +84,7 @@ response! { NodeSummary {
     labels: Value,
     capabilities: Value,
     diagnostics: Value,
+    identity: Value,
     signing_profiles: Vec<String>,
     slots: i32,
     draining: bool,

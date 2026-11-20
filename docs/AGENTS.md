@@ -15,7 +15,7 @@ api.md: 定义 HTTP API 输入、权限和返回值。
 artifactory-rename-2026-11-11.md: 记录产品命名迁移。
 signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。
 configuration.md: 定义任务执行计划的结构与限制。
-design-system.md: 定义中性色、字体、工作区布局和自定义下拉控件边界。
+design-system.md: 定义中性色、字体、工作区布局、设备识别和自定义下拉控件边界。
 direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、启动等待和故障依赖隔离的验证边界。
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。
@@ -27,10 +27,10 @@ image-builds-kubernetes-128-acceptance-2026-11-18.md: 记录 1.28 生命周期�
 local-macmini-acceptance-2026-11-11.md: 记录本机和 Mac mini 的验收。
 module-layout.md: 定义模块命名和依赖边界。
 multitenancy.md: 定义租户权限和设备共享边界。
-node-placement.md: 定义节点能力查询与 AI 选机。
+node-placement.md: 定义节点识别、网络诊断、能力查询与 AI 选机。
 operations.md: 定义初始账号、部署、备份和故障恢复。
 operator-operations.md: 定义临时源码、池级出口代理、内部直连和任务收尾。
-protocol.md: 定义 Emissary 通信和状态迁移。
+protocol.md: 定义 Emissary 会话、完整心跳预算和状态迁移。
 registration-acceptance-2026-11-11.md: 记录用户注册的本地验收。
 planning-protocol.md: 定义内嵌规划接口、任务身份与新实例基线。
 ephemeral-source-acceptance-2026-11-18.md: 记录临时源码验证、存储回收与正式切换。

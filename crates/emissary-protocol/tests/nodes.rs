@@ -1,14 +1,38 @@
 //! [INPUT]: 依赖公开节点元数据、资源和选机契约。
-//! [OUTPUT]: 验证快照边界、双时钟新鲜度和选机输入。
+//! [OUTPUT]: 验证名称字节边界、快照和选机输入。
 //! [POS]: 节点协议的行为回归；阻止过期资源进入分配。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_emissary_protocol::nodes::{
-    MetadataSnapshot, Placement, ResourceRequirements, Resources,
+    MetadataSnapshot, Placement, ResourceRequirements, Resources, normalize_node_name,
 };
 use chrono::{Duration, Utc};
 use serde_json::json;
 use std::collections::BTreeMap;
 use uuid::Uuid;
+
+#[test]
+fn node_names_trim_and_enforce_utf8_bytes_and_visible_characters() {
+    assert_eq!(normalize_node_name("  实验室节点  ").unwrap(), "实验室节点");
+    assert_eq!(normalize_node_name(&"x".repeat(100)).unwrap().len(), 100);
+    assert_eq!(
+        normalize_node_name(&format!("{}a", "中".repeat(33)))
+            .unwrap()
+            .len(),
+        100
+    );
+    for invalid in [
+        "".into(),
+        "  ".into(),
+        "x".repeat(101),
+        "中".repeat(34),
+        "node\nname".into(),
+        "node\tname".into(),
+        "node\0name".into(),
+        "node\u{7f}name".into(),
+    ] {
+        assert!(normalize_node_name(&invalid).is_err(), "{invalid:?}");
+    }
+}
 
 #[test]
 fn metadata_is_canonical_bounded_and_namespaced() {

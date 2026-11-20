@@ -9,7 +9,8 @@ crypto.rs: 加密私有凭据并计算认证摘要。
 dispatch.rs: 向当前连接发送可重放设备命令。
 error.rs: 将业务失败转换为 HTTP 错误。
 execution_plan.rs: 要求显式应用分类，校验并密封 AI 执行计划。
-grpc.rs: 认证设备并接收构建事件。
+grpc.rs: 共用名称与完整心跳预算校验，认证节点会话并接收构建事件。
+grpc_tests.rs: 验证完整 hello 的组合预算、重连与超额拒绝。
 lib.rs: 导出控制平面模块与协议。
 lifecycle.rs: 按游标执行工作区清理并清扫镜像日志前缀。
 main.rs: 首次创建默认管理员，启动 HTTP、gRPC、内嵌规划运行时和后台协调。

@@ -1,10 +1,13 @@
-//! Management queries and atomic node updates.
+//! [INPUT]: 依赖租户作用域、节点状态与数据库事务。
+//! [OUTPUT]: 提供名称审计事务和有界节点识别摘要。
+//! [POS]: 管理接口的持久化边界；不返回完整节点元数据。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use super::dto;
 use crate::error::{ApiError, Result};
 use artifactory_database::{params, sql};
 use chrono::{Duration, Utc};
-use serde_json::Value;
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use serde::Deserialize;
@@ -105,9 +108,9 @@ impl ControlStore {
     }
 
     pub async fn nodes(&self, limit: i64, offset: i64, q: &str) -> Result<Vec<dto::NodeSummary>> {
-        // Project before encoding so list requests never deserialize large metadata values.
+        // 在数据库投影摘要，避免列表传输和反序列化完整元数据。
         Ok(sql::scalars(&mut self.pool.clone(), r#"SELECT to_jsonb(summary) FROM (
-            SELECT n.id,n.name,n.os,n.arch,n.pool_id,n.labels,n.capabilities,CASE WHEN $5 THEN n.diagnostics ELSE '{}'::jsonb END AS diagnostics,
+            SELECT n.id,n.name,n.os,n.arch,n.pool_id,n.labels,n.capabilities,CASE WHEN $5 THEN n.diagnostics ELSE '{}'::jsonb END AS diagnostics,identity.summary AS identity,
                 n.signing_profiles,n.slots,n.draining,n.revoked,n.certificate_expires_at,
                 n.last_seen,n.created_at,n.emissary_target_release,n.emissary_current_version,
                 n.emissary_launcher_version,CASE WHEN $5 THEN n.emissary_ota_status ELSE '{}'::jsonb END AS emissary_ota_status,n.ota_draining,
@@ -117,9 +120,50 @@ impl ControlStore {
                 (SELECT count(*) FROM attempts a WHERE a.node_id=n.id
                     AND a.status IN ('leased','running') AND a.lease_expires_at>now()) AS active_jobs
             FROM nodes n JOIN node_pools p ON p.id=n.pool_id
-            WHERE n.tenant_id=$4 AND ($5 OR EXISTS(SELECT 1 FROM projects pr WHERE pr.id=ANY($6) AND project_node_allowed(pr.id,n.id))) AND strpos(lower(n.name||' '||n.os||' '||p.name),lower($3))>0
+            CROSS JOIN LATERAL (SELECT CASE WHEN $5 THEN jsonb_strip_nulls(jsonb_build_object(
+                'hostname',CASE WHEN jsonb_typeof(n.metadata->'system.hostname')='string' THEN n.metadata->'system.hostname' END,
+                'device_model',CASE WHEN jsonb_typeof(n.metadata->'hardware.device_model')='string' THEN n.metadata->'hardware.device_model' END,
+                'device_vendor',CASE WHEN jsonb_typeof(n.metadata->'hardware.device_vendor')='string' THEN n.metadata->'hardware.device_vendor' END,
+                'cpu_model',CASE WHEN jsonb_typeof(n.metadata->'hardware.cpu_model')='string' THEN n.metadata->'hardware.cpu_model' END,
+                'memory_total_bytes',CASE WHEN jsonb_typeof(n.metadata->'hardware.physical_memory_bytes')='number' THEN
+                    CASE WHEN (n.metadata->>'hardware.physical_memory_bytes') ~ '^(0|[1-9][0-9]*)$'
+                        AND (n.metadata->>'hardware.physical_memory_bytes')::numeric<=18446744073709551615
+                        THEN n.metadata->'hardware.physical_memory_bytes' END END
+            )) ELSE '{}'::jsonb END AS summary) identity
+            WHERE n.tenant_id=$4 AND ($5 OR EXISTS(SELECT 1 FROM projects pr WHERE pr.id=ANY($6) AND project_node_allowed(pr.id,n.id)))
+                AND ($3='' OR strpos(lower(concat_ws(' ',n.name,n.os,n.arch,n.id::text,p.name,
+                    identity.summary->>'hostname',identity.summary->>'device_model',identity.summary->>'cpu_model')),lower($3))>0)
             ORDER BY n.created_at DESC,n.id DESC LIMIT $1 OFFSET $2
         ) summary"#, params![limit, offset, q,self.tenant()?,self.scoped_admin(),self.scoped_projects().unwrap_or_default()]).await?)
+    }
+
+    pub async fn rename_node(&self, id: Uuid, name: &str) -> Result<()> {
+        let auth = self.scope.as_ref().ok_or(ApiError::TenantRequired)?;
+        auth.session_role("admin")?;
+        let tenant = self.tenant()?;
+        let mut db = self.pool.clone();
+        let mut transaction = db.transaction().await?;
+        let old_name: String = sql::optional_scalar(
+            &mut transaction,
+            "SELECT name FROM nodes WHERE id=$1 AND tenant_id=$2 FOR UPDATE",
+            params![id, tenant],
+        )
+        .await?
+        .ok_or(ApiError::NotFound)?;
+        sql::execute(
+            &mut transaction,
+            "UPDATE nodes SET name=$3 WHERE id=$1 AND tenant_id=$2",
+            params![id, tenant, name],
+        )
+        .await?;
+        sql::execute(
+            &mut transaction,
+            "INSERT INTO audit_events(tenant_id,actor,action,resource_id,details) VALUES($1,$2,'node_renamed',$3,$4)",
+            params![tenant, auth.user_id.to_string(), id.to_string(), json!({"old_name":old_name,"new_name":name})],
+        )
+        .await?;
+        transaction.commit().await?;
+        Ok(())
     }
 
     pub async fn update_node(&self, id: Uuid, input: &NodeUpdate) -> Result<bool> {

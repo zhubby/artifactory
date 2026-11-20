@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖节点 API、通知、Select、工具栏和节点侧面板。
+ * [INPUT]: 依赖节点查询 API、通知、Select、工具栏和可重命名侧面板。
  * [OUTPUT]: 提供 NodesWorkspace 设备工作区。
  * [POS]: 衔接节点筛选、列表与详情交互。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -67,7 +67,7 @@ export function NodesWorkspace({
           </Button>
         )}
       </PageTitle>
-      <ListToolbar query={query} count={nodes.data?.length}
+      <ListToolbar query={query} count={nodes.data?.length} placeholder={t("nodes.searchHint")}
           onQueryChange={(value) => {
             setQuery(value);
             setOffset(0);

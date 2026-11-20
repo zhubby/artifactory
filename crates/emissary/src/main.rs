@@ -1,5 +1,5 @@
-// [INPUT]: 依赖节点配置、服务控制与运行时库。
-// [OUTPUT]: 提供注册、诊断、服务与更新初始化命令。
+// [INPUT]: 依赖节点名称规范、节点配置、服务控制与运行时库。
+// [OUTPUT]: 校验注册名称，提供诊断、服务与更新初始化命令。
 // [POS]: 原生节点的 CLI 入口，不承载构建业务。
 // [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
@@ -85,6 +85,15 @@ fn default_root() -> PathBuf {
         .map(|d| d.data_local_dir().join("artifactory/emissary"))
         .unwrap_or_default()
 }
+fn registration_name(name: Option<&str>, hostname: Option<&str>) -> Result<String> {
+    use artifactory_emissary_protocol::nodes::normalize_node_name;
+    if let Some(name) = name {
+        return normalize_node_name(name);
+    }
+    Ok(hostname
+        .and_then(|name| normalize_node_name(name).ok())
+        .unwrap_or_else(|| "emissary".into()))
+}
 #[tokio::main]
 async fn main() {
     if artifactory_source_checkout::askpass() {
@@ -139,9 +148,10 @@ async fn run(cli: Cli) -> Result<()> {
                 endpoint: args.endpoint,
                 ca_file: std::path::absolute(args.ca)?,
                 root: std::path::absolute(args.root)?,
-                name: args.name.unwrap_or_else(|| {
-                    sysinfo::System::host_name().unwrap_or_else(|| "emissary".into())
-                }),
+                name: registration_name(
+                    args.name.as_deref(),
+                    sysinfo::System::host_name().as_deref(),
+                )?,
                 allow_http_uploads: args.allow_http_uploads,
                 ..Default::default()
             };
@@ -210,4 +220,57 @@ async fn run(cli: Cli) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn register_rejects_invalid_name_before_reading_enrollment_token() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = directory.path().join("emissary.json");
+        let cli = Cli::try_parse_from([
+            "artifactory-emissary",
+            "register",
+            "--endpoint",
+            "https://example.invalid",
+            "--config",
+            config.to_str().unwrap(),
+            "--ca",
+            "/missing-ca.pem",
+            "--root",
+            directory.path().to_str().unwrap(),
+            "--name",
+            "invalid\nname",
+            "--token-env",
+            "ARTIFACTORY_TEST_ABSENT_REGISTRATION_TOKEN",
+        ])
+        .unwrap();
+        let error = run(cli).await.unwrap_err();
+        assert!(error.to_string().contains("node name"), "{error:#}");
+        assert!(!config.exists());
+    }
+
+    #[test]
+    fn registration_name_normalizes_explicit_names_and_rejects_invalid_names() {
+        assert_eq!(
+            registration_name(Some("  构建节点  "), Some("host")).unwrap(),
+            "构建节点"
+        );
+        for name in [" ", "a\nb", &"界".repeat(34)] {
+            assert!(registration_name(Some(name), Some("host")).is_err());
+        }
+    }
+
+    #[test]
+    fn registration_name_uses_hostname_then_emissary_fallback() {
+        assert_eq!(
+            registration_name(None, Some("  host.local  ")).unwrap(),
+            "host.local"
+        );
+        for hostname in [None, Some(" "), Some("bad\nhost")] {
+            assert_eq!(registration_name(None, hostname).unwrap(), "emissary");
+        }
+    }
 }

@@ -1,6 +1,6 @@
 <!--
 [INPUT]: Emissary 公共协议、设备执行与规划协调器身份。
-[OUTPUT]: 定义设备会话、执行租约与临时源码边界。
+[OUTPUT]: 定义设备会话、心跳预算、执行租约与临时源码边界。
 [POS]: 设备通信入口；规划 Pod 的恢复细节由规划协调器协议定义。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -22,6 +22,8 @@
 节点证书到期前需要排空、吊销并以新配置重新注册；本版没有自动续证；Emissary 自动升级见 [OTA 协议与运维](emissary-ota.md)。吊销不可反向恢复，防止旧私钥重新有效。
 
 启动快照编码上限 64 KiB，控制平面提交后返回 `metadata_ack`，以 `request_id` 回显启动 ID。ACK 丢失时 `metadata` 事件重发同一快照；普通重连不重新探测，已退役 startup 和旧 session 的提交被拒绝。新进程快照完整替换旧值；管理员 labels、签名权限和 slots 独立维护。普通心跳只保留运行信息，详见 [节点元数据](node-placement.md)。
+
+完整 hello 和 heartbeat 的 `payload_json` 上限为 96 KiB。协议共享此预算：启动快照 64 KiB、网络诊断 8 KiB、运行信封 24 KiB。运行信封包含最多 32 项活动任务、OTA、指标和 JSON 字段开销。旧 72 KiB 事件加完整网络诊断和字段开销仍在新上限内；超过完整预算的事件在 JSON 解码前拒绝。独立启动快照上限不变。
 
 ## 两阶段开始与租约
 

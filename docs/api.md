@@ -38,7 +38,7 @@
 | `DELETE /tokens/{id}` | 吊销当前用户的 Token |
 | `GET, POST /pools` | 创建 `{name}` |
 | `POST /enrollment-tokens` | `{pool_id}`，返回一次性令牌 |
-| `GET /nodes` | 实际能力、诊断、slots、online、active_jobs；不携带全量 metadata |
+| `GET /nodes` | 实际能力、诊断、identity 摘要、slots、online、active_jobs；不携带全量 metadata |
 | `GET /nodes/{id}/metadata` | viewer 会话；完整启动 metadata、startup_id、内容摘要与服务端接收时间 |
 | `GET /nodes/{id}/telemetry` | viewer 会话；最新主机采样、fresh 与版本化清单 |
 | `GET /nodes/{id}/inventory` | viewer 会话；最近 100 次清单观察，附 truncated |
@@ -46,6 +46,7 @@
 | `GET /attempts/{id}/telemetry` | 项目 read；构建资源时序，显式 from / to / resolution |
 | `GET /attempts/{id}/processes` | 项目 read；托管进程明细，显式 from / to / resolution=raw |
 | `PATCH /nodes/{id}` | `{draining,revoked,slots,labels,signing_profiles,pool_id}`；吊销不可逆 |
+| `PATCH /nodes/{id}/name` | 仅租户 owner/admin 会话；`{name}`，成功返回 `{ok:true}`，只更新名称 |
 | `GET, POST /credentials` | 创建 `{name,kind,username,secret,known_hosts}`；kind 为 https / ssh |
 | `GET /audit` | 最近 200 条审计事件，仅管理员 |
 | `GET, POST /projects` | 创建 `{name,repository_url,credential_id,pool_ids,signing_profiles,model_profile_id?,build_context?,source_credentials?}` |
@@ -106,5 +107,9 @@ curl --fail-with-body -X POST 'https://build.example.com/api/v1/projects/PROJECT
 OCI 客户端通过公开网关的 `/v2/` 访问内建仓库。Registry Token realm 为 `/api/v1/registry/token`，使用 HTTP Basic 携带平台 API Token 或执行专属短期身份，不使用浏览器 Cookie。返回的仓库 JWT 有效期为 60 秒，scope 严格约束租户、项目和仓库。普通 API Token 对正式仓只读；平台发布 JWT 额外绑定 Release 与发布租约代次。构建回执与 publication 接口只接受执行专属 Bearer Token。部署与取消边界见 [镜像构建与网关](image-builds.md)。
 
 ## Emissary 版本与升级
+
+`GET /nodes` 的 `identity` 只投影正确类型的 `hostname`、`device_model`、`device_vendor`、`cpu_model` 和 `memory_total_bytes`。缺失字段省略，可见范围与 `diagnostics` 相同；受限项目视角返回空对象。`q` 支持名称、系统、架构、节点 UUID，以及当前会话可见的主机名、型号和 CPU。列表不读取全量启动快照。
+
+节点名称去除首尾空白后必须为1–100个 UTF-8 字节，且不能包含控制字符。注册和改名使用相同校验。改名需要 CSRF 和可写租户，普通成员、项目管理员和 API Token 均无此权限。成功记录 `node_renamed` 审计及 `old_name`、`new_name`，不更换节点 UUID、证书或节点设置。心跳与重连不覆盖已保存名称。
 
 版本目录、节点 / 节点池目标、执行记录、重试及取消见 [Emissary OTA 管理接口](emissary-ota.md#管理接口)。这些管理写操作只允许管理员会话，项目 API Token 不获得升级权限。

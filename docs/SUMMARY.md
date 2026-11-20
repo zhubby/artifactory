@@ -74,6 +74,7 @@
 
 # 设计与计划归档
 
+- [设备命名与辨识度改进 · 2026-11-20](plans/2026-11-20-node-identification.md)
 - [Kubernetes 1.28 一次性镜像构建方案 · 2026-11-18](plans/2026-11-18-001-refactor-kubernetes-128-build-plan.md)
 - [临时源码与任务独立拉取 · 2026-11-18](plans/2026-11-18-ephemeral-source-execution.md)
 - [设计基线 · 2026-11-09](superpowers/specs/2026-11-09-artifactory-design.md)

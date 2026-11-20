@@ -19,6 +19,9 @@ mod readable_routes;
 #[path = "account_settings.rs"]
 mod account_settings;
 
+#[path = "node_identity.rs"]
+mod node_identity;
+
 #[path = "workspace_lifecycle.rs"]
 mod workspace_lifecycle;
 

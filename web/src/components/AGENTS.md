@@ -17,11 +17,13 @@ console.tsx: 组合工作区数据、请求生命周期和业务页面，交由�
 emissary-ota.tsx: 配置节点发布与升级目标。
 forms.tsx: 提供项目、节点、凭据表单，复用下拉并统一提交通知。
 lifecycle.tsx: 使用 HTTP 兼容幂等键提交归档、恢复与删除，保留当前操作恢复入口。
-node-card.tsx: 展示设备资源行与状态。
-node-detail-dialog.tsx: 组合节点详情弹窗。
+node-card.tsx: 直接消费列表快照，展示名称、主机名、短 ID、硬件与资源状态。
+node-detail-dialog.tsx: 组合身份、网络地址、遥测和授权操作，标题提供独立重命名入口。
+node-network-addresses.tsx: 按接口展示最后 IPv4/IPv6 快照、采样时间和截断状态。
+node-rename.tsx: 只提交名称，按 Unicode White_Space 裁剪后校验 UTF8 与控制字符，保护草稿和焦点。
 node-detail-parts.tsx: 提供节点字段、格式化时间与失败重试空态，错误详情通过通知。
 node-metadata.tsx: 按需读取节点元数据，首读显示详情骨架，刷新保留快照并提供失败重试。
-nodes-workspace.tsx: 查询、筛选和配置节点。
+nodes-workspace.tsx: 复用 q 查询身份字段，刷新节点列表并关闭不再匹配的详情。
 notifications.tsx: 顶部居中显示通知，避开手机顶栏与抽屉导航，桥接校验和弹窗焦点。
 preferences-controls.tsx: 为登录页和个人设置提供自定义语言、主题下拉。
 providers.tsx: 组合账户、语言、主题、顶部进度和全局通知，动效适配系统偏好。

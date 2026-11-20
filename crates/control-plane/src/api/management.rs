@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖租户鉴权、节点配置与凭据加密。
-//! [OUTPUT]: 提供设备、访问令牌和凭据的管理接口。
+//! [INPUT]: 依赖租户鉴权、共享名称校验与凭据加密。
+//! [OUTPUT]: 提供设备改名、配置及凭据的管理接口。
 //! [POS]: 管理写入先验证权限，再进入业务存储。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::auth::TenantState;
@@ -203,6 +203,19 @@ pub async fn update_node(
             json!({"draining":input.draining,"revoked":revoked}),
         )
         .await?;
+    Ok(Json(json!({"ok":true})))
+}
+
+pub async fn rename_node(
+    TenantState(state): TenantState,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+    Json(input): Json<Name>,
+) -> Result<Json<Value>> {
+    auth.session_role("admin")?;
+    let name = artifactory_emissary_protocol::nodes::normalize_node_name(&input.name)
+        .map_err(|error| ApiError::BadRequest(error.to_string()))?;
+    state.store.rename_node(id, &name).await?;
     Ok(Json(json!({"ok":true})))
 }
 
