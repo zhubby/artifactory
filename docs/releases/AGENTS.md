@@ -10,5 +10,6 @@
 2026-11-16-managed-signing-kubernetes.md: 记录签名审查修复、密钥环、迁移恢复和现场验收。
 2026-11-19-module-boundaries-kubernetes.md: 记录模块改名后的独立实例、初始账号修正、验证与网络限制。
 2026-11-20-release-delivery-kubernetes.md: 记录 Release 实现、固定镜像与真实交付验收边界。
+2026-11-20-loading-tenant-kubernetes.md: 记录骨架加载、顶部进度和租户大厅的固定镜像与真实页面验收。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

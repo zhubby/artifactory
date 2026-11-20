@@ -101,6 +101,7 @@
 - [托管应用签名 Kubernetes 升级记录 · 2026-11-16](releases/2026-11-16-managed-signing-kubernetes.md)
 - [模块重构 Kubernetes 新实例部署 · 2026-11-19](releases/2026-11-19-module-boundaries-kubernetes.md)
 - [Release 中心版本交付 Kubernetes 记录 · 2026-11-20](releases/2026-11-20-release-delivery-kubernetes.md)
+- [加载反馈与租户大厅 Kubernetes 上线记录 · 2026-11-20](releases/2026-11-20-loading-tenant-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)
 
