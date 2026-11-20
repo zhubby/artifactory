@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖受控输入、异步建议、React 生命周期与既有输入样式。
  * [OUTPUT]: 提供允许任意文本的 Combobox 与建议选项类型。
- * [POS]: 表单的可编辑建议入口；列表不改变输入合同，也不提交表单。
+ * [POS]: 建议浮层与完整输入框等宽对齐，视口不足时收缩；保留表单合同。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -63,7 +63,7 @@ export function Combobox({
       const above = anchor.top - topEdge - 8;
       const downward = below >= 160 || below >= above;
       const maxHeight = Math.max(48, Math.min(280, downward ? below : above));
-      const popupWidth = Math.min(Math.max(anchor.width, 240), width - 16);
+      const popupWidth = Math.min(anchor.width, width - 16);
       setPosition({
         left: Math.max(leftEdge + 8, Math.min(anchor.left, leftEdge + width - popupWidth - 8)),
         top: downward ? anchor.bottom + 4 : anchor.top - 4,

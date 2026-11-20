@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Radix Select、原生选项声明和语义控件样式。
- * [OUTPUT]: 提供保留原生表单、异步默认值、组合输入和分层关闭的下拉。
+ * [OUTPUT]: 提供等宽对齐浮层，保留表单、异步默认值和分层关闭。
  * [POS]: 业务选项的统一入口；浮层负责交互，隐藏字段负责表单。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -190,7 +190,7 @@ export function Select({
           <SelectPrimitive.Icon className="select-chevron"><ChevronDown size={14} /></SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
         <SelectPrimitive.Portal>
-          <SelectPrimitive.Content className="select-content" position="popper" sideOffset={5} collisionPadding={12} onKeyDownCapture={guardComposition}>
+          <SelectPrimitive.Content className="select-content" position="popper" align="start" sideOffset={5} collisionPadding={12} onKeyDownCapture={guardComposition}>
             <SelectPrimitive.ScrollUpButton className="select-scroll"><ChevronUp size={14} /></SelectPrimitive.ScrollUpButton>
             <SelectPrimitive.Viewport className="select-viewport"><OptionEntries entries={entries} /></SelectPrimitive.Viewport>
             <SelectPrimitive.ScrollDownButton className="select-scroll"><ChevronDown size={14} /></SelectPrimitive.ScrollDownButton>

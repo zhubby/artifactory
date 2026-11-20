@@ -1,15 +1,27 @@
 /**
  * [INPUT]: 依赖业务页面、共享下拉与成员接口夹具。
- * [OUTPUT]: 验证弹层、组合输入、分层关闭、异步默认值和单一表单事件。
+ * [OUTPUT]: 验证弹层齐宽对齐、组合输入、分层关闭和表单合同。
  * [POS]: 设计规范中全站下拉要求的回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fixtureAPI, openPreferences, project, tenantURL } from "./fixtures";
 import { chooseOption } from "./select-helpers";
+
+async function expectMenuAligned(menu: Locator, control: Locator) {
+  await expect.poll(async () => {
+    const [popup, input] = await Promise.all([menu.boundingBox(), control.boundingBox()]);
+    if (!popup || !input) return Number.POSITIVE_INFINITY;
+    return Math.max(
+      Math.abs(popup.width - input.width),
+      Math.abs(popup.x - input.x),
+      Math.abs(popup.x + popup.width - input.x - input.width),
+    );
+  }, { message: "下拉弹层与完整输入框应齐宽，左右边界误差不超过 1px" }).toBeLessThanOrEqual(1);
+}
 
 test("business components cannot introduce native select or datalist menus", () => {
   function scan(directory: string): string[] {
@@ -29,6 +41,9 @@ test("preference menus use theme tokens and Escape preserves the parent dialog",
   await openPreferences(page);
   const dialog = page.getByRole("dialog");
   const theme = dialog.getByRole("combobox", { name: "主题", exact: true });
+  const themeField = page.locator(".preference-select").filter({
+    has: page.locator('button[role="combobox"][aria-label="主题"]'),
+  });
   expect(await theme.evaluate(element => element.tagName)).toBe("BUTTON");
   if (info.project.name === "mobile") expect((await theme.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   for (const value of ["light", "dark"]) {
@@ -37,6 +52,7 @@ test("preference menus use theme tokens and Escape preserves the parent dialog",
     await theme.click();
     const list = page.getByRole("listbox");
     await expect(list).toBeVisible();
+    await expectMenuAligned(list, themeField);
     await expect(page.getByRole("option", { selected: true })).toHaveAttribute("data-value", value);
     const audit = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
     expect(audit.violations.map(item => ({ id: item.id, nodes: item.nodes.map(node => node.target) }))).toEqual([]);
@@ -140,6 +156,7 @@ test("long menus scroll within the viewport and support End selection", async ({
   const user = page.getByRole("combobox", { name: "租户成员", exact: true });
   await user.click();
   await expect(page.getByRole("option")).toHaveCount(151);
+  await expectMenuAligned(page.getByRole("listbox"), page.locator('button[role="combobox"][data-name="user"]'));
   await page.keyboard.press("End");
   await expect(page.getByRole("option").last()).toBeInViewport();
   const box = (await page.getByRole("listbox").boundingBox())!;

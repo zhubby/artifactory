@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖源码引用查询和 Release 自定义建议列表。
- * [OUTPUT]: 验证搜索、键盘、任意引用与迟到响应隔离。
+ * [OUTPUT]: 验证建议等宽对齐、搜索、键盘、任意引用与迟到响应隔离。
  * [POS]: Release 创建时固定源码入口的交互回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -28,7 +28,14 @@ test("all repository refs remain available in a searchable custom suggestion lis
   await expect(list.getByRole("option")).toHaveCount(125);
   await source.fill("TOPIC/12");
   await expect(list.getByRole("option")).toHaveCount(6);
+  await expect(list).toBeVisible();
   const bounds = await list.locator("..").boundingBox();
+  const inputBounds = await source.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(inputBounds).not.toBeNull();
+  expect(Math.abs(bounds!.width - inputBounds!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(bounds!.x - inputBounds!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(bounds!.x + bounds!.width - inputBounds!.x - inputBounds!.width)).toBeLessThanOrEqual(1);
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
   expect(bounds!.y).toBeGreaterThanOrEqual(0);

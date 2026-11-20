@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖语义颜色、Radix 浮层尺寸和共享 input 样式。
- * [OUTPUT]: 提供下拉触发器、选项浮层和隐藏表单字段样式。
+ * [OUTPUT]: 提供触发器、等宽对齐浮层和隐藏表单字段样式。
  * [POS]: 由 globals.css 加载；统一页面和弹窗的单选交互。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -15,7 +15,7 @@
 .select-value { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .select-chevron { display: flex; flex-shrink: 0; align-items: center; color: var(--muted-foreground); transition: rotate .15s ease; }
 .select-trigger[data-state="open"] .select-chevron { rotate: 180deg; }
-.select-content { z-index: 200; min-width: var(--radix-select-trigger-width); max-width: min(440px, calc(100vw - 24px)); max-height: min(340px, var(--radix-select-content-available-height)); overflow: hidden; border: 1px solid var(--border); border-radius: 7px; background: var(--card); color: var(--foreground); box-shadow: 0 10px 32px #00000020; transform-origin: var(--radix-select-content-transform-origin); animation: select-appear .12s ease-out; }
+.select-content { z-index: 200; width: var(--radix-select-trigger-width); min-width: 0; max-width: calc(100vw - 24px); max-height: min(340px, var(--radix-select-content-available-height)); overflow: hidden; border: 1px solid var(--border); border-radius: 7px; background: var(--card); color: var(--foreground); box-shadow: 0 10px 32px #00000020; transform-origin: var(--radix-select-content-transform-origin); animation: select-appear .12s ease-out; }
 .select-viewport { padding: 4px; }
 .select-option { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 34px; padding: 7px 9px; border-radius: 4px; font-size: 13px; line-height: 1.5; cursor: pointer; outline: none; user-select: none; }
 .select-option > span:first-child { min-width: 0; overflow-wrap: anywhere; }
