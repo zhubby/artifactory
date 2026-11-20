@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖生命周期 API、统一表单和全局通知。
- * [OUTPUT]: 提供工作区归档、恢复、删除及操作历史。
- * [POS]: 保留持久操作状态；请求反馈通过固定通知桥展示。
+ * [OUTPUT]: 提供归档、恢复、删除及当前操作的撤销、重试入口。
+ * [POS]: 设置仅展示当前范围的必要操作；请求反馈通过顶部通知展示。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -12,8 +12,6 @@ import {
   Trash2,
   RefreshCw,
   X,
-  Clock3,
-  ArrowUpRight,
 } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { mutation, useRemote } from "@/lib/api";
@@ -25,117 +23,11 @@ import { SubmitForm } from "@/components/forms";
 import { ErrorBox, Field, Loading, Status } from "@/components/common";
 import { asError } from "@/lib/errors";
 import { notify } from "@/lib/notify";
-import { Link } from "@/lib/tenant";
 
-export function OperationHistory({
-  tenant,
-  project,
-}: {
-  tenant?: string;
-  project?: string;
-}) {
-  const { t, date } = useUI();
-  const operations = useRemote<LifecycleOperation[]>("/operations", 2000);
-  const [error, setError] = useState<Error>();
-  const rows = operations.data?.filter(
-    (op) =>
-      (!tenant || op.tenant_id === tenant) &&
-      (!project || op.project_id === project),
-  );
-  async function action(op: LifecycleOperation, verb: string) {
-    setError(undefined);
-    try {
-      await mutation(`/operations/${op.id}/${verb}`, {});
-      await operations.reload();
-      notify.success(t("common.operationSucceeded"));
-    } catch (error) {
-      setError(asError(error));
-    }
-  }
-  const feedback = <ErrorBox key="operation-feedback" message={error || operations.error} />;
-  if (!rows?.length && !operations.error && !error) return <>{feedback}</>;
-  const history = (
-    <section className="panel operation-history">
-      <div className="section-title">
-        <h2>{t("lifecycle.operations")}</h2>
-      </div>
-      {rows?.map((op) => (
-        <article key={op.id} className="operation-row">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3>
-                {t(`lifecycle.${op.action}`)} ·{" "}
-                <span className="font-mono">{op.slug}</span>
-              </h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {date(op.created_at)} · {t(`lifecycle.phase_${op.phase}`)}
-              </p>
-            </div>
-            <Status value={op.state} />
-          </div>
-          {op.state === "waiting" && (
-            <p className="mt-3 text-sm text-muted-foreground">
-              {t("lifecycle.waitingNotice")}
-            </p>
-          )}
-          {!!op.blockers.length && (
-            <ul className="operation-blockers">
-              {op.blockers.map((task) => (
-                <li key={`${task.kind}:${task.id}`}>
-                  <Clock3 size={13} />
-                  <span>{task.kind}</span>
-                  {task.kind === "build" ? (
-                    <Link
-                      className="text-primary"
-                      href={`/tenants/${task.tenant_slug}/projects/${task.project_slug}/builds/${task.number}`}
-                    >
-                      {task.project_slug} #{task.number}{" "}
-                      <ArrowUpRight size={12} className="inline" />
-                    </Link>
-                  ) : (
-                    <code>{task.id}</code>
-                  )}
-                  <Status small value={task.status} />
-                  {task.kind === "build" && (
-                    <span className="text-xs">
-                      {t("lifecycle.cancelSeparately")}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          {op.error && (
-            <p className="mt-3 text-sm text-destructive" role="status" aria-atomic="true">
-              {t("lifecycle.failedNotice")}
-            </p>
-          )}
-          {(op.state === "waiting" || op.state === "failed") && (
-            <div className="mt-3 flex gap-2">
-              {op.state === "waiting" ? (
-                <Button
-                  variant="secondary"
-                  onClick={() => void action(op, "cancel")}
-                >
-                  <X />
-                  {t("lifecycle.cancel")}
-                </Button>
-              ) : (
-                <Button
-                  variant="secondary"
-                  onClick={() => void action(op, "retry")}
-                >
-                  <RefreshCw />
-                  {t("common.retry")}
-                </Button>
-              )}
-            </div>
-          )}
-        </article>
-      ))}
-    </section>
-  );
-  return <>{feedback}{history}</>;
+function latestOperation(rows: LifecycleOperation[] | undefined, tenant: string, project?: string) {
+  return rows?.filter(op => op.tenant_id === tenant && op.project_id === (project ?? null))
+    .reduce<LifecycleOperation | undefined>((latest, op) =>
+      !latest || op.created_at > latest.created_at ? op : latest, undefined);
 }
 export function LifecycleSettings({
   path,
@@ -157,6 +49,13 @@ export function LifecycleSettings({
   const { t } = useUI();
   const [action, setAction] = useState<"archive" | "restore" | "delete">();
   const [key, setKey] = useState("");
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<Error>();
+  const operations = useRemote<LifecycleOperation[]>(allowed ? "/operations" : null, rows => {
+    const current = latestOperation(rows, tenant, project);
+    return current && ["waiting", "running"].includes(current.state) ? 2000 : false;
+  });
+  const current = latestOperation(operations.data, tenant, project);
   const impact = useRemote<Record<string, number>>(
     allowed ? `${path}/lifecycle` : null,
     10000,
@@ -165,13 +64,31 @@ export function LifecycleSettings({
     setKey(crypto.randomUUID());
     setAction(action);
   }
+  async function recover(verb: "cancel" | "retry") {
+    if (!allowed || !current || recoveryBusy) return;
+    setRecoveryBusy(true);
+    setRecoveryError(undefined);
+    try {
+      const updated = await mutation<LifecycleOperation>(`/operations/${current.id}/${verb}`, {});
+      operations.setData(rows => [updated, ...(rows || []).filter(op => op.id !== updated.id)]);
+      await operations.reload();
+      onChange();
+      notify.success(t(verb === "retry" ? "lifecycle.requestSubmitted" : "common.operationSucceeded"));
+    } catch (error) {
+      setRecoveryError(asError(error));
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
   return (
     <div className="management-stack">
       <section className="panel management-section">
         <h2>{t("lifecycle.title")}</h2>
         <p className="management-description">{t("lifecycle.description")}</p>
         <Status value={status} />
-        <ErrorBox message={impact.error} />
+        <ErrorBox message={impact.error || operations.error || recoveryError} />
+        <ErrorBox message={current?.state === "failed" ? current.error || t("common.operationFailed") : undefined} />
+        {allowed && !impact.data && !impact.error && <Loading variant="form" />}
         <div className="lifecycle-counts">
           {Object.entries(impact.data || {}).map(([key, value]) => (
             <div key={key}>
@@ -180,6 +97,10 @@ export function LifecycleSettings({
             </div>
           ))}
         </div>
+        {allowed && ((impact.error && !impact.data) || (operations.error && !operations.data)) && <Button variant="secondary" className="mb-4" onClick={() => {
+          void impact.reload();
+          void operations.reload();
+        }}>{t("common.retry")}</Button>}
         {allowed ? (
           <div className="lifecycle-actions">
             {status === "active" && (
@@ -200,12 +121,19 @@ export function LifecycleSettings({
                 {t("lifecycle.delete")}
               </Button>
             )}
+            {current?.state === "waiting" && <Button variant="secondary" disabled={recoveryBusy} onClick={() => void recover("cancel")}>
+              <X />
+              {t("lifecycle.cancel")}
+            </Button>}
+            {current?.state === "failed" && <Button variant="secondary" disabled={recoveryBusy} onClick={() => void recover("retry")}>
+              <RefreshCw />
+              {t("common.retry")}
+            </Button>}
           </div>
         ) : (
           <p className="notice mt-5">{t("lifecycle.ownerRequired")}</p>
         )}
       </section>
-      <OperationHistory tenant={tenant} project={project} />
       <Modal
         open={!!action}
         onOpenChange={(open) => {
@@ -224,8 +152,9 @@ export function LifecycleSettings({
           <SubmitForm
             key={key}
             label={t(`lifecycle.${action}`)}
+            successMessage={t("lifecycle.requestSubmitted")}
             onSubmit={async (form) => {
-              await mutation(`${path}/lifecycle`, {
+              const submitted = await mutation<LifecycleOperation>(`${path}/lifecycle`, {
                 action,
                 idempotency_key: key,
                 ...(action === "delete"
@@ -235,8 +164,10 @@ export function LifecycleSettings({
                     }
                   : {}),
               });
+              operations.setData(rows => [submitted, ...(rows || []).filter(op => op.id !== submitted.id)]);
               setAction(undefined);
               onChange();
+              void operations.reload();
             }}
           >
             {action === "delete" && (

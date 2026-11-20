@@ -37,7 +37,7 @@ export function ReleaseDetail({ id, project, readOnly = false }: { id: string; p
   const [error, setError] = useState<Error>();
   const release = remote.data;
   const editable = !readOnly && project.effective_role !== "viewer";
-  if (!release) return <><ErrorBox key="release-feedback" message={remote.error} /><Loading /></>;
+  if (!release) return <><ErrorBox key="release-feedback" message={remote.error} />{!remote.error && <Loading variant="detail" />}</>;
   if (release.project_id !== project.id) return <><ErrorBox key="release-feedback" message={t("common.notFound")} /></>;
   const draft = release.status === "draft";
   const candidates = builds.data?.filter(build => build.status === "succeeded" && build.spec_revision === release.spec_revision) || [];
@@ -75,7 +75,7 @@ export function ReleaseDetail({ id, project, readOnly = false }: { id: string; p
         </section>
         <section className="panel"><SectionTitle title={t("releaseFlow.deliverySelection")} /><div className="p-5 text-sm">{selected ? <Link className="text-primary" href={buildPath(project.slug,selected.number,release.id)}>#{selected.number} · {t("releaseFlow.revision", {number:selected.spec_revision})}</Link> : <p>{t("releaseFlow.notPublished")}</p>}</div></section>
       </section>
-      <section hidden={activeTab !== "builds"} className="panel"><SectionTitle title={t("releaseFlow.buildHistory")} detail={t("releaseFlow.historyHint")} />{builds.data ? <BuildTable builds={builds.data} /> : <Loading />}</section>
+      <section hidden={activeTab !== "builds"} className="panel"><SectionTitle title={t("releaseFlow.buildHistory")} detail={t("releaseFlow.historyHint")} />{builds.data ? <BuildTable builds={builds.data} /> : !builds.error && <Loading variant="table" />}</section>
       <div hidden={activeTab !== "delivery"} className="space-y-5">
         {release.status !== "published" ? <section className="panel"><Empty title={t("releaseFlow.noDelivery")} detail={t("releaseFlow.noDeliveryHint")} /></section> : <>
           <div className="flex flex-wrap gap-3"><Button variant="secondary" onClick={() => void download("manifest")}><Download />{t("releaseFlow.manifest")}</Button><Button variant="secondary" onClick={() => void download("checksums")}><Download />SHA256SUMS</Button></div>

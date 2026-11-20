@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖鉴权日志分页 API、目标 attempt 和步骤筛选。
- * [OUTPUT]: 提供无轮询的 BuildLogHistory。
+ * [INPUT]: 依赖鉴权日志分页 API、内容骨架和目标步骤筛选。
+ * [OUTPUT]: 提供无轮询的历史日志与首次读取骨架。
  * [POS]: 终态日志阅读器；向前加载时保留阅读锚点。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useUI } from "@/components/providers";
-import { CopyButton, ErrorBox, SectionTitle } from "@/components/common";
+import { CopyButton, ErrorBox, Loading, SectionTitle } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { asError } from "@/lib/errors";
@@ -51,6 +51,8 @@ export function BuildLogHistory({ buildId, attemptId, step }: {
   useEffect(() => {
     const controller = new AbortController();
     request.current = controller;
+    setLogs([]);
+    setBefore(null);
     void load(null, controller);
     return () => controller.abort();
   }, [load]);
@@ -69,13 +71,13 @@ export function BuildLogHistory({ buildId, attemptId, step }: {
     <ErrorBox message={error} />
     {(before !== null || error) && <div className="border-b border-border px-5 py-2">
       <Button size="sm" variant="secondary" disabled={loading} onClick={() => { if (request.current) void load(before, request.current); }}>
-        {loading ? t("common.loading") : error ? t("common.retry") : t("builds.olderLogs")}
+        {error ? t("common.retry") : t("builds.olderLogs")}
       </Button>
     </div>}
     <div className="log-console" ref={terminal} role="log" aria-label={t("builds.logLabel")} aria-live="off" aria-busy={loading}>
       {logs.length ? logs.map(log => <span key={log.id} data-log-id={log.id}>
         {!step && <span className="mr-3 select-none text-log-muted">[{log.step}]</span>}{log.text}
-      </span>) : <span className="text-muted-foreground">{loading ? t("common.loading") : t("builds.noLogs")}</span>}
+      </span>) : loading ? <Loading variant="log" /> : !error && <span className="text-muted-foreground">{t("builds.noLogs")}</span>}
     </div>
   </section>;
 }

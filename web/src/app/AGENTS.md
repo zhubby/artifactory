@@ -6,7 +6,7 @@ AGENTS.md: 本目录职责、成员和依赖入口。
 apple-icon.png: PNG；apple-icon配置或静态资源。
 error.tsx: 通知安全故障文案并保留重试和返回入口。
 favicon.ico: ICO；favicon配置或静态资源。
-globals.css: 加载统一样式并在减少动效时禁用动画。
+globals.css: 加载业务、骨架、顶部进度与通知样式，在减少动效时禁用动画。
 icon.svg: SVG；icon配置或静态资源。
 layout.tsx: App Router 根布局，建立主题和语言上下文。
 manifest.webmanifest: WEBMANIFEST；manifest配置或静态资源。

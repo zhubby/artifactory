@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户下载 API、全局通知和带验签证据的制品类型。
- * [OUTPUT]: 提供应用与宿主标签、通知错误桥和制品验签表。
+ * [OUTPUT]: 提供状态、内容骨架、通知错误桥和制品验签表。
  * [POS]: 业务页面复用的展示与反馈边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -118,16 +118,31 @@ export function Empty({
     </div>
   );
 }
-export function Loading() {
+export function Loading({
+  variant = "list",
+}: {
+  variant?: "list" | "cards" | "table" | "detail" | "form" | "log";
+}) {
   const { t } = useUI();
   return (
     <div
       role="status"
-      className="loading-state"
+      aria-busy="true"
+      className={`loading-state skeleton-${variant}`}
     >
-      <LoaderCircle className="size-4 animate-spin" />
-      {t("common.loading")}
-      <span className="skeleton-line" aria-hidden="true" />
+      <span className="sr-only">{t("common.loading")}</span>
+      <div className="skeleton-layout" aria-hidden="true">
+        {Array.from({ length: variant === "cards" ? 2 : variant === "log" ? 7 : 3 }, (_, index) => (
+          <div className="skeleton-row" key={index}>
+            {(variant === "cards" || variant === "list") && <span className="skeleton-block skeleton-icon" />}
+            <div className="skeleton-copy">
+              <span className="skeleton-block skeleton-title" />
+              {variant !== "log" && <span className="skeleton-block skeleton-caption" />}
+            </div>
+            {(variant === "table" || variant === "detail" || variant === "cards") && <span className="skeleton-block skeleton-value" />}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

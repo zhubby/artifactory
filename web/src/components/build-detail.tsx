@@ -139,7 +139,7 @@ export function BuildDetail({
     return (
       <>
         <ErrorBox key="build-feedback" message={remote.error} />
-        <Loading />
+        {!remote.error && <Loading variant="detail" />}
       </>
     );
   if (releaseId && releaseId !== build.release_id)

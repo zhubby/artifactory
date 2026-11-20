@@ -117,7 +117,7 @@ export function WorkspaceManagement({
         </h2>
         <ErrorBox message={pools.error || credentials.error} />
         {!pools.data ? (
-          <Loading />
+          !pools.error && <Loading variant="form" />
         ) : (
           <fieldset
             disabled={

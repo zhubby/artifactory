@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖节点元数据 API、详情字段和内容骨架。
+ * [OUTPUT]: 展示节点元数据快照与查询失败重试入口。
+ * [POS]: 节点详情的按需分区，保留刷新前的快照。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
 import { useRemote } from "@/lib/api";
@@ -19,7 +25,7 @@ export function NodeMetadata({ id }: { id: string }) {
   return (
     <div className="space-y-6">
       <NodeDataError error={snapshot.error} retry={snapshot.reload} />
-      {!snapshot.data && !snapshot.error && <Loading />}
+      {!snapshot.data && !snapshot.error && <Loading variant="detail" />}
       {snapshot.data && (
         <>
           <NodeFacts

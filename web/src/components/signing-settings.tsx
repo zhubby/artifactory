@@ -276,7 +276,7 @@ export function SigningSettings() {
       <section className="panel management-section">
         <h2>{t("signing.credentials")}</h2>
         {!credentials.data ? (
-          <Loading />
+          !credentials.error && <Loading />
         ) : (
           credentials.data.credentials.map((credential) => (
             <div className="border-b py-4" key={credential.id}>
@@ -422,7 +422,7 @@ export function ProjectSigning({
       <SigningSummary bindings={preview.data || []} />
       {editable &&
         (!profiles.data ? (
-          <Loading />
+          !profiles.error && <Loading variant="form" />
         ) : (
           <SubmitForm
             key={JSON.stringify(project.signing_defaults)}

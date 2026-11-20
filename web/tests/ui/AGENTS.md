@@ -2,7 +2,7 @@
 > L2 | Parent: ../AGENTS.md
 
 ai-builds.spec.ts: 验证应用与宿主分类、规划、澄清和重开终态补读。
-accessibility.spec.ts: 验证共享页面的 WCAG 自动检查。
+accessibility.spec.ts: 验证租户卡片、业务页面与覆盖面板的 WCAG 自动检查。
 browser-audit.spec.ts: 验证侧栏设置草稿保护与退出重试。
 build-source-edge.spec.ts: 验证 Release 源码引用默认值和迟到响应隔离。
 build-history.spec.ts: 验证终态静态日志、分页锚点、尾部事件与发布状态轮询。
@@ -12,7 +12,10 @@ emissary-ota.spec.ts: 验证节点升级配置。
 errors.spec.ts: 验证错误状态和本地化。
 fixtures.ts: 提供显式应用分类、租户数据、默认签名预览、HTTP 夹具及个人设置、侧栏入口。
 interaction-visual.spec.ts: 验证切换器键盘访问、320px 长名称顶栏、短视口侧栏与个人设置。
-images.spec.ts: 验证已发布 Release 固定版本分发、正式下载名、manifest、候选只读与凭据清空。
+lifecycle-controls.spec.ts: 验证全站隐藏操作历史、当前范围恢复按钮、请求提交反馈与终态停止轮询。
+loading-progress.spec.ts: 验证前台并发结束、失败释放、租户解析取消、轮询静默与未保存导航保护。
+loading-motion.spec.ts: 采样骨架与进度条动画帧，验证系统减少动态效果、快速请求防闪及 SSE 静默。
+images.spec.ts: 验证已发布 Release 分发、候选只读、凭据清空，以及慢轮询与终态日志补读保留输出。
 monochrome-workspace.spec.ts: 验证中性色工作台、项目切换和导航状态。
 motion.spec.ts: 验证默认动效、系统减少动态适配、历史开关忽略及偏好界面无动效控制。
 node-details.spec.ts: 验证节点详情布局、分区查询和管理操作。
@@ -23,6 +26,8 @@ preferences.spec.ts: 验证用户视觉和语言偏好。
 readable-routes.spec.ts: 验证 slug 导航和作用域切换。
 registration.spec.ts: 验证注册交互。
 signing.spec.ts: 验证设置导航、导入清空秘密、异步默认选择、不可用方案和验签状态。
+skeleton-loading.spec.ts: 验证节点首次读取骨架、失败退出加载和历史日志分页保留输出。
+tenant-chooser.spec.ts: 验证租户卡片响应式布局、搜索、独立管理链接和读取失败重试。
 tenancy.spec.ts: 验证租户与项目权限界面。
 workspace-hierarchy.spec.ts: 验证作用域侧栏、顶栏租户切换、设置别名、权限边界、草稿保护与生命周期。
 

@@ -20,7 +20,7 @@ export function ImageCatalog({ projectId, query, order }: { projectId: string; q
   return <section className="panel mt-5">
     <SectionTitle title={t("images.results")} />
     <ErrorBox message={remote.error} />
-    {!images ? <Loading /> : !images.length ? <Empty title={t("images.empty")} detail={t("images.emptyDetail")} /> : <div className="table-scroll"><table>
+    {!images ? !remote.error && <Loading variant="table" /> : !images.length ? <Empty title={t("images.empty")} detail={t("images.emptyDetail")} /> : <div className="table-scroll"><table>
       <thead><tr><th>{t("images.name")}</th><th>{t("images.repository")}</th><th>{t("images.platforms")}</th><th>{t("images.sourceBuild")}</th><th>{t("images.createdAt")}</th></tr></thead>
       <tbody>{images.map(image => {
         const ref = `${image.registry ? image.registry.replace(/^https?:\/\//, "").replace(/\/$/, "") + "/" : ""}${image.repository}@${image.digest}`;

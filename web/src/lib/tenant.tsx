@@ -1,11 +1,18 @@
+/**
+ * [INPUT]: 依赖工作区 URL、Next 导航状态、未保存保护和前台进度计数。
+ * [OUTPUT]: 提供租户请求头、作用域链接与带加载反馈的路由操作。
+ * [POS]: 连接工作区地址、授权请求与导航生命周期。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 "use client";
 
-import NextLink from "next/link";
+import NextLink, { useLinkStatus } from "next/link";
 import { confirmLeave } from "@/lib/unsaved";
 import { usePathname, useRouter as useNextRouter } from "next/navigation";
-import type { ComponentProps } from "react";
+import { useEffect, useTransition, type ComponentProps } from "react";
 import { LocalizedError } from "@/lib/errors";
 import { tenantFromPath } from "@/lib/routes";
+import { beginProgress } from "@/lib/progress";
 
 export { tenantFromPath } from "@/lib/routes";
 export function currentTenant() {
@@ -74,29 +81,53 @@ export async function tenantHeaders(
 ): Promise<Record<string, string>> {
   assertTenant(tenant, signal);
   if (!tenant) return {};
-  const id = await resolveTenant(tenant);
+  const lookup = resolveTenant(tenant);
+  // 共享解析仍供其他请求复用，单个调用方取消后立即结束自己的等待。
+  const id = await (signal ? new Promise<string>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    lookup.then(value => {
+      signal.removeEventListener("abort", abort);
+      resolve(value);
+    }, error => {
+      signal.removeEventListener("abort", abort);
+      reject(error);
+    });
+  }) : lookup);
   assertTenant(tenant, signal);
   return { "X-Artifactory-Tenant": id };
 }
-export function Link({ href, ...props }: ComponentProps<typeof NextLink>) {
+function useNavigationProgress(pending: boolean) {
+  useEffect(() => pending ? beginProgress() : undefined, [pending]);
+}
+function LinkProgress() {
+  useNavigationProgress(useLinkStatus().pending);
+  return null;
+}
+export function Link({ href, children, ...props }: ComponentProps<typeof NextLink>) {
   const tenant = tenantFromPath(usePathname());
   return (
     <NextLink
       {...props}
       href={typeof href === "string" ? tenantPath(href, tenant) : href}
-    />
+    >
+      {children}
+      <LinkProgress />
+    </NextLink>
   );
 }
 export function useRouter() {
   const router = useNextRouter();
   const tenant = tenantFromPath(usePathname());
+  const [pending, startTransition] = useTransition();
+  useNavigationProgress(pending);
   return {
     ...router,
-    push: (path: string) => {
-      if (confirmLeave()) router.push(tenantPath(path, tenant));
+    push: (path: string, options?: Parameters<typeof router.push>[1]) => {
+      if (confirmLeave()) startTransition(() => router.push(tenantPath(path, tenant), options));
     },
-    replace: (path: string) => {
-      if (confirmLeave()) router.replace(tenantPath(path, tenant));
+    replace: (path: string, options?: Parameters<typeof router.replace>[1]) => {
+      if (confirmLeave()) startTransition(() => router.replace(tenantPath(path, tenant), options));
     },
   };
 }

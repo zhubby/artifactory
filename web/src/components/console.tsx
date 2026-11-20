@@ -27,7 +27,6 @@ import { CommandPalette } from "@/components/command-palette";
 import { ListToolbar } from "@/components/ui/list-toolbar";
 import { WorkspaceManagement } from "@/components/workspace-management";
 import { NodesWorkspace } from "@/components/nodes-workspace";
-import { OperationHistory } from "@/components/lifecycle";
 import { BuildTable } from "@/components/build-table";
 import { BuildDetail } from "@/components/build-detail";
 import { ReleaseCreate } from "@/components/release-form";
@@ -226,7 +225,7 @@ function Workspace({
             }}>{t("common.retry")}</Button>
           </div>}
           {!user || !context.data || !projects.data || (projectSlug && !project) ? (
-            workspaceError ? null : <Loading />
+            workspaceError ? null : <Loading variant="detail" />
           ) : (
             <>
               {(readOnly || (project && project.status !== "active")) && (
@@ -244,7 +243,7 @@ function Workspace({
                         : "/settings/lifecycle"
                     }
                   >
-                    {t("lifecycle.operations")}
+                    {t("workspace.section_lifecycle")}
                     <ArrowRight size={14} />
                   </Link>
                 </div>
@@ -394,11 +393,12 @@ function TenantHome({
         <SectionTitle title={t("workspace.recentActivity")} />
         {activity.data ? (
           <BuildTable builds={activity.data.slice(0, 5)} />
+        ) : activity.error ? (
+          <Button variant="secondary" className="m-4" onClick={() => void activity.reload()}>{t("common.retry")}</Button>
         ) : (
-          <Loading />
+          <Loading variant="table" />
         )}
       </section>
-      <OperationHistory tenant={context.tenant.id} />
       <Modal
         open={creating}
         onOpenChange={setCreating}
@@ -407,7 +407,10 @@ function TenantHome({
       >
         <ErrorBox message={pools.error || credentials.error} />
         {!pools.data || !credentials.data ? (
-          <Loading />
+          pools.error || credentials.error ? <Button variant="secondary" onClick={() => {
+            void pools.reload();
+            void credentials.reload();
+          }}>{t("common.retry")}</Button> : <Loading variant="form" />
         ) : (
           <ProjectForm
             pools={pools.data}
@@ -490,6 +493,7 @@ function ProjectWorkspace({
   const visibleReleases = releases.data?.filter(release => (!status || release.status === status) && matches(release.version, release.requested_ref, release.commit_sha)).sort((a,b) => compareReleaseVersions(b.version,a.version) * (order === "newest" ? 1 : -1));
   const running = builds.data?.filter(build => ["planning", "resolving", "queued", "running", "needs_input", "replanning"].includes(build.status)) || [];
   const failed = builds.data?.filter(build => build.status === "failed") || [];
+  const listRequest = column === "builds" ? builds : column === "artifacts" ? artifacts : releases;
   return (
     <>
       <PageTitle
@@ -531,7 +535,9 @@ function ProjectWorkspace({
           <section className="panel">
             <SectionTitle title={t("navigation.releases")} detail={t("releaseFlow.projectHint")}><Link href={`${base}/releases`} className="text-xs text-primary">{t("releaseFlow.allReleases")} ↗</Link></SectionTitle>
             <ErrorBox message={releases.error} />
-            {visibleReleases ? <ReleaseTable releases={visibleReleases.slice(0,5)} /> : <Loading />}
+            {visibleReleases ? <ReleaseTable releases={visibleReleases.slice(0,5)} /> : releases.error
+              ? <Button variant="secondary" className="m-4" onClick={() => void releases.reload()}>{t("common.retry")}</Button>
+              : <Loading variant="table" />}
           </section>
           <section className="panel">
             <SectionTitle title={t("projects.builds")}>
@@ -542,8 +548,10 @@ function ProjectWorkspace({
             <ErrorBox message={builds.error} />
             {builds.data ? (
               <BuildTable builds={builds.data.slice(0, 10)} />
+            ) : builds.error ? (
+              <Button variant="secondary" className="m-4" onClick={() => void builds.reload()}>{t("common.retry")}</Button>
             ) : (
-              <Loading />
+              <Loading variant="table" />
             )}
           </section>
           <div className="project-shortcuts">
@@ -581,13 +589,13 @@ function ProjectWorkspace({
             message={builds.error || artifacts.error || releases.error}
           />
           <section className="panel">
-            {column === "builds" ? (
+            {listRequest.error && !listRequest.data ? <Button variant="secondary" className="m-4" onClick={() => void listRequest.reload()}>{t("common.retry")}</Button> : column === "builds" ? (
               builds.data ? (
                 <BuildTable
                   builds={visibleBuilds || []}
                 />
               ) : (
-                <Loading />
+                <Loading variant="table" />
               )
             ) : column === "artifacts" ? (
               artifacts.data ? (
@@ -595,9 +603,9 @@ function ProjectWorkspace({
                   artifacts={visibleArtifacts || []}
                 />
               ) : (
-                <Loading />
+                <Loading variant="table" />
               )
-            ) : releases.data ? <ReleaseTable releases={visibleReleases || []} /> : <Loading />}
+            ) : releases.data ? <ReleaseTable releases={visibleReleases || []} /> : <Loading variant="table" />}
           </section>
           {column === "artifacts" && <ImageCatalog projectId={project.id} query={query} order={order} />}
         </>

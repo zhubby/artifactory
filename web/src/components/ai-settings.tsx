@@ -34,7 +34,7 @@ export function AISettings() {
     <div className="notice">{t("ai.settingsDescription")}</div>
     <section className="panel">
       <SectionTitle title={t("ai.models")}><Button size="sm" onClick={() => setEditing("new")}><Plus />{t("ai.addModel")}</Button></SectionTitle>
-      {!models.data ? <div className="px-5"><Loading /></div> : models.data.length === 0 ? <Empty title={t("ai.noModels")} detail={t("ai.noModelsHint")} /> : <div className="table-scroll"><table>
+      {!models.data ? !models.error && <Loading variant="table" /> : models.data.length === 0 ? <Empty title={t("ai.noModels")} detail={t("ai.noModelsHint")} /> : <div className="table-scroll"><table>
         <thead><tr><th>{t("common.name")}</th><th>{t("ai.model")}</th><th>{t("ai.budget")}</th><th>{t("common.status")}</th><th /></tr></thead>
         <tbody>{models.data.map((profile) => <tr key={profile.id}>
           <td><button className="font-medium text-primary" onClick={() => setEditing(profile)}>{profile.name}</button><p className="mt-1 break-all text-xs text-muted-foreground">{profile.base_url}</p></td>

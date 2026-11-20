@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖租户作用域、CSRF 边界与 React 生命周期。
- * [OUTPUT]: 提供请求、变更、附件下载及失败去重和显式重试的 useRemote。
+ * [INPUT]: 依赖租户作用域、CSRF 边界、前台进度与 React 生命周期。
+ * [OUTPUT]: 提供带进度的请求、变更、附件下载及静默轮询和显式重试的 useRemote。
  * [POS]: 控制台远端数据的请求与取消边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -16,6 +16,9 @@ import {
 import { assertTenant, currentTenant, tenantHeaders } from "@/lib/tenant";
 import { projectFromPath } from "@/lib/routes";
 import { asError, LocalizedError, sameError } from "@/lib/errors";
+import { beginProgress } from "@/lib/progress";
+
+export type APIInit = RequestInit & { progress?: "foreground" | "background" };
 
 const scopedRequests = new Map<AbortController, string>();
 function currentScope() {
@@ -31,7 +34,7 @@ export function cancelBusinessRequests(scope: string) {
 }
 export async function api<Type>(
   path: string,
-  init: RequestInit = {},
+  init: APIInit = {},
   format: "json" | "attachment" = "json",
 ): Promise<Type> {
   const tenant = currentTenant();
@@ -50,14 +53,16 @@ export async function api<Type>(
         "AbortError",
       );
   };
-  const headers = independent ? {} : await tenantHeaders(tenant, signal);
-  check();
   if (!independent) scopedRequests.set(controller, scope);
+  const { progress = "foreground", ...requestInit } = init;
+  const finish = progress === "foreground" ? beginProgress() : () => {};
   try {
+    const headers = independent ? {} : await tenantHeaders(tenant, signal);
+    check();
     let response: Response;
     try {
       response = await fetch(`/api/v1${path}`, {
-        ...init,
+        ...requestInit,
         signal,
         credentials: "same-origin",
         headers: {
@@ -119,6 +124,7 @@ export async function api<Type>(
     return body as Type;
   } finally {
     scopedRequests.delete(controller);
+    finish();
   }
 }
 
@@ -175,12 +181,12 @@ export function useRemote<Type>(
     },
     [path],
   );
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (progress: APIInit["progress"] = "foreground") => {
     if (!path) return;
     const controller = new AbortController();
     requests.current.add(controller);
     try {
-      const data = await api<Type>(path, { signal: controller.signal });
+      const data = await api<Type>(path, { signal: controller.signal, progress });
       if (
         mounted.current &&
         !controller.signal.aborted &&
@@ -215,14 +221,15 @@ export function useRemote<Type>(
     };
   }, [reload]);
   const data = snapshot.path === path ? snapshot.data : undefined;
-  const retry = useCallback(() => {
-    setSnapshot(previous => previous.path === path ? { ...previous, error: undefined } : previous);
-    return reload();
+  const retry = useCallback((options: Pick<APIInit, "progress"> = {}) => {
+    if (options.progress !== "background")
+      setSnapshot(previous => previous.path === path ? { ...previous, error: undefined } : previous);
+    return reload(options.progress);
   }, [path, reload]);
   const delay = typeof interval === "function" ? interval(data) : interval;
   useEffect(() => {
     if (!path || delay === false || delay <= 0) return;
-    const timer = setInterval(() => void reload(), delay);
+    const timer = setInterval(() => void reload("background"), delay);
     return () => clearInterval(timer);
   }, [reload, path, delay]);
   return {

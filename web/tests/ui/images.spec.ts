@@ -107,3 +107,50 @@ test("candidate build images provide logs without external distribution actions"
  await expect(page.getByRole("button",{name:"推送到外部仓库",exact:true})).toHaveCount(0);
  await expect(page.getByRole("button",{name:"发布版本",exact:true})).toHaveCount(0);
 });
+
+for (const finishes of [false, true]) test(`slow image log ${finishes ? "completion reads" : "polling"} preserve output without foreground progress`, async ({ page }) => {
+  await fixtureAPI(page);
+  const publication = { ...execution, id: "publication-running", parent_id: execution.id, operation: "publish", status: "running" };
+  let details = 0;
+  await page.route("**/api/v1/projects/by-slug/desktop-client/builds/128", route => {
+    const running = !finishes || ++details === 1;
+    return route.fulfill({ json: {
+      ...build, status: "succeeded", publish_status: finishes && running ? "pending" : "succeeded",
+      image_executions: [{ ...publication, status: running ? "running" : "succeeded" }],
+    } });
+  });
+  await page.route("**/api/v1/builds/build-main/logs?*", route => route.fulfill({ json: { logs: [], next_before: null } }));
+  let finishInitial!: () => void;
+  let finishPoll!: () => void;
+  let pollStarted!: () => void;
+  const initial = new Promise<void>(resolve => { finishInitial = resolve; });
+  const pending = new Promise<void>(resolve => { finishPoll = resolve; });
+  const started = new Promise<void>(resolve => { pollStarted = resolve; });
+  let reads = 0;
+  await page.route("**/api/v1/image-executions/publication-running/logs?*", async route => {
+    const first = ++reads === 1;
+    if (!first) pollStarted();
+    await (first ? initial : pending);
+    await route.fulfill({ json: [{ id: first ? 1 : 2, platform: "linux/amd64", text: first ? "existing image output\n" : "next image output\n" }] });
+  });
+  try {
+    await page.goto(tenantURL(`/projects/desktop-client/releases/${release.id}/builds/128`));
+    await page.getByRole("tab", { name: "制品", exact: true }).click();
+    await page.getByText("平台构建日志", { exact: true }).click();
+    const progress = page.getByRole("progressbar");
+    await expect(progress).toBeVisible();
+    finishInitial();
+    await expect(page.getByText("[linux/amd64] existing image output", { exact: false })).toBeVisible();
+    await expect(progress).toBeHidden();
+    await started;
+    if (finishes) await expect(page.locator("article .status-succeeded")).toBeVisible();
+    await page.waitForTimeout(350);
+    await expect(progress).toBeHidden();
+    await expect(page.getByText("[linux/amd64] existing image output", { exact: false })).toBeVisible();
+    finishPoll();
+    await expect(page.getByText("next image output", { exact: false })).toBeVisible();
+  } finally {
+    finishInitial();
+    finishPoll();
+  }
+});

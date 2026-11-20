@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 tokens.css 的语义变量。
- * [OUTPUT]: 提供控件、表格与反馈样式。
+ * [OUTPUT]: 提供控件、表格、内容骨架与反馈样式。
  * [POS]: 业务组件共享的视觉基础。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -40,8 +40,41 @@ td a:not([data-slot="button"]):hover { text-decoration: underline; text-underlin
 .tag { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted-foreground); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
 .notice { padding: 12px 14px; border: 1px solid var(--border); border-radius: 5px; background: var(--quiet); color: var(--muted-foreground); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 56px 24px; text-align: center; color: var(--muted-foreground); }
-.loading-state { display: flex; align-items: center; gap: 10px; padding: 40px 16px; color: var(--muted-foreground); font-size: 13px; }
-.skeleton-line { width: 160px; height: 8px; border-radius: 3px; background: var(--secondary); }
+.loading-state { min-width: 0; padding: 16px; }
+.skeleton-layout { display: grid; min-width: 0; gap: 0; }
+.skeleton-row { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 68px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.skeleton-row:last-child { border-bottom: 0; }
+.skeleton-block { display: block; flex-shrink: 0; height: 10px; max-width: 100%; border-radius: 3px; background: var(--secondary); animation: skeleton-pulse 1.6s ease-in-out infinite; }
+.skeleton-icon { width: 34px; height: 34px; border-radius: 5px; }
+.skeleton-copy { display: grid; flex: 1; min-width: 0; gap: 10px; }
+.skeleton-title { width: 54%; height: 12px; }
+.skeleton-caption { width: 32%; height: 9px; }
+.skeleton-value { width: 64px; }
+.skeleton-row:nth-child(2n) .skeleton-title { width: 68%; }
+.skeleton-table .skeleton-row { min-height: 52px; }
+.skeleton-table .skeleton-copy { grid-template-columns: 1fr 1fr; align-items: center; gap: 24px; }
+.skeleton-table .skeleton-caption { width: 60%; }
+.skeleton-detail .skeleton-layout { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.skeleton-detail .skeleton-row { flex-direction: column; align-items: start; gap: 16px; min-height: 112px; padding: 16px; border: 1px solid var(--border); border-radius: 5px; }
+.skeleton-detail .skeleton-copy { width: 100%; }
+.skeleton-form .skeleton-layout { gap: 20px; }
+.skeleton-form .skeleton-row { padding: 0; border: 0; }
+.skeleton-form .skeleton-title { width: 96px; height: 10px; }
+.skeleton-form .skeleton-caption { width: 100%; height: 36px; border-radius: 5px; }
+.skeleton-cards { padding: 0; }
+.skeleton-cards .skeleton-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.skeleton-cards .skeleton-row { align-items: start; flex-wrap: wrap; gap: 12px; min-height: 156px; padding: 20px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); }
+.skeleton-cards .skeleton-icon { width: 40px; height: 40px; }
+.skeleton-cards .skeleton-copy { padding-top: 4px; }
+.skeleton-cards .skeleton-title { width: 72%; }
+.skeleton-cards .skeleton-caption { width: 46%; }
+.skeleton-cards .skeleton-value { width: 38%; margin-left: 52px; }
+.skeleton-log { padding: 0; }
+.skeleton-log .skeleton-layout { gap: 14px; }
+.skeleton-log .skeleton-row { min-height: 0; padding: 0; border: 0; }
+.skeleton-log .skeleton-title { height: 9px; width: 72%; }
+.skeleton-log .skeleton-row:nth-child(3n) .skeleton-title { width: 42%; }
+@keyframes skeleton-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 .list-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
 .list-toolbar-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .list-toolbar .input { width: auto; }
@@ -118,6 +151,7 @@ td a:not([data-slot="button"]):hover { text-decoration: underline; text-underlin
   .node-pool { display: none; }
 }
 @media (max-width: 767px) {
+  .skeleton-cards .skeleton-layout, .skeleton-detail .skeleton-layout { grid-template-columns: minmax(0, 1fr); }
   .page-title { gap: 16px; flex-wrap: wrap; }
   .page-title h1 { font-size: 22px; }
   .page-title .page-actions { width: 100%; }

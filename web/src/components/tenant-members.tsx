@@ -303,7 +303,7 @@ export function ProjectMembers({ project }: { project: Project; user: User }) {
         </div>
       </SubmitForm>
       {!members.data ? (
-        <Loading />
+        !members.error && <Loading />
       ) : (
         <ul className="mt-4 divide-y divide-border">
           {members.data.map((member) => (

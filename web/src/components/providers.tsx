@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖服务端语言、系统动效偏好、主题、账户和全局通知。
- * [OUTPUT]: 提供本地化、主题、动画状态与通知出口。
+ * [INPUT]: 依赖服务端语言、系统动效偏好、主题、账户、前台进度和全局通知。
+ * [OUTPUT]: 提供本地化、主题、动画状态、顶部进度与通知出口。
  * [POS]: 根布局的客户端上下文边界；动效仅适配系统设置，不读取浏览器动效开关。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -26,6 +26,7 @@ import {
 import { date as formatDate } from "@/lib/utils";
 import { AccountProvider } from "@/components/account";
 import { Notifications } from "@/components/notifications";
+import { TopProgress } from "@/components/top-progress";
 
 const PreferencesContext = createContext<{
   locale: Locale;
@@ -98,6 +99,7 @@ export function Providers({
           timeZone="UTC"
         >
           <AccountProvider>{children}</AccountProvider>
+          <TopProgress />
           <Notifications />
         </NextIntlClientProvider>
       </PreferencesContext.Provider>

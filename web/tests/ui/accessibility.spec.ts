@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证业务页面、侧栏设置与个人设置的无障碍边界。
+ * [OUTPUT]: 验证租户卡片、业务页面、侧栏与个人设置的无障碍边界。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -29,6 +29,9 @@ for (const theme of ["light", "dark"]) {
     await expect(page.locator('input[name="username"]')).toBeVisible();
     await audit(page);
     await page.unroute("**/api/v1/auth/me");
+    await page.goto("/tenants");
+    await expect(page.getByRole("link", { name: "Build Team", exact: true })).toBeVisible();
+    await audit(page);
     await page.goto(tenantURL("/projects/desktop-client"));
     await expect(page.getByRole("heading", { name: "Desktop Client", exact: true })).toBeVisible();
     await audit(page);

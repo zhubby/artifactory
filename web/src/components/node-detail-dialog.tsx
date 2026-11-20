@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖节点 API、统一通知、元数据、遥测及 OTA 控件。
+ * [INPUT]: 依赖节点 API、内容骨架、通知、遥测及 OTA 控件。
  * [OUTPUT]: 提供 NodeDetailDialog 节点详情。
  * [POS]: 在侧面板展示设备信息与授权操作。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -17,7 +17,7 @@ import {
   ShieldCheck,
   Terminal,
 } from "lucide-react";
-import { ErrorBox, Status } from "@/components/common";
+import { ErrorBox, Loading, Status } from "@/components/common";
 import { NodeOTA } from "@/components/emissary-ota";
 import { NodeForm } from "@/components/forms";
 import { nodePlatform, nodeStatus } from "@/components/node-card";
@@ -756,9 +756,7 @@ export function NodeDetailDialog({
           <div className="mb-5 empty:hidden">
             <NodeDataError error={telemetry.error} retry={telemetry.reload} />
             {!telemetry.data && !telemetry.error && (
-              <p role="status" className="py-3 text-sm text-muted-foreground">
-                {t("common.loading")}
-              </p>
+              <Loading variant="detail" />
             )}
           </div>
         )}

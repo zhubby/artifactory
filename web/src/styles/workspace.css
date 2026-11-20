@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖主题变量、工作区范围导航和账户面板类名。
- * [OUTPUT]: 提供页首租户切换、侧栏范围导航和响应式工作区样式。
+ * [OUTPUT]: 提供租户卡片大厅、页首切换和响应式工作区样式。
  * [POS]: 统一业务与设置侧栏，固定文档入口并保留账户面板布局。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -117,12 +117,6 @@
 .lifecycle-counts strong { font-size: 19px; font-weight: 500; }
 .lifecycle-counts span { color: var(--muted-foreground); font-size: 11px; }
 .lifecycle-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.operation-history { margin-top: 28px; }
-.operation-row { padding: 16px; border-top: 1px solid var(--border); }
-.operation-row h3 { font-size: 12px; font-weight: 500; }
-.operation-blockers { margin: 12px 0; color: var(--muted-foreground); font-size: 12px; }
-.operation-blockers li { margin-top: 6px; }
-.operation-blockers code { overflow-wrap: anywhere; font-size: 11px; }
 
 /* Account controls sit at the bottom of the sidebar; overlays preserve drafts. */
 .account-anchor { position: fixed; z-index: 35; }
@@ -175,23 +169,40 @@
 .login-preferences { position: absolute; top: 28px; right: 28px; z-index: 10; }
 .pipeline-line { display: flex; align-items: center; gap: 10px; padding: 13px 0; border-bottom: 1px solid var(--border); }
 .tenant-hall { min-height: 100dvh; }
-.hall-header { display: flex; align-items: center; justify-content: space-between; min-height: 72px; padding: 20px 230px 20px 32px; border-bottom: 1px solid var(--border); }
+.hall-header { display: flex; align-items: center; justify-content: space-between; min-height: 72px; padding: 16px 230px 16px 32px; border-bottom: 1px solid var(--border); }
 .hall-header .brand { padding: 0; }
 .hall-header > a:last-child { color: var(--muted-foreground); font-size: 12px; }
-.hall-main { max-width: 980px; margin-inline: auto; padding: 64px 32px; }
-.hall-heading { display: flex; align-items: start; justify-content: space-between; gap: 24px; margin-bottom: 36px; }
+.hall-main { max-width: 1040px; margin-inline: auto; padding: 48px 32px 64px; }
+.hall-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 36px; }
+.hall-heading > div { min-width: 0; }
+.hall-heading > button { flex-shrink: 0; }
 .hall-heading h1 { margin-top: 8px; font-size: 26px; font-weight: 550; letter-spacing: -.7px; overflow-wrap: anywhere; }
-.hall-heading p:not(.eyebrow) { margin-top: 10px; color: var(--muted-foreground); font-size: 13px; line-height: 1.8; }
-.tenant-grid { display: grid; border-top: 1px solid var(--border); }
-.tenant-card { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 20px 8px; border-bottom: 1px solid var(--border); }
-.tenant-card:hover { background: var(--quiet); }
-.tenant-card-top { display: contents; }
-.tenant-card-top > .status { grid-column: 3; grid-row: 1; }
-.tenant-card-title { grid-column: 2; grid-row: 1; }
-.tenant-card-title > svg { width: 14px; color: var(--muted-foreground); }
-.tenant-card-role { grid-column: 2; margin-top: -12px; font-size: 11px; color: var(--muted-foreground); }
-.tenant-card-footer { grid-column: 2 / -1; display: flex; align-items: center; justify-content: space-between; margin-top: -8px; font-size: 11px; color: var(--muted-foreground); }
-.hall-empty { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 56px 24px; border: 1px dashed var(--border); border-radius: 6px; text-align: center; }
+.hall-heading p:not(.eyebrow) { margin-top: 8px; color: var(--muted-foreground); font-size: 13px; line-height: 1.8; }
+.hall-tenants { min-width: 0; }
+.hall-tenants .workspace-section-heading { margin: 0 0 16px; }
+.hall-tenants .workspace-section-heading h2 { font-size: 14px; }
+.hall-tenants .workspace-section-heading > div > span { display: grid; place-items: center; min-width: 24px; height: 22px; padding-inline: 6px; border-radius: 4px; background: var(--secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+.hall-tenants .workspace-filter { min-height: 36px; }
+.tenant-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.tenant-card { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 20px; min-width: 0; min-height: 156px; padding: 20px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); transition: border-color .15s, background .15s; }
+.tenant-card:hover { border-color: var(--placeholder); background: var(--quiet); }
+.tenant-card:has(.tenant-card-title:focus-visible) { outline: 2px solid var(--ring); outline-offset: 3px; }
+.tenant-card-top { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: start; gap: 12px; }
+.tenant-card .tenant-glyph { width: 40px; height: 40px; border: 1px solid var(--border); }
+.tenant-card-identity { min-width: 0; }
+.tenant-card-top > .status { margin-top: 3px; white-space: nowrap; }
+.tenant-card-title { gap: 5px; font-size: 14px; line-height: 1.5; }
+.tenant-card-title::after { content: ""; position: absolute; inset: 0; border-radius: 6px; }
+.tenant-card-title:focus-visible { outline: none; }
+.tenant-card-title > svg { flex-shrink: 0; color: var(--muted-foreground); transition: transform .15s; }
+.tenant-card:hover .tenant-card-title > svg { transform: translate(2px, -2px); }
+.tenant-card-role { margin-top: 4px; font-size: 11px; color: var(--muted-foreground); }
+.tenant-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted-foreground); }
+.tenant-card-footer code { min-width: 0; overflow-wrap: anywhere; }
+.tenant-card-footer a { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; min-height: 28px; margin-block: -4px; padding: 4px 6px; border-radius: 4px; }
+.tenant-card-footer a:hover { color: var(--foreground); background: var(--secondary); }
+.hall-retry { padding-block: 24px; }
+.hall-empty { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 48px 24px; border: 1px solid var(--border); border-radius: 6px; background: var(--quiet); text-align: center; }
 .hall-empty > svg { color: var(--muted-foreground); }
 .hall-empty h2 { font-size: 15px; font-weight: 500; }
 .hall-empty p { max-width: 400px; font-size: 13px; line-height: 1.8; color: var(--muted-foreground); }
@@ -262,12 +273,17 @@
   .preferences-mobile { display: inline-flex; }
   .global-account { top: 18px; right: 16px; }
   .global-account .account-trigger-name, .global-account .account-trigger > svg { display: none; }
-  .hall-header { min-height: 76px; padding: 24px 76px 24px 20px; gap: 20px; }
-  .hall-main { padding: 36px 20px; }
-  .hall-heading { flex-direction: column; gap: 20px; }
+  .hall-header { min-height: 76px; padding: 16px 76px 16px 16px; gap: 16px; }
+  .hall-main { padding: 32px 16px 48px; }
+  .hall-heading { align-items: start; flex-direction: column; gap: 20px; margin-bottom: 28px; }
   .hall-heading h1 { font-size: 24px; }
   .workspace-section-heading { align-items: stretch; }
   .workspace-section-heading .workspace-filter { width: 100%; }
-  .tenant-card { gap: 12px; padding: 18px 4px; }
+  .tenant-grid { grid-template-columns: minmax(0, 1fr); }
+  .tenant-card { padding: 20px; }
+  .tenant-card-title, .tenant-card-footer a { min-height: 44px; }
+  .tenant-card-role { margin-top: 0; }
+  .tenant-card-top > .status { margin-top: 12px; }
+  .tenant-card-footer { padding-top: 8px; }
   .preference-select { min-height: 44px; }
 }

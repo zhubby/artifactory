@@ -114,9 +114,7 @@ export function Settings({
               }
             />
             {!entries ? (
-              <div className="px-6">
-                <Loading />
-              </div>
+              !remote.error && <Loading variant="table" />
             ) : entries.length === 0 ? (
               <Empty
                 title={t("security.empty")}

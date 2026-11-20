@@ -1,12 +1,12 @@
 /**
- * [INPUT]: 依赖认证 API、AuthShell、共享表单和全局通知。
+ * [INPUT]: 依赖认证 API、作用域导航、AuthShell、共享表单和全局通知。
  * [OUTPUT]: 提供 Login 登录页面。
  * [POS]: 保留登录草稿；认证反馈通过全局通知展示。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
-import Link from "next/link";
+import { Link } from "@/lib/tenant";
 import { useEffect, useState, type FormEvent } from "react";
 import { ArrowRight } from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";

@@ -74,7 +74,7 @@ export function NodesWorkspace({
       />
       <ErrorBox message={nodes.error || pools.error} />
       {!nodes.data ? (
-        <Loading />
+        !nodes.error && <Loading />
       ) : !nodes.data.length ? (
         <section className="panel">
           <Empty title={t("nodes.empty")} detail={t("nodes.emptyDetail")} />

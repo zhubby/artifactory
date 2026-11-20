@@ -1,12 +1,12 @@
 /**
- * [INPUT]: 依赖 Next Link、品牌和 UI 词条。
+ * [INPUT]: 依赖作用域导航、品牌和 UI 词条。
  * [OUTPUT]: 提供 NotFound 未知路由页面。
  * [POS]: 将未知地址引回已有控制台入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
-import Link from "next/link";
+import { Link } from "@/lib/tenant";
 import { ArrowLeft, FileQuestion } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { Button } from "@/components/ui/button";

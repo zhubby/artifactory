@@ -1,15 +1,14 @@
 /**
  * [INPUT]: 依赖账户上下文、租户 API、共享表单与全局通知。
- * [OUTPUT]: 提供租户选择、创建与邀请页面。
- * [POS]: 登录后的工作区入口；复用控制台统一样式。
+ * [OUTPUT]: 提供租户卡片选择、创建与邀请页面。
+ * [POS]: 登录后的工作区入口；首次读取使用卡片骨架，失败提供重试。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
-import Link from "next/link";
+import { Link } from "@/lib/tenant";
 import { useAccount } from "@/components/account";
 import { BrandMark } from "@/components/brand-mark";
-import { OperationHistory } from "@/components/lifecycle";
 import { Modal } from "@/components/ui/dialog";
 import { Status } from "@/components/common";
 import { useState } from "react";
@@ -23,7 +22,7 @@ import {
 } from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";
 import { useUI } from "@/components/providers";
-import { Empty, ErrorBox, Field, Loading } from "@/components/common";
+import { ErrorBox, Field, Loading } from "@/components/common";
 import { SubmitForm } from "@/components/forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,8 +39,9 @@ export function TenantChooser() {
   const [creating, setCreating] = useState(false);
   const [key, setKey] = useState("");
   const filtered = tenants.data?.filter((tenant) =>
-    `${tenant.name} ${tenant.slug}`.toLowerCase().includes(query.toLowerCase()),
+    `${tenant.name} ${tenant.slug}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
+  const hallError = account.error || tenants.error;
   return (
     <div className="tenant-hall">
       <header className="hall-header">
@@ -74,92 +74,107 @@ export function TenantChooser() {
             {t("tenants.create")}
           </Button>
         </div>
-        <div className="workspace-section-heading">
-          <div>
-            <h2>{t("tenants.choose")}</h2>
-            <span>{tenants.data?.length ?? "—"}</span>
+        <section className="hall-tenants" aria-labelledby="tenant-list-title">
+          <div className="workspace-section-heading">
+            <div>
+              <h2 id="tenant-list-title">{t("tenants.choose")}</h2>
+              <span>{tenants.data?.length ?? "—"}</span>
+            </div>
+            <label className="workspace-filter">
+              <Search size={16} />
+              <input
+                aria-label={t("workspace.searchTenant")}
+                placeholder={t("workspace.searchTenant")}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
           </div>
-          <label className="workspace-filter">
-            <Search size={16} />
-            <input
-              aria-label={t("workspace.searchTenant")}
-              placeholder={t("workspace.searchTenant")}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </label>
-        </div>
-        <ErrorBox message={account.error || tenants.error} />
-        {!filtered ? (
-          <Loading />
-        ) : !filtered.length ? (
-          <section className="hall-empty">
-            <Building2 size={35} />
-            <h2>
-              {t(
-                tenants.data?.length
-                  ? "workspace.noResults"
-                  : "tenants.welcome",
-              )}
-            </h2>
-            <p>
-              {t(
-                tenants.data?.length
-                  ? "workspace.trySearch"
-                  : "workspace.emptyHall",
-              )}
-            </p>
-            {!tenants.data?.length && (
-              <Button
-                onClick={() => {
-                  setKey(crypto.randomUUID());
-                  setCreating(true);
-                }}
-              >
-                <Plus />
-                {t("tenants.create")}
-              </Button>
-            )}
-          </section>
-        ) : (
-          <div className="tenant-grid">
-            {filtered.map((tenant) => (
-              <article key={tenant.id} className="tenant-card">
-                <div className="tenant-card-top">
-                  <span className="tenant-glyph">
-                    <Building2 size={24} />
-                  </span>
-                  <Status small value={tenant.status} />
-                </div>
-                <Link
-                  href={`/tenants/${tenant.slug}`}
-                  className="tenant-card-title"
+          <ErrorBox message={hallError} />
+          {!filtered ? (
+            hallError ? (
+              <div className="hall-retry">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (account.error) void account.reload();
+                    else void tenants.reload();
+                  }}
                 >
-                  {tenant.name}
-                  <ArrowUpRight size={19} />
-                </Link>
-                <p className="tenant-card-role">
-                  {t(`tenants.${tenant.role}`)}
-                </p>
-                <div className="tenant-card-footer">
-                  <code>{tenant.slug}</code>
-                  {["owner", "admin"].includes(tenant.role) && (
-                    <Link
-                      href={`/tenants/${tenant.slug}/settings`}
-                      aria-label={t("workspace.manageTenantNamed", {
-                        name: tenant.name,
-                      })}
-                    >
-                      <Settings2 size={16} />
-                      {t("workspace.manage")}
-                    </Link>
-                  )}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-        <OperationHistory />
+                  {t("common.retry")}
+                </Button>
+              </div>
+            ) : <Loading variant="cards" />
+          ) : !filtered.length ? (
+            <section className="hall-empty">
+              <Building2 size={35} />
+              <h2>
+                {t(
+                  tenants.data?.length
+                    ? "workspace.noResults"
+                    : "tenants.welcome",
+                )}
+              </h2>
+              <p>
+                {t(
+                  tenants.data?.length
+                    ? "workspace.trySearch"
+                    : "workspace.emptyHall",
+                )}
+              </p>
+              {!tenants.data?.length && (
+                <Button
+                  onClick={() => {
+                    setKey(crypto.randomUUID());
+                    setCreating(true);
+                  }}
+                >
+                  <Plus />
+                  {t("tenants.create")}
+                </Button>
+              )}
+            </section>
+          ) : (
+            <div className="tenant-grid">
+              {filtered.map((tenant) => (
+                <article key={tenant.id} className="tenant-card">
+                  <div className="tenant-card-top">
+                    <span className="tenant-glyph" aria-hidden="true">
+                      <Building2 size={22} />
+                    </span>
+                    <div className="tenant-card-identity">
+                      <Link
+                        href={`/tenants/${tenant.slug}`}
+                        className="tenant-card-title"
+                      >
+                        {tenant.name}
+                        <ArrowUpRight size={16} aria-hidden="true" />
+                      </Link>
+                      <p className="tenant-card-role">
+                        {t(`tenants.${tenant.role}`)}
+                      </p>
+                    </div>
+                    <Status small value={tenant.status} />
+                  </div>
+                  <div className="tenant-card-footer">
+                    <code>{tenant.slug}</code>
+                    {["owner", "admin"].includes(tenant.role) && (
+                      <Link
+                        href={`/tenants/${tenant.slug}/settings`}
+                        aria-label={t("workspace.manageTenantNamed", {
+                          name: tenant.name,
+                        })}
+                      >
+                        <Settings2 size={14} aria-hidden="true" />
+                        {t("workspace.manage")}
+                      </Link>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       </main>
       <Modal
         open={creating}
@@ -219,12 +234,11 @@ export function InvitationJoin({ token }: { token: string }) {
     >
       <ErrorBox message={invitation.error || error} />
       {!invitation.data ? (
-        <>
-          <Loading />
+        invitation.error ? (
           <Button variant="secondary" onClick={() => void invitation.reload()}>
             {t("common.retry")}
           </Button>
-        </>
+        ) : <Loading variant="detail" />
       ) : (
         <>
           <div className="mb-6 rounded-xl border border-border p-5">

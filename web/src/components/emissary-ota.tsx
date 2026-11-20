@@ -86,7 +86,7 @@ export function EmissarySettings({ user }: { user: User }) {
         {admin && <SubmitForm label={t("ota.import")} onSubmit={async form => { await mutation("/emissary-releases", { tag: form.get("tag") }); await reload(); }}>
           <Field label={t("ota.tag")}><Input name="tag" required maxLength={100} placeholder="v0.2.0" /></Field>
         </SubmitForm>}
-        {!releases.data ? <Loading /> : <div className="flex flex-wrap gap-2">{releases.data.map(r => <span className="tag" key={r.id}>{r.version}</span>)}{!releases.data.length && <p className="text-xs text-muted-foreground">{t("ota.noReleases")}</p>}</div>}
+        {!releases.data ? !releases.error && <Loading /> : <div className="flex flex-wrap gap-2">{releases.data.map(r => <span className="tag" key={r.id}>{r.version}</span>)}{!releases.data.length && <p className="text-xs text-muted-foreground">{t("ota.noReleases")}</p>}</div>}
       </div>
     </section>
     <section className="panel"><SectionTitle title={t("ota.pools")} detail={t("ota.poolHint")} />

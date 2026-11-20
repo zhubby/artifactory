@@ -1,12 +1,12 @@
 /**
- * [INPUT]: 依赖注册 API、AuthShell、共享表单和全局通知。
+ * [INPUT]: 依赖注册 API、作用域导航、AuthShell、共享表单和全局通知。
  * [OUTPUT]: 提供 Register 注册页面。
  * [POS]: 校验注册输入；错误桥跨配置与表单分支保持挂载。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
-import Link from "next/link";
+import { Link } from "@/lib/tenant";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, RefreshCw } from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";
@@ -84,7 +84,7 @@ export default function Register() {
           </Button>
         </>
       ) : !config.data ? (
-        <Loading />
+        <Loading variant="form" />
       ) : !config.data.registration_enabled ? (
         <p role="status" className="text-sm leading-6 text-muted-foreground">
           {translate("register.disabled")}

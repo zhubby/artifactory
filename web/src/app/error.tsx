@@ -1,12 +1,12 @@
 /**
- * [INPUT]: 依赖 Next 重试回调、安全错误通知、UI 词条和 Button。
+ * [INPUT]: 依赖 Next 重试回调、作用域导航、安全错误通知、UI 词条和 Button。
  * [OUTPUT]: 提供 ErrorPage 路由错误界面。
  * [POS]: 显示故障反馈并允许用户重试或返回。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
-import Link from "next/link";
+import { Link } from "@/lib/tenant";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { Button } from "@/components/ui/button";
