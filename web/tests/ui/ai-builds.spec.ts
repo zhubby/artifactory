@@ -161,6 +161,7 @@ for (const locale of ["zh-CN", "en"] as const) {
     await page.goto(tenantURL(`/projects/desktop-client/releases/${build.release_id}`));
     await page.getByRole("button", { name: locale === "zh-CN" ? "发起构建" : "Start build", exact: true }).click();
     await expect(page.locator('input[name="ref"]')).toHaveValue("refs/heads/main");
+    await page.getByRole("dialog").getByRole("button", {name:locale === "zh-CN" ? "继续" : "Continue",exact:true}).click();
     await expect(page.locator('textarea[name="goal"]')).toBeVisible();
     await page
       .locator('textarea[name="goal"]')

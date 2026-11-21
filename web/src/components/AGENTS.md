@@ -10,7 +10,8 @@ build-log-history.tsx: 首读显示日志骨架，按 attempt 和步骤分页，
 build-planning.tsx: 展示应用分类、宿主、规划骨架、澄清与对话入口，终态补读静默。
 planning-conversations.tsx: 首次展开使用骨架，按 generation 分页读取审计，后台轮询和终态补读静默。
 build-table.tsx: 展示构建的 Release 归属、独立源码与目标和执行状态。
-build-wizard.tsx: 在 Release 内启动独立构建，选择源码并提交必填要求、目标与参数。
+build-wizard.tsx: 组合四步弹窗、答案草稿、摘要编辑和最终确认提交。
+build-target-picker.tsx: 使用类型与平台卡片选择多个目标，高级设置保留精细合同。
 common.tsx: 提供内容骨架、共享字段、持久状态、无布局错误通知桥及复制下载反馈。
 command-palette.tsx: 复用当前范围的业务与设置导航，支持项目切换并恢复触发焦点。
 console.tsx: 组合工作区数据、请求生命周期和业务页面，交由独立组件呈现导航。

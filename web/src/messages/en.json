@@ -1013,5 +1013,25 @@
     "saveNotes": "Save notes",
     "buildCount": "{count} builds",
     "artifactCount": "{count} artifacts"
+  },
+  "buildGuide": {
+    "steps": {
+      "source": "Source",
+      "goal": "Goal",
+      "targets": "Targets",
+      "review": "Review"
+    },
+    "targetsQuestion": "What should this build deliver?",
+    "targetsHint": "Choose an artifact type and platform. Add multiple targets and expand advanced settings when needed.",
+    "nativeHint": "Build applications or native files on authorized nodes.",
+    "imageHint": "Build deliverable container images for one or more platforms.",
+    "platform": "Choose a platform",
+    "imagePlatforms": "Choose one or more image platforms",
+    "targetAdvanced": "Advanced target settings",
+    "confirm": "Confirm and start build",
+    "returnToReview": "Save and return to review",
+    "editGoal": "Edit build goal",
+    "editTargets": "Edit delivery targets",
+    "unavailable": "This Release or project can no longer accept builds. Your answers are preserved; close the guide to return to the Release."
   }
 }

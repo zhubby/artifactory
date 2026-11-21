@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Radix Dialog、通知焦点与导航边界、UI 词条及 cn 工具。
- * [OUTPUT]: 提供 Modal 弹窗与侧面板。
+ * [OUTPUT]: 提供可固定页脚、禁止关闭的 Modal 弹窗与侧面板。
  * [POS]: 统一焦点约束、关闭恢复和入场布局。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -28,6 +28,8 @@ export function Modal({
   navigation,
   placement = "center",
   initialFocus,
+  footer,
+  dismissible = true,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -38,12 +40,15 @@ export function Modal({
   navigation?: ReactNode;
   placement?: "center" | "side";
   initialFocus?: RefObject<HTMLElement | null>;
+  footer?: ReactNode;
+  dismissible?: boolean;
 }) {
   const { t } = useUI();
   const depth = useContext(ModalDepth);
   const previousFocus = useRef<HTMLElement | null>(null);
   const content = useRef<HTMLElement | null>(null);
   function change(value: boolean) {
+    if (!value && !dismissible) return;
     if (
       !value &&
       content.current?.querySelector(
@@ -123,6 +128,7 @@ export function Modal({
               </Dialog.Description>
             </div>
             <Dialog.Close
+              disabled={!dismissible}
               className="absolute top-3 right-3 flex size-8 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-md:size-11"
               aria-label={t("dialog.close")}
             >
@@ -130,6 +136,7 @@ export function Modal({
             </Dialog.Close>
             {navigation && <div data-notification-clearance={placement === "side" ? "" : undefined} className="shrink-0">{navigation}</div>}
             <div
+              data-modal-scroll=""
               className={cn(
                 size === "wide"
                   ? "min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6"
@@ -138,6 +145,7 @@ export function Modal({
             >
               {children}
             </div>
+            {footer && <div className="shrink-0 border-t border-border bg-card px-5 py-4 sm:px-6">{footer}</div>}
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>

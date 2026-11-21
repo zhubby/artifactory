@@ -74,7 +74,12 @@ test("quick navigation shortcuts preserve the active modal and still toggle the 
 test("Build target forms keep host and application platforms consistent", async ({page})=>{
  await fixtureAPI(page);await page.goto(tenantURL(`/projects/desktop-client/releases/${build.release_id}`));
  await page.getByRole("button",{name:"发起构建",exact:true}).click();
- const target=page.locator("fieldset").first();
+ const dialog=page.getByRole("dialog");
+ await dialog.getByRole("button",{name:"继续",exact:true}).click();
+ await dialog.getByRole("radio",{name:"构建并收集产物",exact:true}).check();
+ await dialog.getByRole("button",{name:"继续",exact:true}).click();
+ const target=dialog.getByRole("region",{name:"目标 1",exact:true});
+ await target.getByText("高级目标设置",{exact:true}).click();
  await chooseOption(target.getByRole("combobox",{name:"构建宿主系统",exact:true}), "darwin");
  const application = target.getByRole("combobox",{name:"应用平台",exact:true});
  await expect(application).toHaveAttribute("data-value", "");

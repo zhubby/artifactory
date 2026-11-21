@@ -474,8 +474,11 @@ test("real repository references and the build wizard preserve model configurati
   await page.getByRole("button",{name:"发起构建",exact:true}).click();
   expect((await referenceResponse).status()).toBe(200);
   await expect(page.locator('input[name="ref"]')).toHaveValue("refs/heads/main");
+  await page.getByRole("dialog").getByRole("button",{name:"继续",exact:true}).click();
   await page.locator('textarea[name="goal"]').fill("Build the native C application and collect dist/app");
-  await page.getByRole("dialog").getByRole("button",{name:"发起构建",exact:true}).click();
+  await page.getByRole("dialog").getByRole("button",{name:"继续",exact:true}).click();
+  await page.getByRole("dialog").getByRole("button",{name:"继续",exact:true}).click();
+  await page.getByRole("dialog").getByRole("button",{name:"确认发起构建",exact:true}).click();
   // This regression server seeds pre-migration builds and has no model key.
   // Real-provider execution is covered by scripts/ai_acceptance.py.
   await expect(page).toHaveURL(/\/builds\/[^/]+$/);

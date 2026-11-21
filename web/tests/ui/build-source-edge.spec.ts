@@ -54,7 +54,6 @@ test("all repository refs remain available in a searchable custom suggestion lis
 test("source keyboard navigation selects explicitly and preserves ordinary text cursor", async ({ page }) => {
   const events = await fixtureAPI(page);
   await openWizard(page);
-  await page.locator('textarea[name="goal"]').fill("Build a distributable application");
   const source = sourceInput(page);
   await expect(source).toHaveValue(repositoryRefs.default_ref);
   await source.clear();

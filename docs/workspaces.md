@@ -1,6 +1,6 @@
 <!--
-[INPUT]: 当前工作区路由、权限与个人设置实现。
-[OUTPUT]: 定义工作区导航、个人设置与生命周期流程。
+[INPUT]: 当前工作区路由、Release 构建入口、权限与个人设置。
+[OUTPUT]: 定义导航、构建入口、个人设置与生命周期流程。
 [POS]: 租户与项目控制台的用户操作指南。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -18,7 +18,8 @@
 | 租户设置 | 租户路径下的 `/settings/{section}` |
 | 项目概览 | `/tenants/{tenant}/projects/{project}` |
 | 项目构建、制品、发布 | 项目路径下的 `/builds`、`/artifacts`、`/releases` |
-| 发起构建与构建详情 | 项目路径下的 `/builds/new`、`/builds/{number}` |
+| 发起构建 | 项目 `/releases/{release}` 内的四步弹窗 |
+| 构建详情 | 项目 `/releases/{release}/builds/{number}` |
 | 项目设置 | 项目路径下的 `/settings/{section}` |
 
 租户工作台侧栏只显示项目、构建节点与租户设置。普通租户成员的设置入口为访问令牌。项目工作台侧栏显示概览、版本；有效角色为项目管理员时显示项目设置。版本工作台使用概览、构建记录、交付物页内标签。项目工作台不显示租户节点或租户设置。文档入口保留在侧栏底部。

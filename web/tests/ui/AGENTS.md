@@ -6,6 +6,7 @@ accessibility.spec.ts: 验证租户卡片、业务页面与覆盖面板的 WCAG 
 browser-audit.spec.ts: 验证侧栏设置草稿保护与退出重试。
 build-source-edge.spec.ts: 验证构建弹窗三视口源码建议等宽对齐、搜索、键盘与光标、默认值、失败重试和迟到响应隔离。
 build-history.spec.ts: 验证终态静态日志、分页锚点、尾部事件与发布状态轮询。
+build-guide.spec.ts: 验证四步弹窗、混合目标、草稿与失败重试、最终确认、中英文明暗主题和无障碍。
 build-wizard.spec.ts: 验证严格 SemVer、Release 说明、独立源码与目标、轮询稳定的单构建交付、候选失效重选、失败重试和权限。
 console-visual.spec.ts: 验证多语言工作台、侧栏设置与个人设置布局。
 emissary-ota.spec.ts: 验证节点升级配置。

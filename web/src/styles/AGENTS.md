@@ -9,7 +9,7 @@ dropdown.css: 统一单选触发器、等宽对齐浮层和隐藏字段，适配
 notifications.css: 顶部居中浮层，不占页面空间，适配长文案并避开手机导航。
 progress.css: 顶部固定细线的缓进和完成淡出，不占布局并适配减少动态效果。
 tokens.css: 全部控制台样式的颜色与尺寸来源。
-wizard.css: 限定构建引导的响应式内容布局。
+wizard.css: 定义四步弹窗、目标卡片、固定操作与确认摘要的响应式布局。
 workspace.css: 连接租户卡片、顶栏、侧栏与认证；偏好整框触发，手机触控至少 44px。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

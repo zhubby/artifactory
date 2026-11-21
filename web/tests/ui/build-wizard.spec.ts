@@ -100,17 +100,22 @@ test("a build submits its independent tag, required goal, targets and protected 
   await page.goto(tenantURL(path));
   await page.getByRole("button",{name:"发起构建",exact:true}).click();
   const dialog=page.getByRole("dialog");
-  await expect(dialog.locator('textarea[name="goal"]')).toHaveValue("");
+  await expect(dialog.locator('textarea[name="goal"]')).toHaveCount(0);
   await dialog.locator('input[name="ref"]').fill("refs/tags/v1.2.0");
   await page.keyboard.press("Escape");
-  await dialog.getByRole("textbox",{name:"目标键",exact:true}).fill("linux-production");
+  await dialog.getByRole("button",{name:"继续",exact:true}).click();
   await dialog.locator('textarea[name="goal"]').fill("Build from the selected tag");
+  await dialog.getByRole("button",{name:"继续",exact:true}).click();
+  await dialog.getByText("高级目标设置",{exact:true}).click();
+  await dialog.getByRole("textbox",{name:"目标键",exact:true}).fill("linux-production");
+  await dialog.getByRole("button",{name:"继续",exact:true}).click();
+  await dialog.getByText("高级参数（可选）",{exact:true}).click();
   await dialog.locator('textarea[name="parameters"]').fill('{"ARTIFACTORY_RELEASE_VERSION":"2.0.0"}');
-  await dialog.getByRole("button",{name:"发起构建",exact:true}).click();
+  await dialog.getByRole("button",{name:"确认发起构建",exact:true}).click();
   await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("参数必须为字符串键值 JSON 对象，且不能覆盖平台 Release 变量。");
   expect(writes).toEqual([]);
   await dialog.locator('textarea[name="parameters"]').fill('{"PROFILE":"production"}');
-  await dialog.getByRole("button",{name:"发起构建",exact:true}).click();
+  await dialog.getByRole("button",{name:"确认发起构建",exact:true}).click();
   await expect(page).toHaveURL(tenantURL(`${path}/builds/${build.number}`));
   expect(writes).toEqual([{ref:"refs/tags/v1.2.0",goal:"Build from the selected tag",targets:["linux-production"],target_requirements:defaultTargets.map(target => ({...target,key:"linux-production"})),parameters:{PROFILE:"production"}}]);
   expect(events.writes).toEqual([]);
@@ -186,7 +191,10 @@ test("each build chooses its own source and target contract", async ({ page }) =
   await page.getByRole("button", { name: "发起构建", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.locator('input[name="ref"]')).toHaveValue("refs/heads/main");
+  await dialog.getByRole("button", { name: "继续", exact: true }).click();
   await expect(dialog.locator('textarea[name="goal"]')).toHaveAttribute("required", "");
+  await dialog.getByRole("radio", {name:"构建并收集产物",exact:true}).check();
+  await dialog.getByRole("button", { name: "继续", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "添加目标", exact: true })).toBeVisible();
 });
 

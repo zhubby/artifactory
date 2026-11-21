@@ -72,8 +72,13 @@ test("invalid JSON is a localized form error and never reaches the backend", asy
   await page.goto(tenantURL(`/projects/desktop-client/releases/${release.id}`));
   await page.getByRole("button",{name:"发起构建",exact:true}).click();
   const dialog=page.getByRole("dialog");
+  await dialog.getByRole("button",{name:"继续",exact:true}).click();
+  await dialog.getByRole("radio",{name:"构建并收集产物",exact:true}).check();
+  await dialog.getByRole("button",{name:"继续",exact:true}).click();
+  await dialog.getByRole("button",{name:"继续",exact:true}).click();
+  await dialog.getByText("高级参数（可选）",{exact:true}).click();
   await dialog.locator('textarea[name="parameters"]').fill('{"unfinished":');
-  await dialog.getByRole("button",{name:"发起构建",exact:true}).click();
+  await dialog.getByRole("button",{name:"确认发起构建",exact:true}).click();
   await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "JSON 格式无效，请检查后重试",
   );

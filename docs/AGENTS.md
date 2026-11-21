@@ -15,11 +15,11 @@ api.md: 定义 HTTP API 输入、权限和返回值。
 artifactory-rename-2026-11-11.md: 记录产品命名迁移。
 signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。
 configuration.md: 定义任务执行计划的结构与限制。
-design-system.md: 定义中性色、浏览器图标、工作区、设备档案层级和自定义下拉控件边界。
+design-system.md: 定义中性色、四步构建弹窗、工作区、设备档案和自定义下拉边界。
 direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、启动等待和故障依赖隔离的验证边界。
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。
-frontend-experience.md: 定义语言、主题、骨架加载、顶部进度、系统动效适配与前端验证入口。
+frontend-experience.md: 定义语言、主题、构建引导草稿、加载、系统动效与前端验证入口。
 helm.md: 定义最低 Kubernetes 1.28 的安装、Service 整合迁移与持久身份保留。
 image-builds.md: 定义普通容器镜像生命周期、整合网关、池级出口代理和交付边界。
 image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像、独立 Operator、网关迁移与空闲连接验收。
@@ -40,7 +40,7 @@ tasknotes-platform-fixes-2026-11-18.md: 罗列 TaskNotes 暴露的平台缺陷�
 telemetry.md: 定义主机与构建的时序观测、私有双端口 Service 和设备 mTLS。
 toasty-acceptance-2026-11-13.md: 记录 Toasty 数据迁移验收。
 versioning.md: 定义统一版本与交付约束。
-release-delivery.md: 定义版本元数据、构建独立源码与目标、单次不可变交付。
+release-delivery.md: 定义版本元数据、四步构建确认、独立源码与目标、单次不可变交付。
 workspaces.md: 定义租户和项目导航、个人设置与生命周期流程。
 acceptance/: 保存子系统在真实环境中的验收记录。
 brand/: 保存品牌规范和视觉资源。

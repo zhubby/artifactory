@@ -1013,5 +1013,25 @@
     "saveNotes": "保存说明",
     "buildCount": "{count} 次构建",
     "artifactCount": "{count} 个制品"
+  },
+  "buildGuide": {
+    "steps": {
+      "source": "源码",
+      "goal": "要求",
+      "targets": "目标",
+      "review": "确认"
+    },
+    "targetsQuestion": "需要哪些交付目标？",
+    "targetsHint": "选择产物类型和运行平台。可以添加多个目标，精细配置按需展开。",
+    "nativeHint": "在授权节点上构建应用或其他原生文件。",
+    "imageHint": "构建可交付的容器镜像，支持多个平台。",
+    "platform": "选择运行平台",
+    "imagePlatforms": "选择镜像平台，可多选",
+    "targetAdvanced": "高级目标设置",
+    "confirm": "确认发起构建",
+    "returnToReview": "保存并返回确认",
+    "editGoal": "修改构建要求",
+    "editTargets": "修改交付目标",
+    "unavailable": "当前 Release 或项目已不可构建。你的选择仍保留，请关闭引导返回版本页。"
   }
 }

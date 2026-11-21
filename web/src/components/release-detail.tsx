@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖构建候选摘要、共享 Select、Release、外仓分发与统一通知。
- * [OUTPUT]: 提供版本工作台与说明编辑，轮询保留草稿和发布候选。
+ * [OUTPUT]: 提供版本工作台、四步构建入口与说明编辑，轮询保留草稿和发布候选。
  * [POS]: 项目版本工作台；正式发布选择单个完整成功构建并冻结交付。错误桥跨加载分支保持挂载。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -89,7 +89,7 @@ export function ReleaseDetail({ id, project, readOnly = false }: { id: string; p
       </div>
     </>}</Tabs>
     <Modal open={dialog === "edit"} onOpenChange={open => {if (!open) setDialog(undefined);}} title={t("releaseFlow.editNotes")} description={t("releaseFlow.editHint")}>{editing && <ReleaseForm key={editing.id} project={project} release={editing} done={saved => {remote.setData(saved);setDialog(undefined);}} />}</Modal>
-    <Modal open={dialog === "build" && draft} onOpenChange={open => {if (!open) setDialog(undefined);}} title={t("builds.start")} description={t("releaseFlow.buildInherits")}><BuildWizard project={project} release={release} /></Modal>
+    {dialog === "build" && <BuildWizard project={project} release={release} canBuild={editable && project.status === "active"} onClose={() => setDialog(undefined)} />}
     <Modal open={dialog === "publish" && (draft || release.status === "publish_failed")} onOpenChange={open => {if (!open) setDialog(undefined);}} title={t("releaseFlow.publish")} description={t("releaseFlow.publishHint")}>
       {draft ? <Field label={t("releaseFlow.selectBuild")}><Select className="input" value={chosen} onChange={event => setSelectedBuild(event.target.value)}>{!chosen && <option value="" disabled hidden>{t("releaseFlow.selectBuild")}</option>}{candidates.map(build => <option key={build.id} value={build.id}>{buildDeliveryLabel(build)}</option>)}</Select></Field> : <p className="text-sm">{t("releaseFlow.retryHint")}</p>}
       <Button className="mt-5" disabled={pending || !chosen} onClick={() => void publish()}>{pending ? t("common.processing") : t("releaseFlow.confirmPublish")}</Button>
