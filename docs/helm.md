@@ -12,7 +12,9 @@
 
 Control 使用 `emptyDir`。源码解析任务和每个执行 Pod 直接向上游仓库拉取源码。源码目录、Git 对象、LFS 和 BuildKit 状态只存在于任务临时卷。平台只持久化固定 commit、manifest、AI 对话、计划、日志、制品与最终镜像。详见 [Operator 运维](operator-operations.md) 和 [镜像构建](image-builds.md)。
 
-当前版本只支持全新数据库实例，不提供旧数据库或 CRD 的兼容和迁移入口。业务数据库基线为 `2026112101`，规划数据库基线为 `2026111901`；程序拒绝旧库，不会自动重置数据库或删除旧 Deployment、CRD、Pod、PVC。新旧数据库实例使用独立命名空间和持久身份，旧实例由管理员另行备份和退役。下文的 Service 整合仅适用于同一数据库基线内的部署，不迁移业务数据。
+业务数据库初始化基线为 `2026112101`，规划数据库基线为 `2026111901`。同一业务基线自动追加迁移 `2026112201`，保留镜像历史结果并增加可空失败类型。未知数据库历史或旧 CRD 不提供兼容入口。程序不会自动重置数据库或删除旧 Deployment、CRD、Pod、PVC。新旧数据库实例使用独立命名空间和持久身份，旧实例由管理员另行备份和退役。下文的 Service 整合仅适用于同一数据库基线内的部署。
+
+镜像失败分类升级顺序为 Control、Telemetry、BuilderPool 的 `workerImage`。Control 先写入迁移身份。Telemetry 必须使用包含同一迁移集合的镜像。Worker 再发送新的结构化失败字段。
 
 `auth.registrationEnabled` 默认 `true`，访客注册后没有租户或项目权限，需要创建租户或接受邀请。关闭公开注册时设置 `--set auth.registrationEnabled=false`；该开关映射到 control-plane 的 `ARTIFACTORY_REGISTRATION_ENABLED`，不会停用已有账号或会话。
 

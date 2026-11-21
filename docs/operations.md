@@ -1,7 +1,7 @@
 <!--
 [INPUT]: 当前服务拓扑、持久身份和独立部署脚本。
 [OUTPUT]: 定义安装、备份、节点注册和故障处理边界。
-[POS]: 运维入口；当前基线只用于新实例。
+[POS]: 运维入口；区分初始化基线与基线内兼容升级。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
 # 部署与运维
@@ -10,7 +10,9 @@
 
 Control 为支持多副本的 Linux 服务，内嵌规划协调器。后端统一使用 TimescaleDB 2.32+ / PostgreSQL 17，关系表保存队列和业务状态，独立 Rust Telemetry 服务保存时序数据。多副本设备调度使用 PostgreSQL Outbox 与节点行锁，部署、容量与回退见 [Control 多副本](control-ha.md)。Kubernetes 规划和源码任务的部署见 [Operator 运维](operator-operations.md)。宿主执行只接受内部可信项目。签名节点应与一般构建节点分池、最小授权、限制网络和服务账户权限。
 
-本版只安装全新实例。业务数据库基线为 `2026112101`，规划数据库基线为 `2026111901`；程序拒绝旧库，不执行原地升级或自动重置。安装脚本不退役旧 Deployment、CRD、Pod、PVC 或持久数据，完整边界见[初始化与清理](planning-protocol.md#初始化与清理)。
+业务数据库初始化基线为 `2026112101`，规划数据库基线为 `2026111901`。业务基线内追加迁移 `2026112201`，为镜像执行增加可空失败类型，保留历史数据与未知分类。程序只对已识别基线应用追加迁移；遇到未知旧身份时拒绝启动，不自动重置。安装脚本不退役旧 Deployment、CRD、Pod、PVC 或持久数据，完整边界见[初始化与清理](planning-protocol.md#初始化与清理)。
+
+应用 `2026112201` 时，先升级 Control 并完成迁移，再升级 Telemetry，最后升级镜像 Worker。Telemetry 以只读连接验证完整业务迁移集合。旧 Control 和旧 Telemetry 二进制在该迁移之后重启时会拒绝未知迁移身份。
 
 生产需可解析的控制台和 Emissary gRPC 域名。Compose 的 Caddy 只负责 80/443 与 ACME，全部应用请求转至 Pingora。Pingora 反向代理控制台、API、内建仓库与制品，S3 没有公开入口。构建 gRPC 使用钉住私有 CA 的 TLS 8443，独立遥测 mTLS 使用同一设备域名的 8444。仅向受信网络开放设备端口；不公开数据库、遥测内部查询、SeaweedFS 管理端口及 filer/master。代理不得缓冲 SSE。
 

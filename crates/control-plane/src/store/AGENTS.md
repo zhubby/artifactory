@@ -15,14 +15,15 @@ lifecycle.rs: 维护归档、删除租约和 Release 审计资源清单。
 lifecycle_cleanup.rs: 依据删除清单清除业务状态和签名密文。
 builds.rs: 创建构建，读取原生及镜像 Release、制品与日志游标。
 executions.rs: 以兼容取消外键的写锁维护节点 session、事件与不可变制品登记。
-scheduling.rs: 分配任务并汇总构建状态。
+scheduling.rs: 分配任务、汇总构建并对两类执行失败发起有限修订。
+failures.rs: 统一最新失败诊断；镜像按构建源码和目标计划排除旧执行。
 releases.rs: 创建版本元数据、更新说明，复核原生设备授权并保存独立构建输入。
 release_publication.rs: 冻结交付清单、正式文件名和 OCI 摘要白名单。
-planning.rs: 读取固定规划上下文、计划和失败日志。
+planning.rs: 读取固定规划上下文、计划和两类执行器的失败日志。
 planning_management.rs: 写入模型方案、澄清及对话查询上下文。
 placements.rs: 保存节点候选并校验分配条件。
 replication.rs: 协调副本归属和持久化唤醒。
-planning_bridge.rs: 转换规划意图，按 generation 和终态围栏保存累计调用与用量。
+planning_bridge.rs: 转换含两类失败诊断的规划意图，按 generation 和终态围栏保存调用与用量。
 sources.rs: 以构建为归属固定源码 CR UID、pin 和清单，隔离取消与失败传播。
 sources_tests.rs: 验证 CR UID、执行围栏、事务幂等和独立构建源码取消。
 releases_tests.rs: 验证版本元数据、设备授权准入、源码隔离与交付封存围栏。
@@ -34,10 +35,11 @@ ota_management.rs: 写入节点发布及升级目标。
 performance.rs: 验证存储查询预算和响应规模。
 execution_fences.rs: 以真实事件、心跳与取消事务验证节点锁等待及权限租约拒绝。
 
-images.rs: 保存执行隔离候选，约束已发布版本的外仓分发。
+images.rs: 保存执行隔离候选与失败类型，约束已发布版本的外仓分发。
 registry_guard.rs: 领取递增发布租约，按冻结仓库、版本和摘要图授权正式 Manifest。
 
-planning_bridge_tests.rs: 验证真实 outbox 统计投影、取消围栏、回执幂等和重排不变约束。
+planning_bridge_tests.rs: 提供隔离夹具，验证真实 outbox 统计、取消围栏和回执幂等。
+image_revision_tests.rs: 验证镜像修订诊断与日志、成功执行与制品保留、失败分类和两次修订预算。
 planning_runtime_tests.rs: 以隔离数据库验证提案前用量、权限、终态优先与查询降级。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

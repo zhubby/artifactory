@@ -7,6 +7,8 @@
 #[cfg(feature = "operator")]
 pub mod api;
 #[cfg(feature = "operator")]
+mod build_failure;
+#[cfg(feature = "operator")]
 pub mod controller;
 #[cfg(feature = "operator")]
 mod diagnostics;

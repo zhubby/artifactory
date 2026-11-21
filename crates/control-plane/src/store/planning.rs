@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定源码元数据、执行计划和业务数据库。
-//! [OUTPUT]: 保存计划并查询授权节点与构建日志。
+//! [OUTPUT]: 保存计划并查询授权节点、原生日志和镜像日志。
 //! [POS]: Coordinator 提案的事务持久化边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
@@ -186,7 +186,24 @@ impl ControlStore {
         build: Uuid,
         target: &str,
     ) -> Result<Vec<PlanningLog>> {
-        let rows=sql::records(&mut self.pool.clone(), "SELECT l.object_key,l.step FROM log_chunks l JOIN attempts a ON a.id=l.attempt_id JOIN jobs j ON j.id=a.job_id WHERE j.build_id=$1 AND ($2='' OR j.target=$2) ORDER BY l.id DESC LIMIT 24", params![build, target], &[("object_key", Type::String),("step", Type::String)]).await?;
+        let rows = sql::records(
+            &mut self.pool.clone(),
+            "SELECT object_key,step FROM (
+            SELECT l.object_key,l.step,a.created_at AS execution_created,l.id,0 AS executor
+            FROM log_chunks l JOIN attempts a ON a.id=l.attempt_id JOIN jobs j ON j.id=a.job_id
+            WHERE j.build_id=$1 AND ($2='' OR j.target=$2)
+            UNION ALL
+            SELECT l.object_key,'image/'||l.platform,e.created_at,l.id,1
+            FROM image_logs l JOIN image_executions e ON e.id=l.execution_id
+            JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id
+            WHERE j.build_id=$1 AND ($2='' OR j.target=$2) AND e.operation='build'
+                AND e.source_manifest_id=b.source_manifest_id
+                AND e.plan_revision_id IS NOT DISTINCT FROM j.plan_revision_id
+        ) logs ORDER BY execution_created DESC,executor DESC,id DESC LIMIT 24",
+            params![build, target],
+            &[("object_key", Type::String), ("step", Type::String)],
+        )
+        .await?;
         Ok(rows
             .into_iter()
             .map(|row| {

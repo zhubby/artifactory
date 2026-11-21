@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定清单身份、Serde 和 SHA-256。
-//! [OUTPUT]: 提供镜像目标、固定 Release 执行身份与 OCI Index 契约。
+//! [OUTPUT]: 提供镜像目标、固定执行身份、结构化失败与 OCI Index 契约。
 //! [POS]: 控制平面与 Image Operator 共用的执行边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
@@ -272,15 +272,67 @@ pub enum Report {
     },
     Failed {
         message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        failure_kind: Option<FailureKind>,
     },
     Published {
         digest: String,
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureKind {
+    Execution,
+    Source,
+    Authorization,
+    ArtifactTransport,
+    Infrastructure,
+}
+impl FailureKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Execution => "execution",
+            Self::Source => "source",
+            Self::Authorization => "authorization",
+            Self::ArtifactTransport => "artifact_transport",
+            Self::Infrastructure => "infrastructure",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failures_keep_legacy_reports_unknown_and_reject_unknown_classifications() {
+        let legacy: Report =
+            serde_json::from_str(r#"{"kind":"failed","message":"failed"}"#).unwrap();
+        assert!(matches!(
+            legacy,
+            Report::Failed {
+                failure_kind: None,
+                ..
+            }
+        ));
+        let classified: Report = serde_json::from_str(
+            r#"{"kind":"failed","message":"failed","failure_kind":"execution"}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            classified,
+            Report::Failed {
+                failure_kind: Some(FailureKind::Execution),
+                ..
+            }
+        ));
+        assert!(
+            serde_json::from_str::<Report>(
+                r#"{"kind":"failed","message":"failed","failure_kind":"unknown"}"#
+            )
+            .is_err()
+        );
+    }
     #[test]
     fn index_requires_every_requested_platform_and_exact_digests() {
         let expected = platforms();

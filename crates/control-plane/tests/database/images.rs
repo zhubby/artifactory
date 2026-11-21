@@ -420,6 +420,7 @@ async fn unpublished_candidates_cannot_distribute_and_external_failure_preserves
             true,
             &Report::Failed {
                 message: "failure".into(),
+                failure_kind: None,
             },
             None,
         )

@@ -7,7 +7,7 @@ SUMMARY.md: 定义 mdBook 导航顺序。
 404.md: 提供文档缺页入口。
 acceptance.md: 汇总实施状态和验收边界。
 agent-ota-acceptance-2026-11-11.md: 记录旧 Agent OTA 验收。
-ai-builds.md: 定义模型兼容、目标准入、实时规划摘要与构建发布流程。
+ai-builds.md: 定义模型兼容、目标准入、两类执行失败修订与构建发布流程。
 ai-builds-acceptance-2026-11-11.md: 记录零侵入 AI 构建验收。
 ai-workspace-build-acceptance-2026-11-16.md: 记录固定源码的双平台真实构建、故障修复与内部发布证据。
 ai-workspace-signing-acceptance-2026-11-17.md: 记录真实 Developer ID 托管签名、制品读回、材料清理及公证边界。
@@ -20,7 +20,7 @@ direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、启
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。
 frontend-experience.md: 定义语言、主题、构建引导草稿、加载、系统动效与前端验证入口。
-helm.md: 定义最低 Kubernetes 1.28 的安装、Service 整合迁移与持久身份保留。
+helm.md: 定义最低 Kubernetes 1.28 安装、基线内追加迁移与持久身份保留。
 image-builds.md: 定义普通容器镜像生命周期、整合网关、池级出口代理和交付边界。
 image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像、独立 Operator、网关迁移与空闲连接验收。
 image-builds-kubernetes-128-acceptance-2026-11-18.md: 记录 1.28 生命周期、正式部署与原生设备验收。
@@ -28,7 +28,7 @@ local-macmini-acceptance-2026-11-11.md: 记录本机和 Mac mini 的验收。
 module-layout.md: 定义模块命名和依赖边界。
 multitenancy.md: 定义租户权限和设备共享边界。
 node-placement.md: 定义节点识别、网络诊断、能力查询与 AI 选机。
-operations.md: 定义初始账号、部署、备份和故障恢复。
+operations.md: 定义初始账号、部署、兼容追加迁移、备份和故障恢复。
 operator-operations.md: 定义临时源码、池级出口代理、内部直连和任务收尾。
 protocol.md: 定义 Emissary 会话、完整心跳预算和状态迁移。
 registration-acceptance-2026-11-11.md: 记录用户注册的本地验收。

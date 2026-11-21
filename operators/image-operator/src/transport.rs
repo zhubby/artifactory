@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖任务令牌、控制 URL、服务 CA 与共享脱敏。
-//! [OUTPUT]: 提供有界报告、脱敏失败日志、发布材料读取和心跳。
+//! [OUTPUT]: 提供有界报告、结构化失败、脱敏日志和发布材料。
 //! [POS]: 工作 Pod 到控制平面的认证边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
@@ -89,6 +89,11 @@ impl Control {
         let _ = self
             .report(&Report::Failed {
                 message: message.clone(),
+                failure_kind: if platform == "publish" {
+                    None
+                } else {
+                    crate::build_failure::kind(error)
+                },
             })
             .await;
         message

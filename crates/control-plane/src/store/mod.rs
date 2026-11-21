@@ -63,6 +63,7 @@ mod builds;
 pub mod images;
 pub use builds::{ArtifactDownload, LogChunk};
 
+mod failures;
 pub(crate) mod registry_guard;
 mod release_publication;
 mod releases;

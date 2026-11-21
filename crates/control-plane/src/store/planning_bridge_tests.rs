@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖真实 PostgreSQL 和 Coordinator 业务提交事务。
-//! [OUTPUT]: 验证真实 outbox 统计、规划回执和取消围栏。
+//! [OUTPUT]: 提供隔离夹具，验证真实 outbox 统计和取消围栏。
 //! [POS]: Coordinator 事件进入业务构建状态的数据库回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{ControlStore, PlanningEventCommit};
@@ -7,6 +7,9 @@ use anyhow::Result;
 use artifactory_database::{PoolSettings, connect, params, sql, with_options};
 use serde_json::{Value, json};
 use uuid::Uuid;
+
+#[path = "image_revision_tests.rs"]
+mod image_revisions;
 struct Database {
     admin: toasty::Db,
     pool: toasty::Db,
@@ -57,7 +60,7 @@ impl Database {
         let source = Uuid::new_v4();
         sql::execute(&mut self.pool.clone(), "INSERT INTO projects(id,tenant_id,name,repository_url) VALUES($1,'00000000-0000-0000-0000-000000000001','statistics','https://example.com/repo.git')", params![project]).await?;
         sql::execute(&mut self.pool.clone(), "INSERT INTO source_manifests(id,project_id,commit_sha,manifest,digest) VALUES($1,$2,$3,'{}',$4)", params![source,project,"0".repeat(40),"a".repeat(64)]).await?;
-        sql::execute(&mut self.pool.clone(), "WITH fixture_release AS (INSERT INTO releases(id,project_id,version) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-','')) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url,release_id,release_version,source_manifest_id) VALUES($1,$2,'main','planning','https://example.com/repo.git',(SELECT id FROM fixture_release),(SELECT version FROM fixture_release),$3)", params![build,project,source]).await?;
+        sql::execute(&mut self.pool.clone(), "WITH fixture_release AS (INSERT INTO releases(id,project_id,version) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-','')) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url,release_id,release_version,source_manifest_id,goal,model_config_snapshot) VALUES($1,$2,'main','planning','https://example.com/repo.git',(SELECT id FROM fixture_release),(SELECT version FROM fixture_release),$3,'Build both targets','{}')", params![build,project,source]).await?;
         sql::execute(&mut self.pool.clone(), "INSERT INTO planning_runs(id,build_id,purpose,model_config,deadline_at) VALUES($1,$2,'initial','{}',now()+interval '1 minute')", params![run,build]).await?;
         Ok((project, build, run, source))
     }

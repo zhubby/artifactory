@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户、项目和业务状态。
-//! [OUTPUT]: 认领任务、汇总构建并在草稿锁内发起重排。
+//! [OUTPUT]: 认领任务、汇总构建并在草稿锁内修订两类执行失败。
 //! [POS]: 控制平面的业务边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Scheduler persistence. Claim, publish and resolver lock lifetimes are owned here.
@@ -86,10 +86,10 @@ impl ControlStore {
         let mut tx_db = self.pool.clone();
         let mut tx = tx_db.transaction().await?;
         let draft_releases:Vec<Uuid>=sql::scalars(&mut tx,"SELECT id FROM releases WHERE status='draft' AND id IN (SELECT release_id FROM builds WHERE status='failed' AND revision_count<2) ORDER BY id FOR UPDATE SKIP LOCKED",params![]).await?;
-        let rows=sql::records(&mut tx, "SELECT id,model_config_snapshot FROM builds b WHERE b.release_id=ANY($1) AND EXISTS(SELECT 1 FROM releases r WHERE r.id=b.release_id AND r.status='draft') AND goal IS NOT NULL AND current_plan_id IS NOT NULL AND status='failed' AND NOT cancel_requested AND revision_count<2 AND (SELECT state FROM planning_runs WHERE build_id=b.id ORDER BY created_at DESC LIMIT 1)='succeeded' AND EXISTS(SELECT 1 FROM jobs j JOIN LATERAL (SELECT failure_kind FROM attempts WHERE job_id=j.id ORDER BY created_at DESC LIMIT 1) a ON true WHERE j.build_id=b.id AND j.status='failed' AND a.failure_kind='execution') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 10", params![&draft_releases], &[("id", Type::Uuid),("model_config_snapshot", Type::String)]).await?;
+        let rows=sql::records(&mut tx, &format!("WITH failures AS ({}) SELECT id,model_config_snapshot FROM builds b WHERE b.release_id=ANY($1) AND EXISTS(SELECT 1 FROM releases r WHERE r.id=b.release_id AND r.status='draft') AND goal IS NOT NULL AND current_plan_id IS NOT NULL AND status='failed' AND NOT cancel_requested AND revision_count<2 AND (SELECT state FROM planning_runs WHERE build_id=b.id ORDER BY created_at DESC,id DESC LIMIT 1)='succeeded' AND EXISTS(SELECT 1 FROM failures f WHERE f.build_id=b.id AND f.job_status='failed' AND f.status='failed' AND f.failure_kind='execution') ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 10", super::failures::LATEST_FAILURES), params![&draft_releases], &[("id", Type::Uuid),("model_config_snapshot", Type::String)]).await?;
         for row in rows {
             let id: Uuid = row.decode("id")?;
-            let failed:Vec<String>=sql::scalars(&mut tx, "SELECT j.target FROM jobs j JOIN LATERAL (SELECT failure_kind FROM attempts WHERE job_id=j.id ORDER BY created_at DESC LIMIT 1) a ON true WHERE j.build_id=$1 AND j.status='failed' AND a.failure_kind='execution'", params![id]).await?;
+            let failed:Vec<String>=sql::scalars(&mut tx, &format!("WITH failures AS ({}) SELECT target FROM failures WHERE build_id=$1 AND job_status='failed' AND status='failed' AND failure_kind='execution' ORDER BY target", super::failures::LATEST_FAILURES), params![id]).await?;
             sql::execute(&mut tx, "UPDATE builds SET revision_count=revision_count+1,status='replanning',finished_at=NULL WHERE id=$1", params![id]).await?;
             super::models::PlanningRun::create()
                 .id(Uuid::new_v4())

@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖业务构建任务、租户授权和加密任务材料。
-//! [OUTPUT]: 保存隔离候选与 CR UID；外仓仅分发已发布 Release 的固定版本。
+//! [OUTPUT]: 保存隔离候选、CR UID 与失败分类；外仓仅分发固定版本。
 //! [POS]: Control 是成功写入者；网络校验在事务外完成。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
@@ -352,7 +352,10 @@ impl ControlStore {
                 )
                 .await?;
             }
-            Report::Failed { message } => {
+            Report::Failed {
+                message,
+                failure_kind,
+            } => {
                 ensure!(
                     !message.trim().is_empty()
                         && message.len() <= 1024
@@ -366,8 +369,8 @@ impl ControlStore {
                 };
                 sql::execute(
                     &mut tx,
-                    "UPDATE image_executions SET status=$2,error=$3,finished_at=now() WHERE id=$1",
-                    params![id, status, message],
+                    "UPDATE image_executions SET status=$2,error=$3,failure_kind=$4,finished_at=now() WHERE id=$1",
+                    params![id, status, message, if publisher { None } else { failure_kind.map(|kind|kind.as_str()) }],
                 )
                 .await?;
                 if execution.destination_credential.is_none() {

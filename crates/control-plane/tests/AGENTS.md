@@ -12,6 +12,6 @@ scheduling.rs: 验证授权节点和调度约束。
 storage_errors.rs: 验证对象存储故障。
 storage_tls.rs: 验证 HTTPS 存储证书。
 
-baseline.rs: 验证新基线身份；误连旧库时保留数据并拒绝启动。
+baseline.rs: 验证初始化与兼容追加迁移保持历史数据；误连未知历史时无损拒绝。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

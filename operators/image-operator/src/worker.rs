@@ -1,6 +1,6 @@
 //! ```text
 //! [INPUT]: 依赖清单身份、共享执行、源码检出、OCI 客户端和 BuildKit。
-//! [OUTPUT]: 注入固定 Release 版本并读回 OCI 元数据，收尾后提交候选。
+//! [OUTPUT]: 注入固定版本，分类 buildctl 失败，收尾后提交候选。
 //! [POS]: BuildKit Pod 的隔离执行进程。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! ```
@@ -343,7 +343,7 @@ async fn build(
             emit.clone(),
             secrets.clone(),
         ));
-        let err = tokio::spawn(redact::read_log(stderr, "buildkit", emit.clone(), secrets));
+        let err = tokio::spawn(crate::build_failure::stderr(stderr, emit.clone(), secrets));
         let result = process::wait(
             &mut *child,
             cancel,
@@ -351,8 +351,10 @@ async fn build(
         )
         .await;
         finish_log(out, Duration::from_secs(5)).await?;
-        finish_log(err, Duration::from_secs(5)).await?;
-        ensure!(result?.success(), "BuildKit failed; inspect build logs");
+        let diagnostic = finish_log(err, Duration::from_secs(5)).await?;
+        if !result?.success() {
+            return Err(crate::build_failure::failure(&diagnostic));
+        }
         artifactory_source_checkout::verify(&prepared, workspace, cancel).await?;
         let bytes = tokio::fs::read(&metadata).await?;
         ensure!(bytes.len() <= 65536, "oversized BuildKit metadata");

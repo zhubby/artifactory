@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离数据库、镜像夹具与工作区租约。
-//! [OUTPUT]: 验证材料回收、失败诊断、日志隔离和 Release 分发快照。
+//! [OUTPUT]: 验证材料回收、失败分类、日志隔离和 Release 分发快照。
 //! [POS]: 镜像审查问题的跨边界回归验收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
@@ -44,7 +44,15 @@ async fn image_failure_preserves_safe_summary_and_separates_publisher_logs() {
     for message in ["x".repeat(1025), "contains\ncontrol".into(), "".into()] {
         assert!(
             store
-                .image_report(id, true, &Report::Failed { message }, None)
+                .image_report(
+                    id,
+                    true,
+                    &Report::Failed {
+                        message,
+                        failure_kind: None
+                    },
+                    None
+                )
                 .await
                 .is_err()
         );
@@ -56,6 +64,7 @@ async fn image_failure_preserves_safe_summary_and_separates_publisher_logs() {
             true,
             &Report::Failed {
                 message: summary.into(),
+                failure_kind: Some(artifactory_image_protocol::FailureKind::Execution),
             },
             None,
         )
@@ -74,6 +83,17 @@ async fn image_failure_preserves_safe_summary_and_separates_publisher_logs() {
     .await
     .unwrap();
     assert_eq!(saved, summary);
+    let failure_kind: Option<String> = sql::scalar(
+        &mut db.pool.clone(),
+        "SELECT failure_kind FROM image_executions WHERE id=$1",
+        params![id],
+    )
+    .await
+    .unwrap();
+    assert!(
+        failure_kind.is_none(),
+        "publisher failure cannot trigger build revisions"
+    );
     db.close().await;
 }
 
@@ -180,6 +200,7 @@ async fn failed_or_canceled_execution_stops_an_active_imagebuild_before_cleanup(
                     status == "publish_failed",
                     &Report::Failed {
                         message: "fixture failure before Kubernetes Pod termination".into(),
+                        failure_kind: None,
                     },
                     None,
                 )
