@@ -1,8 +1,8 @@
 # 零侵入 AI 构建
 
 <!--
-[INPUT]: 读取源码清单、临时 Worker 与 Emissary 的执行契约。
-[OUTPUT]: 定义仓库接入、AI 规划、构建与内部发布流程。
+[INPUT]: 读取源码、模型协议、项目设备和执行契约。
+[OUTPUT]: 定义模型兼容、目标准入、阶段反馈和构建发布流程。
 [POS]: 用户构建指南，连接控制台操作与运行时约束。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -18,6 +18,8 @@
 项目先创建 Release，填写严格 SemVer 与版本说明。项目侧栏的“版本”进入版本列表。Release 工作台包含概览、构建记录和交付物。
 
 构建只能从草稿 Release 发起。构建向导显示固定版本，并独立选择分支或 Tag、构建要求、完整目标和参数。每次新构建独立解析并固定 SourceManifest；同版本构建可以采用不同源码和目标。Release 已封存后不能新建或重试构建。版本说明不充当 AI 构建指令，修改说明不影响构建。
+
+向导通过 `GET /api/v1/projects/{id}/build-platforms` 读取项目获授权的原生设备平台。每个条目包含 `os`、`arch`、`device_count` 和 `online_count`。缺少对应系统或架构设备的原生目标无法选择；默认优先选择有在线设备的平台。离线、忙碌和暂时排空设备仍计入设备数量，吊销设备不计入。提交构建时，服务端再次检查每个原生目标，防止设备授权变化后继续创建。镜像目标不使用此原生设备列表过滤。
 
 `GET /api/v1/projects/{id}/refs` 使用项目读取权限与该项目已配置的仓库凭据，通过只读 `git ls-remote --symref` 返回：
 
@@ -36,6 +38,29 @@ AI 规划只使用 Kubernetes Pod。独立 Planning Operator 创建 Pi Pod，规
 1. 安装主 Chart、Planning Operator 和 Image Operator。主 Chart 的 Control 内嵌规划协调器；配置 PlanningPool 的 `sourcePreparerImage`、`controlUrl`、规划镜像和临时存储限制。
 2. 在“访问与安全 → AI 规划”新增模型配置。支持 OpenAI Chat Completions、Responses 和 Anthropic Messages。项目可以覆盖平台默认配置。
 3. 注册并授权原生设备，或配置集群的 amd64/arm64 构建节点。任务通过绑定 Pod 的投影令牌领取材料，无需注册常驻规划 Worker。
+
+模型名称由供应商定义，可填写私有别名。平台按接口协议和显式能力构造请求，不按模型名称推断能力。Chat Completions 的“接口兼容性”设置对应 `parameters.compat`：
+
+| 参数 | 可选值 | 默认值 |
+|---|---|---|
+| `system_role` | `system`、`developer` | `system` |
+| `thinking_format` | `none`、`reasoning_effort`、`enable_thinking`、`thinking` | `none` |
+| `max_tokens_field` | `max_tokens`、`max_completion_tokens` | `max_tokens` |
+
+三个参数独立选择。`thinking_level` 定义思考级别；`thinking_format` 定义供应商接受的参数格式，`none` 不发送思考参数。旧 Qwen 配置若需启用思考，必须显式选择 `enable_thinking` 并设置非 `off` 的思考级别。例如：
+
+```json
+{
+  "thinking_level": "medium",
+  "compat": {
+    "system_role": "system",
+    "thinking_format": "enable_thinking",
+    "max_tokens_field": "max_tokens"
+  }
+}
+```
+
+Responses 和 Anthropic Messages 使用各自协议，不接受 `compat`。兼容配置仅接受表中的键和字符串枚举，不能注入认证或端点参数。修改模型配置后，新构建固定新的配置版本。
 
 模型密钥使用主密钥加密落库。Pi 通过规划协调器模型代理调用供应商，供应商密钥留在规划协调器。源码凭据只提供给准备进程，不能写入 CR、Pod、仓库 URL、主容器或 AI 会话。
 
@@ -70,6 +95,8 @@ Pi 工具仅能列目录、读文件、搜索、读取 Git 元数据、节点能
 `ExecutionPlan v1` 包含摘要、实际文件依据、外置脚本和经过现有 Recipe 验证的目标/步骤/制品规则。平台固定源码清单、模型配置版本及计划版本；attempt 引用自己的计划，历史版本不可覆盖。脚本位于 `ARTIFACTORY_SCRIPT_DIR`，命令工作目录为 checkout，`ARTIFACTORY_WORK_DIR` 为其父 attempt 目录。
 
 有效计划自动执行。执行失败最多自动修订两次，共三轮；只修订失败目标，成功目标的执行与制品保留。修订不能改变 commit、目标集合、平台或扩大签名/节点池权限。源码凭据、模型认证及权限错误直接失败。所有阶段都可取消，提交计划与取消通过服务端事务排序，过期结果不能排队。
+
+构建详情按目标执行方式显示进度。原生目标显示节点、attempt、步骤和日志。镜像目标复用镜像执行卡片，显示当前状态与平台构建日志入口，不等待原生节点。源码解析或规划终止且未创建任务时，执行页不显示节点匹配。计划页分别说明正在规划、等待回答、失败或取消。
 
 人工重试复用原提交及该目标原计划。改变源码或目标需在草稿 Release 内创建新构建。发布在 Release 工作台显式选择一次完整成功构建。失败和旧轮次产物不能混入交付。发布冻结、命名和镜像不可变约束见[项目版本交付](release-delivery.md)。
 

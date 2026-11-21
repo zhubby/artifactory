@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
- * [OUTPUT]: 验证快捷导航、业务草稿保护与日志状态保持。
+ * [OUTPUT]: 验证快捷导航、应用分类、草稿保护与日志状态保持。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -72,7 +72,13 @@ test("quick navigation shortcuts preserve the active modal and still toggle the 
 });
 
 test("Build target forms keep host and application platforms consistent", async ({page})=>{
- await fixtureAPI(page);await page.goto(tenantURL(`/projects/desktop-client/releases/${build.release_id}`));
+ await fixtureAPI(page);
+ await page.route("**/api/v1/projects/*/build-platforms",route=>route.fulfill({json:[
+   {os:"linux",arch:"amd64",device_count:1,online_count:1},
+   {os:"darwin",arch:"arm64",device_count:1,online_count:0},
+   {os:"darwin",arch:"amd64",device_count:1,online_count:0},
+ ]}));
+ await page.goto(tenantURL(`/projects/desktop-client/releases/${build.release_id}`));
  await page.getByRole("button",{name:"发起构建",exact:true}).click();
  const dialog=page.getByRole("dialog");
  await dialog.getByRole("button",{name:"继续",exact:true}).click();
@@ -86,6 +92,8 @@ test("Build target forms keep host and application platforms consistent", async 
  await application.click();
  await expect(page.getByRole("listbox").getByRole("option")).toHaveText(["非应用目标","macos","ios","android"]);
  await page.getByRole("option", { name: "ios", exact: true }).click();
+ await expect(application).toHaveAttribute("data-value", "ios");
+ await chooseOption(target.getByRole("combobox",{name:"架构",exact:true}), "arm64");
  await expect(application).toHaveAttribute("data-value", "ios");
 });
 

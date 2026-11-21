@@ -1,6 +1,6 @@
 <!--
-[INPUT]: 当前 HTTP 路由、会话和租户项目授权。
-[OUTPUT]: 定义公开接口、输入、返回值与权限边界。
+[INPUT]: 当前 HTTP 路由、模型能力和租户项目授权。
+[OUTPUT]: 定义公开接口、协议兼容参数和目标准入边界。
 [POS]: 控制台与外部集成共用的 HTTP 契约入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -51,6 +51,7 @@
 | `GET /audit` | 最近 200 条审计事件，仅管理员 |
 | `GET, POST /projects` | 创建 `{name,repository_url,credential_id,pool_ids,signing_profiles,model_profile_id?,build_context?,source_credentials?}` |
 | `GET, PATCH /projects/{id}` | PATCH 使用完整项目设置，不是任意 JSON Patch |
+| `GET /projects/{id}/build-platforms` | 项目 read；返回获授权且未吊销的原生设备平台及设备数量 |
 | `POST /projects/{id}/releases` | 项目 release；`{version,notes?}`，创建严格 SemVer 草稿 |
 | `GET, POST /releases/{id}/builds` | 读取版本构建；创建需要 build 权限，接收 `{ref,goal,target_requirements,targets,parameters?}` |
 | `PATCH /releases/{id}` | 项目 release；`{notes}`，各发布状态均可修改说明 |
@@ -83,6 +84,36 @@
 创建租户和项目返回 `{id,slug}`，构建返回 `{id,number,project_slug}`；其他资源创建通常返回 `{id}`；Token 类创建还返回明文值；修改操作通常返回 `{ok:true}`。所有查询使用真实数据库，不返回演示对象。
 
 遥测历史使用 ISO 8601 `from/to` 左闭右开区间，`resolution=raw|minute|hour`，默认 minute；单次范围分别限 6 小时、2 天、31 天，并受数据保留期约束。历史及清单查询返回 `{"samples":[],"truncated":false}`，结果超过行数或字节预算时标记截断。采集范围、未知值、权限和保留策略见 [时序观测](telemetry.md)。
+
+## 模型协议与兼容参数
+
+模型配置的 `api` 为 `openai-completions`、`openai-responses` 或 `anthropic-messages`。`model` 为供应商模型标识，允许任意非空名称，最多 200 UTF-8 字节。平台按协议和显式能力生成请求，不按模型名称推断能力。
+
+`parameters` 支持 `thinking_level`、`max_tokens`、`context_window`、`temperature` 和 `requests_per_minute`。仅 `openai-completions` 额外接受可选对象 `compat`：
+
+| 字段 | 字符串枚举 | 省略时默认值 |
+|---|---|---|
+| `parameters.compat.system_role` | `system`、`developer` | `system` |
+| `parameters.compat.thinking_format` | `none`、`reasoning_effort`、`enable_thinking`、`thinking` | `none` |
+| `parameters.compat.max_tokens_field` | `max_tokens`、`max_completion_tokens` | `max_tokens` |
+
+空对象合法。`compat` 为 `null`、非对象、含未知键或非法枚举时返回 `400`。Responses 和 Anthropic Messages 即使收到空 `compat` 对象也返回 `400`。兼容参数不能覆盖模型端点或认证信息。
+
+`system_role` 独立控制指令消息角色，`max_tokens_field` 指定输出上限字段。`thinking_format` 为 `none` 时不发送思考参数；其他值指定思考参数格式，级别由 `thinking_level` 决定。旧 Qwen 配置若需思考，显式设置 `{"thinking_level":"medium","compat":{"thinking_format":"enable_thinking"}}`，模型名称本身不启用思考。
+
+`thinking_level=off` 时，`enable_thinking` 发送 `false`，`thinking` 发送 `{"type":"disabled"}`，`reasoning_effort` 不发送参数。其他级别分别发送 `true`、`{"type":"enabled"}` 或对应的推理级别。
+
+## 原生目标设备准入
+
+`GET /projects/{id}/build-platforms` 需要项目 read 权限，响应为数组：
+
+```json
+[{"os":"darwin","arch":"arm64","device_count":1,"online_count":1}]
+```
+
+条目按项目可使用且未吊销的设备分组，`os` 为 `linux`、`darwin` 或 `windows`，`arch` 为 `amd64` 或 `arm64`。`device_count` 包含离线、忙碌和暂时排空设备。`online_count` 只统计心跳在 30 秒内、存在活动会话和连接所有者且证书有效的设备。没有对应设备的平台不返回条目。构建向导禁用缺设备的原生平台，并优先选择有在线设备的平台。
+
+`POST /releases/{id}/builds` 在事务中逐一复核原生目标。项目没有获授权且未吊销的对应 OS/架构设备时返回 `400`，错误说明包含目标 key 和 OS/架构。此检查不要求设备当前空闲或在线；镜像目标不受此原生设备列表限制。
 
 ## 触发示例
 

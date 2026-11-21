@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖隔离数据库与镜像执行存储。
+//! [INPUT]: 依赖隔离数据库、显式原生设备与镜像执行存储。
 //! [OUTPUT]: 验证无设备执行、候选确认和 Release 外仓分发。
 //! [POS]: 镜像执行状态机的数据库集成验收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -708,6 +708,7 @@ async fn disabled_namespace_rejects_image_retry_but_preserves_native_retry_and_a
         .unwrap(),
         "queued"
     );
+    db.node().await;
     let input = serde_json::from_value(crate::fixture::build_input()).unwrap();
     let release: Uuid = sql::scalar(
         &mut db.pool.clone(),

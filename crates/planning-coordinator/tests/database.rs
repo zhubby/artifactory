@@ -19,6 +19,8 @@ mod conversation_chunks;
 mod execution_failure;
 #[path = "database/source_payload.rs"]
 mod source_payload;
+#[path = "database/worker_failure.rs"]
+mod worker_failure;
 struct TestCoordinator {
     coordinator: Coordinator,
     pool: toasty::Db,

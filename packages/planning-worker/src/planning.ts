@@ -1,24 +1,17 @@
 /**
- * [INPUT]: 依赖 Pi 模型接口、节点 MCP 与平台 RPC。
+ * [INPUT]: 依赖显式协议能力、Pi Agent、节点 MCP 与平台 RPC。
  * [OUTPUT]: 提供显式应用分类、规划循环与脱敏审计。
  * [POS]: Kubernetes Planning coordinator 的单任务规划核心。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { Agent, type AgentTool, type ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createModels, createProvider, type Api, type Model } from "@earendil-works/pi-ai";
-import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
-import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
-import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
+import { modelConfiguration, type ModelConfiguration } from "./model-configuration.js";
+export { modelConfiguration, type ModelConfiguration } from "./model-configuration.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
 import { connectNodeMcp } from "./node-mcp.js";
 import { isSourceTool, taskSource } from "./source-tools.js";
 
-export interface ModelConfiguration {
-  api: "openai-completions" | "openai-responses" | "anthropic-messages";
-  base_url: string; model: string; api_key: string;
-  parameters: { thinking_level?: string; max_tokens?: number; context_window?: number; temperature?: number; requests_per_minute?: number };
-}
 export interface Task {
   context: Record<string, unknown>;
   model: ModelConfiguration;
@@ -147,26 +140,9 @@ export function safeError(error: unknown, secret: string): string {
   return "AI planning failed; check model endpoint, model availability and worker connectivity";
 }
 
-export function modelConfiguration(config: ModelConfiguration) {
-  const provider = "artifactory-task";
-  const parameters = config.parameters || {};
-  const qwenThinking = config.api === "openai-completions" && /^qwen3(?:[.\/-]|$)/i.test(config.model);
-  const model: Model<Api> = {
-    id: config.model, name: config.model, api: config.api, provider,
-    baseUrl: config.base_url, reasoning: qwenThinking || (!!parameters.thinking_level && parameters.thinking_level !== "off"),
-    ...(qwenThinking ? { compat: { thinkingFormat: "qwen" as const, supportsReasoningEffort: false, supportsDeveloperRole: false, maxTokensField: "max_tokens" as const } } : {}),
-    input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: parameters.context_window || 128000, maxTokens: parameters.max_tokens || 8192,
-  };
-  const api = config.api === "anthropic-messages" ? anthropicMessagesApi() : config.api === "openai-responses" ? openAIResponsesApi() : openAICompletionsApi();
-  const models = createModels();
-  models.setProvider(createProvider({ id: provider, baseUrl: config.base_url, models: [model], auth: { apiKey: { name: "Platform task credential", resolve: async () => ({ auth: { apiKey: config.api_key } }) } }, api }));
-  return { models, model };
-}
-
 export async function runTask(task: Task, rpc: Rpc, signal: AbortSignal): Promise<void> {
   if (signal.aborted) throw new Error("task canceled");
-  const { models, model } = modelConfiguration(task.model);
+  const { models, model, onPayload, cacheRetention } = modelConfiguration(task.model);
   let completed = false;
   let calls = 0;
   let lastCall = 0;
@@ -210,7 +186,7 @@ export async function runTask(task: Task, rpc: Rpc, signal: AbortSignal): Promis
   });
   const agent = new Agent({
     initialState: { systemPrompt, model, tools, thinkingLevel: (task.model.parameters?.thinking_level || "off") as ThinkingLevel },
-    streamFn: (selected, context, options) => models.streamSimple(selected, context, { ...options, maxRetries: 0, transport: "sse" as const, headers: { "x-artifactory-request-id": randomUUID() }, maxTokens: model.maxTokens, ...(task.model.parameters?.temperature === undefined ? {} : { temperature: task.model.parameters.temperature }) }),
+    streamFn: (selected, context, options) => models.streamSimple(selected, context, { ...options, onPayload, cacheRetention, maxRetries: 0, transport: "sse" as const, headers: { "x-artifactory-request-id": randomUUID() }, maxTokens: model.maxTokens, ...(task.model.parameters?.temperature === undefined ? {} : { temperature: task.model.parameters.temperature }) }),
     getApiKey: () => task.model.api_key,
     identity: { attribution: { name: "artifactory", url: "https://github.com/zhubby/artifactory" } },
     toolExecution: "sequential",

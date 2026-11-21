@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖共享 Select、租户模型配置、统一通知和表单。
- * [OUTPUT]: 提供模型方案配置。
- * [POS]: Kubernetes 规划只配置模型；Worker 由 Operator 调度。
+ * [OUTPUT]: 提供模型、调用预算与显式接口兼容配置。
+ * [POS]: 兼容字段独立于模型名称；Worker 由 Operator 调度。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -57,13 +57,18 @@ function ModelForm({profile, defaultModel, done}: {profile?: ModelProfile; defau
   const { t } = useUI();
   const [api, setApi] = useState(profile?.api || "openai-completions");
   const [endpoint, setEndpoint] = useState(profile?.base_url || "https://api.openai.com/v1");
+  const [compat, setCompat] = useState<Required<NonNullable<ModelProfile["parameters"]["compat"]>>>({
+    system_role: profile?.parameters.compat?.system_role ?? "system",
+    thinking_format: profile?.parameters.compat?.thinking_format ?? "none",
+    max_tokens_field: profile?.parameters.compat?.max_tokens_field ?? "max_tokens",
+  });
   return <SubmitForm onCancel={done} onSubmit={async (form) => {
     const value = (name: string) => String(form.get(name) || "");
     await mutation(profile ? `/model-profiles/${profile.id}` : "/model-profiles", {
       name: value("name"), api, base_url: endpoint, model: value("model"), api_key: value("api_key"),
       enabled: form.has("enabled"), is_default: form.has("is_default"),
       max_calls: Number(value("max_calls")), timeout_seconds: Number(value("timeout_seconds")),
-      parameters: {context_window: Number(value("context_window")), max_tokens: Number(value("max_tokens")), thinking_level: value("thinking_level"), ...(profile?.parameters.temperature === undefined ? {} : {temperature: profile.parameters.temperature}), ...(value("requests_per_minute") ? {requests_per_minute: Number(value("requests_per_minute"))} : {})},
+      parameters: {context_window: Number(value("context_window")), max_tokens: Number(value("max_tokens")), thinking_level: value("thinking_level"), ...(profile?.parameters.temperature === undefined ? {} : {temperature: profile.parameters.temperature}), ...(value("requests_per_minute") ? {requests_per_minute: Number(value("requests_per_minute"))} : {}), ...(api === "openai-completions" ? {compat} : {})},
     }, profile ? "PATCH" : "POST"); done();
   }}>
     <Field label={t("common.name")}><Input name="name" required maxLength={100} defaultValue={profile?.name} /></Field>
@@ -79,6 +84,15 @@ function ModelForm({profile, defaultModel, done}: {profile?: ModelProfile; defau
       <Field label={t("ai.rpm")} hint={t("ai.rpmHint")}><Input name="requests_per_minute" type="number" min={1} max={600} defaultValue={profile?.parameters.requests_per_minute} /></Field>
     </div>
     <Field label={t("ai.thinking")}><Select className="input" name="thinking_level" defaultValue={profile?.parameters.thinking_level || "off"}>{["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((level) => <option key={level} value={level}>{level}</option>)}</Select></Field>
+    {api === "openai-completions" && <details className="wizard-advanced">
+      <summary>{t("ai.compatibility")}</summary>
+      <p className="mt-3 text-xs text-muted-foreground">{t("ai.compatibilityHint")}</p>
+      <div className="mt-3 grid gap-3">
+        <Field label={t("ai.systemRole")}><Select name="compat_system_role" value={compat.system_role} onChange={(event) => setCompat({...compat, system_role: event.target.value as typeof compat.system_role})}><option value="system">system</option><option value="developer">developer</option></Select></Field>
+        <Field label={t("ai.thinkingFormat")}><Select name="compat_thinking_format" value={compat.thinking_format} onChange={(event) => setCompat({...compat, thinking_format: event.target.value as typeof compat.thinking_format})}><option value="none">{t("ai.noThinkingParameter")}</option><option value="reasoning_effort">reasoning_effort</option><option value="enable_thinking">enable_thinking</option><option value="thinking">thinking</option></Select></Field>
+        <Field label={t("ai.maxTokensField")}><Select name="compat_max_tokens_field" value={compat.max_tokens_field} onChange={(event) => setCompat({...compat, max_tokens_field: event.target.value as typeof compat.max_tokens_field})}><option value="max_tokens">max_tokens</option><option value="max_completion_tokens">max_completion_tokens</option></Select></Field>
+      </div>
+    </details>}
     <label className="flex gap-2 text-sm"><input type="checkbox" name="enabled" defaultChecked={profile?.enabled ?? true} />{t("ai.enabled")}</label>
     <label className="flex gap-2 text-sm"><input type="checkbox" name="is_default" defaultChecked={profile?.is_default ?? defaultModel} />{t("ai.makeDefault")}</label>
   </SubmitForm>;

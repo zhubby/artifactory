@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖构建状态、规划历史、内容骨架和澄清接口。
- * [OUTPUT]: 展示显式应用分类、宿主、计划与澄清入口。
- * [POS]: 活跃构建轮询规划；终态保留静态计划。
+ * [OUTPUT]: 展示计划与澄清入口，未生成计划时区分处理中与终态。
+ * [POS]: 活跃构建轮询规划；失败与取消不再显示等待执行说明。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -27,6 +27,10 @@ export function BuildPlanning({build, user, refresh}: {build: Build; user: User;
   }, [build.id, terminal, history.reload]);
   const current = history.data?.plans.at(-1);
   const run = history.data?.runs.at(-1);
+  const emptyHint = build.status === "needs_input" ? "ai.clarificationHint"
+    : build.status === "failed" ? "ai.noPlanFailed"
+    : build.status === "canceled" ? "ai.noPlanCanceled"
+    : terminal ? "ai.noPlan" : "ai.planningHint";
   return <section className="panel mb-6 min-w-0">
     <SectionTitle title={t("ai.plan")} detail={t("ai.revisionCount", {count: build.revision_count || 0})}>{run && <span className="tag">{t("ai.callCount", {count: run.calls})}</span>}</SectionTitle>
     <div className="space-y-4 p-5">
@@ -45,7 +49,7 @@ export function BuildPlanning({build, user, refresh}: {build: Build; user: User;
         <ul className="space-y-2 text-xs text-muted-foreground">{current.contents.evidence.map((item, index) => <li key={index}><code className="break-all text-primary">{item.path}</code><span className="ml-2">{item.reason}</span></li>)}</ul>
         <details><summary className="cursor-pointer text-sm text-primary">{t("ai.executionPlan")}</summary><div className="mt-4 space-y-4">{Object.entries(current.contents.recipe.targets).map(([name, target]) => <div key={name}><h3 className="mb-2 text-sm font-medium">{name} · <TargetPlatformLabel target={target} /></h3>{target.steps.map((step, index) => <div className="mb-3" key={index}><p className="mb-1 text-xs text-muted-foreground">{step.name} · {step.phase}</p><pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-background p-3 text-xs">{step.run}</pre></div>)}</div>)}{current.contents.scripts.map((script) => <div key={script.name}><p className="mb-2 font-mono text-xs">{script.name}</p><pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-background p-3 text-xs">{script.content}</pre></div>)}</div></details>
         <details><summary className="cursor-pointer text-sm text-muted-foreground">{t("ai.planHistory")}</summary><div className="mt-3 space-y-2">{history.data?.plans.map((entry) => <details key={entry.id}><summary className="cursor-pointer text-xs">{t("ai.version", {version: entry.revision})} · {date(entry.created_at)}</summary><p className="mt-2 whitespace-pre-wrap text-xs leading-5">{entry.contents.summary}</p><pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(entry.contents, null, 2)}</pre></details>)}</div></details>
-      </> : !history.data ? !history.error && <Loading variant="detail" /> : <p className="text-sm text-muted-foreground">{t("ai.planningHint")}</p>}
+      </> : !history.data ? !history.error && <Loading variant="detail" /> : <p className="text-sm text-muted-foreground">{t(emptyHint)}</p>}
     </div>
   </section>;
 }

@@ -1,6 +1,6 @@
 <!--
-[INPUT]: 固定源码身份、Operator 执行观察和规划协调器事务。
-[OUTPUT]: 定义准备、领取、故障回报与恢复边界。
+[INPUT]: 固定源码身份、Worker 报告和规划协调器事务。
+[OUTPUT]: 定义准备、故障脱敏、累计统计和提案围栏。
 [POS]: 控制平面内嵌的规划协调器协议入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -82,7 +82,7 @@ Control 的 `/internal/planning/event`、`/internal/planning/tool` 和 `/interna
 | `/v1/execution-lost` | Operator 服务身份 | 以完整执行身份撤销丢失 Pod，或结束被删除的 CR |
 | `/v1/prepare` | Kubernetes 投射令牌 | 给 init 提供固定源码材料 |
 | `/v1/acquire` | Kubernetes 投射令牌 | 获取 run grant 并启动首次模型 deadline |
-| `/v1/heartbeat`、`/v1/report` | run grant | 续租、累计 usage 与完成消息审计 |
+| `/v1/heartbeat`、`/v1/report` | run grant | 续租、累计 usage、完成消息审计和安全终态错误 |
 | `/model/{run}/{generation}/{uid}/v1/...` | run grant | 原子预留预算并代理模型 SSE |
 | `/v1/tool`、`/v1/proposal` | run grant | 转发只读工具、保存提案与读取原回执 |
 | `/v1/conversations` | 服务身份及 run/tenant/project | 列出 generation 会话摘要 |
@@ -98,6 +98,14 @@ Operator 使用服务令牌读取和登记执行。内部网关使用 TLS，客�
 控制平面消费 outbox 后结束业务构建。
 重复回报不重复写入事件，旧身份被拒绝。
 已提交提案继续由原回执决定结果，Pod 退出不能覆盖已接受结果。
+
+Worker 通过 `/v1/report` 的 `kind=failed` 和 `payload.error` 提交终态原因。Worker 先将认证失败、调用预算和规划截止时间转换为安全分类。规划协调器保留该原因，替换模型密钥、运行租约及其 JSON 转义值，将控制字符转换为空格，再按 UTF-8 边界限制为 2000 字节。空白或非字符串错误使用 `Pi planning failed`。清理后的错误与失败状态在同一事务写入 outbox，控制平面将其保存为构建和规划运行的错误，构建页面显示该原因。
+
+Worker 失败报告必须通过当前租约、generation 和事件顺序校验。取消、已有终态和待接受提案不能被失败报告覆盖。已提交提案仍由其持久回执决定结果。
+
+每个提案和失败 outbox 事件携带协调器保存的 `generation`、累计 `calls` 和 `usage` 快照。模型代理在发送请求前原子预留次数。供应商返回 4xx 或结果未知时，该次数仍被消耗。控制平面将累计统计投影到规划运行，供 `/api/v1/builds/{id}/plans` 和构建页面读取。待澄清、成功、失败和被拒绝提案都保留已消耗的调用统计。
+
+统计仅更新活动运行。控制平面拒绝低于已接收 generation 的事件，累计次数和有效数字用量不能回退。重复回执不累加次数，取消和已有终态不接收新的统计。提案验证失败不回滚已保存的调用统计。
 
 丢失回报包含 `run_id`、`generation`、`execution` 和 `reason`。`reason=pod_missing` 用于 Pod 消失或开始删除，要求完整执行身份与规划协调器登记完全一致；事务撤销 grant，结束旧会话，并在预算允许时重新排队到下一 generation。重试最多三个 generation，累计调用与原 deadline 不重置。`reason=resource_deleted` 结束被删除 CR 对应的活动任务；仅规划协调器尚未登记执行时允许 execution 为空。已有终态和持久提案不被覆盖。成功恢复后，重复旧 generation 回报被 fencing 拒绝；Operator 重新读取当前运行状态。旧 Pod 必须停止并完成清理后，Operator 才创建新 generation 的 Pod。未知旧 Pod 的停止证据仍由 Operator 保存，不能据此释放实际执行容量。
 

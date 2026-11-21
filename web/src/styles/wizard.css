@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖主题变量、四步构建弹窗和目标卡片类名。
- * [OUTPUT]: 提供固定导航与操作、卡片选择和可编辑确认摘要。
+ * [OUTPUT]: 提供固定导航与操作、平台禁选反馈和可编辑确认摘要。
  * [POS]: 构建引导的响应式布局；滚动限定在共享弹窗正文。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -19,6 +19,8 @@
 .wizard-choice { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 48px; padding: 12px; border: 1px solid var(--border); border-radius: 5px; font-size: 13px; line-height: 1.6; cursor: pointer; overflow-wrap: anywhere; }
 .wizard-choice input { flex-shrink: 0; }
 .wizard-choice:hover { background: var(--quiet); }
+.wizard-choice[data-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.wizard-choice[data-disabled="true"]:hover { background: transparent; }
 .wizard-choice[data-selected="true"] { border-color: var(--foreground); background: var(--quiet); }
 .wizard-choice:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: 2px; }
 .wizard-choice-detail { display: block; margin-top: 4px; font-size: 11px; color: var(--muted-foreground); line-height: 1.6; }

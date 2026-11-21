@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离数据库、真实 HTTP 鉴权和 Release 领域。
-//! [OUTPUT]: 验证版本元数据、并发唯一约束和独立构建归属。
+//! [OUTPUT]: 验证版本元数据、授权设备边界和独立构建归属。
 //! [POS]: Release API 合同回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::fixture::build_input;
@@ -123,6 +123,15 @@ async fn concurrent_duplicate_release_versions_return_one_success_and_one_confli
 async fn release_http_contract_owns_builds_and_rejects_mutable_identity() {
     let db = Database::with_tenant().await;
     let (project, old_build, _) = db.fixture().await;
+    db.node().await;
+    let mac = db.node().await;
+    sql::execute(
+        &mut db.pool.clone(),
+        "UPDATE nodes SET os='darwin',arch='arm64' WHERE id=$1",
+        params![mac],
+    )
+    .await
+    .unwrap();
     let _ = db.release_build_path(project).await;
     grant_release_token(&db, project).await;
     let (status, created) = call(
@@ -299,6 +308,113 @@ async fn release_http_contract_owns_builds_and_rejects_mutable_identity() {
         .await
         .0,
         StatusCode::FORBIDDEN
+    );
+    db.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn project_build_platforms_enforce_scope_and_native_build_admission() {
+    let db = Database::with_tenant().await;
+    let (project, _, _) = db.fixture().await;
+    let (hidden, _, _) = db.fixture().await;
+    grant_release_token(&db, project).await;
+    let path = db.release_build_path(project).await;
+    db.node().await;
+    let mac = db.node().await;
+    sql::execute(
+        &mut db.pool.clone(),
+        "UPDATE nodes SET os='darwin',arch='arm64',active_session=NULL WHERE id=$1",
+        params![mac],
+    )
+    .await
+    .unwrap();
+    let (status, platforms) = call(
+        &db,
+        "GET",
+        format!("/projects/{project}/build-platforms"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{platforms}");
+    assert_eq!(
+        platforms,
+        json!([
+            {"os":"darwin","arch":"arm64","device_count":1,"online_count":0},
+            {"os":"linux","arch":"amd64","device_count":1,"online_count":1},
+        ])
+    );
+    assert_eq!(
+        call(
+            &db,
+            "GET",
+            format!("/projects/{hidden}/build-platforms"),
+            json!({})
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let mut unsupported = build_input();
+    unsupported["target_requirements"][0]["arch"] = json!("arm64");
+    let (status, error) = call(&db, "POST", path.clone(), unsupported).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{error}");
+    assert!(error["error"].as_str().unwrap().contains("linux/arm64"));
+    assert_eq!(
+        call(&db, "POST", path.clone(), build_input()).await.0,
+        StatusCode::OK
+    );
+    sql::execute(
+        &mut db.pool.clone(),
+        "UPDATE projects SET node_access_mode='nodes',node_ids=ARRAY[$2] WHERE id=$1",
+        params![project, mac],
+    )
+    .await
+    .unwrap();
+    let (status, platforms) = call(
+        &db,
+        "GET",
+        format!("/projects/{project}/build-platforms"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        platforms,
+        json!([{"os":"darwin","arch":"arm64","device_count":1,"online_count":0}])
+    );
+    assert_eq!(
+        call(&db, "POST", path.clone(), build_input()).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let mut mac_input = build_input();
+    mac_input["target_requirements"][0]["os"] = json!("darwin");
+    mac_input["target_requirements"][0]["arch"] = json!("arm64");
+    assert_eq!(
+        call(&db, "POST", path.clone(), mac_input.clone()).await.0,
+        StatusCode::OK
+    );
+    sql::execute(
+        &mut db.pool.clone(),
+        "UPDATE nodes SET revoked=true WHERE id=$1",
+        params![mac],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        call(
+            &db,
+            "GET",
+            format!("/projects/{project}/build-platforms"),
+            json!({})
+        )
+        .await
+        .1,
+        json!([])
+    );
+    assert_eq!(
+        call(&db, "POST", path, mac_input).await.0,
+        StatusCode::BAD_REQUEST
     );
     db.close().await;
 }

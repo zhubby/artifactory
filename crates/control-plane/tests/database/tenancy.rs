@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖隔离数据库和带租户头的 HTTP 会话。
+//! [INPUT]: 依赖隔离数据库、授权设备和租户 HTTP 会话。
 //! [OUTPUT]: 验证多租户、成员和签名管理边界。
 //! [POS]: 数据库验收中的租户测试入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -540,6 +540,7 @@ async fn project_administrators_cannot_expand_resources_and_role_changes_revoke_
     let (outsider_id, _) = account(&db, "outsider", "admin").await;
     let t = tenant(&db, &owner, "Team").await;
     let p = project(&db, &owner, t, "App").await;
+    device(&db, t).await;
     for name in ["project-admin", "member"] {
         assert_eq!(
             request(

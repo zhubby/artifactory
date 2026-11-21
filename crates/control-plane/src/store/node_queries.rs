@@ -1,4 +1,7 @@
-//! Discovery always intersects current project permissions with the frozen build scope.
+//! [INPUT]: 依赖项目设备授权、设备平台与构建冻结范围。
+//! [OUTPUT]: 查询项目原生平台，以及构建范围内的规划设备。
+//! [POS]: 设备发现边界；创建前查询当前授权，规划时再相交冻结授权。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use crate::node_query::Query;
 use anyhow::Result;
@@ -7,6 +10,11 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 impl ControlStore {
+    pub async fn project_build_platforms(&self, project: Uuid) -> crate::error::Result<Vec<Value>> {
+        self.authorize_owned("projects", project).await?;
+        Ok(sql::scalars(&mut self.pool.clone(), "SELECT jsonb_build_object('os',n.os,'arch',n.arch,'device_count',count(*),'online_count',count(*) FILTER (WHERE n.last_seen>clock_timestamp()-interval '30 seconds' AND n.active_session IS NOT NULL AND n.connection_owner IS NOT NULL AND n.certificate_expires_at>clock_timestamp())) FROM nodes n WHERE project_node_allowed($1,n.id) AND NOT n.revoked AND n.os IN ('linux','darwin','windows') AND n.arch IN ('amd64','arm64') GROUP BY n.os,n.arch ORDER BY n.os,n.arch", params![project]).await?)
+    }
+
     pub(crate) async fn query_nodes(
         &self,
         build: Uuid,

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供 Release 说明、构建目标与归属、节点身份与接口快照类型。
+ * [OUTPUT]: 提供 Release、原生与镜像执行、节点和模型兼容字段类型。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -160,6 +160,7 @@ export interface Job {
   target: string;
   status: string;
   target_config: TargetPlatform & {
+    executor?: "native" | "buildkit";
     steps: { name: string; phase: string }[];
   };
   attempts: Attempt[];
@@ -488,6 +489,11 @@ export interface ModelProfile {
     thinking_level?: string;
     temperature?: number;
     requests_per_minute?: number;
+    compat?: {
+      system_role?: "system" | "developer";
+      thinking_format?: "none" | "reasoning_effort" | "enable_thinking" | "thinking";
+      max_tokens_field?: "max_tokens" | "max_completion_tokens";
+    };
   };
 }
 export interface PlanRevision {

@@ -2,16 +2,16 @@
 > L2 | Parent: ../AGENTS.md
 
 account.tsx: 提供个人设置和跨导航操作通知，保存反馈不占面板布局。
-ai-settings.tsx: 使用共享下拉配置模型与固定推理预算。
+ai-settings.tsx: 使用共享下拉配置任意模型、调用预算与独立接口兼容字段。
 auth-shell.tsx: 渲染认证页面布局。
 brand-mark.tsx: 渲染 Artifactory 品牌标记。
-build-detail.tsx: 展示版本内构建、独立源码与目标、日志与候选，统一操作通知，保留可访问持久状态。
+build-detail.tsx: 按原生与镜像目标展示执行和日志，未创建任务的终态不显示节点等待。
 build-log-history.tsx: 首读显示日志骨架，按 attempt 和步骤分页，追加旧日志时保留输出与阅读锚点。
-build-planning.tsx: 展示应用分类、宿主、规划骨架、澄清与对话入口，终态补读静默。
+build-planning.tsx: 展示计划、澄清与对话入口，未生成计划时区分等待回答、处理中和终态。
 planning-conversations.tsx: 首次展开使用骨架，按 generation 分页读取审计，后台轮询和终态补读静默。
 build-table.tsx: 展示构建的 Release 归属、独立源码与目标和执行状态。
-build-wizard.tsx: 组合四步弹窗、答案草稿、摘要编辑和最终确认提交。
-build-target-picker.tsx: 使用类型与平台卡片选择多个目标，高级设置保留精细合同。
+build-wizard.tsx: 组合四步弹窗、授权设备默认目标、答案草稿和最终确认提交。
+build-target-picker.tsx: 按项目授权设备禁选原生平台，高级设置遵守同一设备约束。
 common.tsx: 提供内容骨架、共享字段、持久状态、无布局错误通知桥及复制下载反馈。
 command-palette.tsx: 复用当前范围的业务与设置导航，支持项目切换并恢复触发焦点。
 console.tsx: 组合工作区数据、请求生命周期和业务页面，交由独立组件呈现导航。

@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖租户夹具、构建源码任务和 UUID 鉴权。
+//! [INPUT]: 依赖租户设备夹具、构建源码任务和 UUID 鉴权。
 //! [OUTPUT]: 验证 slug、构建序号与项目权限。
 //! [POS]: 可读地址的数据库与 HTTP 回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -168,6 +168,7 @@ async fn readable_lookup_checks_membership_project_grants_and_token_scopes() {
     let p = project(&db, &alice, a, "Visible").await;
     project(&db, &alice, a, "Hidden").await;
     project(&db, &bob, b, "Visible").await;
+    device(&db, a).await;
     let (_, build) = request(
         &db,
         &alice,
@@ -324,6 +325,7 @@ async fn concurrent_build_numbers_are_project_local_and_not_reused() {
     let t = tenant(&db, &cookie, "Team").await;
     let p = project(&db, &cookie, t, "Desktop App").await;
     let other = project(&db, &cookie, t, "Other").await;
+    device(&db, t).await;
     let path = db.release_build_path(p).await;
     let create = || {
         request(

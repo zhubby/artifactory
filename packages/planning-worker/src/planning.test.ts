@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖规划核心与本地 HTTP 模型桩。
- * [OUTPUT]: 验证应用分类、工具权限、凭据隔离和规划终态。
+ * [OUTPUT]: 验证协议能力、应用分类、工具权限和凭据隔离。
  * [POS]: 规划核心的行为回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { runTask, safeError, toolDefinitions, type Task } from "./planning.js";
+import type { ModelConfiguration } from "./model-configuration.js";
 
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -88,35 +89,88 @@ test("Pi uses task key only for authentication and terminates after clarificatio
   } finally { server.close(); server.closeAllConnections(); }
 });
 
-test("OpenAI-compatible Qwen requests honor the configured thinking level", async (t) => {
-  for (const fixture of [
-    { model: "qwen3.8-max", level: "off", thinking: false },
-    { model: "qwen3.8-max", level: "low", thinking: true },
-    { model: "gpt-4.1", level: "off", thinking: undefined },
-  ]) await t.test(`${fixture.model} ${fixture.level}`, async () => {
+test("Chat Completions request fields follow explicit capabilities for any model name", async (t) => {
+  const fixtures: {
+    model: string; level: string;
+    compat?: NonNullable<ModelConfiguration["parameters"]["compat"]>;
+    thinking?: boolean; nestedThinking?: string; effort?: string; role?: string;
+  }[] = [
+    { model: "qwen3.8-max", level: "off" },
+    { model: "qwen4-max", level: "medium" },
+    { model: "arbitrary-private-model", level: "high" },
+    { model: "qwen4-max", level: "medium", compat: { thinking_format: "enable_thinking" }, thinking: true },
+    { model: "renamed-model", level: "off", compat: { thinking_format: "enable_thinking" }, thinking: false },
+    { model: "any-model", level: "medium", compat: { thinking_format: "thinking" }, nestedThinking: "enabled" },
+    { model: "any-model", level: "off", compat: { thinking_format: "thinking" }, nestedThinking: "disabled" },
+    { model: "any-model", level: "medium", compat: { system_role: "system", thinking_format: "reasoning_effort", max_tokens_field: "max_completion_tokens" }, effort: "medium" },
+    { model: "any-model", level: "off", compat: { system_role: "developer" }, role: "developer" },
+    { model: "any-model", level: "off", compat: { thinking_format: "reasoning_effort" } },
+  ];
+  for (const [index,fixture] of fixtures.entries()) await t.test(`${index}: ${fixture.model} ${fixture.level}`, async () => {
     let sent: Record<string, unknown> | undefined;
     const server = createServer(async (request, response) => {
       let body = "";
       for await (const chunk of request) body += chunk;
       sent = JSON.parse(body);
       response.writeHead(200, { "content-type": "text/event-stream" });
-      const chunk = (delta: unknown, finish_reason: string | null = null) => response.write(`data: ${JSON.stringify({ id: "qwen-test", object: "chat.completion.chunk", created: 1, model: fixture.model, choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
+      const chunk = (delta: unknown, finish_reason: string | null = null) => response.write(`data: ${JSON.stringify({ id: "compat-test", object: "chat.completion.chunk", created: 1, model: fixture.model, choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
       chunk({ role: "assistant", tool_calls: [{ index: 0, id: "question-1", type: "function", function: { name: "request_input", arguments: JSON.stringify({ question: "Which product?" }) } }] });
       chunk({}, "tool_calls");
       response.end("data: [DONE]\n\n");
     });
     server.listen(0, "127.0.0.1"); await once(server, "listening");
     const address = server.address(); assert.ok(address && typeof address === "object");
-    const task: Task = { context: { source_manifest:manifest, goal: "Build the selected product" }, model: { api: "openai-completions", base_url: `http://127.0.0.1:${address.port}/v1`, model: fixture.model, api_key: "task-secret", parameters: { thinking_level: fixture.level } }, timeout_seconds: 10, max_calls: 1 };
+    const task: Task = { context: { source_manifest:manifest, goal: "Build the selected product" }, model: { api: "openai-completions", base_url: `http://127.0.0.1:${address.port}/v1`, model: fixture.model, api_key: "task-secret", parameters: { thinking_level: fixture.level, ...(fixture.compat ? {compat:fixture.compat} : {}) } }, timeout_seconds: 10, max_calls: 1 };
     try {
       await runTask(task, async (method, payload) => {
         if (method === "tool") { assert.equal(payload.name, "request_input"); return { accepted: true, needs_input: true }; }
         return { ok: true };
       }, new AbortController().signal);
       assert.ok(sent);
+      assert.equal(sent.model,fixture.model);
       assert.equal(sent.enable_thinking, fixture.thinking);
-      if (fixture.model.startsWith("qwen")) assert.equal((sent.messages as { role: string }[])[0]?.role, "system");
+      assert.deepEqual(sent.thinking, fixture.nestedThinking ? {type:fixture.nestedThinking} : undefined);
+      assert.equal(sent.reasoning_effort, fixture.effort);
+      assert.equal((sent.messages as { role: string }[])[0]?.role, fixture.role || "system");
+      const tokenField=fixture.compat?.max_tokens_field || "max_tokens";
+      assert.equal(sent[tokenField],8192);
+      assert.equal(sent[tokenField === "max_tokens" ? "max_completion_tokens" : "max_tokens"],undefined);
+      assert.equal(sent.store,undefined);
       assert.equal(JSON.stringify(sent).includes("task-secret"), false);
+    } finally { server.close(); server.closeAllConnections(); }
+  });
+});
+
+test("Chat Completions does not infer second-turn fields from endpoint names", async (t) => {
+  for (const endpoint of ["generic", "deepseek.com", "openrouter.ai"]) await t.test(endpoint, async () => {
+    const requests: Record<string, unknown>[] = [];
+    const server = createServer(async (request, response) => {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      requests.push(JSON.parse(body));
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      const first = requests.length === 1;
+      const delta = first ? { role: "assistant", content: "I will inspect this source." } : {
+        role: "assistant", tool_calls: [{ index: 0, id: "question", type: "function", function: { name: "request_input", arguments: JSON.stringify({ question: "Which product?" }) } }],
+      };
+      for (const [value, finish] of [[delta, null], [{}, first ? "stop" : "tool_calls"]]) {
+        response.write(`data: ${JSON.stringify({ id: "endpoint-test", object: "chat.completion.chunk", created: 1, model: "private-alias", choices: [{ index: 0, delta: value, finish_reason: finish }] })}\n\n`);
+      }
+      response.end("data: [DONE]\n\n");
+    });
+    server.listen(0, "127.0.0.1"); await once(server, "listening");
+    const address = server.address(); assert.ok(address && typeof address === "object");
+    const task: Task = { context: { source_manifest: manifest, goal: "Build this product" }, model: { api: "openai-completions", base_url: `http://127.0.0.1:${address.port}/${endpoint}/v1`, model: "private-alias", api_key: "task-secret", parameters: { thinking_level: "medium", compat: { thinking_format: "reasoning_effort" } } }, timeout_seconds: 10, max_calls: 2 };
+    try {
+      await runTask(task, async (method) => method === "tool" ? { accepted: true, needs_input: true } : { ok: true }, new AbortController().signal);
+      assert.equal(requests.length, 2);
+      const next = requests[1]; assert.ok(next);
+      const history = (next.messages as Record<string, unknown>[]).find(message => message.role === "assistant");
+      assert.ok(history);
+      assert.equal(history.reasoning_content, undefined);
+      assert.equal(next.reasoning_effort, "medium");
+      assert.equal(next.prompt_cache_key, undefined);
+      assert.equal(next.prompt_cache_retention, undefined);
     } finally { server.close(); server.closeAllConnections(); }
   });
 });

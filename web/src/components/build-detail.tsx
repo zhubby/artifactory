@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖构建目标摘要、Release 归属、构建 API、事件与统一通知。
- * [OUTPUT]: 提供本次源码、目标、构建详情与可访问持久状态。
- * [POS]: Release 内的构建详情；历史错误保留正文，候选由版本工作台交付。
+ * [OUTPUT]: 按原生或镜像目标展示执行、日志与未创建任务的状态。
+ * [POS]: Release 内的构建详情；镜像复用 ImageBuilds，候选由版本工作台交付。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -147,6 +147,8 @@ export function BuildDetail({
     return <><ErrorBox key="build-feedback" message={t("common.notFound")} /></>;
   const job = build.jobs?.find((job) => job.id === selected) || build.jobs?.[0];
   const attempt = job?.attempts.at(-1);
+  const imageJob = job?.target_config.executor === "buildkit";
+  const imageExecutions = build.image_executions?.filter(execution => execution.job_id === job?.id && execution.operation === "build") || [];
   const displayed = logs.filter(
     (log) =>
       (!attempt || log.attempt_id === attempt.id) &&
@@ -161,6 +163,12 @@ export function BuildDetail({
     "running",
     "canceling",
   ].includes(build.status);
+  const canRetry = !!job && ["failed", "lost", "canceled"].includes(job.status)
+    && !["planning", "replanning", "needs_input"].includes(build.status)
+    && canMutate && role !== "viewer";
+  const noJobsDetail = t(build.status === "failed" ? "builds.configFailed"
+    : build.status === "needs_input" ? "redesign.needsInput"
+    : active ? "builds.readingConfig" : "builds.noJobs");
   return (
     <>
       <Link
@@ -261,13 +269,11 @@ export function BuildDetail({
               ))
             ) : (
               <div className="p-5 text-xs leading-6 text-muted-foreground">
-                {build.status === "failed"
-                  ? t("builds.configFailed")
-                  : t("builds.readingConfig")}
+                {noJobsDetail}
               </div>
             )}
           </div>
-          <div className="border-t border-border p-4 text-[11px] leading-6 text-muted-foreground">
+          {job && !imageJob && <div className="border-t border-border p-4 text-[11px] leading-6 text-muted-foreground">
             {attempt ? (
               <>
                 <div className="flex items-center gap-2">
@@ -282,11 +288,12 @@ export function BuildDetail({
                 </div>
               </>
             ) : (
-              t("builds.matching")
+              t(["queued", "leased", "running"].includes(job.status) ? "builds.matching" : "builds.noAttempts")
             )}
-          </div>
+          </div>}
         </section>
-          <section className="panel">
+          {job && (!imageJob || canRetry) && <section className="panel">
+            {!imageJob && <>
             <SectionTitle
               title={t("builds.steps")}
               detail={t("builds.pipeline")}
@@ -338,13 +345,8 @@ export function BuildDetail({
                 <p className="whitespace-pre-wrap break-words text-sm text-destructive" role="status" aria-atomic="true">{attempt.error}</p>
               </div>
             )}
-            {job &&
-              ["failed", "lost", "canceled"].includes(job.status) &&
-              !["planning", "replanning", "needs_input"].includes(
-                build.status,
-              ) &&
-              canMutate &&
-              role !== "viewer" && (
+            </>}
+            {canRetry && (
                 <div className="p-4">
                   <Button
                     size="sm"
@@ -356,9 +358,11 @@ export function BuildDetail({
                   </Button>
                 </div>
               )}
-          </section>
+          </section>}
             </div>
-          {!live ? <BuildLogHistory key={`${id}/${attempt?.id || ""}/${filter || ""}`} buildId={id} attemptId={attempt?.id} step={filter} /> : <section className="panel">
+          {imageJob ? <section className="panel"><SectionTitle title={t("images.build")} />
+            {imageExecutions.length ? <ImageBuilds executions={imageExecutions} registry={build.image_registry} /> : <div className="space-y-3 p-5"><Status value={job.status} /><p className="text-sm text-muted-foreground">{t("images.noExecution")}</p></div>}
+          </section> : !job ? <section className="panel"><Empty title={t("builds.noJobs")} detail={noJobsDetail} /></section> : !live ? <BuildLogHistory key={`${id}/${attempt?.id || ""}/${filter || ""}`} buildId={id} attemptId={attempt?.id} step={filter} /> : <section className="panel">
             <SectionTitle
               live
               title={

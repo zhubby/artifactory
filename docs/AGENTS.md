@@ -7,11 +7,11 @@ SUMMARY.md: 定义 mdBook 导航顺序。
 404.md: 提供文档缺页入口。
 acceptance.md: 汇总实施状态和验收边界。
 agent-ota-acceptance-2026-11-11.md: 记录旧 Agent OTA 验收。
-ai-builds.md: 定义仓库接入、AI 规划与构建发布流程。
+ai-builds.md: 定义模型兼容、目标设备准入、原生与镜像阶段反馈和构建发布流程。
 ai-builds-acceptance-2026-11-11.md: 记录零侵入 AI 构建验收。
 ai-workspace-build-acceptance-2026-11-16.md: 记录固定源码的双平台真实构建、故障修复与内部发布证据。
 ai-workspace-signing-acceptance-2026-11-17.md: 记录真实 Developer ID 托管签名、制品读回、材料清理及公证边界。
-api.md: 定义 HTTP API 输入、权限和返回值。
+api.md: 定义 HTTP API 输入、模型协议参数、项目设备准入和权限边界。
 artifactory-rename-2026-11-11.md: 记录产品命名迁移。
 signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。
 configuration.md: 定义任务执行计划的结构与限制。
@@ -32,7 +32,7 @@ operations.md: 定义初始账号、部署、备份和故障恢复。
 operator-operations.md: 定义临时源码、池级出口代理、内部直连和任务收尾。
 protocol.md: 定义 Emissary 会话、完整心跳预算和状态迁移。
 registration-acceptance-2026-11-11.md: 记录用户注册的本地验收。
-planning-protocol.md: 定义内嵌规划接口、任务身份与新实例基线。
+planning-protocol.md: 定义内嵌规划接口、失败脱敏、累计统计和提案围栏。
 ephemeral-source-acceptance-2026-11-18.md: 记录临时源码验证、存储回收与正式切换。
 substrate-scheduling-assessment-2026-11-12.md: 评估可选调度后端的适用边界。
 tasknotes-application-acceptance-2026-11-18.md: 记录 TaskNotes 真实应用的构建、网关下载、运行证据和环境阻塞。

@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖租户 HTTP 夹具、构建请求和工作区租约。
+//! [INPUT]: 依赖租户设备夹具、构建请求和工作区租约。
 //! [OUTPUT]: 验证工作区准入、归档、删除和恢复。
 //! [POS]: 工作区生命周期的数据库与 HTTP 回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -136,6 +136,7 @@ async fn draining_waits_for_existing_work_and_can_be_cancelled() {
     let (_, owner) = account(&db, "drain-owner", "viewer").await;
     let t = tenant(&db, &owner, "Waiting").await;
     let p = project(&db, &owner, t, "Desktop").await;
+    device(&db, t).await;
     let (status, build) = request(
         &db,
         &owner,

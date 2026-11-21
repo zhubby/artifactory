@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖隔离 PostgreSQL schema 和业务服务。
+//! [INPUT]: 依赖隔离 PostgreSQL、授权设备和业务服务。
 //! [OUTPUT]: 提供数据库验收夹具与跨模块测试入口。
 //! [POS]: 真实数据库测试总入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -135,6 +135,7 @@ async fn queued_signing_authorization_is_rechecked() {
 async fn build_scope_can_retry_release_drafts_and_source_is_snapshotted() {
     let database = Database::with_tenant().await;
     let (project, _, job) = database.fixture().await;
+    database.node().await;
     let user = Uuid::new_v4();
     sql::execute(&mut database.pool.clone(), "INSERT INTO users(id,username,password_hash,role) VALUES($1,'builder','unused','operator')", params![user]).await.unwrap();
     sql::execute(&mut database.pool.clone(), "INSERT INTO api_tokens(tenant_id,id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES('00000000-0000-0000-0000-000000000001',$1,$2,'build-only',$3,$4,'{read,build}',now()+interval '1 hour')", params![Uuid::new_v4(), user, crypto::hash("builder"), vec![project]]).await.unwrap();

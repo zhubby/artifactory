@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户鉴权、项目存储与源码引用查询。
-//! [OUTPUT]: 提供项目查询、配置写入和仓库引用接口。
+//! [OUTPUT]: 提供项目查询、配置写入、原生平台和仓库引用接口。
 //! [POS]: 项目 HTTP 权限边界；签名默认方案由 signing 接口写入。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::auth::TenantState;
@@ -59,6 +59,15 @@ pub async fn refs(
     Ok(Json(result.map_err(|_| {
         ApiError::BadGateway("repository reference query failed; check access and retry".into())
     })?))
+}
+
+pub async fn build_platforms(
+    TenantState(state): TenantState,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Vec<Value>>> {
+    auth.project(id, "read")?;
+    Ok(Json(state.store.project_build_platforms(id).await?))
 }
 
 async fn validate(_state: &AppState, input: &ProjectInput) -> Result<()> {

@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户鉴权、模型配置存储与规划状态。
-//! [OUTPUT]: 提供模型配置、澄清、计划和分页对话接口。
+//! [OUTPUT]: 提供模型配置、协议兼容校验、澄清和规划查询。
 //! [POS]: AI 规划的管理入口；构建执行由独立节点负责。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::auth::TenantState;
@@ -8,7 +8,6 @@ use crate::store::dto;
 use crate::{
     auth::Auth,
     error::{ApiError, Result},
-    state::AppState,
 };
 use axum::{
     Json,
@@ -17,7 +16,7 @@ use axum::{
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-fn validate(state: &AppState, input: &ProfileInput) -> Result<()> {
+fn validate(insecure_dev: bool, input: &ProfileInput) -> Result<()> {
     let url = url::Url::parse(&input.base_url)
         .map_err(|_| ApiError::BadRequest("invalid model endpoint".into()))?;
     if input.name.trim().is_empty()
@@ -31,7 +30,7 @@ fn validate(state: &AppState, input: &ProfileInput) -> Result<()> {
         ]
         .contains(&input.api.as_str())
         || url.host_str().is_none()
-        || !(url.scheme() == "https" || state.settings.insecure_dev && url.scheme() == "http")
+        || !(url.scheme() == "https" || insecure_dev && url.scheme() == "http")
         || !url.username().is_empty()
         || url.password().is_some()
         || url.query().is_some()
@@ -45,13 +44,14 @@ fn validate(state: &AppState, input: &ProfileInput) -> Result<()> {
     {
         return Err(ApiError::BadRequest("invalid model configuration".into()));
     }
-    // Parameters are model inference options, never an alternate auth/endpoint channel.
+    // 参数只描述推理选项和协议能力，不能覆盖认证或端点。
     let allowed = [
         "thinking_level",
         "max_tokens",
         "context_window",
         "temperature",
         "requests_per_minute",
+        "compat",
     ];
     if input
         .parameters
@@ -73,6 +73,7 @@ fn validate(state: &AppState, input: &ProfileInput) -> Result<()> {
                 .is_some_and(|n| (1024..=10_000_000).contains(&n)),
             "requests_per_minute" => value.as_u64().is_some_and(|n| (1..=600).contains(&n)),
             "temperature" => value.as_f64().is_some_and(|n| (0.0..=2.0).contains(&n)),
+            "compat" => valid_chat_compatibility(&input.api, value),
             _ => false,
         };
         if !valid {
@@ -82,6 +83,25 @@ fn validate(state: &AppState, input: &ProfileInput) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn valid_chat_compatibility(api: &str, value: &Value) -> bool {
+    api == "openai-completions"
+        && value.as_object().is_some_and(|options| {
+            options.iter().all(|(key, value)| {
+                let Some(value) = value.as_str() else {
+                    return false;
+                };
+                match key.as_str() {
+                    "system_role" => ["system", "developer"].contains(&value),
+                    "thinking_format" => {
+                        ["none", "reasoning_effort", "enable_thinking", "thinking"].contains(&value)
+                    }
+                    "max_tokens_field" => ["max_tokens", "max_completion_tokens"].contains(&value),
+                    _ => false,
+                }
+            })
+        })
 }
 
 pub async fn profiles(
@@ -105,7 +125,7 @@ pub async fn create_profile(
     Json(input): Json<ProfileInput>,
 ) -> Result<Json<Value>> {
     auth.session_role("admin")?;
-    validate(&state, &input)?;
+    validate(state.settings.insecure_dev, &input)?;
     if input.api_key.is_empty() {
         return Err(ApiError::BadRequest("model API key is required".into()));
     }
@@ -126,7 +146,7 @@ pub async fn update_profile(
     Json(input): Json<ProfileInput>,
 ) -> Result<Json<Value>> {
     auth.session_role("admin")?;
-    validate(&state, &input)?;
+    validate(state.settings.insecure_dev, &input)?;
     state
         .store
         .save_model_profile(&state.settings.master_key, id, input, true)
@@ -231,4 +251,78 @@ pub async fn messages(
         return Err(ApiError::NotFound);
     }
     Ok(Json(crate::planning_bridge::coordinator()?.post("/v1/conversation/messages",&json!({"run_id":run,"tenant_id":auth.tenant_id,"project_id":project,"generation":generation,"after":page.after.unwrap_or(0),"limit":page.limit.unwrap_or(50).min(100)})).await?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn profile(api: &str, model: &str, parameters: Value) -> ProfileInput {
+        serde_json::from_value(json!({
+            "name": "compatible endpoint", "api": api,
+            "base_url": "https://model.example/v1", "model": model,
+            "parameters": parameters
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn chat_compatibility_accepts_explicit_capabilities_for_any_model_name() {
+        for model in ["qwen4-max", "vendor/future-model", "private-model-alias"] {
+            for compat in [
+                json!({}),
+                json!({"system_role":"system"}),
+                json!({"system_role":"developer","thinking_format":"reasoning_effort","max_tokens_field":"max_completion_tokens"}),
+                json!({"thinking_format":"enable_thinking","max_tokens_field":"max_tokens"}),
+                json!({"thinking_format":"thinking"}),
+                json!({"thinking_format":"none"}),
+            ] {
+                let input = profile(
+                    "openai-completions",
+                    model,
+                    json!({"thinking_level":"medium","compat":compat}),
+                );
+                assert!(
+                    validate(false, &input).is_ok(),
+                    "{model}: {}",
+                    input.parameters
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn chat_compatibility_rejects_unknown_fields_types_and_values() {
+        for compat in [
+            Value::Null,
+            json!([]),
+            json!("system"),
+            json!(true),
+            json!({"headers":{"Authorization":"override"}}),
+            json!({"api_key":"override"}),
+            json!({"system_role":"user"}),
+            json!({"system_role":null}),
+            json!({"thinking_format":"qwen"}),
+            json!({"thinking_format":false}),
+            json!({"max_tokens_field":"tokens"}),
+            json!({"max_tokens_field":8192}),
+        ] {
+            let input = profile("openai-completions", "custom", json!({"compat":compat}));
+            assert!(validate(false, &input).is_err(), "{}", input.parameters);
+        }
+    }
+
+    #[test]
+    fn chat_compatibility_cannot_be_applied_to_other_protocols() {
+        for api in ["openai-responses", "anthropic-messages"] {
+            assert!(validate(false, &profile(api, "custom", json!({"compat":{}}))).is_err());
+            assert!(
+                validate(
+                    false,
+                    &profile(api, "custom", json!({"thinking_level":"medium"}))
+                )
+                .is_ok()
+            );
+        }
+    }
 }

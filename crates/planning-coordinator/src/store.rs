@@ -1,11 +1,12 @@
 //! [INPUT]: 依赖固定运行意图、数据库事务和执行身份。
-//! [OUTPUT]: 持久化生命周期与故障，提供项目准入身份和源码准备资格。
+//! [OUTPUT]: 持久化生命周期与故障，向业务事件附加权威累计统计。
 //! [POS]: Coordinator 操作状态边界；审计记录不用于恢复会话。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod conversations;
 mod execution_failures;
 mod model_requests;
 mod rows;
+mod worker_reports;
 use rows::{locked, run_fields};
 mod models;
 use crate::{lifecycle::Lifecycle, server::id};
@@ -107,8 +108,19 @@ async fn enqueue(
     tx: &mut toasty::db::Transaction<'_>,
     run: Uuid,
     kind: &str,
-    payload: Value,
+    mut payload: Value,
 ) -> Result<Uuid> {
+    let row = sql::record(
+        tx,
+        "SELECT lifecycle,usage FROM planning_runs WHERE id=$1",
+        params![run],
+        &[("lifecycle", Type::String), ("usage", Type::String)],
+    )
+    .await?;
+    let life: Lifecycle = serde_json::from_value(row.decode("lifecycle")?)?;
+    payload["calls"] = json!(life.calls);
+    payload["generation"] = json!(life.generation);
+    payload["usage"] = row.decode("usage")?;
     let event = Uuid::new_v4();
     models::Outbox::create()
         .id(event)
@@ -362,63 +374,6 @@ impl PlanningStore {
         Ok(
             json!({"run_id":run,"status":row.decode::<String>("status")?,"lifecycle":row.decode::<Value>("lifecycle")?,"execution":row.decode::<Option<Value>>("execution")?}),
         )
-    }
-
-    pub async fn report_event(&self, v: Value) -> Result<Value> {
-        let lease: Lease = serde_json::from_value(v["lease"].clone())?;
-        let event = id(&v, "event_id")?;
-        let mut tx_db = self.pool.clone();
-        let mut tx = tx_db.transaction().await?;
-        let row = locked(&mut tx, lease.run_id).await?;
-        authorized(&row, &lease)?;
-        let hash = crypto::hash(serde_json::to_vec(&v)?);
-        let prior: Option<String> = sql::optional_scalar(
-            &mut tx,
-            "SELECT input_hash FROM planning_reports WHERE run_id=$1 AND event_id=$2",
-            params![lease.run_id, event],
-        )
-        .await?;
-        if let Some(prior) = prior {
-            ensure!(prior == hash, "event ID reused");
-            return Ok(json!({"ok":true}));
-        }
-        let kind = v["kind"].as_str().context("event kind required")?;
-        ensure!(
-            matches!(kind, "usage" | "failed" | "conversation"),
-            "unsupported event kind"
-        );
-        let sequence = v["sequence"].as_i64().context("event sequence required")?;
-        if kind == "conversation" {
-            conversations::append(&mut tx, &lease, event, &v["payload"]).await?;
-        }
-        if sequence > row.decode::<i64>("report_sequence")? {
-            if kind == "usage" {
-                sql::execute(
-                    &mut tx,
-                    "UPDATE planning_runs SET usage=$2,report_sequence=$3 WHERE id=$1",
-                    params![lease.run_id, &v["payload"], sequence],
-                )
-                .await?;
-            }
-            if kind == "failed" {
-                conversations::finish(&mut tx, lease.run_id, lease.generation, "failed").await?;
-                sql::execute(
-                    &mut tx,
-                    "UPDATE planning_runs SET status='failed' WHERE id=$1",
-                    params![lease.run_id],
-                )
-                .await?;
-                enqueue(&mut tx,lease.run_id,"failed",json!({"error":"Pi planning failed","calls":serde_json::from_value::<Lifecycle>(row.decode("lifecycle")?)?.calls})).await?;
-            }
-        }
-        models::Report::create()
-            .run_id(lease.run_id)
-            .event_id(event)
-            .input_hash(hash)
-            .exec(&mut tx)
-            .await?;
-        tx.commit().await?;
-        Ok(json!({"ok":true}))
     }
 
     pub async fn acquire_execution(&self, execution: Execution, public_url: &str) -> Result<Value> {

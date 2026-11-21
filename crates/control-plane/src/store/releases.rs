@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖版本元数据、项目配置与本次构建的源码和目标输入。
+//! [INPUT]: 依赖版本元数据、项目设备授权与本次构建的源码和目标输入。
 //! [OUTPUT]: 创建版本、更新说明并创建独立源码解析的构建快照。
 //! [POS]: 版本元数据与构建创建的事务边界；正式交付由 release_publication 封存。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -290,6 +290,25 @@ impl ControlStore {
         )
         .await?;
         let p = &r["project"];
+        for target in input.target_requirements.as_array().unwrap() {
+            if target["kind"] != "native" {
+                continue;
+            }
+            let os = target["os"].as_str().unwrap();
+            let arch = target["arch"].as_str().unwrap();
+            // 保留离线与忙碌设备的排队语义，锁定授权设备直到构建事务提交。
+            let device: Option<Uuid> = sql::optional_scalar(
+                &mut tx,
+                "SELECT n.id FROM nodes n WHERE project_node_allowed($1,n.id) AND NOT n.revoked AND n.os=$2 AND n.arch=$3 ORDER BY n.id LIMIT 1 FOR SHARE OF n",
+                params![project, os, arch],
+            ).await?;
+            if device.is_none() {
+                return Err(bad(&format!(
+                    "native target '{}' requires an authorized project device for {os}/{arch}",
+                    target["key"].as_str().unwrap()
+                )));
+            }
+        }
         validate_delivery_contract(
             p["slug"].as_str().unwrap(),
             r["version"].as_str().unwrap(),

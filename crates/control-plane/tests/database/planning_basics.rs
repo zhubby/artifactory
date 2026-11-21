@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖业务状态、固定构建输入和隔离数据库。
-//! [OUTPUT]: 验证注册、预算分类与规划终态。
+//! [OUTPUT]: 验证模型兼容配置、密钥脱敏、注册和规划终态。
 //! [POS]: 数据库验收中的规划与身份基础回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
@@ -37,7 +37,16 @@ async fn model_profile_queries_mask_keys_and_validate_planning_parameters() {
             StatusCode::BAD_REQUEST,
         ),
         (
-            serde_json::json!({"max_tokens":1024,"requests_per_minute":3}),
+            serde_json::json!({"compat":{"headers":{"Authorization":"override"}}}),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            serde_json::json!({"compat":{"system_role":"user"}}),
+            StatusCode::BAD_REQUEST,
+        ),
+        (serde_json::json!({"compat":null}), StatusCode::BAD_REQUEST),
+        (
+            serde_json::json!({"max_tokens":1024,"requests_per_minute":3,"compat":{"system_role":"system","thinking_format":"enable_thinking","max_tokens_field":"max_tokens"}}),
             StatusCode::OK,
         ),
     ] {
@@ -84,6 +93,15 @@ async fn model_profile_queries_mask_keys_and_validate_planning_parameters() {
     assert!(!body.contains("private-model-key"));
     assert!(!body.contains("key_ciphertext"));
     assert!(body.contains("********"));
+    let profiles: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        profiles[0]["parameters"]["compat"],
+        serde_json::json!({
+            "system_role":"system",
+            "thinking_format":"enable_thinking",
+            "max_tokens_field":"max_tokens"
+        })
+    );
     let ciphertext: String = sql::scalar(
         &mut database.pool.clone(),
         "SELECT key_ciphertext FROM model_profiles",

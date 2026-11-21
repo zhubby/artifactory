@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖规划运行时回执、源码清单和任务状态。
-//! [OUTPUT]: 持久化规划意图、提交回执和材料授权。
+//! [OUTPUT]: 持久化规划回执与累计统计，保护取消和终态。
 //! [POS]: 业务状态与独立 Coordinator 之间的事务边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
@@ -42,6 +42,25 @@ pub(crate) struct PlanningEventCommit<'a> {
     pub payload: &'a Value,
     pub validation: Option<String>,
 }
+
+fn cumulative_usage(current: Value, incoming: &Value) -> Value {
+    let mut usage = current.as_object().cloned().unwrap_or_default();
+    for field in ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] {
+        if let Some(value) = incoming[field].as_u64()
+            && value >= usage.get(field).and_then(Value::as_u64).unwrap_or(0)
+        {
+            usage.insert(field.into(), json!(value));
+        }
+    }
+    if let Some(cost) = incoming["cost"].as_f64()
+        && cost.is_finite()
+        && cost >= usage.get("cost").and_then(Value::as_f64).unwrap_or(0.0)
+    {
+        usage.insert("cost".into(), json!(cost));
+    }
+    Value::Object(usage)
+}
+
 impl ControlStore {
     pub(crate) async fn planning_tool_build(&self, run: Uuid) -> Result<Uuid> {
         let build:Uuid=sql::scalar(&mut self.pool.clone(), "SELECT b.id FROM builds b JOIN planning_runs r ON r.build_id=b.id WHERE r.id=$1 AND NOT b.cancel_requested AND (b.status IN ('planning','replanning') OR (r.purpose='placement' AND b.status IN ('queued','running'))) AND r.state IN ('queued','leased') AND (r.deadline_at IS NULL OR r.deadline_at>clock_timestamp())", params![run]).await?;
@@ -127,20 +146,47 @@ impl ControlStore {
             params![run],
         )
         .await?;
+        let latest_generation: i64 = sql::scalar(
+            &mut tx,
+            "SELECT coalesce(max(generation),0) FROM planning_receipts WHERE run_id=$1",
+            params![run],
+        )
+        .await?;
+        let stale_generation = payload["generation"]
+            .as_i64()
+            .is_some_and(|generation| generation < latest_generation);
+        let placement = row.decode::<String>("purpose")? == "placement";
+        let active = !row.decode::<bool>("cancel_requested")?
+            && ["queued", "leased"].contains(&row.decode::<String>("state")?.as_str())
+            && (["planning", "replanning"]
+                .contains(&row.decode::<String>("build_status")?.as_str())
+                || placement
+                    && ["queued", "running"]
+                        .contains(&row.decode::<String>("build_status")?.as_str()))
+            && (!placement
+                || row
+                    .decode::<Option<chrono::DateTime<chrono::Utc>>>("deadline_at")?
+                    .is_some_and(|deadline| deadline > chrono::Utc::now()));
+        if active
+            && !stale_generation
+            && matches!(kind, "failed" | "proposal")
+            && let Some(calls) = payload["calls"].as_i64()
+            && (0..=100).contains(&calls)
+            && calls >= i64::from(row.decode::<i32>("calls")?)
+        {
+            let usage = cumulative_usage(row.decode("usage")?, &payload["usage"]);
+            sql::execute(
+                &mut tx,
+                "UPDATE planning_runs SET calls=$2,usage=$3 WHERE id=$1",
+                params![run, i32::try_from(calls)?, usage],
+            )
+            .await?;
+        }
         let result = if let Some(plan) = existing {
             json!({"accepted":true,"plan_revision_id":plan})
-        } else if row.decode::<bool>("cancel_requested")?
-            || !(["planning", "replanning"]
-                .contains(&row.decode::<String>("build_status")?.as_str())
-                || (row.decode::<String>("purpose")? == "placement"
-                    && ["queued", "running"]
-                        .contains(&row.decode::<String>("build_status")?.as_str())))
-            || (row.decode::<String>("purpose")? == "placement"
-                && (!matches!(row.decode::<String>("state")?.as_str(), "queued" | "leased")
-                    || row
-                        .decode::<Option<chrono::DateTime<chrono::Utc>>>("deadline_at")?
-                        .is_none_or(|deadline| deadline <= chrono::Utc::now())))
-        {
+        } else if stale_generation {
+            json!({"error":"stale coordinator generation"})
+        } else if !active {
             json!({"error":"build canceled or planning superseded"})
         } else if kind == "failed" {
             sql::execute(

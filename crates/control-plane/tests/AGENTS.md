@@ -4,7 +4,7 @@
 config.rs: 验证应用平台、执行配方和阶段限制。
 crypto.rs: 验证凭据加密上下文。
 bootstrap_auth.rs: 验证固定初始密码的 Argon2 散列与常规密码策略隔离。
-database.rs: 组合隔离数据库夹具及业务验收。
+database.rs: 组合隔离数据库夹具，验证授权设备下的构建和业务边界。
 database/: 保存分模块数据库与 HTTP 验收。
 fixtures/: 保存传输验收夹具。
 permissions.rs: 验证 HTTP 和项目权限。

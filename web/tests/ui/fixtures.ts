@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright 路由拦截与控制台业务类型。
- * [OUTPUT]: 提供独立构建目标、Release 说明、租户数据、HTTP 夹具和个人设置、侧栏导航入口。
+ * [OUTPUT]: 提供构建目标、授权设备平台、租户数据和 HTTP 夹具。
  * [POS]: UI 测试的默认服务响应；专项测试覆盖对应响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -397,6 +397,10 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
       },
       [`/projects/${project.id}`]: { ...project, effective_role: role },
       [`/projects/${project.id}/refs`]: repositoryRefs,
+      [`/projects/${project.id}/build-platforms`]: [
+        {os:"linux",arch:"amd64",device_count:1,online_count:1},
+        {os:"darwin",arch:"arm64",device_count:1,online_count:0},
+      ],
       [`/projects/${project.id}/signing-preview`]: [],
       [`/projects/${project.id}/image-credentials`]: [],
       "/builds": [

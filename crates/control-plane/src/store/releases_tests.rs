@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离 PostgreSQL 和真实 Release 聚合事务。
-//! [OUTPUT]: 验证版本元数据、构建源码隔离与封存交付围栏。
+//! [OUTPUT]: 验证版本元数据、授权设备准入、构建源码隔离与封存交付围栏。
 //! [POS]: Release 领域的数据库回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{ControlStore, ReleaseBuildInput, ReleaseInput, ReleaseUpdate};
@@ -67,6 +67,10 @@ impl Database {
         let project = Uuid::new_v4();
         sql::execute(&mut pool.clone(),"INSERT INTO projects(id,tenant_id,name,repository_url,pool_ids) VALUES($1,$2,'release-test','https://example.com/repo.git','{00000000-0000-0000-0000-000000000001}')",params![project,tenant]).await?;
         sql::execute(&mut pool.clone(),"INSERT INTO model_profiles(id,tenant_id,name,api,base_url,model,key_ciphertext,is_default) VALUES($1,$2,'test','openai-responses','https://example.com','test','unused',true)",params![Uuid::new_v4(),tenant]).await?;
+        for os in ["linux", "darwin"] {
+            let node = Uuid::new_v4();
+            sql::execute(&mut pool.clone(),"INSERT INTO nodes(id,name,os,arch,pool_id,certificate_hash,certificate_expires_at) VALUES($1,'authorized-test',$2,'amd64','00000000-0000-0000-0000-000000000001',$3,now()+interval '1 day')",params![node,os,node.to_string()]).await?;
+        }
         let mut auth = crate::auth::Auth::scoped(
             actor,
             "builder",
@@ -199,6 +203,66 @@ impl Database {
         .await?;
         Ok(())
     }
+}
+#[tokio::test]
+#[ignore = "requires isolated PostgreSQL"]
+async fn native_build_targets_require_current_project_device_grants() -> Result<()> {
+    let db = Database::new().await?;
+    let result = async {
+        let release = db.release("1.2.3").await?;
+        // 离线且暂时排空的设备仍能排队；无授权平台必须在写入构建前拒绝。
+        sql::execute(
+            &mut db.pool.clone(),
+            "UPDATE nodes SET draining=true",
+            params![],
+        )
+        .await?;
+        db.build(release).await?;
+        let denied = db
+            .build_from(release, "main", "windows-cli", "windows")
+            .await;
+        ensure!(
+            denied.is_err(),
+            "a platform without an authorized device was accepted"
+        );
+        sql::execute(
+            &mut db.pool.clone(),
+            "UPDATE projects SET node_access_mode='nodes',node_ids='{}' WHERE id=$1",
+            params![db.project],
+        )
+        .await?;
+        ensure!(
+            db.build(release).await.is_err(),
+            "pool devices bypassed explicit node grants"
+        );
+        let node: Uuid = sql::scalar(
+            &mut db.pool.clone(),
+            "SELECT id FROM nodes WHERE os='linux'",
+            params![],
+        )
+        .await?;
+        sql::execute(
+            &mut db.pool.clone(),
+            "UPDATE projects SET node_ids=ARRAY[$2] WHERE id=$1",
+            params![db.project, node],
+        )
+        .await?;
+        db.build(release).await?;
+        sql::execute(
+            &mut db.pool.clone(),
+            "UPDATE nodes SET revoked=true WHERE id=$1",
+            params![node],
+        )
+        .await?;
+        ensure!(
+            db.build(release).await.is_err(),
+            "a revoked device authorized a native target"
+        );
+        Ok(())
+    }
+    .await;
+    db.close().await?;
+    result
 }
 #[tokio::test]
 #[ignore = "requires isolated PostgreSQL"]

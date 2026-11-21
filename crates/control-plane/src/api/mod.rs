@@ -227,6 +227,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/v1/projects/{id}/builds", get(builds::project_list))
         .route("/api/v1/projects/{id}/refs", get(projects::refs))
+        .route(
+            "/api/v1/projects/{id}/build-platforms",
+            get(projects::build_platforms),
+        )
         .route("/api/v1/builds", get(builds::list))
         .route("/api/v1/builds/{id}", get(builds::detail))
         .route("/api/v1/builds/{id}/cancel", post(builds::cancel))

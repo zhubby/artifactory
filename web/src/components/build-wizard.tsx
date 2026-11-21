@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖项目引用、目标卡片、共享弹窗和构建创建接口。
+ * [INPUT]: 依赖项目引用、授权设备平台、目标卡片和构建创建接口。
  * [OUTPUT]: 提供四步构建引导、可编辑摘要和最终确认提交。
  * [POS]: Release 内构建入口；只读版本，独立保存本次源码、要求和目标。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -8,7 +8,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, Pencil, Play } from "lucide-react";
 import { ErrorBox, Field } from "@/components/common";
-import { BuildTargetPicker, initialTarget, type TargetChoice } from "@/components/build-target-picker";
+import { BuildTargetPicker, initialTarget, nativeTarget, type TargetChoice } from "@/components/build-target-picker";
 import { useUI } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/input";
 import { mutation } from "@/lib/api";
 import { asError, LocalizedError } from "@/lib/errors";
 import { useRepositoryRefs } from "@/lib/repository-refs";
+import { defaultBuildPlatform, targetsHaveDevices, useBuildPlatforms } from "@/lib/build-platforms";
 import { buildTargetSummary, validBuildTargets } from "@/lib/build-targets";
 import { notify } from "@/lib/notify";
 import { buildPath } from "@/lib/routes";
@@ -35,6 +36,9 @@ export function BuildWizard({release,project,onClose,canBuild=true}:{release:Rel
   const question=useRef<HTMLHeadingElement>(null);
   const busy=useRef(false);
   const refs=useRepositoryRefs(project.id);
+  const platforms=useBuildPlatforms(project.id);
+  const targetsTouched=useRef(false);
+  const defaultApplied=useRef(false);
   const [step,setStep]=useState<Step>(0);
   const [returnToReview,setReturnToReview]=useState(false);
   const [source,setSource]=useState("");
@@ -52,6 +56,13 @@ export function BuildWizard({release,project,onClose,canBuild=true}:{release:Rel
 
   useEffect(()=>{if(!sourceTouched.current&&refs.data?.default_ref)setSource(refs.data.default_ref);},[refs.data]);
   useEffect(()=>{
+    if(!platforms.data||defaultApplied.current||targetsTouched.current)return;
+    defaultApplied.current=true;
+    const preferred=defaultBuildPlatform(platforms.data);
+    if(preferred)setChoices([{id:0,customKey:false,target:{...nativeTarget(preferred),artifact_key:"app"}}]);
+    else setChoices([{id:0,customKey:false,target:{kind:"image",key:"image",platforms:["linux/amd64","linux/arm64"]}}]);
+  },[platforms.data]);
+  useEffect(()=>{
     question.current?.focus({preventScroll:true});
     question.current?.closest('[data-modal-scroll]')?.scrollTo({top:0});
   },[step]);
@@ -60,6 +71,10 @@ export function BuildWizard({release,project,onClose,canBuild=true}:{release:Rel
     if(current===0&&(!source.trim()||source!==source.trim()||bytes(source)>255||source.startsWith("-")||/[\0\r\n]/.test(source)))throw new LocalizedError("wizard.invalidRef");
     if(current===1&&(!goal.trim()||bytes(goal)>16000))throw new LocalizedError("wizard.invalidGoal");
     if(current===2&&!validBuildTargets(targets))throw new LocalizedError("releaseFlow.invalidTargets");
+    if(current===2&&targets.some(target=>target.kind==="native")){
+      if(!platforms.data)throw new LocalizedError(platforms.loading?"buildGuide.devicesLoading":"buildGuide.devicesLoadFailed");
+      if(!targetsHaveDevices(targets,platforms.data))throw new LocalizedError("buildGuide.devicesInvalid");
+    }
     if(current===3){
       let value:unknown;
       try{value=JSON.parse(parameters);}catch{throw new LocalizedError("common.invalidJson");}
@@ -112,7 +127,13 @@ export function BuildWizard({release,project,onClose,canBuild=true}:{release:Rel
       {step===1&&<div className="space-y-5"><fieldset className="guide-goals"><legend className="sr-only">{t("releaseFlow.buildGoal")}</legend>
         {["Build","Test","Custom"].map(template=><label key={template} className="wizard-choice" data-selected={goalTemplate===template}><input type="radio" name="goal-template" checked={goalTemplate===template} onChange={()=>{setGoalTemplate(template);if(template!=="Custom")setGoal(t(`wizard.goal${template}Text`));setDirty(true);}} /><span>{t(`wizard.goal${template}`)}</span></label>)}
       </fieldset><Field label={t("releaseFlow.buildGoal")}><Textarea name="goal" aria-label={t("releaseFlow.buildGoal")} required value={goal} maxLength={16000} onChange={event=>{setGoal(event.target.value);setGoalTemplate("Custom");setDirty(true);}} placeholder={t("releaseFlow.goalPlaceholder")} /></Field></div>}
-      {step===2&&<BuildTargetPicker choices={choices} onChange={value=>{setChoices(value);setDirty(true);}} />}
+      {step===2&&<>
+        <p className="mb-4 text-xs leading-5 text-muted-foreground">{t("buildGuide.devicesHint")}</p>
+        {(platforms.loading||platforms.error||platforms.data?.length===0)&&<div className="notice mb-4" role="status">{t(platforms.loading?"buildGuide.devicesLoading":platforms.error?"buildGuide.devicesLoadFailed":"buildGuide.devicesEmpty")}
+          {platforms.error&&<Button type="button" variant="ghost" className="ml-2" onClick={platforms.reload}>{t("common.retry")}</Button>}
+        </div>}
+        <BuildTargetPicker choices={choices} platforms={platforms.data} onChange={value=>{targetsTouched.current=true;setChoices(value);setDirty(true);}} />
+      </>}
       {step===3&&<>
         <dl className="wizard-review">
           <div><dt>{t("projects.project")} / Release</dt><dd>{project.name} · {release.version}</dd></div>
