@@ -15,4 +15,6 @@
 2026-11-20-node-identification-kubernetes.md: 记录设备识别固定镜像、身份保留、原生升级与页面验收边界。
 2026-11-21-device-detail-kubernetes.md: 记录设备详情固定镜像、Web 部署、持久身份与双设备页面验收。
 
+2026-11-21-release-build-decoupling-kubernetes.md: 记录版本解耦固定镜像、业务库切换、身份保留与真实表单验收。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

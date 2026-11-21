@@ -107,6 +107,7 @@
 - [自定义下拉与 HTTP 操作 Kubernetes 上线记录 · 2026-11-20](releases/2026-11-20-dropdown-http-kubernetes.md)
 - [设备识别 Kubernetes 上线记录 · 2026-11-20](releases/2026-11-20-node-identification-kubernetes.md)
 - [设备详情 Kubernetes 上线记录 · 2026-11-21](releases/2026-11-21-device-detail-kubernetes.md)
+- [Release 与构建解耦 Kubernetes 上线记录 · 2026-11-21](releases/2026-11-21-release-build-decoupling-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)
 
