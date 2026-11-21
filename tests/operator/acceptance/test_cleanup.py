@@ -110,9 +110,10 @@ class CleanupTests(unittest.TestCase):
             if path == '/api/v1/projects':
                 return {'id': 'project'}
             if path == '/api/v1/projects/project/releases':
-                self.assertEqual(_body['targets'], ['app'])
+                self.assertEqual(set(_body), {'version', 'notes'})
                 return {'id': 'release', 'version': _body['version']}
             if path.endswith('/builds'):
+                self.assertEqual(_body['targets'], ['app'])
                 return {'id': 'build'}
             raise AssertionError('Unexpected API call: ' + path)
 

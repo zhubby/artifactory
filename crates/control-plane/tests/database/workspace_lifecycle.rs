@@ -1,4 +1,7 @@
-//! Lifecycle authority, admission and operation progress use the real database.
+//! [INPUT]: 依赖租户 HTTP 夹具、构建请求和工作区租约。
+//! [OUTPUT]: 验证工作区准入、归档、删除和恢复。
+//! [POS]: 工作区生命周期的数据库与 HTTP 回归。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use std::time::Duration;
 
@@ -74,7 +77,7 @@ async fn project_archive_fences_admission_and_restore_preserves_the_route() {
             Some(t),
             "POST",
             &db.release_build_path(p).await,
-            json!({})
+            crate::fixture::build_input()
         )
         .await
         .0,
@@ -133,15 +136,16 @@ async fn draining_waits_for_existing_work_and_can_be_cancelled() {
     let (_, owner) = account(&db, "drain-owner", "viewer").await;
     let t = tenant(&db, &owner, "Waiting").await;
     let p = project(&db, &owner, t, "Desktop").await;
-    let (_, build) = request(
+    let (status, build) = request(
         &db,
         &owner,
         Some(t),
         "POST",
         &db.release_build_path(p).await,
-        json!({}),
+        crate::fixture::build_input(),
     )
     .await;
+    assert_eq!(status, StatusCode::OK, "{build}");
     let (status, op) = request(
         &db,
         &owner,

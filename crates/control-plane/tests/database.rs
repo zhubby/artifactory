@@ -165,7 +165,7 @@ async fn build_scope_can_retry_release_drafts_and_source_is_snapshotted() {
         ))
         .header("content-type", "application/json")
         .header("authorization", "Bearer builder")
-        .body(Body::from(r#"{}"#))
+        .body(Body::from(fixture::build_input().to_string()))
         .unwrap();
     let response = router.oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -342,7 +342,7 @@ async fn real_http_authorization_rejects_csrf_and_scope_escalation() {
             "00000000-0000-0000-0000-000000000001",
         )
         .header("cookie", "artifactory_session=session")
-        .body(Body::from(r#"{}"#))
+        .body(Body::from(fixture::build_input().to_string()))
         .unwrap();
     assert_eq!(
         router.clone().oneshot(request).await.unwrap().status(),
@@ -356,7 +356,7 @@ async fn real_http_authorization_rejects_csrf_and_scope_escalation() {
         ))
         .header("content-type", "application/json")
         .header("authorization", "Bearer api-token")
-        .body(Body::from(r#"{}"#))
+        .body(Body::from(fixture::build_input().to_string()))
         .unwrap();
     assert_eq!(
         router.clone().oneshot(request).await.unwrap().status(),

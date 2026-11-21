@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖源码清单、任务身份和项目凭据引用。
-//! [OUTPUT]: 固定共享解析身份与部分 pin，复用 Release 源码清单。
-//! [POS]: 清扫、解析和新构建共用 Release 锁的事务边界。
+//! [OUTPUT]: 固定单次构建的解析身份、部分 pin 和源码清单。
+//! [POS]: 源码任务以 Build 归属；按版本、构建、任务顺序加锁，隔离解析结果。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use anyhow::{Context, Result, ensure};
@@ -47,11 +47,11 @@ impl ControlStore {
     pub(crate) async fn enqueue_source_resolutions(&self) -> Result<()> {
         let mut db = self.pool.clone();
         let mut tx = db.transaction().await?;
-        let releases:Vec<Uuid>=sql::scalars(&mut tx,"SELECT r.id FROM releases r WHERE EXISTS(SELECT 1 FROM builds b WHERE b.release_id=r.id AND b.status='resolving') OR EXISTS(SELECT 1 FROM source_tasks s WHERE s.release_id=r.id AND s.status IN ('queued','running')) ORDER BY r.id FOR UPDATE SKIP LOCKED",params![]).await?;
-        sql::execute(&mut tx,"INSERT INTO source_tasks(id,tenant_id,project_id,build_id,release_id,purpose,repository_url,reference,credential_id,bindings,pinned_ref_oid,frozen_tags,deadline_at) SELECT b.id,b.tenant_id,b.project_id,b.id,b.release_id,'resolve',b.source_repository_url,b.requested_ref,b.source_credential_id,coalesce(b.planning_context->'source_credentials','[]'),r.pinned_ref_oid,r.frozen_tags,now()+interval '15 minutes' FROM builds b JOIN releases r ON r.id=b.release_id AND r.source_resolution_id=b.id JOIN projects p ON p.id=b.project_id JOIN tenants t ON t.id=b.tenant_id WHERE b.release_id=ANY($1) AND b.status='resolving' AND NOT b.cancel_requested AND r.status='draft' AND p.status='active' AND t.status='active' ON CONFLICT(id) DO NOTHING",params![&releases]).await?;
-        sql::execute(&mut tx, "UPDATE source_tasks s SET status='canceled' WHERE (s.release_id IS NULL OR s.release_id=ANY($1)) AND s.status IN ('queued','running') AND ((s.purpose='resolve' AND NOT EXISTS(SELECT 1 FROM builds b WHERE b.release_id=s.release_id AND b.status='resolving' AND NOT b.cancel_requested)) OR NOT EXISTS(SELECT 1 FROM projects p JOIN tenants t ON t.id=p.tenant_id WHERE p.id=s.project_id AND p.status IN ('active','draining') AND t.status IN ('active','draining')))", params![&releases]).await?;
-        sql::execute(&mut tx, "UPDATE source_tasks SET status='failed',error='source preparation deadline reached' WHERE (release_id IS NULL OR release_id=ANY($1)) AND status IN ('queued','running') AND deadline_at<=clock_timestamp()", params![&releases]).await?;
-        sql::execute(&mut tx, "UPDATE builds b SET status='failed',error=t.error,finished_at=now() FROM source_tasks t JOIN releases r ON r.source_resolution_id=t.id WHERE b.release_id=ANY($1) AND b.release_id=r.id AND t.status IN ('failed','canceled') AND b.status='resolving' AND NOT b.cancel_requested", params![&releases]).await?;
+        let releases:Vec<Uuid>=sql::scalars(&mut tx,"SELECT r.id FROM releases r WHERE EXISTS(SELECT 1 FROM builds b WHERE b.release_id=r.id AND b.status='resolving') OR EXISTS(SELECT 1 FROM source_tasks s JOIN builds b ON b.id=s.build_id WHERE b.release_id=r.id AND s.status IN ('queued','running')) ORDER BY r.id FOR UPDATE SKIP LOCKED",params![]).await?;
+        sql::execute(&mut tx,"INSERT INTO source_tasks(id,tenant_id,project_id,build_id,purpose,repository_url,reference,credential_id,bindings,deadline_at) SELECT b.id,b.tenant_id,b.project_id,b.id,'resolve',b.source_repository_url,b.requested_ref,b.source_credential_id,coalesce(b.planning_context->'source_credentials','[]'),now()+interval '15 minutes' FROM builds b JOIN releases r ON r.id=b.release_id JOIN projects p ON p.id=b.project_id JOIN tenants t ON t.id=b.tenant_id WHERE b.release_id=ANY($1) AND b.status='resolving' AND NOT b.cancel_requested AND r.status='draft' AND p.status='active' AND t.status='active' ON CONFLICT(id) DO NOTHING",params![&releases]).await?;
+        sql::execute(&mut tx, "UPDATE source_tasks s SET status='canceled' WHERE (s.build_id IS NULL OR EXISTS(SELECT 1 FROM builds b WHERE b.id=s.build_id AND b.release_id=ANY($1))) AND s.status IN ('queued','running') AND ((s.purpose='resolve' AND NOT EXISTS(SELECT 1 FROM builds b WHERE b.id=s.build_id AND b.status='resolving' AND NOT b.cancel_requested)) OR NOT EXISTS(SELECT 1 FROM projects p JOIN tenants t ON t.id=p.tenant_id WHERE p.id=s.project_id AND p.status IN ('active','draining') AND t.status IN ('active','draining')))", params![&releases]).await?;
+        sql::execute(&mut tx, "UPDATE source_tasks s SET status='failed',error='source preparation deadline reached' WHERE (s.build_id IS NULL OR EXISTS(SELECT 1 FROM builds b WHERE b.id=s.build_id AND b.release_id=ANY($1))) AND s.status IN ('queued','running') AND s.deadline_at<=clock_timestamp()", params![&releases]).await?;
+        sql::execute(&mut tx, "UPDATE builds b SET status='failed',error=t.error,finished_at=now() FROM source_tasks t WHERE b.release_id=ANY($1) AND t.build_id=b.id AND t.status IN ('failed','canceled') AND b.status='resolving' AND NOT b.cancel_requested", params![&releases]).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -89,7 +89,7 @@ impl ControlStore {
     }
 
     pub(crate) async fn source_task_context(&self, id: Uuid) -> Result<Value> {
-        Ok(sql::scalar(&mut self.pool.clone(), "SELECT to_jsonb(s) FROM source_tasks s JOIN projects p ON p.id=s.project_id JOIN tenants t ON t.id=s.tenant_id WHERE s.id=$1 AND p.status IN ('active','draining') AND t.status IN ('active','draining') AND (s.status='succeeded' OR (s.status IN ('queued','running') AND s.deadline_at>clock_timestamp() AND (s.purpose='refs' OR EXISTS(SELECT 1 FROM builds b WHERE b.release_id=s.release_id AND NOT b.cancel_requested AND b.status='resolving'))))", params![id]).await?)
+        Ok(sql::scalar(&mut self.pool.clone(), "SELECT to_jsonb(s) FROM source_tasks s JOIN projects p ON p.id=s.project_id JOIN tenants t ON t.id=s.tenant_id WHERE s.id=$1 AND p.status IN ('active','draining') AND t.status IN ('active','draining') AND (s.status='succeeded' OR (s.status IN ('queued','running') AND s.deadline_at>clock_timestamp() AND (s.purpose='refs' OR EXISTS(SELECT 1 FROM builds b WHERE b.id=s.build_id AND NOT b.cancel_requested AND b.status='resolving'))))", params![id]).await?)
     }
 
     pub(crate) async fn pin_source(
@@ -146,7 +146,6 @@ impl ControlStore {
             }
             _ => anyhow::bail!("unknown source pin"),
         };
-        sql::execute(&mut tx,"UPDATE releases r SET pinned_ref_oid=coalesce(r.pinned_ref_oid,s.pinned_ref_oid),frozen_tags=s.frozen_tags FROM source_tasks s WHERE s.id=$1 AND r.id=s.release_id AND r.source_resolution_id=s.id",params![id]).await?;
         tx.commit().await?;
         Ok(result)
     }
@@ -198,33 +197,25 @@ impl ControlStore {
                     "source tags changed"
                 );
             }
-            let release = task["release_id"]
+            let build_id = task["build_id"]
                 .as_str()
-                .context("resolution release missing")?
+                .context("resolution build missing")?
                 .parse::<Uuid>()?;
+            let build: Value = sql::scalar(&mut tx, "SELECT to_jsonb(b) FROM builds b WHERE id=$1 AND status='resolving' AND NOT cancel_requested", params![build_id]).await?;
+            ensure!(
+                build["model_config_snapshot"].is_object(),
+                "configure an enabled model profile before building"
+            );
             sql::execute(&mut tx,"INSERT INTO source_manifests(id,tenant_id,project_id,commit_sha,manifest,digest) VALUES($1,$2,$3,$4,$5,$6)",params![id,task["tenant_id"].as_str().context("tenant missing")?.parse::<Uuid>()?,task["project_id"].as_str().context("project missing")?.parse::<Uuid>()?,&root.commit_sha,serde_json::to_value(&manifest)?,&manifest.digest]).await?;
-            let changed=sql::execute(&mut tx,"UPDATE releases SET source_manifest_id=$2,commit_sha=$3 WHERE id=$1 AND source_resolution_id=$2 AND source_manifest_id IS NULL AND status='draft'",params![release,id,&root.commit_sha]).await?;
-            ensure!(changed == 1, "release source resolution superseded");
-            let waiting:Vec<Value>=sql::scalars(&mut tx,"SELECT to_jsonb(b) FROM builds b WHERE release_id=$1 AND status='resolving' AND NOT cancel_requested ORDER BY id FOR UPDATE",params![release]).await?;
-            ensure!(!waiting.is_empty(), "no waiting release builds");
-            for build in waiting {
-                let build_id = build["id"]
-                    .as_str()
-                    .context("build missing")?
-                    .parse::<Uuid>()?;
-                ensure!(
-                    build["model_config_snapshot"].is_object(),
-                    "configure an enabled model profile before building"
-                );
-                sql::execute(&mut tx,"UPDATE builds SET commit_sha=$2,source_manifest_id=$3,status='planning' WHERE id=$1",params![build_id,&root.commit_sha,id]).await?;
-                super::models::PlanningRun::create()
-                    .id(Uuid::new_v4())
-                    .build_id(build_id)
-                    .purpose("initial")
-                    .model_config(toasty::Json(build["model_config_snapshot"].clone()))
-                    .exec(&mut tx)
-                    .await?;
-            }
+            let changed = sql::execute(&mut tx,"UPDATE builds SET commit_sha=$2,source_manifest_id=$3,status='planning' WHERE id=$1 AND status='resolving' AND NOT cancel_requested AND source_manifest_id IS NULL",params![build_id,&root.commit_sha,id]).await?;
+            ensure!(changed == 1, "build source resolution superseded");
+            super::models::PlanningRun::create()
+                .id(Uuid::new_v4())
+                .build_id(build_id)
+                .purpose("initial")
+                .model_config(toasty::Json(build["model_config_snapshot"].clone()))
+                .exec(&mut tx)
+                .await?;
         } else {
             ensure!(
                 result["refs"].is_object() && serde_json::to_vec(result)?.len() <= 4 * 1024 * 1024,
@@ -399,7 +390,7 @@ impl ControlStore {
 }
 
 async fn lock_source_task(tx: &mut dyn toasty::Executor, id: Uuid) -> Result<Value> {
-    let scope:Value=sql::scalar(tx,"SELECT jsonb_build_object('tenant',tenant_id,'project',project_id,'build',build_id,'release',release_id) FROM source_tasks WHERE id=$1",params![id]).await?;
+    let scope:Value=sql::scalar(tx,"SELECT jsonb_build_object('tenant',s.tenant_id,'project',s.project_id,'build',s.build_id,'release',b.release_id) FROM source_tasks s LEFT JOIN builds b ON b.id=s.build_id WHERE s.id=$1",params![id]).await?;
     let tenant = scope["tenant"]
         .as_str()
         .context("source tenant missing")?
@@ -427,13 +418,8 @@ async fn lock_source_task(tx: &mut dyn toasty::Executor, id: Uuid) -> Result<Val
             params![release.parse::<Uuid>()?],
         )
         .await?;
-        sql::execute(
-            tx,
-            "SELECT id FROM builds WHERE release_id=$1 ORDER BY id FOR UPDATE",
-            params![release.parse::<Uuid>()?],
-        )
-        .await?;
-    } else if let Some(build) = scope["build"].as_str() {
+    }
+    if let Some(build) = scope["build"].as_str() {
         sql::execute(
             tx,
             "SELECT id FROM builds WHERE id=$1 FOR UPDATE",
@@ -458,7 +444,7 @@ async fn ensure_live_source_task(
         matches!(task["status"].as_str(), Some("queued" | "running")),
         "source task stopped"
     );
-    let live:bool=sql::scalar(tx,"SELECT s.deadline_at>clock_timestamp() AND p.status IN ('active','draining') AND t.status IN ('active','draining') AND (s.purpose='refs' OR EXISTS(SELECT 1 FROM builds b WHERE b.release_id=s.release_id AND NOT b.cancel_requested AND b.status='resolving')) FROM source_tasks s JOIN projects p ON p.id=s.project_id JOIN tenants t ON t.id=s.tenant_id WHERE s.id=$1",params![id]).await?;
+    let live:bool=sql::scalar(tx,"SELECT s.deadline_at>clock_timestamp() AND p.status IN ('active','draining') AND t.status IN ('active','draining') AND (s.purpose='refs' OR EXISTS(SELECT 1 FROM builds b WHERE b.id=s.build_id AND NOT b.cancel_requested AND b.status='resolving')) FROM source_tasks s JOIN projects p ON p.id=s.project_id JOIN tenants t ON t.id=s.tenant_id WHERE s.id=$1",params![id]).await?;
     ensure!(live, "source task canceled or expired");
     Ok(())
 }

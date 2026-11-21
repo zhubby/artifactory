@@ -1,13 +1,16 @@
 /**
- * [INPUT]: 依赖源码引用查询和 Release 自定义建议列表。
+ * [INPUT]: 依赖源码引用查询和 构建自定义建议列表。
  * [OUTPUT]: 验证建议等宽对齐、搜索、键盘、任意引用与迟到响应隔离。
- * [POS]: Release 创建时固定源码入口的交互回归。
+ * [POS]: 构建独立源码入口的交互回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { expect, test, type Page } from "@playwright/test";
-import { fixtureAPI, repositoryRefs, tenantURL } from "./fixtures";
+import { fixtureAPI, release, repositoryRefs, tenantURL } from "./fixtures";
 
-const createURL = tenantURL("/projects/desktop-client/releases/new");
+async function openWizard(page: Page) {
+  await page.goto(tenantURL(`/projects/desktop-client/releases/${release.id}`));
+  await page.getByRole("button", { name: "发起构建", exact: true }).click();
+}
 const sourceInput = (page: Page) => page.locator('input[name="ref"]');
 
 test("all repository refs remain available in a searchable custom suggestion list", async ({ page }, testInfo) => {
@@ -18,7 +21,7 @@ test("all repository refs remain available in a searchable custom suggestion lis
   await page.route("**/api/v1/projects/project-main/refs", route => route.fulfill({
     json: { default_ref: "refs/heads/topic/124", branches, tags: [] },
   }));
-  await page.goto(createURL);
+  await openWizard(page);
   const source = sourceInput(page);
   await expect(source).toHaveValue("refs/heads/topic/124");
   await expect(page.locator("datalist")).toHaveCount(0);
@@ -50,8 +53,7 @@ test("all repository refs remain available in a searchable custom suggestion lis
 
 test("source keyboard navigation selects explicitly and preserves ordinary text cursor", async ({ page }) => {
   const events = await fixtureAPI(page);
-  await page.goto(createURL);
-  await page.locator('input[name="version"]').fill("1.3.0");
+  await openWizard(page);
   await page.locator('textarea[name="goal"]').fill("Build a distributable application");
   const source = sourceInput(page);
   await expect(source).toHaveValue(repositoryRefs.default_ref);
@@ -103,7 +105,7 @@ test("a late source lookup never replaces an explicit source selection", async (
     await pending; await route.fulfill({ json: repositoryRefs });
   });
   const requested = page.waitForRequest("**/api/v1/projects/project-main/refs");
-  await page.goto(createURL);
+  await openWizard(page);
   await requested;
   const source = sourceInput(page);
   await source.fill("refs/tags/custom");
@@ -128,7 +130,7 @@ test("failed suggestions retain arbitrary input and explicit retry restores the 
       ? { status: 502, json: { error: "Source lookup unavailable" } }
       : { json: repositoryRefs });
   });
-  await page.goto(createURL);
+  await openWizard(page);
   const source = sourceInput(page);
   await source.fill("unlisted/ref");
   await expect(page.getByRole("listbox").locator("..").getByRole("status")).toHaveText("请求未能完成");

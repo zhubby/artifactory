@@ -7,7 +7,7 @@ use artifactory_control_plane::store::MIGRATIONS;
 #[test]
 fn new_baseline_has_a_distinct_identity() {
     let versions: Vec<_> = MIGRATIONS.migrations().iter().map(|m| m.id()).collect();
-    assert_eq!(versions, vec![2026112001]);
+    assert_eq!(versions, vec![2026112101]);
 }
 
 #[tokio::test]
@@ -19,7 +19,7 @@ async fn legacy_baseline_is_rejected_without_changing_its_data() -> anyhow::Resu
     use toasty::migration::{MigrationFile, MigrationSet};
 
     static LEGACY: MigrationSet = MigrationSet::new(&[MigrationFile::new(
-        2026111803,
+        2026112001,
         "0000_baseline.sql",
         "CREATE TABLE legacy_planning_data(id bigint PRIMARY KEY,value text NOT NULL);
          INSERT INTO legacy_planning_data VALUES(1,'preserve-existing-instance');",
@@ -50,7 +50,7 @@ async fn legacy_baseline_is_rejected_without_changing_its_data() -> anyhow::Resu
             "SELECT id FROM __toasty_migrations",
             params![],
         ).await?;
-        assert_eq!(version, 2026111803);
+        assert_eq!(version, 2026112001);
         let created: bool = sql::scalar(
             &mut db,
             "SELECT EXISTS(SELECT 1 FROM pg_class WHERE relnamespace=current_schema()::regnamespace AND relname='planning_intents')",

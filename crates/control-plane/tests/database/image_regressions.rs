@@ -665,7 +665,7 @@ async fn draining_preserves_accepted_images_and_rejects_new_work() {
                 .await
                 .is_err()
         );
-        let input = serde_json::from_value(json!({"parameters":{}})).unwrap();
+        let input = serde_json::from_value(crate::fixture::build_input()).unwrap();
         let release: Uuid = sql::scalar(
             &mut db.pool.clone(),
             "SELECT release_id FROM builds WHERE id=$1",

@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖租户鉴权、Release 聚合和发布调度器。
-//! [OUTPUT]: 提供版本草稿、构建归属、发布和冻结交付下载。
-//! [POS]: Release HTTP 边界；版本和源码只在创建时接收。
+//! [OUTPUT]: 提供版本元数据、独立构建创建、发布和冻结交付下载。
+//! [POS]: Release HTTP 边界；版本创建后固定，说明独立更新，源码由构建接收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     auth::{Auth, TenantState},
@@ -61,7 +61,7 @@ pub async fn update(
             auth.user_id,
             "release_updated",
             id,
-            json!({"spec_revision":input.spec_revision}),
+            json!({"notes":input.notes}),
         )
         .await?;
     Ok(Json(json!(state.store.release(id).await?)))

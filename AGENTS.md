@@ -34,7 +34,8 @@ book.toml - mdBook 文档构建。
 公网协议共用网关 Service，内部 HTTPS 保留独立 ClusterIP。
 遥测查询与写入共用私有 Service。
 HTTP 仓库只在用户指定该协议时接入。
-项目 Release 固定 SemVer、源码和目标修订。
+项目 Release 仅定义不可变 SemVer 与可编辑版本说明。
+每次构建独立选择源码引用与目标，并固定自己的源码清单。
 Release 只交付一次完整构建，正式版本不可覆盖。
 镜像执行只写隔离候选，正式推广受发布租约与摘要准入约束。
 界面操作反馈统一使用顶部居中 notify，不占页面布局。

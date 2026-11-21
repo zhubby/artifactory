@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖租户夹具、稳定路由和 UUID 鉴权。
+//! [INPUT]: 依赖租户夹具、构建源码任务和 UUID 鉴权。
 //! [OUTPUT]: 验证 slug、构建序号与项目权限。
 //! [POS]: 可读地址的数据库与 HTTP 回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -12,7 +12,7 @@ async fn fresh_resources_receive_stable_routes_without_identity_changes() {
     let second = Uuid::new_v4();
     sql::execute(
         &mut db.pool.clone(),
-        "WITH fixture_release AS (INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets,source_resolution_id) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-',''),'main','test','[]','{}',$1) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url,release_id,spec_revision,release_version) VALUES($1,$2,'main','failed','https://example.com/repo.git', (SELECT id FROM fixture_release),1,(SELECT version FROM fixture_release))",
+        "WITH fixture_release AS (INSERT INTO releases(id,project_id,version) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-','')) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url,release_id,release_version) VALUES($1,$2,'main','failed','https://example.com/repo.git', (SELECT id FROM fixture_release),(SELECT version FROM fixture_release))",
         params![second, project],
     )
     .await
@@ -33,7 +33,7 @@ async fn fresh_resources_receive_stable_routes_without_identity_changes() {
         .unwrap();
     let third: i64 = sql::scalar(
         &mut db.pool.clone(),
-        "WITH fixture_release AS (INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets,source_resolution_id) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-',''),'main','test','[]','{}',$1) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,source_repository_url,release_id,spec_revision,release_version) VALUES($1,$2,'main','https://example.com/repo.git', (SELECT id FROM fixture_release),1,(SELECT version FROM fixture_release)) RETURNING number",
+        "WITH fixture_release AS (INSERT INTO releases(id,project_id,version) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-','')) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,source_repository_url,release_id,release_version) VALUES($1,$2,'main','https://example.com/repo.git', (SELECT id FROM fixture_release),(SELECT version FROM fixture_release)) RETURNING number",
         params![Uuid::new_v4(), project],
     )
     .await
@@ -174,7 +174,7 @@ async fn readable_lookup_checks_membership_project_grants_and_token_scopes() {
         Some(a),
         "POST",
         &db.release_build_path(p).await,
-        json!({}),
+        crate::fixture::build_input(),
     )
     .await;
     assert_eq!(build["number"], 1);
@@ -325,7 +325,16 @@ async fn concurrent_build_numbers_are_project_local_and_not_reused() {
     let p = project(&db, &cookie, t, "Desktop App").await;
     let other = project(&db, &cookie, t, "Other").await;
     let path = db.release_build_path(p).await;
-    let create = || request(&db, &cookie, Some(t), "POST", &path, json!({}));
+    let create = || {
+        request(
+            &db,
+            &cookie,
+            Some(t),
+            "POST",
+            &path,
+            crate::fixture::build_input(),
+        )
+    };
     let (a, b, c, d, e, f, g, h) = tokio::join!(
         create(),
         create(),
@@ -353,10 +362,17 @@ async fn concurrent_build_numbers_are_project_local_and_not_reused() {
         Some(t),
         "POST",
         &db.release_build_path(other).await,
-        json!({}),
+        crate::fixture::build_input(),
     )
     .await;
     assert_eq!(value["number"], 1);
+    sql::execute(
+        &mut db.pool.clone(),
+        "DELETE FROM source_tasks WHERE build_id IN(SELECT id FROM builds WHERE project_id=$1 AND number=8)",
+        params![p],
+    )
+    .await
+    .unwrap();
     sql::execute(
         &mut db.pool.clone(),
         "DELETE FROM builds WHERE project_id=$1 AND number=8",

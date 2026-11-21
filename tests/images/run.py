@@ -135,7 +135,7 @@ def verify(a, args, platforms):
     source_control=None
     def detail():
         value = a.api('/api/v1/builds/'+build_id)
-        evidence['build'] = {key:value.get(key) for key in ['id','status','commit_sha','source_manifest_id','release_id','release_version','spec_revision']}
+        evidence['build'] = {key:value.get(key) for key in ['id','status','commit_sha','source_manifest_id','release_id','release_version','requested_ref','target_requirements']}
         evidence['executions'] = [{key:item.get(key) for key in ['id','operation','status','root_digest','destination_repository','tags']}
             for item in value.get('image_executions',[])]
         save(a,evidence)
@@ -209,7 +209,7 @@ def verify(a, args, platforms):
         assert delivery['root_digest']==execution['root_digest']
         assert delivery['version']==release['version']==build['release_version']
         assert delivery['repository']!=execution['destination_repository']
-        evidence['release']={key:release[key] for key in ['id','version','status','selected_build_id','commit_sha','spec_revision']}
+        evidence['release']={key:release[key] for key in ['id','version','notes','status','selected_build_id']}
         issued=a.api('/api/v1/tokens',{'name':'Image digest verification','project_ids':[project_id],'scopes':['read'],'days':1})
         token_id=issued['id']
         query=urllib.parse.urlencode({'service':'artifactory-registry','scope':'repository:'+delivery['repository']+':pull'})

@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖公开 JSON 字段和数据库解码。
-//! [OUTPUT]: 提供节点识别摘要与公开业务响应投影。
+//! [OUTPUT]: 提供版本元数据、独立构建快照与节点识别的公开响应投影。
 //! [POS]: HTTP 响应的数据边界；不包含秘密信封。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Explicit API projections. These types never contain ORM models or database handles.
@@ -225,7 +225,6 @@ response! { BuildSummary {
     status: String,
     error: Option<String>,
     release_id: Uuid,
-    spec_revision: i32,
     release_version: String,
     publish_status: String,
     publish_error: Option<String>,
@@ -260,7 +259,6 @@ response! { BuildEnvelope {
     status: String,
     error: Option<String>,
     release_id: Uuid,
-    spec_revision: i32,
     release_version: String,
     publish_status: String,
     publish_error: Option<String>,
@@ -379,13 +377,7 @@ response! { ReleaseSummary {
     project_name: String,
     version: String,
     status: String,
-    requested_ref: String,
-    goal: String,
-    target_requirements: Value,
-    targets: Vec<String>,
-    spec_revision: i32,
-    source_manifest_id: Option<Uuid>,
-    commit_sha: Option<String>,
+    notes: String,
     created_at: String,
     build_count: i64,
     selected_build_id: Option<Uuid>,
@@ -401,13 +393,7 @@ response! { Release {
     project_name: String,
     version: String,
     status: String,
-    requested_ref: String,
-    goal: String,
-    target_requirements: Value,
-    targets: Vec<String>,
-    spec_revision: i32,
-    source_manifest_id: Option<Uuid>,
-    commit_sha: Option<String>,
+    notes: String,
     created_at: String,
     build_count: i64,
     selected_build_id: Option<Uuid>,

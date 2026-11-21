@@ -492,7 +492,7 @@ function ProjectWorkspace({
   const visibleBuilds = builds.data?.filter(build => (!status || build.status === status) &&
     matches(String(build.number), build.requested_ref, build.release_version, build.status)).sort(chronological);
   const visibleArtifacts = artifacts.data?.filter(artifact => matches(artifact.delivery_filename,artifact.path,artifact.target,artifact.release_version)).sort(chronological);
-  const visibleReleases = releases.data?.filter(release => (!status || release.status === status) && matches(release.version, release.requested_ref, release.commit_sha)).sort((a,b) => compareReleaseVersions(b.version,a.version) * (order === "newest" ? 1 : -1));
+  const visibleReleases = releases.data?.filter(release => (!status || release.status === status) && matches(release.version, release.notes)).sort((a,b) => compareReleaseVersions(b.version,a.version) * (order === "newest" ? 1 : -1));
   const running = builds.data?.filter(build => ["planning", "resolving", "queued", "running", "needs_input", "replanning"].includes(build.status)) || [];
   const failed = builds.data?.filter(build => build.status === "failed") || [];
   const listRequest = column === "builds" ? builds : column === "artifacts" ? artifacts : releases;

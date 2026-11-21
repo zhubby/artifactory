@@ -10,7 +10,11 @@ mod completion;
 #[path = "image_regressions.rs"]
 mod regressions;
 async fn image(db: &Database) -> (Uuid, Uuid, Uuid, Uuid) {
-    let (project, build, job) = db.fixture().await;
+    let (project, build, job) = db
+        .fixture_with_requirements(
+            json!([{"kind":"image","key":"app","platforms":["linux/amd64","linux/arm64"]}]),
+        )
+        .await;
     let snapshot = sql::scalar(
         &mut db.pool.clone(),
         "SELECT source_manifest_id FROM builds WHERE id=$1",
@@ -18,7 +22,6 @@ async fn image(db: &Database) -> (Uuid, Uuid, Uuid, Uuid) {
     )
     .await
     .unwrap();
-    sql::execute(&mut db.pool.clone(), "UPDATE releases SET target_requirements='[{\"kind\":\"image\",\"key\":\"app\",\"platforms\":[\"linux/amd64\",\"linux/arm64\"]}]' WHERE id=(SELECT release_id FROM builds WHERE id=$1)", params![build]).await.unwrap();
     let target = json!({"executor":"buildkit","os":"linux","arch":"amd64","timeout_seconds":600,"image":{"name":"app","platforms":["linux/amd64","linux/arm64"]}});
     sql::execute(
         &mut db.pool.clone(),
@@ -289,7 +292,7 @@ async fn confirm_image(store: &artifactory_control_plane::store::ControlStore, i
 // 外仓测试只模拟已完成的正式推广；真实仓库推广由 OCI 与集群验收覆盖。
 async fn freeze_published_image(db: &Database, build: Uuid, execution: Uuid) -> String {
     let repository: String = sql::scalar(&mut db.pool.clone(), "SELECT b.tenant_id::text||'/'||b.project_id::text||'/images/app' FROM builds b WHERE b.id=$1",params![build]).await.unwrap();
-    sql::execute(&mut db.pool.clone(),"INSERT INTO release_deliveries(release_id,build_id,source_manifest_id,spec_revision,manifest) SELECT release_id,id,source_manifest_id,spec_revision,'{}' FROM builds WHERE id=$1",params![build]).await.unwrap();
+    sql::execute(&mut db.pool.clone(),"INSERT INTO release_deliveries(release_id,build_id,source_manifest_id,manifest) SELECT release_id,id,source_manifest_id,'{}' FROM builds WHERE id=$1",params![build]).await.unwrap();
     sql::execute(&mut db.pool.clone(),"INSERT INTO release_images(release_id,image_id,repository,version,root_digest,manifest_digests) SELECT b.release_id,i.id,$3,b.release_version,i.digest,jsonb_build_array(i.digest) FROM image_artifacts i JOIN jobs j ON j.id=i.job_id JOIN builds b ON b.id=j.build_id WHERE b.id=$1 AND i.execution_id=$2",params![build,execution,&repository]).await.unwrap();
     sql::execute(&mut db.pool.clone(),"UPDATE releases SET status='published',published_at=now() WHERE id=(SELECT release_id FROM builds WHERE id=$1)",params![build]).await.unwrap();
     repository
@@ -705,7 +708,7 @@ async fn disabled_namespace_rejects_image_retry_but_preserves_native_retry_and_a
         .unwrap(),
         "queued"
     );
-    let input = serde_json::from_value(json!({"parameters":{}})).unwrap();
+    let input = serde_json::from_value(crate::fixture::build_input()).unwrap();
     let release: Uuid = sql::scalar(
         &mut db.pool.clone(),
         "SELECT release_id FROM builds WHERE id=$1",

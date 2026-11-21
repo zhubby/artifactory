@@ -69,7 +69,7 @@ impl ControlStore {
     }
     pub(crate) async fn release_workloads(&self, release: Uuid) -> anyhow::Result<Value> {
         Ok(sql::scalar(&mut self.pool.clone(),
-            "SELECT jsonb_build_object('sources',(SELECT coalesce(jsonb_agg(s.id),'[]') FROM source_tasks s LEFT JOIN builds b ON b.id=s.build_id WHERE s.release_id=$1 OR b.release_id=$1),'planning',(SELECT coalesce(jsonb_agg(p.id),'[]') FROM planning_runs p JOIN builds b ON b.id=p.build_id WHERE b.release_id=$1),'images',(SELECT coalesce(jsonb_agg(e.id),'[]') FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id WHERE b.release_id=$1))",
+            "SELECT jsonb_build_object('sources',(SELECT coalesce(jsonb_agg(s.id),'[]') FROM source_tasks s LEFT JOIN builds b ON b.id=s.build_id WHERE b.release_id=$1),'planning',(SELECT coalesce(jsonb_agg(p.id),'[]') FROM planning_runs p JOIN builds b ON b.id=p.build_id WHERE b.release_id=$1),'images',(SELECT coalesce(jsonb_agg(e.id),'[]') FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id WHERE b.release_id=$1))",
             params![release]).await?)
     }
     pub async fn image_execution(&self, id: Uuid) -> anyhow::Result<ImageExecution> {

@@ -40,7 +40,7 @@ tasknotes-platform-fixes-2026-11-18.md: 罗列 TaskNotes 暴露的平台缺陷�
 telemetry.md: 定义主机与构建的时序观测、私有双端口 Service 和设备 mTLS。
 toasty-acceptance-2026-11-13.md: 记录 Toasty 数据迁移验收。
 versioning.md: 定义统一版本与交付约束。
-release-delivery.md: 定义项目 Release、固定源码、完整目标和不可变交付。
+release-delivery.md: 定义版本元数据、构建独立源码与目标、单次不可变交付。
 workspaces.md: 定义租户和项目导航、个人设置与生命周期流程。
 acceptance/: 保存子系统在真实环境中的验收记录。
 brand/: 保存品牌规范和视觉资源。

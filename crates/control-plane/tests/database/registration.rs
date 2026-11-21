@@ -391,7 +391,7 @@ async fn registered_account_requires_membership_then_project_viewer_can_only_rea
         ),
         (
             database.release_build_path(project).await,
-            json!({"goal":"Build the application"}),
+            crate::fixture::build_input(),
         ),
         (
             "/users".to_owned(),

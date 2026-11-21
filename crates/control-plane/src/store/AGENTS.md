@@ -16,16 +16,16 @@ lifecycle_cleanup.rs: 依据删除清单清除业务状态和签名密文。
 builds.rs: 创建构建，读取原生及镜像 Release、制品与日志游标。
 executions.rs: 以兼容取消外键的写锁维护节点 session、事件与不可变制品登记。
 scheduling.rs: 分配任务并汇总构建状态。
-releases.rs: 固定版本、目标修订及首次构建的仓库和凭据引用。
+releases.rs: 创建版本元数据、更新说明，并保存每次构建的独立源码和目标输入。
 release_publication.rs: 冻结交付清单、正式文件名和 OCI 摘要白名单。
 planning.rs: 读取固定规划上下文、计划和失败日志。
 planning_management.rs: 写入模型方案、澄清及对话查询上下文。
 placements.rs: 保存节点候选并校验分配条件。
 replication.rs: 协调副本归属和持久化唤醒。
 planning_bridge.rs: 转换 Coordinator 规划意图与业务状态。
-sources.rs: 固定源码 CR UID 和递增执行身份，锁内校验材料、pin 和 commit。
-sources_tests.rs: 验证 CR UID、执行围栏、事务幂等和共享源码取消。
-releases_tests.rs: 验证源码引用冻结、清扫竞争、交付封存和发布代次围栏。
+sources.rs: 以构建为归属固定源码 CR UID、pin 和清单，隔离取消与失败传播。
+sources_tests.rs: 验证 CR UID、执行围栏、事务幂等和独立构建源码取消。
+releases_tests.rs: 验证版本元数据、构建源码隔离、清扫竞争与交付封存围栏。
 lookups.rs: 读取调度、构建和授权对象。
 node_metadata.rs: 记录启动元数据和能力摘要。
 node_queries.rs: 执行项目范围内的节点查询。

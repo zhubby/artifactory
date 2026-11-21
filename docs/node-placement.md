@@ -91,7 +91,7 @@ Telemetry 的兼容字段 `Batch.session_id` 对新版 Emissary 表示 `startup_
 
 ## 初始化与启用
 
-1. 安装全新 Control 和内嵌规划协调器，分别初始化业务基线 `2026112001` 与规划基线 `2026111901`。程序拒绝旧库，不迁入旧节点或在途任务。
+1. 安装全新 Control 和内嵌规划协调器，分别初始化业务基线 `2026112101` 与规划基线 `2026111901`。程序拒绝旧库，不迁入旧节点或在途任务。
 2. 初始化独立 Telemetry 数据库。业务授权角色继续只读，无需新增写权限。
 3. 部署 Planning Operator 与规划 Worker，并注册 Emissary，确认启动 metadata 和当前资源均已上报。
 4. 最后设置 `ARTIFACTORY_AI_PLACEMENT=true`，Helm 对应 `controlPlane.aiPlacement: true`。

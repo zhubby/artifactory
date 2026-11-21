@@ -464,19 +464,17 @@ test("real repository references and the build wizard preserve model configurati
     .locator(".project-card-title")
     .filter({ hasText: projectName })
     .click();
-  const referenceResponse = page.waitForResponse((response) =>
-    new URL(response.url()).pathname.endsWith("/refs"),
-  );
   await page.getByRole("link", { name: "新建 Release", exact: true }).click();
   await expect(page).toHaveURL(/\/projects\/[^/]+\/releases\/new$/);
-  const references = await referenceResponse;
-  expect(references.status()).toBe(200);
-  await expect(page.locator('input[name="ref"]')).toHaveValue("refs/heads/main");
   await page.locator('input[name="version"]').fill(`0.0.${Date.now()}`);
-  await page.locator('textarea[name="goal"]').fill("Build the native C application and collect dist/app");
+  await page.locator('textarea[name="notes"]').fill("Native C release notes");
   await page.getByRole("button",{name:"新建 Release",exact:true}).click();
   await expect(page).toHaveURL(/\/releases\/[0-9a-f-]{36}$/);
+  const referenceResponse = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/refs"));
   await page.getByRole("button",{name:"发起构建",exact:true}).click();
+  expect((await referenceResponse).status()).toBe(200);
+  await expect(page.locator('input[name="ref"]')).toHaveValue("refs/heads/main");
+  await page.locator('textarea[name="goal"]').fill("Build the native C application and collect dist/app");
   await page.getByRole("dialog").getByRole("button",{name:"发起构建",exact:true}).click();
   // This regression server seeds pre-migration builds and has no model key.
   // Real-provider execution is covered by scripts/ai_acceptance.py.
@@ -498,7 +496,7 @@ test("published Release workbench exposes immutable delivery names and version m
   expect(release.status).toBe("published");
   expect(release.selected_build_id).toBeTruthy();
   await page.goto(tenantURL(`/projects/${evidence.project_slug}/releases/${evidence.release_id}`));
-  await expect(page.getByRole("button",{name:"编辑草稿",exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"编辑说明",exact:true})).toBeVisible();
   await expect(page.getByRole("button",{name:"发起构建",exact:true})).toHaveCount(0);
   await page.getByRole("tab",{name:"交付物",exact:true}).click();
   for(const artifact of release.artifacts) {

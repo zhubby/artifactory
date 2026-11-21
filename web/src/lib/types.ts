@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供 Release 合同、构建归属、节点身份与接口快照类型。
+ * [OUTPUT]: 提供 Release 说明、构建目标与归属、节点身份与接口快照类型。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -187,8 +187,9 @@ export interface ImageExecution {
   destination_repository: string; destination_credential: string | null; destination_registry?: string | null; error: string | null;
 }
 export interface Build {
+  target_requirements: BuildTarget[];
+  selected_targets: string[];
   release_id: string;
-  spec_revision: number;
   number: number;
   project_slug: string;
   goal?: string | null;
@@ -369,13 +370,7 @@ export interface Release {
   project_name: string;
   version: string;
   status: "draft" | "publishing" | "published" | "publish_failed";
-  requested_ref: string;
-  goal: string;
-  target_requirements: ReleaseTarget[];
-  targets: string[];
-  spec_revision: number;
-  source_manifest_id: string | null;
-  commit_sha: string | null;
+  notes: string;
   build_count: number;
   selected_build_id: string | null;
   delivery_manifest: Record<string, unknown> | null;
@@ -386,7 +381,7 @@ export interface Release {
   images?: ReleaseImage[];
   image_registry?: string | null;
 }
-export type ReleaseTarget = {
+export type BuildTarget = {
   kind: "native";
   key: string;
   os: "linux" | "darwin" | "windows";

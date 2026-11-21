@@ -121,17 +121,17 @@ class HarnessTests(unittest.TestCase):
         second = acceptance.create_build('project', 'Build image', ref='a' * 40,
             target_requirements=image_contract, parameters={'fixture': True})
         self.assertEqual(calls[0][0], '/api/v1/projects/project/releases')
-        self.assertEqual(calls[0][1]['target_requirements'], [
-            {'kind': 'native', 'key': 'app', 'os': 'linux', 'arch': 'amd64'}])
-        self.assertEqual(calls[0][1]['targets'], ['app'])
-        self.assertEqual(calls[0][1]['ref'], 'v-fixture')
+        self.assertEqual(set(calls[0][1]), {'version', 'notes'})
+        self.assertEqual(calls[0][1]['notes'], '隔离环境验收')
         self.assertRegex(first['release_version'], r'^0\.0\.0-acceptance\.r[0-9a-f]{32}$')
         self.assertNotEqual(first['release_version'], second['release_version'])
-        self.assertEqual(calls[1], ('/api/v1/releases/release-1/builds', {'parameters': {}}))
-        self.assertEqual(calls[2][1]['target_requirements'], image_contract)
-        self.assertEqual(calls[2][1]['targets'], ['image'])
-        self.assertEqual(calls[2][1]['ref'], 'a' * 40)
-        self.assertEqual(calls[3], ('/api/v1/releases/release-3/builds', {'parameters': {'fixture': True}}))
+        self.assertEqual(calls[1], ('/api/v1/releases/release-1/builds', {
+            'ref': 'v-fixture', 'goal': 'Build native artifact', 'parameters': {}, 'targets': ['app'],
+            'target_requirements': [{'kind': 'native', 'key': 'app', 'os': 'linux', 'arch': 'amd64'}]}))
+        self.assertEqual(set(calls[2][1]), {'version', 'notes'})
+        self.assertEqual(calls[3], ('/api/v1/releases/release-3/builds', {
+            'ref': 'a' * 40, 'goal': 'Build image', 'target_requirements': image_contract,
+            'targets': ['image'], 'parameters': {'fixture': True}}))
         self.assertEqual(second['release_id'], 'release-3')
 
     def test_release_failure_does_not_submit_an_unowned_build(self):

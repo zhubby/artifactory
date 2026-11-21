@@ -1,5 +1,5 @@
 // [INPUT]: 隔离服务身份、固定 Git/LFS 夹具与模型故障开关。
-// [OUTPUT]: 提供同源源码、Release 目标规划和验收回执代理。
+// [OUTPUT]: 提供同源源码、构建目标规划和验收回执代理。
 // [POS]: Kubernetes 新任务契约的上游与供应商夹具。
 // [PROTOCOL]: Update this header on change, then check AGENTS.md
 package main

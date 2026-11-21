@@ -62,7 +62,7 @@ async fn planning_placement_commit_preserves_scripts_resources_and_versions() ->
     let placement = json!({"candidates":[{"node_id":Uuid::new_v4(),"metadata_digest":"a".repeat(64),"reason":"fixture"}],"resources":{"min_available_memory_bytes":1024}});
     let target = json!({"os":"linux","arch":"amd64","steps":[{"name":"compile","run":"make"}]});
     sql::execute(&mut db.pool.clone(),"INSERT INTO projects(id,tenant_id,name,repository_url) VALUES($1,'00000000-0000-0000-0000-000000000001','placement','https://example.com/repo.git')",params![project]).await?;
-    sql::execute(&mut db.pool.clone(),"WITH fixture_release AS (INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets,source_resolution_id) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-',''),'main','test','[]','{}',$1) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url,release_id,spec_revision,release_version) VALUES($1,$2,'main','queued','https://example.com/repo.git', (SELECT id FROM fixture_release),1,(SELECT version FROM fixture_release))",params![build,project]).await?;
+    sql::execute(&mut db.pool.clone(),"WITH fixture_release AS (INSERT INTO releases(id,project_id,version) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-','')) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url,release_id,release_version) VALUES($1,$2,'main','queued','https://example.com/repo.git', (SELECT id FROM fixture_release),(SELECT version FROM fixture_release))",params![build,project]).await?;
     sql::execute(
         &mut db.pool.clone(),
         "INSERT INTO jobs(id,build_id,target,target_config) VALUES($1,$2,'app',$3)",
@@ -165,7 +165,7 @@ async fn planning_execution_failure_finishes_the_build_once_and_preserves_cancel
         let event = Uuid::new_v4();
         let build_status = if canceled { "canceled" } else { "planning" };
         let run_state = if canceled { "canceled" } else { "queued" };
-        sql::execute(&mut db.pool.clone(), "WITH fixture_release AS (INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets,source_resolution_id) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-',''),'main','test','[]','{}',$1) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,status,cancel_requested,source_repository_url,release_id,spec_revision,release_version) VALUES($1,$2,'main',$3,$4,'https://example.com/repo.git', (SELECT id FROM fixture_release),1,(SELECT version FROM fixture_release))", params![build,project,build_status,canceled]).await?;
+        sql::execute(&mut db.pool.clone(), "WITH fixture_release AS (INSERT INTO releases(id,project_id,version) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-','')) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,status,cancel_requested,source_repository_url,release_id,release_version) VALUES($1,$2,'main',$3,$4,'https://example.com/repo.git', (SELECT id FROM fixture_release),(SELECT version FROM fixture_release))", params![build,project,build_status,canceled]).await?;
         sql::execute(&mut db.pool.clone(), "INSERT INTO planning_runs(id,build_id,purpose,state,model_config,deadline_at) VALUES($1,$2,'initial',$3,'{}',now()+interval '1 minute')", params![run,build,run_state]).await?;
         let payload =
             json!({"generation":1,"error":"source preparation container exited with code 1"});

@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定源码元数据、节点能力和执行计划。
-//! [OUTPUT]: 校验完整 Release 目标合同并读取构建日志。
+//! [OUTPUT]: 校验本次构建的完整目标合同并读取构建日志。
 //! [POS]: Coordinator 提案进入业务调度的校验边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{execution_plan::ExecutionPlan, recipe::Recipe, state::AppState};
@@ -38,7 +38,7 @@ fn target_requirements(recipe: &Recipe, requirements: &Value) -> Result<()> {
         .context("target requirements must be an array")?;
     ensure!(
         requirements.len() == recipe.targets.len(),
-        "plan must implement every Release target exactly once"
+        "plan must implement every build target exactly once"
     );
     for requirement in requirements {
         let key = requirement["key"]
@@ -47,13 +47,13 @@ fn target_requirements(recipe: &Recipe, requirements: &Value) -> Result<()> {
         let target = recipe
             .targets
             .get(key)
-            .context("plan omits a Release target")?;
+            .context("plan omits a build target")?;
         match requirement["kind"].as_str() {
             Some("image") => {
                 let image = target
                     .image
                     .as_ref()
-                    .context("Release image requires BuildKit")?;
+                    .context("build image requires BuildKit")?;
                 ensure!(
                     target.executor == "buildkit" && image.name == key,
                     "image component identity changed"
@@ -66,7 +66,7 @@ fn target_requirements(recipe: &Recipe, requirements: &Value) -> Result<()> {
                 actual.sort();
                 ensure!(
                     expected == actual,
-                    "image platforms differ from Release targets"
+                    "image platforms differ from build targets"
                 );
                 ensure!(
                     image.tags.is_empty(),
@@ -87,10 +87,10 @@ fn target_requirements(recipe: &Recipe, requirements: &Value) -> Result<()> {
                         && requirement["arch"].as_str() == Some(target.arch.as_str())
                         && requirement["application_platform"].as_str()
                             == target.application_platform.as_deref(),
-                    "native platform differs from Release target"
+                    "native platform differs from build target"
                 );
             }
-            _ => anyhow::bail!("invalid Release target kind"),
+            _ => anyhow::bail!("invalid build target kind"),
         }
     }
     Ok(())

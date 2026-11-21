@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖共享 Select、 Release、冻结交付、外仓分发 API 与统一通知。
- * [OUTPUT]: 提供版本工作台与固定修订的编辑草稿，轮询不覆盖未保存输入。
- * [POS]: 项目版本工作台；正式发布选择完整成功构建并冻结合同。错误桥跨加载分支保持挂载。
+ * [INPUT]: 依赖构建候选摘要、共享 Select、Release、外仓分发与统一通知。
+ * [OUTPUT]: 提供版本工作台与说明编辑，轮询保留草稿和发布候选。
+ * [POS]: 项目版本工作台；正式发布选择单个完整成功构建并冻结交付。错误桥跨加载分支保持挂载。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -12,6 +12,7 @@ import { ArrowLeft, Download, Pencil, Play, ShieldCheck } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { downloadFile, mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
+import { buildDeliveryLabel } from "@/lib/build-targets";
 import { notify } from "@/lib/notify";
 import { Link } from "@/lib/tenant";
 import { buildPath, projectPath } from "@/lib/routes";
@@ -42,9 +43,9 @@ export function ReleaseDetail({ id, project, readOnly = false }: { id: string; p
   if (!release) return <><ErrorBox key="release-feedback" message={remote.error} />{!remote.error && <Loading variant="detail" />}</>;
   if (release.project_id !== project.id) return <><ErrorBox key="release-feedback" message={t("common.notFound")} /></>;
   const draft = release.status === "draft";
-  const candidates = builds.data?.filter(build => build.status === "succeeded" && build.spec_revision === release.spec_revision) || [];
+  const candidates = builds.data?.filter(build => build.status === "succeeded") || [];
   const selected = builds.data?.find(build => build.id === release.selected_build_id);
-  const chosen = release.status === "publish_failed" ? release.selected_build_id || "" : candidates.some(build => build.id === selectedBuild) ? selectedBuild : candidates[0]?.id || "";
+  const chosen = release.status === "publish_failed" ? release.selected_build_id || "" : candidates.some(build => build.id === selectedBuild) ? selectedBuild : dialog === "publish" ? "" : candidates[0]?.id || "";
   async function publish() {
     if (!chosen) return;
     setPending(true); setError(undefined);
@@ -63,19 +64,19 @@ export function ReleaseDetail({ id, project, readOnly = false }: { id: string; p
     <Link href={`${projectPath(project.slug)}/releases`} className="mb-5 inline-flex items-center gap-2 text-xs text-muted-foreground"><ArrowLeft size={14} />{t("navigation.releases")}</Link>
     <PageTitle eyebrow={project.name} title={release.version} description={t("releaseFlow.workbenchDescription")}>
       <Status value={release.status} />
-      {editable && draft && <><Button variant="secondary" onClick={() => {setEditing(release);setDialog("edit");}}><Pencil />{t("releaseFlow.editDraft")}</Button><Button onClick={() => setDialog("build")}><Play />{t("builds.start")}</Button></>}
-      {editable && (draft || release.status === "publish_failed") && <Button variant="secondary" disabled={draft ? !candidates.length : !chosen} onClick={() => setDialog("publish")}><ShieldCheck />{t(release.status === "publish_failed" ? "releaseFlow.retryPublish" : "releaseFlow.publish")}</Button>}
+      {editable && <Button variant="secondary" onClick={() => {setEditing(release);setDialog("edit");}}><Pencil />{t("releaseFlow.editNotes")}</Button>}
+      {editable && draft && <Button onClick={() => setDialog("build")}><Play />{t("builds.start")}</Button>}
+      {editable && (draft || release.status === "publish_failed") && <Button variant="secondary" disabled={draft ? !candidates.length : !chosen} onClick={() => {if (draft) setSelectedBuild(chosen);setDialog("publish");}}><ShieldCheck />{t(release.status === "publish_failed" ? "releaseFlow.retryPublish" : "releaseFlow.publish")}</Button>}
     </PageTitle>
     {release.publish_error && <p className="mb-5 whitespace-pre-wrap break-words text-sm text-destructive" role="status" aria-atomic="true">{release.publish_error}</p>}
-    <div className="build-meta"><span className="meta-item">{release.requested_ref}</span><span className="meta-item break-all font-mono">{release.commit_sha || t("releaseFlow.sourceUnpinned")}</span><span className="meta-item">{t("releaseFlow.revision", {number:release.spec_revision})}</span></div>
+    <div className="build-meta"><span className="meta-item">{t("releaseFlow.buildCount", {count:release.build_count})}</span><span className="meta-item">{t("releaseFlow.artifactCount", {count:release.artifact_count || 0})}</span></div>
     {release.status === "publishing" && <p className="notice" role="status">{t("releaseFlow.publishingHint")}</p>}
     <Tabs value={tab} onChange={setTab} label={t("releaseFlow.tabs")} items={[{value:"overview",label:t("releaseFlow.overview")},{value:"builds",label:t("releaseFlow.buildHistory")},{value:"delivery",label:t("releaseFlow.deliverables")}]}>{activeTab => <>
       <section hidden={activeTab !== "overview"} className="space-y-5">
-        <section className="panel"><SectionTitle title={t("releaseFlow.contract")} detail={t("releaseFlow.revision", {number:release.spec_revision})} />
-          <div className="space-y-4 p-5"><p className="whitespace-pre-wrap text-sm leading-6">{release.goal}</p><p className="text-xs text-muted-foreground">{t(release.commit_sha ? "releaseFlow.sourcePinned" : "releaseFlow.sourceHint")}</p><p className="text-xs text-muted-foreground">{t("releaseFlow.contractHint")}</p></div>
-          <div className="table-scroll"><table><thead><tr><th>{t("releaseFlow.targetKey")}</th><th>{t("releaseFlow.targetKind")}</th><th>{t("releaseFlow.platforms")}</th><th>{t("releaseFlow.deliveryName")}</th></tr></thead><tbody>{release.target_requirements.map(target => <tr key={target.key}><td className="font-mono">{target.key}</td><td>{t(target.kind === "native" ? "releaseFlow.native" : "releaseFlow.image")}</td><td>{target.kind === "image" ? target.platforms.join(" · ") : `${target.application_platform || t("builds.nonApplication")} · ${target.os}/${target.arch}`}</td><td>{target.kind === "image" ? <code>{release.version}</code> : <span>{target.artifact_key || target.key} · {target.format_suffix || t("releaseFlow.detectSuffix")}</span>}</td></tr>)}</tbody></table></div>
+        <section className="panel"><SectionTitle title={t("releaseFlow.notes")} />
+          <div className="p-5"><p className="whitespace-pre-wrap break-words text-sm leading-6">{release.notes || t("releaseFlow.noNotes")}</p></div>
         </section>
-        <section className="panel"><SectionTitle title={t("releaseFlow.deliverySelection")} /><div className="p-5 text-sm">{selected ? <Link className="text-primary" href={buildPath(project.slug,selected.number,release.id)}>#{selected.number} · {t("releaseFlow.revision", {number:selected.spec_revision})}</Link> : <p>{t("releaseFlow.notPublished")}</p>}</div></section>
+        <section className="panel"><SectionTitle title={t("releaseFlow.deliverySelection")} /><div className="p-5 text-sm">{selected ? <Link className="break-all text-primary" href={buildPath(project.slug,selected.number,release.id)}>{buildDeliveryLabel(selected)}</Link> : <p>{t("releaseFlow.notPublished")}</p>}</div></section>
       </section>
       <section hidden={activeTab !== "builds"} className="panel"><SectionTitle title={t("releaseFlow.buildHistory")} detail={t("releaseFlow.historyHint")} />{builds.data ? <BuildTable builds={builds.data} /> : !builds.error && <Loading variant="table" />}</section>
       <div hidden={activeTab !== "delivery"} className="space-y-5">
@@ -87,10 +88,10 @@ export function ReleaseDetail({ id, project, readOnly = false }: { id: string; p
         </>}
       </div>
     </>}</Tabs>
-    <Modal open={dialog === "edit"} onOpenChange={open => {if (!open) setDialog(undefined);}} title={t("releaseFlow.editDraft")} description={t("releaseFlow.editHint")}>{editing && <ReleaseForm key={editing.spec_revision} project={project} release={editing} done={saved => {remote.setData(saved);setDialog(undefined);}} />}</Modal>
-    <Modal open={dialog === "build" && draft} onOpenChange={open => {if (!open) setDialog(undefined);}} title={t("builds.start")} description={t("releaseFlow.buildInherits")}><BuildWizard release={release} /></Modal>
+    <Modal open={dialog === "edit"} onOpenChange={open => {if (!open) setDialog(undefined);}} title={t("releaseFlow.editNotes")} description={t("releaseFlow.editHint")}>{editing && <ReleaseForm key={editing.id} project={project} release={editing} done={saved => {remote.setData(saved);setDialog(undefined);}} />}</Modal>
+    <Modal open={dialog === "build" && draft} onOpenChange={open => {if (!open) setDialog(undefined);}} title={t("builds.start")} description={t("releaseFlow.buildInherits")}><BuildWizard project={project} release={release} /></Modal>
     <Modal open={dialog === "publish" && (draft || release.status === "publish_failed")} onOpenChange={open => {if (!open) setDialog(undefined);}} title={t("releaseFlow.publish")} description={t("releaseFlow.publishHint")}>
-      {draft ? <Field label={t("releaseFlow.selectBuild")}><Select className="input" value={chosen} onChange={event => setSelectedBuild(event.target.value)}>{candidates.map(build => <option key={build.id} value={build.id}>#{build.number} · {t("releaseFlow.revision", {number:build.spec_revision})}</option>)}</Select></Field> : <p className="text-sm">{t("releaseFlow.retryHint")}</p>}
+      {draft ? <Field label={t("releaseFlow.selectBuild")}><Select className="input" value={chosen} onChange={event => setSelectedBuild(event.target.value)}>{!chosen && <option value="" disabled hidden>{t("releaseFlow.selectBuild")}</option>}{candidates.map(build => <option key={build.id} value={build.id}>{buildDeliveryLabel(build)}</option>)}</Select></Field> : <p className="text-sm">{t("releaseFlow.retryHint")}</p>}
       <Button className="mt-5" disabled={pending || !chosen} onClick={() => void publish()}>{pending ? t("common.processing") : t("releaseFlow.confirmPublish")}</Button>
     </Modal>
   </>;

@@ -1,6 +1,10 @@
+# [INPUT]: 依赖全新业务数据库与当前初始化 SQL。
+# [OUTPUT]: 声明独立构建源码基线 2026112101。
+# [POS]: 控制平面初始化身份；旧身份由启动校验拒绝。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 version = 1
 
 [[migrations]]
-id = 2026112001
+id = 2026112101
 name = "0000_baseline.sql"
 snapshot_name = "0000_snapshot.toml"

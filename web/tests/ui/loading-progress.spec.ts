@@ -71,13 +71,13 @@ test("tenant polling preserves cards without flashing foreground progress", asyn
 test("rejecting an unsaved navigation leaves no progress behind", async ({ page }) => {
   await fixtureAPI(page);
   await page.goto(tenantURL("/projects/desktop-client/releases/new"));
-  await page.locator('textarea[name="goal"]').fill("Keep the current release draft");
+  await page.locator('textarea[name="notes"]').fill("Keep the current release draft");
   await expect(page.getByRole("progressbar")).toBeHidden();
   await openNavigation(page);
   page.once("dialog", dialog => dialog.dismiss());
   await page.getByRole("link", { name: "返回租户工作台", exact: true }).click();
   await expect(page).toHaveURL(tenantURL("/projects/desktop-client/releases/new"));
-  await expect(page.locator('textarea[name="goal"]')).toHaveValue("Keep the current release draft");
+  await expect(page.locator('textarea[name="notes"]')).toHaveValue("Keep the current release draft");
   await page.waitForTimeout(350);
   await expect(page.getByRole("progressbar")).toBeHidden();
 });

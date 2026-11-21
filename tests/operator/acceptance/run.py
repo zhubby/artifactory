@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 独立镜像、命名统一的中间件与确定性模型夹具。
-[OUTPUT]: 经 Release 创建构建，验证任务交付和池恢复。
+[OUTPUT]: 创建版本元数据与独立构建配置，验证任务交付和池恢复。
 [POS]: 仅修改指定验收命名空间；私密证据保存在 .local/。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -119,9 +119,10 @@ class Acceptance:
         requirements = target_requirements if target_requirements is not None else [
             {'kind': 'native', 'key': 'app', 'os': 'linux', 'arch': self.arch}]
         release = self.api('/api/v1/projects/' + project + '/releases', {
-            'version': '0.0.0-acceptance.r' + uuid.uuid4().hex, 'ref': ref, 'goal': goal,
-            'target_requirements': requirements, 'targets': [item['key'] for item in requirements]})
+            'version': '0.0.0-acceptance.r' + uuid.uuid4().hex, 'notes': '隔离环境验收'})
         build = self.api('/api/v1/releases/' + release['id'] + '/builds', {
+            'ref': ref, 'goal': goal, 'target_requirements': requirements,
+            'targets': [item['key'] for item in requirements],
             'parameters': parameters if parameters is not None else {}})
         return dict(build, release_id=release['id'], release_version=release['version'])
 

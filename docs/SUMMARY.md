@@ -90,6 +90,7 @@
 - [中性色控制台重构计划 · 2026-11-15](superpowers/plans/2026-11-15-monochrome-console.md)
 - [托管应用签名实施计划 · 2026-11-16](superpowers/plans/2026-11-16-managed-signing.md)
 - [镜像构建与独立 Operator 实施计划 · 2026-11-17](superpowers/plans/2026-11-17-image-builds-and-operators.md)
+- [Release 元数据与独立构建实施计划 · 2026-11-21](superpowers/plans/2026-11-21-release-build-decoupling.md)
 
 # 品牌与变更记录
 

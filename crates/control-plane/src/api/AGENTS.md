@@ -4,7 +4,7 @@
 mod.rs: 组合业务路由与规划运行时前缀，保持各自的请求约束。
 ai_management.rs: 提供模型配置、澄清、计划和分页对话接口。
 builds.rs: 校验构建权限并提供查询与制品下载。
-releases.rs: 提供版本草稿、修订、构建归属和交付清单。
+releases.rs: 提供版本元数据、说明编辑、独立构建创建和交付清单。
 build_logs.rs: 提供日志静态分页与终态排空后结束的 SSE。
 emissary_updates.rs: 提供 Emissary 升级包与升级请求接口。
 lifecycle.rs: 提供工作区生命周期任务接口。

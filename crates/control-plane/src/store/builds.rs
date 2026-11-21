@@ -146,7 +146,7 @@ impl ControlStore {
             return Err(ApiError::Conflict("release is sealed".into()));
         }
         sql::execute(&mut transaction,"SELECT require_active_project(b.project_id) FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1",params![id]).await?;
-        let row=sql::record(&mut transaction, "SELECT j.status,j.target_config->>'executor' AS executor,b.status AS build_status,b.id,b.project_id,b.release_version,EXISTS(SELECT 1 FROM releases r WHERE r.id=b.release_id AND (r.status<>'draft' OR r.spec_revision<>b.spec_revision)) AS published FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1 FOR UPDATE OF j,b", params![id], &[("status", Type::String),("executor", Type::String),("build_status", Type::String),("id", Type::Uuid),("project_id", Type::Uuid),("release_version", Type::String),("published", Type::Bool)]).await?;
+        let row=sql::record(&mut transaction, "SELECT j.status,j.target_config->>'executor' AS executor,b.status AS build_status,b.id,b.project_id,b.release_version,EXISTS(SELECT 1 FROM releases r WHERE r.id=b.release_id AND r.status<>'draft') AS published FROM jobs j JOIN builds b ON b.id=j.build_id WHERE j.id=$1 FOR UPDATE OF j,b", params![id], &[("status", Type::String),("executor", Type::String),("build_status", Type::String),("id", Type::Uuid),("project_id", Type::Uuid),("release_version", Type::String),("published", Type::Bool)]).await?;
         auth.project(row.decode("project_id")?, "build")?;
         if row.decode::<Option<String>>("executor")?.as_deref() == Some("buildkit")
             && !crate::images::enabled()

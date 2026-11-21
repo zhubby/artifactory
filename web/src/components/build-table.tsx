@@ -1,11 +1,12 @@
 /**
- * [INPUT]: 依赖含 Release 归属的构建列表。
- * [OUTPUT]: 提供版本、目标修订与构建状态表。
+ * [INPUT]: 依赖独立构建目标摘要与含 Release 归属的构建列表。
+ * [OUTPUT]: 提供版本归属、本次源码、目标与构建状态表。
  * [POS]: 版本工作台与项目聚合共用的构建入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
+import { buildTargetSummary } from "@/lib/build-targets";
 import { useUI } from "@/components/providers";
 
 import { Link } from "@/lib/tenant";
@@ -27,7 +28,7 @@ export function BuildTable({ builds }: { builds: Build[] }) {
             <th>{t("builds.project")}</th>
             <th>{t("builds.source")}</th>
             <th>{t("builds.buildStatus")}</th>
-            <th>{t("releaseFlow.contract")}</th>
+            <th>{t("releaseFlow.targets")}</th>
             <th>{t("builds.duration")}</th>
             <th>{t("common.createdAt")}</th>
             <th />
@@ -66,7 +67,7 @@ export function BuildTable({ builds }: { builds: Build[] }) {
                 <Status value={build.status} />
               </td>
               <td>
-                <span className="text-xs">{t("releaseFlow.revision", {number:build.spec_revision})}</span>
+                <span className="text-xs">{buildTargetSummary(build)}</span>
               </td>
               <td className="font-mono text-xs text-muted-foreground">
                 {elapsed(build.created_at, build.finished_at)}

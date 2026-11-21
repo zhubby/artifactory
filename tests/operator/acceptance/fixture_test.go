@@ -1,5 +1,5 @@
 // [INPUT]: 真实 TLS HTTP 服务器、LFS、镜像规划与双架构源码夹具。
-// [OUTPUT]: 验证同源源码、Release 镜像目标和真实 RUN 夹具。
+// [OUTPUT]: 验证同源源码、构建镜像目标和真实 RUN 夹具。
 // [POS]: 规划上游的公开契约回归，不连接 Kubernetes。
 // [PROTOCOL]: Update this header on change, then check AGENTS.md
 package main
@@ -36,7 +36,7 @@ func TestImagePlatformsAndExplicitEmulation(t *testing.T) {
 			t.Fatalf("image contract lost explicit settings: %+v", target)
 		}
 		if image["name"] != "image" || len(image["tags"].([]string)) != 0 {
-			t.Fatalf("fixture overrides Release target identity or version: %+v", image)
+			t.Fatalf("fixture overrides build target identity or Release version: %+v", image)
 		}
 	}
 }

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright 路由拦截与控制台业务类型。
- * [OUTPUT]: 提供显式应用分类、租户数据、HTTP 夹具和个人设置、侧栏导航入口。
+ * [OUTPUT]: 提供独立构建目标、Release 说明、租户数据、HTTP 夹具和个人设置、侧栏导航入口。
  * [POS]: UI 测试的默认服务响应；专项测试覆盖对应响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -62,6 +62,9 @@ export const repositoryRefs = {
   tags: [{ name: "v1.2.0", ref: "refs/tags/v1.2.0", oid: "c".repeat(40) }],
 };
 export const build: Build = {
+  goal: "构建桌面客户端并交付已签名安装包",
+  target_requirements: [{kind:"native",key:"macos",os:"darwin",arch:"arm64",application_platform:"macos",artifact_key:"app",format_suffix:".zip"}],
+  selected_targets: ["macos"],
   id: "build-main",
   number: 128,
   project_slug: project.slug,
@@ -74,7 +77,6 @@ export const build: Build = {
   publish_error: null,
   error: null,
   release_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-  spec_revision: 1,
   release_version: "1.2.0-internal",
   created_at: created,
   finished_at: null,
@@ -288,17 +290,11 @@ export const release: Release = {
   project_name: project.name,
   version: "1.2.0-internal",
   status: "draft",
-  requested_ref: "refs/heads/main",
-  goal: "构建桌面客户端并交付已签名安装包",
-  target_requirements: [{kind:"native",key:"macos",os:"darwin",arch:"arm64",application_platform:"macos",artifact_key:"app",format_suffix:".zip"}],
-  targets: ["macos"],
-  spec_revision: 1,
-  source_manifest_id: "source-main",
+  notes: "桌面客户端内部版本\n交付说明与构建要求独立",
   build_count: 2,
   selected_build_id: null,
   delivery_manifest: null,
   publish_error: null,
-  commit_sha: build.commit_sha!,
   created_at: created,
   artifact_count: 1,
   artifacts: [artifact],

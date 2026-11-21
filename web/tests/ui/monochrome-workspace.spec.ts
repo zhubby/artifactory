@@ -34,14 +34,14 @@ test("keyboard quick navigation searches authorized projects and restores focus 
 test("quick navigation respects unsaved build drafts and viewer permissions", async ({ page }) => {
   const events = await fixtureAPI(page);
   await page.goto(tenantURL("/projects/desktop-client/releases/new"));
-  await page.locator('textarea[name="goal"]').fill("Preserve the exact draft");
+  await page.locator('textarea[name="notes"]').fill("Preserve the exact draft");
   await page.keyboard.press("Control+k");
   await page.getByRole("combobox", { name: "搜索项目或页面", exact: true }).fill("返回租户工作台");
   const rejected = page.waitForEvent("dialog").then(dialog => dialog.dismiss());
   await page.keyboard.press("Enter");
   await rejected;
   await expect(page).toHaveURL(tenantURL("/projects/desktop-client/releases/new"));
-  await expect(page.locator('textarea[name="goal"]')).toHaveValue("Preserve the exact draft");
+  await expect(page.locator('textarea[name="notes"]')).toHaveValue("Preserve the exact draft");
   expect(events.writes).toEqual([]);
 });
 
@@ -71,8 +71,9 @@ test("quick navigation shortcuts preserve the active modal and still toggle the 
   await expect(close).toBeFocused();
 });
 
-test("Release target forms keep host and application platforms consistent", async ({page})=>{
- await fixtureAPI(page);await page.goto(tenantURL("/projects/desktop-client/releases/new"));
+test("Build target forms keep host and application platforms consistent", async ({page})=>{
+ await fixtureAPI(page);await page.goto(tenantURL(`/projects/desktop-client/releases/${build.release_id}`));
+ await page.getByRole("button",{name:"发起构建",exact:true}).click();
  const target=page.locator("fieldset").first();
  await chooseOption(target.getByRole("combobox",{name:"构建宿主系统",exact:true}), "darwin");
  const application = target.getByRole("combobox",{name:"应用平台",exact:true});

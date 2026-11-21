@@ -51,9 +51,9 @@
 | `GET /audit` | 最近 200 条审计事件，仅管理员 |
 | `GET, POST /projects` | 创建 `{name,repository_url,credential_id,pool_ids,signing_profiles,model_profile_id?,build_context?,source_credentials?}` |
 | `GET, PATCH /projects/{id}` | PATCH 使用完整项目设置，不是任意 JSON Patch |
-| `POST /projects/{id}/releases` | 项目 release；`{version,ref,goal,target_requirements,targets}`，创建严格 SemVer 草稿 |
-| `GET, POST /releases/{id}/builds` | 读取版本构建；创建需要 build 权限，只接受 `{parameters?,goal?}` |
-| `PATCH /releases/{id}` | 项目 release；`{spec_revision,goal?,target_requirements?,targets?}`，仅草稿，递增目标修订 |
+| `POST /projects/{id}/releases` | 项目 release；`{version,notes?}`，创建严格 SemVer 草稿 |
+| `GET, POST /releases/{id}/builds` | 读取版本构建；创建需要 build 权限，接收 `{ref,goal,target_requirements,targets,parameters?}` |
+| `PATCH /releases/{id}` | 项目 release；`{notes}`，各发布状态均可修改说明 |
 | `GET /builds` | 可选 `?project_id=`，最多 100 条 |
 | `GET /builds/{id}` | 完整源码清单、当前计划 ID、修订次数、澄清、目标、设备 attempt、步骤、制品、镜像执行和发布记录 |
 | `GET /builds/{id}/plans` | 不可变计划历史、摘要、文件依据、规划运行和调用统计；不返回模型密钥或 checkpoint |
@@ -65,7 +65,7 @@
 | `GET /model-options` | 操作者会话可读模型 ID、名称和 enabled，用于项目选择 |
 | `POST /builds/{id}/cancel` | 空对象，停止队列和在途任务 |
 | `POST /jobs/{id}/retry` | 空对象，仅失败 / lost / canceled 且尚未发布的 job |
-| `POST /releases/{id}/publish` | 项目 release；`{build_id}`，冻结当前修订的一次完整成功构建，失败只重试相同交付 |
+| `POST /releases/{id}/publish` | 项目 release；`{build_id}`，按所选构建自己的源码与目标冻结一次完整成功构建，失败只重试相同交付 |
 | `GET /builds/{id}/logs` | 静态历史日志；`attempt_id?`、`step?` 筛选，`before?` 向前翻页；返回 `{logs, next_before}`，每页最多 100 块，页内按 ID 升序；无更早日志时游标为 `null` |
 | `GET /builds/{id}/events` | SSE `snapshot` / `log` / `complete`；`Last-Event-ID` 或 `?after=` 恢复日志；终态排空日志后发送包含最终详情的 `complete`，客户端停止重连 |
 | `GET /artifacts` | 可按项目过滤，不返回对象 key |
@@ -77,7 +77,7 @@
 | `POST /projects/{id}/image-credentials` | 项目 admin；`{kind:"registry",name,login:{endpoint,username,password}}` 或 `{kind:"secret",name,value}` |
 | `DELETE /projects/{id}/image-credentials/{credential}` | 项目 admin；吊销凭据，不返回加密材料 |
 | `GET /releases` | 可按项目过滤，按 SemVer 降序 |
-| `GET /releases/{id}` | 草稿目标、固定源码、状态、修订、构建数量与正式交付 |
+| `GET /releases/{id}` | 版本号、版本说明、状态、构建数量与正式交付 |
 | `GET /releases/{id}/manifest`、`GET /releases/{id}/checksums` | published 版本的命名交付清单与 SHA256SUMS |
 
 创建租户和项目返回 `{id,slug}`，构建返回 `{id,number,project_slug}`；其他资源创建通常返回 `{id}`；Token 类创建还返回明文值；修改操作通常返回 `{ok:true}`。所有查询使用真实数据库，不返回演示对象。
@@ -91,14 +91,14 @@ curl --fail-with-body -X POST 'https://build.example.com/api/v1/projects/PROJECT
   -H "Authorization: Bearer $ARTIFACTORY_API_TOKEN" \
   -H 'X-Artifactory-Tenant: TENANT_UUID' \
   -H 'Content-Type: application/json' \
-  --data '{"version":"1.2.3-rc.1","ref":"main","goal":"Build and verify the CLI","targets":["cli"],"target_requirements":[{"kind":"native","key":"cli","os":"linux","arch":"amd64","artifact_key":"cli","format_suffix":".tar.gz"}]}'
+  --data '{"version":"1.2.3-rc.1","notes":"修复启动问题"}'
 ```
 
-随后向 `/releases/RELEASE_UUID/builds` 提交 `{}` 发起构建，向 `/releases/RELEASE_UUID/publish` 提交 `{"build_id":"BUILD_UUID"}` 发布。旧项目级创建构建和构建级补版本发布入口已移除。
+随后向 `/releases/RELEASE_UUID/builds` 提交 `{"ref":"main","goal":"Build and verify the CLI","targets":["cli"],"target_requirements":[{"kind":"native","key":"cli","os":"linux","arch":"amd64","format_suffix":".tar.gz"}]}` 发起构建，向 `/releases/RELEASE_UUID/publish` 提交 `{"build_id":"BUILD_UUID"}` 发布。旧项目级创建构建和构建级补版本发布入口已移除。
 
-版本严格遵循稳定或预发布 SemVer，最多 100 ASCII 字节，不接受 `v` 或 `+metadata`。版本和源码 ref 创建后不可改。目标合同固定原生 key/os/arch/application_platform 或镜像 key/platforms。Build、Artifact 和 Image 响应带 Release 身份，下载名由服务器生成。完整约束见[项目版本交付](release-delivery.md)。
+版本严格遵循稳定或预发布 SemVer，最多 100 ASCII 字节，不接受 `v` 或 `+metadata`。版本创建后不可改。版本说明可留空，最多 16000 UTF-8 字节，发布后仍可修改。源码 ref 和目标合同由每次构建独立提交并固定。目标合同使用原生 key/os/arch/application_platform 或镜像 key/platforms。Build、Artifact 和 Image 响应带 Release 身份，下载名由服务器生成。完整约束见[项目版本交付](release-delivery.md)。
 
-创建 Release 与发布需要 release 权限，执行与重试需要 build 权限。项目模型为空时继承默认模型，创建构建固定配置版本。源码在首次构建解析后供同 Release 的全部构建复用。人工 job 重试使用原提交与计划，只允许 draft Release。构建状态仍为 resolving/planning/needs_input/replanning/queued/running/succeeded/failed/canceled/lost。
+创建 Release 与发布需要 release 权限，执行与重试需要 build 权限。项目模型为空时继承默认模型，创建构建固定配置版本。每次构建独立解析源码，解析成功只推进所属构建。人工 job 重试使用原提交与计划，只允许 draft Release。构建状态仍为 resolving/planning/needs_input/replanning/queued/running/succeeded/failed/canceled/lost。
 
 生命周期状态、清理顺序和管理页面见[工作台](workspaces.md)。操作记录与目标业务行独立保存，状态为 waiting/running/succeeded/failed/canceled；等待阶段可取消，实际清理开始后只能查询或重试。归档保持查询下载，禁止新增业务写入。
 

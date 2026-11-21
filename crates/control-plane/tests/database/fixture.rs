@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖全新业务基线和隔离 PostgreSQL。
-//! [OUTPUT]: 提供租户、源码清单与执行夹具。
+//! [OUTPUT]: 提供版本元数据、创建时固定要求和目标的构建、源码清单与执行夹具。
 //! [POS]: 数据库验收共用初始化边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
@@ -113,6 +113,29 @@ impl Database {
         .unwrap();
     }
     pub(super) async fn fixture(&self) -> (Uuid, Uuid, Uuid) {
+        self.fixture_with_requirements(
+            serde_json::json!([{"kind":"native","key":"app","os":"linux","arch":"amd64"}]),
+        )
+        .await
+    }
+    pub(super) async fn fixture_with_requirements(
+        &self,
+        requirements: serde_json::Value,
+    ) -> (Uuid, Uuid, Uuid) {
+        self.fixture_with_contract(requirements, None).await
+    }
+    pub(super) async fn fixture_with_goal(&self, goal: &str) -> (Uuid, Uuid, Uuid) {
+        self.fixture_with_contract(
+            serde_json::json!([{"kind":"native","key":"app","os":"linux","arch":"amd64"}]),
+            Some(goal),
+        )
+        .await
+    }
+    async fn fixture_with_contract(
+        &self,
+        requirements: serde_json::Value,
+        goal: Option<&str>,
+    ) -> (Uuid, Uuid, Uuid) {
         self.ensure_fixture_tenant().await;
         let project = Uuid::new_v4();
         let build = Uuid::new_v4();
@@ -122,7 +145,7 @@ impl Database {
         sql::execute(&mut self.pool.clone(), query, params![project])
             .await
             .unwrap();
-        sql::execute(&mut self.pool.clone(), "WITH fixture_release AS (INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets,source_resolution_id) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-',''),'main','test','[{\"kind\":\"native\",\"key\":\"app\",\"os\":\"linux\",\"arch\":\"amd64\"}]','{app}',$1) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,commit_sha,config_snapshot,status,source_repository_url,release_id,spec_revision,release_version,selected_targets,target_requirements) VALUES($1,$2,'main',$3,$4,'queued','https://example.com/repo.git', (SELECT id FROM fixture_release),1,(SELECT version FROM fixture_release),'{app}','[{\"kind\":\"native\",\"key\":\"app\",\"os\":\"linux\",\"arch\":\"amd64\"}]')", params![build, project, "0".repeat(40), serde_json::to_value(&recipe).unwrap()]).await.unwrap();
+        sql::execute(&mut self.pool.clone(), "WITH fixture_release AS (INSERT INTO releases(id,project_id,version) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-','')) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,commit_sha,config_snapshot,status,source_repository_url,release_id,release_version,selected_targets,target_requirements,goal) VALUES($1,$2,'main',$3,$4,'queued','https://example.com/repo.git',(SELECT id FROM fixture_release),(SELECT version FROM fixture_release),'{app}',$5,$6)", params![build,project,"0".repeat(40),serde_json::to_value(&recipe).unwrap(),requirements,goal]).await.unwrap();
         sql::execute(
             &mut self.pool.clone(),
             "INSERT INTO jobs(id,build_id,target,target_config) VALUES($1,$2,'app',$3)",
@@ -143,13 +166,18 @@ impl Database {
         )
         .await
         .unwrap();
-        sql::execute(&mut self.pool.clone(),"UPDATE releases SET source_manifest_id=$2,commit_sha=$3 WHERE id=(SELECT release_id FROM builds WHERE id=$1)",params![build,manifest,"0".repeat(40)]).await.unwrap();
         (project, build, job)
     }
     pub(super) async fn release_build_path(&self, project: Uuid) -> String {
         let release = Uuid::new_v4();
         sql::execute(&mut self.pool.clone(),"INSERT INTO model_profiles(id,tenant_id,name,api,base_url,model,key_ciphertext,is_default) SELECT $1,p.tenant_id,'Release test','openai-responses','https://example.com','test','unused',true FROM projects p WHERE p.id=$2 AND NOT EXISTS(SELECT 1 FROM model_profiles m WHERE m.tenant_id=p.tenant_id AND m.enabled AND m.is_default)",params![Uuid::new_v4(),project]).await.unwrap();
-        sql::execute(&mut self.pool.clone(),"INSERT INTO releases(id,project_id,version,requested_ref,goal,target_requirements,targets) VALUES($1,$2,$3,'main','Build test artifacts',$4,'{app}')",params![release,project,format!("0.0.0-test.{}",release.simple()),serde_json::json!([{"kind":"native","key":"app","os":"linux","arch":"amd64"}])]).await.unwrap();
+        sql::execute(
+            &mut self.pool.clone(),
+            "INSERT INTO releases(id,project_id,version) VALUES($1,$2,$3)",
+            params![release, project, format!("0.0.0-test.{}", release.simple())],
+        )
+        .await
+        .unwrap();
         format!("/releases/{release}/builds")
     }
     pub(super) async fn source(&self, project: Uuid, id: Uuid) {
@@ -179,4 +207,8 @@ impl Database {
             .insert(node, Connection { session, sender });
         node
     }
+}
+
+pub(super) fn build_input() -> serde_json::Value {
+    serde_json::json!({"ref":"main","goal":"Build test artifacts","targets":["app"],"target_requirements":[{"kind":"native","key":"app","os":"linux","arch":"amd64"}]})
 }

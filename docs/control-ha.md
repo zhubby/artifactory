@@ -75,7 +75,7 @@ Control 的 `temporaryStorage` 默认 10Gi，实际应大于“校验并发 × �
 
 Control 每个副本使用独立 emptyDir，数据库和对象存储保存共享业务状态。源码由临时任务直接拉取，不依赖 Control PVC 或独立 Source。主 Chart 默认一个 Control，合并 `values-ha.yaml` 后部署三个副本。Deployment 使用 RollingUpdate、PDB 和反亲和性。
 
-本版只支持新实例，业务与规划数据库基线分别为 `2026112001` 和 `2026111901`。程序拒绝旧库，不提供旧数据库迁移或旧二进制回退。安装不会重置旧库，也不清理旧实例的主密钥、设备 PKI、Registry 身份或制品；旧实例由管理员独立备份和退役。
+本版只支持新实例，业务与规划数据库基线分别为 `2026112101` 和 `2026111901`。程序拒绝旧库，不提供旧数据库迁移或旧二进制回退。安装不会重置旧库，也不清理旧实例的主密钥、设备 PKI、Registry 身份或制品；旧实例由管理员独立备份和退役。
 
 外部 HA 存储设置 `postgres.enabled=false`、`s3.enabled=false`，凭据 Secret 指向目标服务，并填写私有 `s3.endpoint`。外部 HTTP 必须显式设置 `s3.allowHttp=true`。
 

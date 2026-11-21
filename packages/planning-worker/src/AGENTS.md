@@ -1,7 +1,7 @@
 # packages/planning-worker/src/
 > L2 | Parent: ../AGENTS.md
 
-planning.ts: 固定 Release 完整目标与版本来源，要求显式应用分类；持久上报完成消息。
+planning.ts: 固定构建完整目标与 Release 版本来源，要求显式应用分类；持久上报完成消息。
 planning.test.ts: 验证应用分类、工具、凭据脱敏和期限。
 pod-main.ts: 获取 Kubernetes Planning coordinator 租约；用退出码区分未确认中断和终态。
 pod-main.test.ts: 验证终态确认、提案恢复、审计幂等和响应字节上限。

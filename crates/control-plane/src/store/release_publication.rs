@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖完整构建、固定源码、目标合同与不可变制品摘要。
+//! [INPUT]: 依赖所选构建的固定源码、目标合同与不可变制品摘要。
 //! [OUTPUT]: 冻结版本交付清单，保存正式名称并封存发布失败。
 //! [POS]: Release 发布事务边界；Scheduler 在冻结后验证 Pod 并推广镜像。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -75,12 +75,10 @@ impl ControlStore {
             "only a successful build can be published"
         );
         ensure!(
-            b["spec_revision"] == r["spec_revision"]
-                && b["source_manifest_id"] == r["source_manifest_id"]
-                && b["source_manifest_id"].is_string(),
-            "build must use current release revision and fixed source"
+            b["source_manifest_id"].is_string(),
+            "build source must be fixed before publication"
         );
-        let active:bool=sql::scalar(&mut tx,"SELECT EXISTS(SELECT 1 FROM builds WHERE release_id=$1 AND status NOT IN ('succeeded','failed','lost','canceled')) OR EXISTS(SELECT 1 FROM source_tasks WHERE release_id=$1 AND status IN ('queued','running')) OR EXISTS(SELECT 1 FROM planning_runs p JOIN builds b ON b.id=p.build_id WHERE b.release_id=$1 AND p.state IN ('queued','leased')) OR EXISTS(SELECT 1 FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.release_id=$1 AND a.status IN ('leased','running')) OR EXISTS(SELECT 1 FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id WHERE b.release_id=$1 AND e.status IN ('preparing','running'))",params![release]).await?;
+        let active:bool=sql::scalar(&mut tx,"SELECT EXISTS(SELECT 1 FROM builds WHERE release_id=$1 AND status NOT IN ('succeeded','failed','lost','canceled')) OR EXISTS(SELECT 1 FROM source_tasks s JOIN builds b ON b.id=s.build_id WHERE b.release_id=$1 AND s.status IN ('queued','running')) OR EXISTS(SELECT 1 FROM planning_runs p JOIN builds b ON b.id=p.build_id WHERE b.release_id=$1 AND p.state IN ('queued','leased')) OR EXISTS(SELECT 1 FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.release_id=$1 AND a.status IN ('leased','running')) OR EXISTS(SELECT 1 FROM image_executions e JOIN jobs j ON j.id=e.job_id JOIN builds b ON b.id=j.build_id WHERE b.release_id=$1 AND e.status IN ('preparing','running'))",params![release]).await?;
         ensure!(!active, "all release work must stop before publication");
         let jobs: Vec<Value> = sql::scalars(
             &mut tx,
@@ -88,12 +86,12 @@ impl ControlStore {
             params![build],
         )
         .await?;
-        let requirements = r["target_requirements"]
+        let requirements = b["target_requirements"]
             .as_array()
-            .context("release targets missing")?;
+            .context("build targets missing")?;
         ensure!(
             jobs.len() == requirements.len() && !jobs.is_empty(),
-            "every release target requires a result"
+            "every build target requires a result"
         );
         let mut files = Vec::new();
         let mut images = Vec::new();
@@ -103,7 +101,7 @@ impl ControlStore {
             let job = jobs
                 .iter()
                 .find(|j| j["target"] == key)
-                .context("release target missing")?;
+                .context("build target missing")?;
             ensure!(job["status"] == "succeeded", "every target must succeed");
             let jobid = job["id"].as_str().context("job missing")?.parse::<Uuid>()?;
             if requirement["kind"] == "image" {
@@ -142,7 +140,6 @@ impl ControlStore {
                     r["project_id"].as_str().context("project missing")?,
                     key
                 );
-                sql::execute(&mut tx,"INSERT INTO release_images(release_id,image_id,repository,version,root_digest,manifest_digests) VALUES($1,$2,$3,$4,$5,$6)",params![release,imageid,&repository,r["version"].as_str().unwrap(),root,&whitelist]).await?;
                 images.push(json!({"image_id":imageid,"target":key,"repository":repository,"version":r["version"],"root_digest":root,"manifest_digests":whitelist,"platforms":results}));
             } else {
                 let artifacts:Vec<Value>=sql::scalars(&mut tx,"SELECT to_jsonb(ar) FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE j.id=$1 AND a.status='succeeded' AND a.source_manifest_id=b.source_manifest_id AND a.plan_revision_id IS NOT DISTINCT FROM j.plan_revision_id AND a.id=(SELECT id FROM attempts WHERE job_id=j.id ORDER BY created_at DESC,id DESC LIMIT 1) ORDER BY ar.path",params![jobid]).await?;
@@ -177,7 +174,6 @@ impl ControlStore {
                         "delivery filenames must be unique"
                     );
                     let artifactid = artifact["id"].as_str().unwrap().parse::<Uuid>()?;
-                    sql::execute(&mut tx,"INSERT INTO release_artifacts(release_id,artifact_id,delivery_filename) VALUES($1,$2,$3)",params![release,artifactid,&filename]).await?;
                     files.push(json!({"artifact_id":artifactid,"target":key,"delivery_filename":filename,"size":artifact["size"],"sha256":artifact["sha256"],"signing":artifact["signing"]}));
                 }
             }
@@ -185,11 +181,17 @@ impl ControlStore {
         let source: Value = sql::scalar(
             &mut tx,
             "SELECT manifest FROM source_manifests WHERE id=$1",
-            params![r["source_manifest_id"].as_str().unwrap().parse::<Uuid>()?],
+            params![b["source_manifest_id"].as_str().unwrap().parse::<Uuid>()?],
         )
         .await?;
-        let manifest = json!({"source_digest":source["digest"],"source_manifest":source,"schema_version":1,"release_id":release,"project_id":r["project_id"],"project":r["project_slug"],"version":r["version"],"build_id":build,"spec_revision":r["spec_revision"],"source_manifest_id":r["source_manifest_id"],"commit_sha":r["commit_sha"],"files":files,"images":images});
-        sql::execute(&mut tx,"INSERT INTO release_deliveries(release_id,build_id,source_manifest_id,spec_revision,manifest) VALUES($1,$2,$3,$4,$5)",params![release,build,r["source_manifest_id"].as_str().unwrap().parse::<Uuid>()?,r["spec_revision"].as_i64().unwrap() as i32,manifest]).await?;
+        let manifest = json!({"source_digest":source["digest"],"source_manifest":source,"schema_version":2,"release_id":release,"project_id":r["project_id"],"project":r["project_slug"],"version":r["version"],"build_id":build,"requested_ref":b["requested_ref"],"target_requirements":requirements,"source_manifest_id":b["source_manifest_id"],"commit_sha":b["commit_sha"],"files":files,"images":images});
+        sql::execute(&mut tx,"INSERT INTO release_deliveries(release_id,build_id,source_manifest_id,manifest) VALUES($1,$2,$3,$4)",params![release,build,b["source_manifest_id"].as_str().unwrap().parse::<Uuid>()?,manifest]).await?;
+        for file in &files {
+            sql::execute(&mut tx,"INSERT INTO release_artifacts(release_id,artifact_id,delivery_filename) VALUES($1,$2,$3)",params![release,file["artifact_id"].as_str().unwrap().parse::<Uuid>()?,file["delivery_filename"].as_str().unwrap()]).await?;
+        }
+        for image in &images {
+            sql::execute(&mut tx,"INSERT INTO release_images(release_id,image_id,repository,version,root_digest,manifest_digests) VALUES($1,$2,$3,$4,$5,$6)",params![release,image["image_id"].as_str().unwrap().parse::<Uuid>()?,image["repository"].as_str().unwrap(),r["version"].as_str().unwrap(),image["root_digest"].as_str().unwrap(),&image["manifest_digests"]]).await?;
+        }
         sql::execute(
             &mut tx,
             "UPDATE releases SET status='publishing',publish_error=NULL WHERE id=$1",

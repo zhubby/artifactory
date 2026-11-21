@@ -1,4 +1,4 @@
-//! [INPUT]: node_metadata 的节点、资源和规划 Worker 夹具。
+//! [INPUT]: 固定构建要求、节点、资源和规划 Worker 夹具。
 //! [OUTPUT]: 验证候选准入、有限重排和不可变执行脚本。
 //! [POS]: 在共享维护锁释放后，按持久轮次验证重排边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -10,7 +10,7 @@ async fn superseded_admission_does_not_start_the_unavailable_timer() {
     let mut database = Database::with_tenant().await;
     let certificates = Certificates::new();
     let (node, _, resource) = placement_node(&database).await;
-    let (_, build, job) = database.fixture().await;
+    let (_, build, job) = database.fixture_with_goal("test").await;
     rank(&database, build, job, &[node]).await;
     let values = Arc::new(RwLock::new(vec![resource]));
     let requested = Arc::new(tokio::sync::Notify::new());
@@ -82,7 +82,7 @@ async fn ranked_placement_busy_fallback_resource_changes_and_no_unlisted_devices
     let resources = Arc::new(RwLock::new(vec![resource_a, resource_b, resource_c]));
     let (_directory, server) =
         resource_server(&mut database, &certificates, resources.clone()).await;
-    let (_, build, job) = database.fixture().await;
+    let (_, build, job) = database.fixture_with_goal("test").await;
     // UUID order is deliberately opposite to the model order.
     let mut order = vec![a, b];
     order.sort();
@@ -97,7 +97,7 @@ async fn ranked_placement_busy_fallback_resource_changes_and_no_unlisted_devices
     .await
     .unwrap();
     assert_eq!(selected, order[0]);
-    let (_, build2, job2) = database.fixture().await;
+    let (_, build2, job2) = database.fixture_with_goal("test").await;
     rank(&database, build2, job2, &order).await;
     scheduler::schedule(&database.state).await.unwrap();
     let selected: Uuid = sql::scalar(
@@ -111,7 +111,7 @@ async fn ranked_placement_busy_fallback_resource_changes_and_no_unlisted_devices
         selected, order[1],
         "busy preferred candidate must fall through in the AI order"
     );
-    let (_, build3, job3) = database.fixture().await;
+    let (_, build3, job3) = database.fixture_with_goal("test").await;
     rank(&database, build3, job3, &order).await;
     sql::execute(
         &mut database.pool.clone(),
@@ -161,7 +161,7 @@ async fn ranked_admission_rechecks_identity_permissions_health_and_both_resource
         "memory", "disk", "cpu", "sampled", "received", "startup", "digest", "project", "drain",
         "ota", "offline", "tools", "cancel",
     ] {
-        let (project, build, job) = database.fixture().await;
+        let (project, build, job) = database.fixture_with_goal("test").await;
         rank(&database, build, job, &[node]).await;
         sql::execute(&mut database.pool.clone(),"UPDATE nodes SET draining=false,ota_draining=false,last_seen=clock_timestamp(),metadata_digest=$2,capabilities='[\"git\",\"bash\",\"external-build-plan-v1\"]' WHERE id=$1",params![node,"a".repeat(64)]).await.unwrap();
         let mut current = valid.clone();
@@ -271,7 +271,7 @@ async fn three_ranked_schedulers_preserve_the_node_slot_limit() {
     )
     .await;
     for _ in 0..3 {
-        let (_, build, job) = database.fixture().await;
+        let (_, build, job) = database.fixture_with_goal("test").await;
         rank(&database, build, job, &[node]).await;
     }
     let first = database.state.clone();

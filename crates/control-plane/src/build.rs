@@ -1,4 +1,4 @@
-// [INPUT]: 依赖 HTTP 业务错误与 Release 目标合同。
+// [INPUT]: 依赖 HTTP 业务错误与构建目标合同。
 // [OUTPUT]: 校验严格 SemVer、比较版本并生成正式交付文件名。
 // [POS]: Release 创建、列表和发布共用确定性的版本规则。
 // [PROTOCOL]: Update this header on change, then check AGENTS.md

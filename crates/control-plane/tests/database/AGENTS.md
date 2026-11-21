@@ -1,8 +1,8 @@
 # crates/control-plane/tests/database/
 > L2 | Parent: ../AGENTS.md
 
-fixture.rs: 初始化新数据库并提供 Release、租户和固定源码夹具。
-release_contract.rs: 验证版本唯一冲突、并发创建、构建归属和旧写入口移除。
+fixture.rs: 初始化新数据库，提供版本元数据、创建时固定要求和目标的构建、固定源码夹具。
+release_contract.rs: 验证版本唯一冲突、元数据编辑、独立构建归属和旧写入口移除。
 planning_basics.rs: 验证模型配置、注册和规划状态边界。
 account_settings.rs: 验证个人设置和项目资源权限。
 build_logs.rs: 验证历史日志分页、过滤、授权和终态流结束。

@@ -88,10 +88,10 @@ for (const locale of ["zh-CN", "en"] as const)
 
       await fixtureAPI(page);
       await page.goto(tenantURL("/projects/desktop-client/releases/new"));
-      await expect(page.locator('input[name="ref"]')).toHaveValue("refs/heads/main");
-      await capture("release-source");
+      await expect(page.locator('textarea[name="notes"]')).toBeVisible();
+      await capture("release-form");
       await page.locator('input[name="version"]').fill("1.2.0-rc.1");
-      await page.locator('textarea[name="goal"]').fill("Build and verify native signed packages with reproducible delivery names.");
-      await capture("release-contract");
+      await page.locator('textarea[name="notes"]').fill("Build and verify native signed packages with reproducible delivery names.");
+      await capture("release-notes");
     });
   }

@@ -35,4 +35,4 @@ Control 只保存仓库身份、commit、子模块、tag 和 LFS 摘要。制品
 
 主 Chart 部署内嵌规划协调器的 Control、Web、统一双副本网关、遥测和私有存储。Planning Operator Chart 部署 Planning Operator 与 PlanningPool。Image Operator Chart 部署 Image Operator 与 BuilderPool。Registry Chart 部署 Distribution。
 
-本版只支持全新实例。规划 API、CRD、配置与数据库基线使用统一规划名称，不提供旧架构原地升级或协议兼容层。业务基线为 `2026112001`，规划基线为 `2026111901`。程序拒绝旧数据库基线，不自动重置数据库、删除旧实例或清理持久资源。旧实例由管理员另行退役。
+本版只支持全新实例。规划 API、CRD、配置与数据库基线使用统一规划名称，不提供旧架构原地升级或协议兼容层。业务基线为 `2026112101`，规划基线为 `2026111901`。程序拒绝旧数据库基线，不自动重置数据库、删除旧实例或清理持久资源。旧实例由管理员另行退役。

@@ -176,7 +176,7 @@ for (const kind of ["tenant", "project"] as const) {
     await page.route("**/api/v1/projects", route => route.fulfill({ json: [project, other] }));
     await page.route("**/api/v1/projects/by-slug/server-api", route => route.fulfill({ json: other }));
     await page.goto(tenantURL("/projects/desktop-client/releases/new"));
-    await page.locator('textarea[name="goal"]').fill("Keep this build draft");
+    await page.locator('textarea[name="notes"]').fill("Keep this build draft");
     for (const accept of [false, true]) {
       if (kind === "project") await openNavigation(page);
       const selector = page.locator(`.space-selector.${kind}`);
@@ -192,7 +192,7 @@ for (const kind of ["tenant", "project"] as const) {
       await confirmation;
       if (!accept) {
         await expect(page).toHaveURL(tenantURL("/projects/desktop-client/releases/new"));
-        await expect(page.locator('textarea[name="goal"]')).toHaveValue("Keep this build draft");
+        await expect(page.locator('textarea[name="notes"]')).toHaveValue("Keep this build draft");
       }
     }
     await expect(page).toHaveURL(kind === "tenant" ? tenantURL("/", betaTenant.slug) : tenantURL("/projects/server-api/releases"));
@@ -261,7 +261,7 @@ test("personal overlay preserves business drafts while profile writes are accoun
     return route.fulfill({ json: account });
   });
   await page.goto(tenantURL("/projects/desktop-client/releases/new"));
-  await page.locator('textarea[name="goal"]').fill("Keep the exact build goal");
+  await page.locator('textarea[name="notes"]').fill("Keep the exact build goal");
   await page.locator(".account-trigger").click();
   const menu = page.getByRole("menu", { name: "个人菜单", exact: true });
   await expect(menu.getByRole("menuitem")).toHaveText(["个人设置", "退出登录"]);
@@ -291,7 +291,7 @@ test("personal overlay preserves business drafts while profile writes are accoun
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.locator('[data-notify][data-kind="success"]')).toContainText("修改已保存");
   await page.keyboard.press("Escape");
-  await expect(page.locator('textarea[name="goal"]')).toHaveValue(
+  await expect(page.locator('textarea[name="notes"]')).toHaveValue(
     "Keep the exact build goal",
   );
   await expect(page.locator(".account-trigger")).toContainText("Alex Chen");
@@ -299,7 +299,7 @@ test("personal overlay preserves business drafts while profile writes are accoun
   await chooseOption(page.getByRole("combobox", { name: "界面语言", exact: true }), "en");
   await chooseOption(page.getByRole("combobox", { name: "Theme", exact: true }), "light");
   await closePreferences(page);
-  await expect(page.locator('textarea[name="goal"]')).toHaveValue(
+  await expect(page.locator('textarea[name="notes"]')).toHaveValue(
     "Keep the exact build goal",
   );
   expect(headers.every((value) => !value["x-artifactory-tenant"])).toBe(true);
@@ -351,7 +351,7 @@ for (const fallback of [false, true]) {
     await fixtureAPI(page);
     await page.goto(tenantURL("/projects/desktop-client"));
     await page.getByRole("link", { name: "新建 Release", exact: true }).click();
-    await page.locator('textarea[name="goal"]').fill("Unsaved build goal");
+    await page.locator('textarea[name="notes"]').fill("Unsaved build goal");
     const rejected = page
       .waitForEvent("dialog")
       .then((dialog) => dialog.dismiss());
@@ -360,7 +360,7 @@ for (const fallback of [false, true]) {
     await expect(page).toHaveURL(
       tenantURL("/projects/desktop-client/releases/new"),
     );
-    await expect(page.locator('textarea[name="goal"]')).toHaveValue(
+    await expect(page.locator('textarea[name="notes"]')).toHaveValue(
       "Unsaved build goal",
     );
     const accepted = page

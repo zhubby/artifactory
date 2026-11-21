@@ -1,10 +1,11 @@
 /**
- * [INPUT]: 依赖 Release 归属、构建 API、事件订阅、共享控件与统一通知。
- * [OUTPUT]: 提供构建详情、操作通知与可访问持久状态。
+ * [INPUT]: 依赖构建目标摘要、Release 归属、构建 API、事件与统一通知。
+ * [OUTPUT]: 提供本次源码、目标、构建详情与可访问持久状态。
  * [POS]: Release 内的构建详情；历史错误保留正文，候选由版本工作台交付。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
+import { buildTargetSummary } from "@/lib/build-targets";
 import { subscribeBuild } from "@/lib/events";
 
 import { useUI } from "@/components/providers";
@@ -210,13 +211,16 @@ export function BuildDetail({
           <Clock3 size={14} />
           {elapsed(build.created_at, build.finished_at)}
         </span>
-        <span className="meta-item">{t("releaseFlow.revision", {number:build.spec_revision})}</span>
+        <span className="meta-item">{buildTargetSummary(build)}</span>
         {build.release_version && (
           <span className="meta-item text-primary">
             <Link href={releasePath(projectSlug,build.release_id)}>{build.release_version}</Link>
           </span>
         )}
       </div>
+      <section className="panel mb-5"><SectionTitle title={t("releaseFlow.targets")} />
+        <div className="table-scroll"><table><thead><tr><th>{t("releaseFlow.targetKey")}</th><th>{t("releaseFlow.targetKind")}</th><th>{t("releaseFlow.platforms")}</th><th>{t("releaseFlow.deliveryName")}</th></tr></thead><tbody>{build.target_requirements.map(target => <tr key={target.key}><td className="font-mono">{target.key}</td><td>{t(target.kind === "native" ? "releaseFlow.native" : "releaseFlow.image")}</td><td>{target.kind === "image" ? target.platforms.join(" · ") : `${target.application_platform || t("builds.nonApplication")} · ${target.os}/${target.arch}`}</td><td>{target.kind === "image" ? build.release_version : `${target.artifact_key || target.key} · ${target.format_suffix || t("releaseFlow.detectSuffix")}`}</td></tr>)}</tbody></table></div>
+      </section>
       {build.status === "needs_input" && <div className="notice build-attention" role="status">
         <span>{t("redesign.needsInput")}</span><Button size="sm" variant="secondary" onClick={() => setTab("plan")}>{t("redesign.viewPlan")}</Button>
       </div>}

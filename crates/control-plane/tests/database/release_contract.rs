@@ -1,7 +1,8 @@
 //! [INPUT]: 依赖隔离数据库、真实 HTTP 鉴权和 Release 领域。
-//! [OUTPUT]: 验证版本唯一冲突、并发创建、修订与构建归属。
+//! [OUTPUT]: 验证版本元数据、并发唯一约束和独立构建归属。
 //! [POS]: Release API 合同回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
+use super::fixture::build_input;
 use super::*;
 use serde_json::{Value, json};
 
@@ -11,8 +12,8 @@ async fn grant_release_token(db: &Database, project: Uuid) {
     sql::execute(&mut db.pool.clone(),"INSERT INTO api_tokens(id,tenant_id,user_id,name,token_hash,project_ids,scopes,expires_at) VALUES($1,'00000000-0000-0000-0000-000000000001',$2,'release-api',$3,$4,'{read,build,release}',now()+interval '1 day')",params![Uuid::new_v4(),user,crypto::hash("release-api"),vec![project]]).await.unwrap();
 }
 
-fn release_input(version: &str, goal: &str) -> Value {
-    json!({"version":version,"ref":"main","goal":goal,"targets":["app"],"target_requirements":[{"kind":"native","key":"app","os":"linux","arch":"amd64"}]})
+fn release_input(version: &str, notes: &str) -> Value {
+    json!({"version":version,"notes":notes})
 }
 
 async fn call(db: &Database, method: &str, path: String, body: Value) -> (StatusCode, Value) {
@@ -47,8 +48,7 @@ async fn duplicate_release_version_returns_conflict_and_preserves_original() {
     let original = release_input("2.3.4", "Original release");
     let (status, created) = call(&db, "POST", path.clone(), original).await;
     assert_eq!(status, StatusCode::OK, "{created}");
-    let mut duplicate = release_input("2.3.4", "Overwrite attempt");
-    duplicate["ref"] = json!("other-ref");
+    let duplicate = release_input("2.3.4", "Overwrite attempt");
     let (status, error) = call(&db, "POST", path, duplicate).await;
     assert_eq!(status, StatusCode::CONFLICT, "{error}");
     assert_eq!(error["error"], "resource already exists");
@@ -69,7 +69,7 @@ async fn duplicate_release_version_returns_conflict_and_preserves_original() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{persisted}");
-    for field in ["id", "version", "requested_ref", "goal", "spec_revision"] {
+    for field in ["id", "version", "notes"] {
         assert_eq!(
             persisted[field], created[field],
             "duplicate changed {field}"
@@ -109,7 +109,7 @@ async fn concurrent_duplicate_release_versions_return_one_success_and_one_confli
     .await
     .unwrap();
     assert_eq!(rows.len(), 1);
-    for field in ["id", "version", "requested_ref", "goal", "spec_revision"] {
+    for field in ["id", "version", "notes"] {
         assert_eq!(
             rows[0][field], created[field],
             "concurrent loser changed {field}"
@@ -125,21 +125,32 @@ async fn release_http_contract_owns_builds_and_rejects_mutable_identity() {
     let (project, old_build, _) = db.fixture().await;
     let _ = db.release_build_path(project).await;
     grant_release_token(&db, project).await;
-    let (status,created)=call(&db,"POST",format!("/projects/{project}/releases"),json!({"version":"1.2.3-rc.1","ref":"main","goal":"Build app","targets":["app"],"target_requirements":[{"kind":"native","key":"app","os":"linux","arch":"amd64"}]})).await;
+    let (status, created) = call(
+        &db,
+        "POST",
+        format!("/projects/{project}/releases"),
+        release_input("1.2.3-rc.1", "版本说明"),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{created}");
     let release = created["id"].as_str().unwrap();
+    let mut alternate = build_input();
+    alternate["ref"] = json!("refs/tags/v1");
+    alternate["target_requirements"] =
+        json!([{"kind":"native","key":"mac","os":"darwin","arch":"arm64"}]);
+    alternate["targets"] = json!(["mac"]);
     let (a, b) = tokio::join!(
         call(
             &db,
             "POST",
             format!("/releases/{release}/builds"),
-            json!({})
+            build_input()
         ),
         call(
             &db,
             "POST",
             format!("/releases/{release}/builds"),
-            json!({})
+            alternate
         )
     );
     assert_eq!(a.0, StatusCode::OK, "{}", a.1);
@@ -147,53 +158,52 @@ async fn release_http_contract_owns_builds_and_rejects_mutable_identity() {
     let (status, detail) = call(&db, "GET", format!("/releases/{release}"), json!({})).await;
     assert_eq!(status, StatusCode::OK, "{detail}");
     assert_eq!(detail["build_count"], 2);
-    assert_eq!(detail["status"], "draft");
-    let count: i64 = sql::scalar(
-        &mut db.pool.clone(),
-        "SELECT count(*) FROM source_tasks WHERE release_id=$1",
-        params![release.parse::<Uuid>().unwrap()],
-    )
-    .await
-    .unwrap();
-    assert_eq!(count, 1);
+    assert_eq!(detail["notes"], "版本说明");
+    for field in [
+        "requested_ref",
+        "goal",
+        "target_requirements",
+        "spec_revision",
+        "source_manifest_id",
+    ] {
+        assert!(detail.get(field).is_none(), "Release still exposes {field}");
+    }
+    let count:i64=sql::scalar(&mut db.pool.clone(),"SELECT count(*) FROM source_tasks s JOIN builds b ON b.id=s.build_id WHERE b.release_id=$1",params![release.parse::<Uuid>().unwrap()]).await.unwrap();
+    assert_eq!(count, 2);
     let build = a.1["id"].as_str().unwrap();
     let (status, detail) = call(&db, "GET", format!("/builds/{build}"), json!({})).await;
     assert_eq!(status, StatusCode::OK, "{detail}");
     assert_eq!(detail["release_id"], release);
     assert_eq!(detail["release_version"], "1.2.3-rc.1");
-    assert_eq!(detail["spec_revision"], 1);
+    assert_eq!(detail["requested_ref"], "main");
+    assert_eq!(detail["target_requirements"][0]["key"], "app");
+    assert!(detail.get("spec_revision").is_none());
+    for body in [
+        json!({"version":"2.0.0"}),
+        json!({"goal":"forbidden"}),
+        json!({"ref":"other"}),
+    ] {
+        assert_eq!(
+            call(&db, "PATCH", format!("/releases/{release}"), body)
+                .await
+                .0,
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+    let (status, updated) = call(
+        &db,
+        "PATCH",
+        format!("/releases/{release}"),
+        json!({"notes":"修正版本说明"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{updated}");
+    assert_eq!(updated["notes"], "修正版本说明");
+    let (_, unchanged) = call(&db, "GET", format!("/builds/{build}"), json!({})).await;
+    assert_eq!(unchanged["goal"], detail["goal"]);
     assert_eq!(
-        call(
-            &db,
-            "PATCH",
-            format!("/releases/{release}"),
-            json!({"spec_revision":1,"version":"2.0.0"})
-        )
-        .await
-        .0,
-        StatusCode::UNPROCESSABLE_ENTITY
-    );
-    assert_eq!(
-        call(
-            &db,
-            "PATCH",
-            format!("/releases/{release}"),
-            json!({"spec_revision":1,"goal":"Revised goal"})
-        )
-        .await
-        .0,
-        StatusCode::OK
-    );
-    assert_eq!(
-        call(
-            &db,
-            "PATCH",
-            format!("/releases/{release}"),
-            json!({"spec_revision":1,"goal":"Stale"})
-        )
-        .await
-        .0,
-        StatusCode::CONFLICT
+        unchanged["target_requirements"],
+        detail["target_requirements"]
     );
     assert_eq!(
         call(
@@ -262,7 +272,7 @@ async fn release_http_contract_owns_builds_and_rejects_mutable_identity() {
             &db,
             "POST",
             format!("/releases/{release}/builds"),
-            json!({})
+            build_input()
         )
         .await
         .0,
@@ -273,7 +283,7 @@ async fn release_http_contract_owns_builds_and_rejects_mutable_identity() {
             &db,
             "PATCH",
             format!("/releases/{release}"),
-            json!({"spec_revision":2,"goal":"forbidden"})
+            json!({"notes":"forbidden"})
         )
         .await
         .0,

@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖业务状态、模型配置和隔离数据库。
+//! [INPUT]: 依赖业务状态、固定构建输入和隔离数据库。
 //! [OUTPUT]: 验证注册、预算分类与规划终态。
 //! [POS]: 数据库验收中的规划与身份基础回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -231,14 +231,19 @@ async fn revision_budget_excludes_source_authorization_and_transport_failures() 
         "artifact_transport",
         "emissary",
     ] {
-        let (project, build, job) = database.fixture().await;
-        let snapshot = Uuid::new_v4();
+        let (_, build, job) = database.fixture_with_goal("test").await;
+        let snapshot: Uuid = sql::scalar(
+            &mut database.pool.clone(),
+            "SELECT source_manifest_id FROM builds WHERE id=$1",
+            params![build],
+        )
+        .await
+        .unwrap();
         let run = Uuid::new_v4();
         let plan = Uuid::new_v4();
-        database.source(project, snapshot).await;
         sql::execute(&mut database.pool.clone(), "INSERT INTO planning_runs(id,build_id,purpose,state,model_config) VALUES($1,$2,'initial','succeeded','{}')", params![run, build]).await.unwrap();
         sql::execute(&mut database.pool.clone(), "INSERT INTO plan_revisions(id,build_id,run_id,revision,source_manifest_id,contents,sha256) VALUES($1,$2,$3,0,$4,'{}','digest')", params![plan, build, run, snapshot]).await.unwrap();
-        sql::execute(&mut database.pool.clone(), "UPDATE builds SET goal='Build CLI',model_config_snapshot='{}',current_plan_id=$2,source_manifest_id=$3,status='failed' WHERE id=$1", params![build, plan, snapshot]).await.unwrap();
+        sql::execute(&mut database.pool.clone(), "UPDATE builds SET model_config_snapshot='{}',current_plan_id=$2,status='failed' WHERE id=$1", params![build, plan]).await.unwrap();
         sql::execute(
             &mut database.pool.clone(),
             "UPDATE jobs SET status='failed',plan_revision_id=$2 WHERE id=$1",

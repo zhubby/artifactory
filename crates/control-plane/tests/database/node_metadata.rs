@@ -1,4 +1,4 @@
-//! [INPUT]: 隔离数据库、节点元数据和 mTLS 规划夹具。
+//! [INPUT]: 隔离数据库、固定构建输入和 mTLS 规划夹具。
 //! [OUTPUT]: 验证快照、改名持久性与租户查询。
 //! [POS]: placement 和 tools 子模块复用本模块的隔离服务。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -563,7 +563,7 @@ async fn placement_node(database: &Database) -> (Uuid, Uuid, Value) {
 }
 async fn rank(database: &Database, build: Uuid, job: Uuid, ids: &[Uuid]) {
     let placement = json!({"candidates":ids.iter().map(|id|json!({"node_id":id,"metadata_digest":"a".repeat(64),"reason":"native platform and available memory"})).collect::<Vec<_>>(),"resources":{"min_available_memory_bytes":4096,"min_build_disk_available_bytes":8192,"max_cpu_percent":80}});
-    sql::execute(&mut database.pool.clone(),"UPDATE builds SET goal='test',planning_context=jsonb_build_object('placement_version',1,'pool_ids',jsonb_build_array('00000000-0000-0000-0000-000000000001'),'signing_profiles','[]'::jsonb),model_config_snapshot='{\"max_calls\":20,\"timeout_seconds\":600}' WHERE id=$1",params![build]).await.unwrap();
+    sql::execute(&mut database.pool.clone(),"UPDATE builds SET planning_context=jsonb_build_object('placement_version',1,'pool_ids',jsonb_build_array('00000000-0000-0000-0000-000000000001'),'signing_profiles','[]'::jsonb),model_config_snapshot='{\"max_calls\":20,\"timeout_seconds\":600}' WHERE id=$1",params![build]).await.unwrap();
     sql::execute(
         &mut database.pool.clone(),
         "INSERT INTO job_placements(job_id,placement) VALUES($1,$2)",
