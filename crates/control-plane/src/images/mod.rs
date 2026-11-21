@@ -1,14 +1,19 @@
 //! [INPUT]: 依赖镜像执行存储、源码快照、OCI 客户端和 Kubernetes。
-//! [OUTPUT]: 提供镜像准入、启动校验、单轮调度与内容校验。
+//! [OUTPUT]: 提供独立镜像池准入、启动校验、单轮调度与内容校验。
 //! [POS]: 控制平面的镜像编排边界；独立于设备调度循环。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod dispatch;
+mod pools;
 pub mod registry;
 mod release;
 mod tasks;
 use anyhow::{Context, Result, ensure};
 use artifactory_image_protocol::RegistryLogin;
 pub use dispatch::tick;
+pub(crate) use pools::{
+    IMAGE_POOL_POLICY, PoolValidationError, configured_pool, normalize_plan_pools,
+    validate_plan_pools,
+};
 pub(crate) use release::publish as publish_release;
 pub(crate) use release::stopped as release_stopped;
 use std::path::PathBuf;
@@ -63,6 +68,7 @@ impl Config {
             artifactory_image_protocol::dns_label(&config.namespace),
             "invalid image namespace"
         );
+        configured_pool()?;
         let insecure = std::env::var("ARTIFACTORY_INSECURE_DEV").as_deref() == Ok("true");
         config.login(uuid::Uuid::nil(), "").validate(insecure)?;
         artifactory_service_transport::service::endpoint(&config.control_url)?;

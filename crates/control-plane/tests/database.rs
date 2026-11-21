@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离 PostgreSQL、授权设备和业务服务。
-//! [OUTPUT]: 提供数据库验收夹具与跨模块测试入口。
+//! [OUTPUT]: 提供数据库夹具、查池并发行锁验证和跨模块测试入口。
 //! [POS]: 真实数据库测试总入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_control_plane::{
@@ -24,6 +24,8 @@ use uuid::Uuid;
 
 #[path = "database/fixture.rs"]
 mod fixture;
+#[path = "database/image_pool_admission.rs"]
+mod image_pool_admission;
 #[path = "database/images.rs"]
 mod images;
 #[path = "database/planning_basics.rs"]

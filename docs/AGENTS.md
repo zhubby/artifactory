@@ -21,7 +21,7 @@ control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。
 frontend-experience.md: 定义语言、主题、构建引导草稿、加载、系统动效与前端验证入口。
 helm.md: 定义最低 Kubernetes 1.28 安装、基线内追加迁移与持久身份保留。
-image-builds.md: 定义普通容器镜像生命周期、整合网关、池级出口代理和交付边界。
+image-builds.md: 定义独立镜像池准入、容器镜像生命周期、整合网关、池代理和交付边界。
 image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像、独立 Operator、网关迁移与空闲连接验收。
 image-builds-kubernetes-128-acceptance-2026-11-18.md: 记录 1.28 生命周期、正式部署与原生设备验收。
 local-macmini-acceptance-2026-11-11.md: 记录本机和 Mac mini 的验收。

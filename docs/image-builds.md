@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 独立镜像 Operator、池代理、监督型 BuildKit 与私有仓库。
-[OUTPUT]: 定义最低 Kubernetes 1.28 的镜像生命周期、整合入口和交付边界。
+[OUTPUT]: 定义独立镜像池准入、最低 Kubernetes 1.28 生命周期和交付边界。
 [POS]: 镜像构建与统一网关的部署入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -64,7 +64,13 @@ helm upgrade --install artifactory charts/artifactory \
   --kube-context YOUR_CONTEXT -n artifactory -f production-values.yaml
 ```
 
-同一命名空间安装一套 Image Operator。Control 的 `imageBuilds.namespace` 必须指向该命名空间。Chart 在目标命名空间为 Control 创建任务声明和 Secret 权限；目标命名空间须预先存在。Image Operator 不读取 Secret，源码 init container 使用专属投影 token，主容器不取得该 token。
+同一命名空间安装一套 Image Operator。Control 的 `imageBuilds.namespace` 必须指向该命名空间。Chart 在目标命名空间为 Control 创建 BuilderPool 只读查询、任务声明和 Secret 权限；目标命名空间须预先存在。Image Operator 不读取 Secret，源码 init container 使用专属投影 token，主容器不取得该 token。
+
+主 Chart 的 `imageBuilds.pool` 对应 Image Operator Chart 的 `builderPool.name`，默认值为 `default`。Control 通过 `ARTIFACTORY_IMAGE_POOL` 读取默认池名并校验 DNS 名称。构建创建时冻结该值，模型通过 `project_context.image_builder_pool` 与 `image_pool_policy` 获得默认池和边界说明。原生 `pool_ids` 和 `nodes[].pool_id` 是设备授权 UUID，不是 BuilderPool 名称。
+
+计划省略 `image.pool` 时，Control 使用该构建冻结的默认池。显式填写的其他 BuilderPool 名称保持原值。Control 在持久化计划前查询该池；明确 404 返回可修正的规划工具错误，查询期间不占构建和规划行锁。客户端初始化、403、503 或总计 10 秒超时返回可重试服务错误；这些故障不写规划回执或工具错误，由同一事件重试，不消耗模型修正轮次。纯原生计划不查询 BuilderPool。
+
+计划通过后，池被删除时，Image Operator 以 `BuilderPoolNotFound` 明确失败并执行原有停机收尾。只有明确 404 进入此终态；权限与临时 API 故障继续重试。Control 保留该安全诊断，避免等待整个构建期限后才报告通用超时。
 
 Control 未设置 `ARTIFACTORY_IMAGE_NAMESPACE` 时拒绝镜像计划、重试和发布，原生目标继续执行。设置该变量后，缺失配置或无效 RSA 签名身份会阻止 Control 启动。Kubernetes 客户端初始化失败时，调度循环持续重试。
 
@@ -81,6 +87,7 @@ gateway:
 imageBuilds:
   enabled: true
   namespace: artifactory
+  pool: default
   registryUrl: https://build.example.com
   controlUrl: https://build.example.com
   registryService: artifactory-registry

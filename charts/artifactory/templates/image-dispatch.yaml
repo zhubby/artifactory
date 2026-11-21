@@ -1,5 +1,5 @@
 # [INPUT]: 任务命名空间、资源前缀和 Control 服务身份。
-# [OUTPUT]: 执行身份校验、任务声明和 Release 发布停机核验权限。
+# [OUTPUT]: BuilderPool 只读查询、任务声明和发布停机核验权限。
 # [POS]: Control 验证 Pod 直接归属 CR；Operator 编排普通 Pod。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 {{- $tokenReviewName := printf "%s-%s-source-tokenreview" (include "artifactory.fullname" .) .Release.Namespace }}
@@ -27,6 +27,9 @@ rules:
   - apiGroups: [images.artifactory.dev]
     resources: [imagebuilds]
     verbs: [get, list, create, patch]
+  - apiGroups: [images.artifactory.dev]
+    resources: [builderpools]
+    verbs: [get]
   - apiGroups: ['']
     resources: [pods]
     verbs: [get, list]

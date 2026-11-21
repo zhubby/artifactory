@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖真实 kube 客户端与隔离 HTTP Kubernetes peer。
-//! [OUTPUT]: 验证创建意图、直接 Pod 准入、UID 围栏和终态收尾。
+//! [OUTPUT]: 验证缺池终态、查池重试、创建意图、UID 围栏和收尾。
 //! [POS]: Peer 保留收到 DELETE 的活 Pod，模拟 Finalizer 与失联节点。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 #![cfg(feature = "operator")]
@@ -7,6 +7,53 @@ mod support;
 use artifactory_image_operator::resources;
 use serde_json::json;
 use support::*;
+
+#[tokio::test]
+async fn missing_builder_pool_fails_without_creating_pods_and_releases_finalizer() {
+    let peer = Peer::new(
+        build("build", "00000000-0000-0000-0000-000000000001"),
+        vec![],
+    )
+    .await;
+    peer.stored.lock().unwrap().pool_status = Some(404);
+    peer.reconcile().await.unwrap();
+    let current = peer.current();
+    assert_eq!(current["status"]["phase"], "Failed");
+    assert_eq!(current["status"]["observedGeneration"], 1);
+    assert_eq!(current["status"]["podOwnership"]["pods"], json!([]));
+    assert!(
+        current["status"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Image failure: reason=BuilderPoolNotFound")
+    );
+    peer.repeat(3).await;
+    let current = peer.current();
+    assert_eq!(
+        current["status"]["message"],
+        "Image failure: reason=BuilderPoolNotFound"
+    );
+    assert_eq!(current["metadata"]["finalizers"], json!([]));
+    assert_eq!(peer.stored.lock().unwrap().creates, 0);
+}
+
+#[tokio::test]
+async fn denied_or_unavailable_builder_pool_remains_retryable() {
+    for code in [403, 503] {
+        let peer = Peer::new(
+            build("build", "00000000-0000-0000-0000-000000000001"),
+            vec![],
+        )
+        .await;
+        peer.stored.lock().unwrap().pool_status = Some(code);
+        assert!(peer.reconcile().await.is_err());
+        assert!(peer.current()["status"].is_null());
+        assert_eq!(peer.stored.lock().unwrap().creates, 0);
+        peer.stored.lock().unwrap().pool_status = None;
+        peer.repeat(2).await;
+        assert_eq!(peer.stored.lock().unwrap().creates, 1);
+    }
+}
 
 #[tokio::test]
 async fn finalizer_precedes_creation_and_pod_is_bound_without_batch_api() {

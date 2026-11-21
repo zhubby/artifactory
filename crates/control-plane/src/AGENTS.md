@@ -17,10 +17,10 @@ main.rs: 首次创建默认管理员，启动 HTTP、gRPC、内嵌规划运行�
 node_query.rs: 按项目授权查询节点能力和资源。
 ota.rs: 校验节点升级包并协调升级状态。
 pki.rs: 创建服务和设备证书。
-planning.rs: 按本次构建的完整目标合同复验执行计划。
+planning.rs: 按冻结镜像默认池补全计划，复验本次构建的完整目标合同。
 planning_runtime.rs: 为最新活动规划运行投影安全摘要，隔离上游不可用。
 recipe.rs: 校验应用分类、执行宿主和原生配方目标。
-planning_bridge.rs: 以内嵌 Coordinator 的受权 HTTP 接口传递意图和材料。材料出口复核 Coordinator 身份。
+planning_bridge.rs: 传递受权意图和材料；事务外查池，临时故障保留事件重试。材料出口复核 Coordinator 身份。
 scheduler.rs: 注入固定版本，分配任务并验证停止后的交付推广。
 signing/: 提供托管材料加密、导入和默认签名约束。
 settings.rs: 读取启动配置与密钥路径。

@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖本机 HTTP、真实 kube 客户端与直接 Pod 契约。
-//! [OUTPUT]: 提供 CR CAS、创建意图、Pod finalizer 与故障注入夹具。
-//! [POS]: 镜像生命周期测试的隔离 API；不连接真实集群。
+//! [OUTPUT]: 提供 CR CAS、创建意图、Pod finalizer 和查池故障注入。
+//! [POS]: 隔离 API 禁用客户端退避，由协调器测试控制重试。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_image_operator::{
     api::{BuilderPool, ImageBuild},
@@ -27,6 +27,7 @@ pub struct Stored {
     pub fail_status: bool,
     pub fail_pods: bool,
     pub fail_metadata: bool,
+    pub pool_status: Option<u16>,
     pub creates: usize,
     pub create_intents: Vec<Value>,
 }
@@ -174,6 +175,9 @@ async fn handle(
         return (StatusCode::OK, Json(result));
     }
     if path.contains("/builderpools/") {
+        if let Some(code) = s.pool_status {
+            return error(StatusCode::from_u16(code).unwrap());
+        }
         return (StatusCode::OK, Json(s.pool.clone()));
     }
     if path.ends_with("/nodes") {
@@ -272,17 +276,19 @@ impl Peer {
             fail_status: false,
             fail_pods: false,
             fail_metadata: false,
+            pool_status: None,
             creates: 0,
             create_intents: vec![],
         }));
         let app = Router::new().fallback(handle).with_state(stored.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let client = Client::try_from(kube::Config::new(
+        let mut config = kube::Config::new(
             format!("http://{}", listener.local_addr().unwrap())
                 .parse()
                 .unwrap(),
-        ))
-        .unwrap();
+        );
+        config.default_retry = false;
+        let client = Client::try_from(config).unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         Self {
             stored,

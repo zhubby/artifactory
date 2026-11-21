@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 Image CRD、Pod UID 归属链和选主租约。
-//! [OUTPUT]: 先持久化 Pod 创建意图，确认停机收尾后释放任务 Finalizer。
+//! [OUTPUT]: 缺池时写失败；持久化创建意图，确认停机后释放 Finalizer。
 //! [POS]: ImageBuild 是工作 Pod 的唯一 owner；同一执行不重建丢失 Pod。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -646,8 +646,19 @@ async fn reconcile_inner(build: Arc<ImageBuild>, ctx: Arc<Context>) -> Result<Ac
         return cleanup(&ctx, &build, &pods, &ledger, "Failed", Some(reason)).await;
     }
     let pool = Api::<BuilderPool>::namespaced(ctx.client.clone(), &ctx.namespace)
-        .get(&build.spec.pool)
+        .get_opt(&build.spec.pool)
         .await?;
+    let Some(pool) = pool else {
+        return cleanup(
+            &ctx,
+            &build,
+            &pods,
+            &ledger,
+            "Failed",
+            Some(artifactory_image_protocol::BUILDER_POOL_NOT_FOUND.into()),
+        )
+        .await;
+    };
     let nodes = Api::<Node>::all(ctx.client.clone())
         .list(&ListParams::default())
         .await?

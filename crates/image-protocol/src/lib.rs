@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定清单身份、Serde 和 SHA-256。
-//! [OUTPUT]: 提供镜像目标、固定执行身份、结构化失败与 OCI Index 契约。
+//! [OUTPUT]: 提供镜像目标、默认池名、缺池诊断、固定执行身份与 OCI Index 契约。
 //! [POS]: 控制平面与 Image Operator 共用的执行边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
@@ -10,6 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub const INDEX_MEDIA_TYPE: &str = "application/vnd.oci.image.index.v1+json";
 pub const MANIFEST_MEDIA_TYPE: &str = "application/vnd.oci.image.manifest.v1+json";
 pub const SUPPORTED_PLATFORMS: [&str; 2] = ["linux/amd64", "linux/arm64"];
+pub const DEFAULT_BUILDER_POOL: &str = "default";
+pub const BUILDER_POOL_NOT_FOUND: &str = "Image failure: reason=BuilderPoolNotFound";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,7 +43,7 @@ fn dockerfile() -> String {
     "Dockerfile".into()
 }
 fn pool() -> String {
-    "default".into()
+    DEFAULT_BUILDER_POOL.into()
 }
 fn platforms() -> Vec<String> {
     SUPPORTED_PLATFORMS.iter().map(|s| (*s).into()).collect()

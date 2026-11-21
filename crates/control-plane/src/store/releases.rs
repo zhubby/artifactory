@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖版本元数据、项目设备授权与本次构建的源码和目标输入。
-//! [OUTPUT]: 创建版本、更新说明并创建独立源码解析的构建快照。
+//! [OUTPUT]: 创建版本、更新说明，创建固定镜像默认池与独立源码的构建快照。
 //! [POS]: 版本元数据与构建创建的事务边界；正式交付由 release_publication 封存。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{ControlStore, dto};
@@ -324,7 +324,7 @@ impl ControlStore {
             .ok_or_else(|| {
                 ApiError::BadRequest("configure an enabled model profile before building".into())
             })?;
-        let context = json!({"release_id":release,"release_version":r["version"],"image_builds_enabled":crate::images::enabled(),"placement_version":if std::env::var("ARTIFACTORY_AI_PLACEMENT").is_ok_and(|v|v=="1"||v=="true"){1}else{0},"pool_ids":p["pool_ids"],"signing_profiles":p["signing_profiles"],"build_context":p["build_context"],"source_credentials":p["source_credentials"]});
+        let context = json!({"release_id":release,"release_version":r["version"],"image_builds_enabled":crate::images::enabled(),"image_builder_pool":crate::images::configured_pool()?,"image_pool_policy":crate::images::IMAGE_POOL_POLICY,"placement_version":if std::env::var("ARTIFACTORY_AI_PLACEMENT").is_ok_and(|v|v=="1"||v=="true"){1}else{0},"pool_ids":p["pool_ids"],"signing_profiles":p["signing_profiles"],"build_context":p["build_context"],"source_credentials":p["source_credentials"]});
         let id = Uuid::new_v4();
         let credential: Option<Uuid> =
             serde_json::from_value(p["credential_id"].clone()).map_err(anyhow::Error::from)?;

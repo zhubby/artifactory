@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖规划运行时回执、源码清单和任务状态。
-//! [OUTPUT]: 持久化规划回执与统计，投影两类失败并保护终态。
+//! [OUTPUT]: 读取冻结镜像默认池，持久化回执与统计，投影两类失败并保护终态。
 //! [POS]: 业务状态与独立 Coordinator 之间的事务边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
@@ -16,6 +16,7 @@ pub(crate) struct PlanningReceipt {
 pub(crate) struct PlanningRunSource {
     pub build_id: Uuid,
     pub source_manifest_id: Uuid,
+    pub planning_context: Value,
 }
 pub(crate) struct PlanningDelivery {
     pub id: i64,
@@ -86,10 +87,11 @@ impl ControlStore {
     }
 
     pub(crate) async fn planning_run_source(&self, run: Uuid) -> Result<PlanningRunSource> {
-        let row=sql::record(&mut self.pool.clone(), "SELECT r.build_id,b.source_manifest_id FROM planning_runs r JOIN builds b ON b.id=r.build_id WHERE r.id=$1", params![run], &[("build_id", Type::Uuid),("source_manifest_id", Type::Uuid)]).await?;
+        let row=sql::record(&mut self.pool.clone(), "SELECT r.build_id,b.source_manifest_id,b.planning_context FROM planning_runs r JOIN builds b ON b.id=r.build_id WHERE r.id=$1", params![run], &[("build_id", Type::Uuid),("source_manifest_id", Type::Uuid),("planning_context", Type::String)]).await?;
         Ok(PlanningRunSource {
             build_id: row.decode("build_id")?,
             source_manifest_id: row.decode("source_manifest_id")?,
+            planning_context: row.decode("planning_context")?,
         })
     }
 

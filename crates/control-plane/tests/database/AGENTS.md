@@ -23,6 +23,7 @@ transport.rs: 组合真实 Tonic/mTLS、设备负载与制品传输回归。
 workspace_lifecycle.rs: 以显式授权设备验证构建排空、归档、删除和恢复。
 
 images.rs: 验证镜像准入、候选隔离、外仓分发及原生准入不受镜像开关影响。
+image_pool_admission.rs: 验证查池不占行锁、缺池无 Job、403/503 无永久回执且同事件可重试。
 image_regressions.rs: 验证终态材料回收、失败摘要、发布失败分类与日志隔离和发布快照。
 image_completion.rs: 验证候选提交与失败诊断的 UID、spec 和 generation 围栏。
 

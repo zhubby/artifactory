@@ -1,8 +1,8 @@
 //! [INPUT]: 依赖 Coordinator 授权、源码清单和持久业务状态。
-//! [OUTPUT]: 传递规划意图、源码材料与幂等提交回执。
-//! [POS]: 控制平面与内嵌规划 Coordinator 之间的业务授权边界。
+//! [OUTPUT]: 传递规划意图与回执；缺池可修正，查池故障保留事件重试。
+//! [POS]: Coordinator 的业务授权边界；集群等待不占构建行锁。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
-use crate::{crypto, execution_plan::ExecutionPlan, state::AppState};
+use crate::{crypto, state::AppState};
 use anyhow::{Context, Result, ensure};
 use artifactory_planning_protocol::{ModelConfiguration, RunIntent};
 use artifactory_service_transport::service::{self, Client};
@@ -120,8 +120,23 @@ pub async fn accept_event(s: &AppState, v: Value) -> Result<Value> {
             let plan = payload["payload"]
                 .get("plan")
                 .unwrap_or(&payload["payload"]);
-            if let Err(error) = ExecutionPlan::parse(plan.clone()) {
-                validation = Some(error.to_string());
+            let prepared = (|| -> Result<_> {
+                let plan = crate::planning::parse_plan(&run_source.planning_context, plan.clone())?;
+                crate::images::ensure_targets_enabled(
+                    plan.recipe.targets.values(),
+                    crate::images::enabled(),
+                )?;
+                Ok(plan)
+            })();
+            match prepared {
+                Err(error) => validation = Some(error.to_string()),
+                Ok(plan) => match crate::images::validate_plan_pools(&plan).await {
+                    Ok(()) => (),
+                    Err(error @ crate::images::PoolValidationError::MissingPool(_)) => {
+                        validation = Some(error.to_string());
+                    }
+                    Err(error) => return Err(error.into()),
+                },
             }
         }
     }

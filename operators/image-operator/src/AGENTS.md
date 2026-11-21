@@ -3,7 +3,7 @@
 
 api.rs: 复用共享出口代理，定义不可变执行身份、角色资源与 Pod UID 台账。
 resources.rs: 按角色预算创建源码 init、Runner/BuildKit 和发布 Pod，校验内部直连并注入池代理；信任卷只投影公开 CA。
-controller.rs: 先预留创建意图，再保存 UID 与停机证据；收尾后释放 CR Finalizer。
+controller.rs: 仅将缺池 404 写为失败；预留创建意图，保存 UID 和停机证据，收尾后释放 Finalizer。
 diagnostics.rs: 复用共享脱敏器清除任务秘密、代理凭据与诊断 URL，限制日志和摘要长度。
 build_failure.rs: 转发脱敏 buildctl 标准错误，只从有界末尾求解诊断识别执行失败与外部故障。
 leadership.rs: 使用独立 Lease 保护 Image 控制器写入。

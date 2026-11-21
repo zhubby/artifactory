@@ -1,5 +1,5 @@
 """[INPUT]: Helm 模板与独立 Secret 初始化脚本。
-[OUTPUT]: 验证固定初始账号、合并服务边界、端口迁移和持久凭据。
+[OUTPUT]: 验证固定账号、镜像默认池与只读查池权限、服务边界和持久凭据。
 [POS]: 部署契约回归；不连接 Kubernetes。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -19,6 +19,17 @@ SCRIPT = Path(__file__).with_name("init-helm.py")
 
 
 class HelmBootstrapTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_image_default_pool_and_readonly_pool_lookup_are_independent_from_native_pools(self):
+        chart = SCRIPT.parents[1] / 'charts/artifactory'
+        rendered = subprocess.run(['helm', 'template', 'images', str(chart), '--set',
+                                   'imageBuilds.enabled=true,imageBuilds.pool=ci-images'],
+                                  check=True, capture_output=True, text=True).stdout
+        self.assertIn('name: ARTIFACTORY_IMAGE_POOL, value: "ci-images"', rendered)
+        rules = [document for document in rendered.split('---') if 'kind: Role\n' in document]
+        self.assertTrue(any(re.search(r'resources: \[builderpools\]\s+verbs: \[get\]', role)
+                            for role in rules))
+
     def services(self, rendered):
         services = {}
         for document in rendered.split('\n---\n'):

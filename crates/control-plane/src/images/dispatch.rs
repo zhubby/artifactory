@@ -191,7 +191,9 @@ fn failure_summary(build: &DynamicObject) -> String {
         .to_owned()
 }
 fn valid_failure_summary(line: &str) -> bool {
-    if line == "Image failure: reason=Unknown" {
+    if line == "Image failure: reason=Unknown"
+        || line == artifactory_image_protocol::BUILDER_POOL_NOT_FOUND
+    {
         return true;
     }
     let Some((platform, detail)) = line
@@ -297,6 +299,7 @@ mod tests {
     fn failure_summary_accepts_only_structured_operator_fields() {
         let mut build: DynamicObject = serde_json::from_value(json!({"apiVersion":"images.artifactory.dev/v1alpha1","kind":"ImageBuild","metadata":{"name":"build"}})).unwrap();
         for message in [
+            "Image failure: reason=BuilderPoolNotFound",
             "Image failure: platform=linux/amd64 pod=Evicted",
             "Image failure: platform=linux/arm64 container=buildkit reason=OOMKilled exit=137",
             "Image failure: platform=publish pod=DeadlineExceeded",

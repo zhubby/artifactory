@@ -17,13 +17,13 @@ builds.rs: 创建构建，读取原生及镜像 Release、制品与日志游标�
 executions.rs: 以兼容取消外键的写锁维护节点 session、事件与不可变制品登记。
 scheduling.rs: 分配任务、汇总构建并对两类执行失败发起有限修订。
 failures.rs: 统一最新失败诊断；镜像按构建源码和目标计划排除旧执行。
-releases.rs: 创建版本元数据、更新说明，复核原生设备授权并保存独立构建输入。
+releases.rs: 创建版本元数据、更新说明，复核原生设备授权并冻结镜像默认池和构建输入。
 release_publication.rs: 冻结交付清单、正式文件名和 OCI 摘要白名单。
 planning.rs: 读取固定规划上下文、计划和两类执行器的失败日志。
 planning_management.rs: 写入模型方案、澄清及对话查询上下文。
 placements.rs: 保存节点候选并校验分配条件。
 replication.rs: 协调副本归属和持久化唤醒。
-planning_bridge.rs: 转换含两类失败诊断的规划意图，按 generation 和终态围栏保存调用与用量。
+planning_bridge.rs: 投影冻结镜像池和两类失败诊断，按 generation 和终态围栏保存调用与用量。
 sources.rs: 以构建为归属固定源码 CR UID、pin 和清单，隔离取消与失败传播。
 sources_tests.rs: 验证 CR UID、执行围栏、事务幂等和独立构建源码取消。
 releases_tests.rs: 验证版本元数据、设备授权准入、源码隔离与交付封存围栏。

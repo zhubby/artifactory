@@ -20,7 +20,7 @@ test_ephemeral_source.py: 验证直接 Pod、临时卷、AppArmor 默认化与�
 test_data_access.py: 验证数据库访问规则。
 test_deploy.py: 验证固定初始账号、单机部署清单与已有凭据保留。
 test_local_gateway.py: 验证本机网关环境的凭据隔离与固定来源。
-test_init_helm.py: 验证初始账号、合并服务端口、迁移拒绝、池代理和 Registry 入口策略。
+test_init_helm.py: 验证初始账号、镜像默认池与查池权限、服务端口、池代理和 Registry 入口策略。
 test_version.py: 验证统一版本与官方 BuildKit 镜像标签，保留第三方镜像。
 version.py: 校验或同步工作区、交付物和官方工作镜像版本。
 wait_local_services.py: 等待本机依赖服务就绪。

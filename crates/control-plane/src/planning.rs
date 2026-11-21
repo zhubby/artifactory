@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖固定源码元数据、节点能力和执行计划。
-//! [OUTPUT]: 校验本次构建的完整目标合同并读取构建日志。
+//! [INPUT]: 依赖固定源码、冻结镜像默认池、节点能力和执行计划。
+//! [OUTPUT]: 补全缺省镜像池，校验完整目标合同并读取构建日志。
 //! [POS]: Coordinator 提案进入业务调度的校验边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{execution_plan::ExecutionPlan, recipe::Recipe, state::AppState};
@@ -101,7 +101,7 @@ pub(crate) async fn prepare_plan(
     context: crate::store::SubmissionContext,
     value: Value,
 ) -> Result<ExecutionPlan> {
-    let mut plan = ExecutionPlan::parse(value)?;
+    let mut plan = parse_plan(&context.planning_context, value)?;
     crate::images::ensure_targets_enabled(plan.recipe.targets.values(), crate::images::enabled())?;
     let source = state
         .store
@@ -227,6 +227,11 @@ pub(crate) async fn prepare_plan(
     // Publication is controlled by explicit API requests and release authorization.
     plan.recipe.release.enabled = true;
     ExecutionPlan::parse(serde_json::to_value(plan)?)
+}
+
+pub(crate) fn parse_plan(context: &Value, mut value: Value) -> Result<ExecutionPlan> {
+    crate::images::normalize_plan_pools(&mut value, context)?;
+    ExecutionPlan::parse(value)
 }
 
 fn source_capabilities(recipe: &mut Recipe, source: &artifactory_source_checkout::SourceManifest) {
