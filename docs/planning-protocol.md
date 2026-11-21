@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 固定源码身份、Worker 报告和规划协调器事务。
-[OUTPUT]: 定义准备、故障脱敏、累计统计和提案围栏。
+[OUTPUT]: 定义准备、预算引导、故障脱敏和提案围栏。
 [POS]: 控制平面内嵌的规划协调器协议入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -40,6 +40,10 @@
 6. 任务终态后 Operator 删除 Pod，确认停止并保存证据后移除 finalizer。Pod 丢失时，Operator 报告完整旧执行身份，由规划协调器撤权并决定新 generation。
 
 placement 运行只读节点元数据，不准备源码。源码准备不 acquire 模型租约，不启动模型 deadline。执行登记尚未完成时 `/v1/prepare` 返回 409，preparer 有界重试。Kubernetes API 的 404、409、429、5xx 和网络故障返回 503。无效投射令牌和错误执行身份返回 403。
+
+Worker 在系统提示中声明当前任务的调用上限和时限。每轮工具返回后，Worker 提示剩余调用次数和秒数。剩余三次调用时，提示使用已有证据提交计划或提出必要澄清，并保留校验修正机会。placement 只提示节点查询和分配提交。提示不增加模型预算，不替代协调器的原子预算校验。
+
+`read_file` 支持从零起的行 `offset` 和正数行 `limit`，范围读取默认 200 行。`search_source` 支持文件或目录 `path`，每页最多读取 16 MiB 并返回 200 条匹配。截断页返回不透明的 `next_offset`；后续按同一 `query/path` 传入 `offset` 续读。截断页零命中不能证明文本不存在。文件读取仍拒绝大于 128 KiB 的文件、符号链接、二进制和目录穿越。
 
 preparer 配置：
 
@@ -106,6 +110,8 @@ Worker 失败报告必须通过当前租约、generation 和事件顺序校验�
 每个提案和失败 outbox 事件携带协调器保存的 `generation`、累计 `calls` 和 `usage` 快照。模型代理在发送请求前原子预留次数。供应商返回 4xx 或结果未知时，该次数仍被消耗。控制平面将累计统计投影到规划运行，供 `/api/v1/builds/{id}/plans` 和构建页面读取。待澄清、成功、失败和被拒绝提案都保留已消耗的调用统计。
 
 统计仅更新活动运行。控制平面拒绝低于已接收 generation 的事件，累计次数和有效数字用量不能回退。重复回执不累加次数，取消和已有终态不接收新的统计。提案验证失败不回滚已保存的调用统计。
+
+提案前的实时统计由受权 `/v1/get` 查询补齐。该查询返回协调器保存的 `usage`。公开 plans 接口只为最新 queued 或 leased 业务运行附加 `runtime: {status,generation,calls,usage}`。此投影只含数值用量，不转发生命周期租约、执行身份、grant 或 intent。业务已确认字段不被覆盖。两秒内无法读取有效摘要时，接口附加 `runtime_unavailable: true`，并保留业务查询的成功结果。取消、终态和 needs_input 运行不读取实时摘要。
 
 丢失回报包含 `run_id`、`generation`、`execution` 和 `reason`。`reason=pod_missing` 用于 Pod 消失或开始删除，要求完整执行身份与规划协调器登记完全一致；事务撤销 grant，结束旧会话，并在预算允许时重新排队到下一 generation。重试最多三个 generation，累计调用与原 deadline 不重置。`reason=resource_deleted` 结束被删除 CR 对应的活动任务；仅规划协调器尚未登记执行时允许 execution 为空。已有终态和持久提案不被覆盖。成功恢复后，重复旧 generation 回报被 fencing 拒绝；Operator 重新读取当前运行状态。旧 Pod 必须停止并完成清理后，Operator 才创建新 generation 的 Pod。未知旧 Pod 的停止证据仍由 Operator 保存，不能据此释放实际执行容量。
 

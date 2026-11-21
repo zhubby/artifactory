@@ -7,8 +7,8 @@ auth-shell.tsx: 渲染认证页面布局。
 brand-mark.tsx: 渲染 Artifactory 品牌标记。
 build-detail.tsx: 按原生与镜像目标展示执行和日志，未创建任务的终态不显示节点等待。
 build-log-history.tsx: 首读显示日志骨架，按 attempt 和步骤分页，追加旧日志时保留输出与阅读锚点。
-build-planning.tsx: 展示计划、澄清与对话入口，未生成计划时区分等待回答、处理中和终态。
-planning-conversations.tsx: 首次展开使用骨架，按 generation 分页读取审计，后台轮询和终态补读静默。
+build-planning.tsx: 展示活动规划实时统计与已确认回退，终态保留持久结果、计划和澄清入口。
+planning-conversations.tsx: 按 generation 按需读取审计；本地化摘要与可访问名一致，保留分片合并和静默补读。
 build-table.tsx: 展示构建的 Release 归属、独立源码与目标和执行状态。
 build-wizard.tsx: 组合四步弹窗、授权设备默认目标、答案草稿和最终确认提交。
 build-target-picker.tsx: 按项目授权设备禁选原生平台，高级设置遵守同一设备约束。

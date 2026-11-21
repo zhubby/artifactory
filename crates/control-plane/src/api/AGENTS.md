@@ -2,7 +2,7 @@
 > L2 | Parent: ../AGENTS.md
 
 mod.rs: 组合业务路由与规划运行时前缀，保持各自的请求约束。
-ai_management.rs: 提供模型配置及协议兼容参数校验、澄清和规划查询。
+ai_management.rs: 提供模型兼容校验、澄清与受权规划运行摘要查询。
 builds.rs: 校验构建权限并提供查询与制品下载。
 releases.rs: 提供版本元数据、说明编辑、独立构建创建和交付清单。
 build_logs.rs: 提供日志静态分页与终态排空后结束的 SSE。

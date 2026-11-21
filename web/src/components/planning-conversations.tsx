@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖构建鉴权、分页审计消息、骨架和后台轮询。
- * [OUTPUT]: 按 run 与 generation 展示对话，首读骨架与终态补读。
- * [POS]: 对话按需读取，不从审计历史恢复执行。列表错误桥独立于折叠状态。
+ * [OUTPUT]: 展示本地化消息摘要、完整审计、骨架与终态补读。
+ * [POS]: 对话按 generation 按需读取；摘要与展开控件共用名称。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -29,6 +29,33 @@ function combinedMessages(messages:ConversationMessage[]):ConversationMessage[] 
  for(const message of messages){if(message.kind!=="message_chunk"){result.push(message);continue;}const p=message.payload;const id=String(p.message_id);let entry=chunks.get(id);if(!entry){entry={event:message,parts:new Map(),total:Number(p.total),kind:String(p.kind)};chunks.set(id,entry);result.push(entry.event);}entry.parts.set(Number(p.index),String(p.text));}
  return result.map(message=>{if(message.kind!=="message_chunk")return message;const entry=chunks.get(String(message.payload.message_id))!;const text=[...entry.parts.entries()].sort((a,b)=>a[0]-b[0]).map(([,part])=>part).join("");let payload:Record<string,unknown>={partial:text};if(entry.parts.size===entry.total){try{payload=JSON.parse(text) as Record<string,unknown>;}catch{payload={text};}}return {...message,kind:entry.kind,payload};});
 }
+function firstSentence(value:unknown) {
+ if(typeof value!=="string")return "";
+ const line=value.split(/[\r\n]+/).find(line=>line.trim())?.trim()||"";
+ const sentence=(line.match(/^.*?[。！？.!?](?=\s|$)/)?.[0]||line).replace(/\s+/g," ");
+ const characters=Array.from(sentence);
+ return characters.length>120?`${characters.slice(0,120).join("")}…`:sentence;
+}
+function messageLabel(message:ConversationMessage,t:ReturnType<typeof useUI>["t"]) {
+ const payload=message.payload;
+ const blocks=Array.isArray(payload.content)?payload.content as Record<string,unknown>[]:[];
+ const text=firstSentence(typeof payload.content==="string"?payload.content:blocks.find(block=>block.type==="text")?.text||payload.text);
+ const tools=blocks.filter(block=>block.type==="toolCall").map(block=>firstSentence(block.name)).filter(Boolean);
+ let type="unknown";const details:string[]=[];
+ if(typeof payload.partial==="string")type="partial";
+ else if(message.kind==="proposal_submitted") {type="proposal";details.push(firstSentence(payload.name));}
+ else if(message.kind==="proposal_result") {
+  type="proposalResult";details.push(firstSentence(payload.name));
+  const result=payload.result&&typeof payload.result==="object"?payload.result as Record<string,unknown>:payload;
+  details.push(t(result.accepted===true?"ai.messageAccepted":result.error||result.accepted===false?"ai.messageRejected":"ai.messageRecorded"));
+  details.push(firstSentence(result.error));
+ } else if(payload.role==="toolResult"||payload.role==="tool") {
+  type="toolResult";details.push(firstSentence(payload.toolName||payload.name));
+  details.push(t(payload.isError?"ai.messageFailed":"ai.messageCompleted"),text);
+ } else if(tools.length) {type="toolCall";details.push(...tools,text);}
+ else {type=message.kind==="system"||payload.role==="system"?"system":payload.role==="user"?"user":payload.role==="assistant"?"assistant":"unknown";details.push(text);}
+ return [message.sequence,t(`ai.messageTypes.${type}`),...details.filter(Boolean)].join(" · ");
+}
 function Conversation({buildId,session}:{buildId:string;session:PlanningConversation}) {
  const {t}=useUI();const root=useRef<HTMLDivElement>(null);const [open,setOpen]=useState(false);
  const [messages,setMessages]=useState<ConversationMessage[]>([]);const [next,setNext]=useState<number|null>(null);const [loaded,setLoaded]=useState(false);const [busy,setBusy]=useState(false);const [error,setError]=useState<Error>();const latest=useRef(0);const requests=useRef(new Set<AbortController>());
@@ -40,5 +67,5 @@ function Conversation({buildId,session}:{buildId:string;session:PlanningConversa
  useEffect(()=>{if(!open||!loaded)return;if(priorStatus.current==="running"&&session.status!=="running")void load(latest.current,true);priorStatus.current=session.status;},[open,loaded,session.status,load]);
  useEffect(()=>{if(!open||!loaded||next!==null||session.status!=="running")return;const timer=setInterval(()=>void load(latest.current,true),3000);return()=>clearInterval(timer);},[open,loaded,next,session.status,load]);
  useEffect(()=>{const pending=requests.current;return()=>{for(const request of pending)request.abort();pending.clear();};},[]);
- return <div ref={root} className="mt-3 space-y-3"><p className="break-all font-mono text-xs text-muted-foreground">{session.model} · {session.pod_uid}{session.source_digest&&` · ${session.source_digest}`}</p>{session.status==="interrupted"&&<p className="text-xs text-muted-foreground">{t("ai.conversationInterrupted")}</p>}<ErrorBox message={error}/>{open&&!loaded&&!error&&<Loading/>}{combinedMessages(messages).map(message=><details key={message.sequence} className="rounded bg-background p-3"><summary className="cursor-pointer text-xs">{message.sequence} · {String(message.payload.role||message.kind)}</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(message.payload,null,2)}</pre></details>)}{next!==null&&<Button variant="secondary" size="sm" disabled={busy} onClick={()=>void load(next)}>{t("ai.moreMessages")}</Button>}{error&&<Button variant="secondary" size="sm" disabled={busy} onClick={()=>{setError(undefined);void load(latest.current);}}>{t("common.retry")}</Button>}</div>;
+ return <div ref={root} className="mt-3 space-y-3"><p className="break-all font-mono text-xs text-muted-foreground">{session.model} · {session.pod_uid}{session.source_digest&&` · ${session.source_digest}`}</p>{session.status==="interrupted"&&<p className="text-xs text-muted-foreground">{t("ai.conversationInterrupted")}</p>}<ErrorBox message={error}/>{open&&!loaded&&!error&&<Loading/>}{combinedMessages(messages).map(message=>{const label=messageLabel(message,t);return <details key={message.sequence} className="rounded bg-background p-3"><summary aria-label={label} className="cursor-pointer break-words text-xs">{label}</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(message.payload,null,2)}</pre></details>;})}{next!==null&&<Button variant="secondary" size="sm" disabled={busy} onClick={()=>void load(next)}>{t("ai.moreMessages")}</Button>}{error&&<Button variant="secondary" size="sm" disabled={busy} onClick={()=>{setError(undefined);void load(latest.current);}}>{t("common.retry")}</Button>}</div>;
 }

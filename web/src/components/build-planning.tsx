@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖构建状态、规划历史、内容骨架和澄清接口。
- * [OUTPUT]: 展示计划与澄清入口，未生成计划时区分处理中与终态。
- * [POS]: 活跃构建轮询规划；失败与取消不再显示等待执行说明。
+ * [INPUT]: 依赖构建状态、规划实时摘要、历史和澄清接口。
+ * [OUTPUT]: 展示实时或已确认统计、计划和澄清入口。
+ * [POS]: 复用规划轮询；取消与终态优先采用持久结果。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -27,12 +27,17 @@ export function BuildPlanning({build, user, refresh}: {build: Build; user: User;
   }, [build.id, terminal, history.reload]);
   const current = history.data?.plans.at(-1);
   const run = history.data?.runs.at(-1);
+  const activeRun = run && !terminal && !["canceling", "needs_input"].includes(build.status)
+    && ["queued", "leased"].includes(run.state);
+  const runtime = activeRun ? run.runtime : undefined;
+  const runtimeUnavailable = activeRun && !runtime && run.runtime_unavailable;
+  const state = runtime?.status === "provisioning" ? "preparing" : runtime?.status || run?.state;
   const emptyHint = build.status === "needs_input" ? "ai.clarificationHint"
     : build.status === "failed" ? "ai.noPlanFailed"
     : build.status === "canceled" ? "ai.noPlanCanceled"
     : terminal ? "ai.noPlan" : "ai.planningHint";
   return <section className="panel mb-6 min-w-0">
-    <SectionTitle title={t("ai.plan")} detail={t("ai.revisionCount", {count: build.revision_count || 0})}>{run && <span className="tag">{t("ai.callCount", {count: run.calls})}</span>}</SectionTitle>
+    <SectionTitle title={t("ai.plan")} detail={t("ai.revisionCount", {count: build.revision_count || 0})}>{run && <span className="tag">{t(runtimeUnavailable ? "ai.confirmedCallCount" : "ai.callCount", {count: runtime?.calls ?? run.calls})}</span>}</SectionTitle>
     <div className="space-y-4 p-5">
       <PlanningConversations buildId={build.id} terminal={terminal} />
       <p className="whitespace-pre-wrap text-sm leading-6">{build.goal}</p>
@@ -43,7 +48,8 @@ export function BuildPlanning({build, user, refresh}: {build: Build; user: User;
         <p className="whitespace-pre-wrap text-sm">{build.clarification.question}</p>
         {user.role !== "viewer" && <SubmitForm label={t("ai.continue")} onSubmit={async (form) => {await mutation(`/builds/${build.id}/clarifications`, {answer: String(form.get("answer") || "")}); await refresh(); await history.reload();}}><Field label={t("ai.answer")}><Textarea name="answer" required maxLength={8000} /></Field></SubmitForm>}
       </div>}
-      {run && <div className="flex flex-wrap gap-4 text-xs text-muted-foreground"><Status value={run.state} small /><span>{t("ai.tokens", {count: number(run.usage?.totalTokens || 0)})}</span>{run.error && <span>{run.error}</span>}</div>}
+      {runtimeUnavailable && <p className="text-xs text-muted-foreground" role="status">{t("ai.runtimeUnavailable")}</p>}
+      {run && <div className="flex flex-wrap gap-4 text-xs text-muted-foreground"><Status value={state || run.state} small /><span>{t("ai.tokens", {count: number((runtime?.usage ?? run.usage)?.totalTokens || 0)})}</span>{run.error && <span>{run.error}</span>}</div>}
       {current ? <>
         <p className="whitespace-pre-wrap text-sm leading-6">{current.contents.summary}</p>
         <ul className="space-y-2 text-xs text-muted-foreground">{current.contents.evidence.map((item, index) => <li key={index}><code className="break-all text-primary">{item.path}</code><span className="ml-2">{item.reason}</span></li>)}</ul>

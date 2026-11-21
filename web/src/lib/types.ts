@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供 Release、原生与镜像执行、节点和模型兼容字段类型。
+ * [OUTPUT]: 提供 Release、执行、规划实时摘要和模型兼容类型。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -524,6 +524,13 @@ export interface PlanningHistory {
     calls: number;
     error: string | null;
     usage: { totalTokens?: number; cost?: number };
+    runtime?: {
+      status: string;
+      generation: number;
+      calls: number;
+      usage: { totalTokens?: number; cost?: number };
+    };
+    runtime_unavailable?: boolean;
   }[];
   events: {
     id: number;

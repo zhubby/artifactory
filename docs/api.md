@@ -57,7 +57,7 @@
 | `PATCH /releases/{id}` | 项目 release；`{notes}`，各发布状态均可修改说明 |
 | `GET /builds` | 可选 `?project_id=`，最多 100 条 |
 | `GET /builds/{id}` | 完整源码清单、当前计划 ID、修订次数、澄清、目标、设备 attempt、步骤、制品、镜像执行和发布记录 |
-| `GET /builds/{id}/plans` | 不可变计划历史、摘要、文件依据、规划运行和调用统计；不返回模型密钥或 checkpoint |
+| `GET /builds/{id}/plans` | 不可变计划历史、规划运行、已确认统计与最新活动运行的安全实时摘要 |
 | `GET /builds/{id}/planning/conversations` | 项目 read；按运行与 generation 返回会话摘要 |
 | `GET /builds/{id}/planning/conversations/{run}/{generation}/messages` | 项目 read；`after` 游标与 `limit`（最多 100），返回消息及 `next_cursor` |
 | `POST /builds/{id}/clarifications` | `{answer}`；只在 needs_input 继续规划，仍固定原源码与目标 |
@@ -130,6 +130,8 @@ curl --fail-with-body -X POST 'https://build.example.com/api/v1/projects/PROJECT
 版本严格遵循稳定或预发布 SemVer，最多 100 ASCII 字节，不接受 `v` 或 `+metadata`。版本创建后不可改。版本说明可留空，最多 16000 UTF-8 字节，发布后仍可修改。源码 ref 和目标合同由每次构建独立提交并固定。目标合同使用原生 key/os/arch/application_platform 或镜像 key/platforms。Build、Artifact 和 Image 响应带 Release 身份，下载名由服务器生成。完整约束见[项目版本交付](release-delivery.md)。
 
 创建 Release 与发布需要 release 权限，执行与重试需要 build 权限。项目模型为空时继承默认模型，创建构建固定配置版本。每次构建独立解析源码，解析成功只推进所属构建。人工 job 重试使用原提交与计划，只允许 draft Release。构建状态仍为 resolving/planning/needs_input/replanning/queued/running/succeeded/failed/canceled/lost。
+
+`GET /builds/{id}/plans` 先校验项目 read 权限。`runs` 的 `state`、`calls` 和 `usage` 保留业务已确认值。最新运行处于 queued 或 leased 时，接口附加可选 `runtime: {status,generation,calls,usage}`。`usage` 仅包含非负数值用量。实时摘要不包含 grant、intent、执行身份或凭据。取消、终态和 needs_input 运行不查询实时摘要。协调器查询超过两秒、不可用或返回无效摘要时，同一运行返回 `runtime_unavailable: true`，整体查询仍成功，已确认字段保持原值。
 
 生命周期状态、清理顺序和管理页面见[工作台](workspaces.md)。操作记录与目标业务行独立保存，状态为 waiting/running/succeeded/failed/canceled；等待阶段可取消，实际清理开始后只能查询或重试。归档保持查询下载，禁止新增业务写入。
 

@@ -3,7 +3,7 @@
 
 mod.rs: 组合持久化接口、租户作用域和迁移。
 auth.rs: 查询登录账户并维护认证状态。
-dto.rs: 定义公开业务响应、节点识别摘要和验签证据投影。
+dto.rs: 定义公开业务响应、安全规划摘要、节点识别与验签证据投影。
 errors.rs: 转换数据库约束为业务错误。
 models.rs: 定义 Toasty 私有 CRUD 投影。
 management.rs: 事务改名并审计，投影可见识别摘要与节点搜索。
@@ -38,5 +38,6 @@ images.rs: 保存执行隔离候选，约束已发布版本的外仓分发。
 registry_guard.rs: 领取递增发布租约，按冻结仓库、版本和摘要图授权正式 Manifest。
 
 planning_bridge_tests.rs: 验证真实 outbox 统计投影、取消围栏、回执幂等和重排不变约束。
+planning_runtime_tests.rs: 以隔离数据库验证提案前用量、权限、终态优先与查询降级。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

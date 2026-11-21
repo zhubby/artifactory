@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户鉴权、模型配置存储与规划状态。
-//! [OUTPUT]: 提供模型配置、协议兼容校验、澄清和规划查询。
+//! [OUTPUT]: 提供模型配置、兼容校验、澄清与安全规划运行摘要。
 //! [POS]: AI 规划的管理入口；构建执行由独立节点负责。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::auth::TenantState;
@@ -191,7 +191,14 @@ pub async fn plans(
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> Result<Json<dto::BuildPlans>> {
-    Ok(Json(state.store.plans(id, &auth).await?))
+    Ok(Json(
+        crate::planning_runtime::plans(&state.store, id, &auth, |run| async move {
+            crate::planning_bridge::coordinator()?
+                .post("/v1/get", &json!({"run_id":run}))
+                .await
+        })
+        .await?,
+    ))
 }
 
 pub async fn conversations(

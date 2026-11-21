@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定运行意图、数据库事务和执行身份。
-//! [OUTPUT]: 持久化生命周期与故障，向业务事件附加权威累计统计。
+//! [OUTPUT]: 持久化生命周期与故障，查询运行用量并输出权威累计统计。
 //! [POS]: Coordinator 操作状态边界；审计记录不用于恢复会话。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod conversations;
@@ -372,7 +372,7 @@ impl PlanningStore {
         )
         .await?;
         Ok(
-            json!({"run_id":run,"status":row.decode::<String>("status")?,"lifecycle":row.decode::<Value>("lifecycle")?,"execution":row.decode::<Option<Value>>("execution")?}),
+            json!({"run_id":run,"status":row.decode::<String>("status")?,"lifecycle":row.decode::<Value>("lifecycle")?,"usage":row.decode::<Value>("usage")?,"execution":row.decode::<Option<Value>>("execution")?}),
         )
     }
 

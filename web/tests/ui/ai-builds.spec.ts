@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证应用分类、规划与折叠终态补读。
+ * [OUTPUT]: 验证应用分类、具名消息展开与折叠终态补读。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -223,8 +223,8 @@ test("planning conversations load on demand and paginate completed messages",asy
  await expect.poll(()=>reads).toBe(1);
  await page.getByRole("button",{name:"Load more messages",exact:true}).click();
  await expect.poll(()=>reads).toBe(2);
- await page.locator("summary").filter({hasText:"2 · assistant"}).click();
- await expect(page.getByText(/Completed audit answer <script>/)).toBeVisible();
+ await page.getByLabel("2 · Assistant · Completed audit answer <script>",{exact:true}).click();
+ await expect(page.locator("pre").filter({hasText:"Completed audit answer <script>"})).toBeVisible();
  await expect(page.locator("script").filter({hasText:"Completed audit answer"})).toHaveCount(0);
  await page.screenshot({path:info.outputPath("planning-conversation.png"),fullPage:true});
 });
@@ -243,8 +243,8 @@ test("planning conversation reads final messages after its status changes",async
  await page.goto(tenantURL("/projects/desktop-client/builds/128"));await page.getByRole("tab",{name:"Plan",exact:true}).click();
  await page.getByText("AI conversation audit",{exact:true}).click();await page.locator("summary").filter({hasText:"run-fina"}).click();
  await expect.poll(()=>reads).toBe(1);status="succeeded";
- await expect(page.locator("summary").filter({hasText:"2 · proposal_result"})).toBeVisible({timeout:8000});
- await page.locator("summary").filter({hasText:"2 · proposal_result"}).click();await expect(page.getByText(/final durable receipt/)).toBeVisible();
+ await expect(page.getByLabel("2 · Proposal result · Accepted",{exact:true})).toBeVisible({timeout:8000});
+ await page.getByLabel("2 · Proposal result · Accepted",{exact:true}).click();await expect(page.getByText(/final durable receipt/)).toBeVisible();
  await page.screenshot({path:info.outputPath("planning-conversation-final.png"),fullPage:true});
 });
 
@@ -271,8 +271,8 @@ test("collapsed planning conversation reads completion once when reopened",async
  await expect(session).toContainText("succeeded",{timeout:8000});
  expect(reads).toEqual(["0"]);
  await session.click();
- await expect(page.locator("summary").filter({hasText:"2 · proposal_result"})).toBeVisible();
- await page.locator("summary").filter({hasText:"2 · proposal_result"}).click();
+ await expect(page.getByLabel("2 · Proposal result · Accepted",{exact:true})).toBeVisible();
+ await page.getByLabel("2 · Proposal result · Accepted",{exact:true}).click();
  await expect(page.getByText(/collapsed final durable receipt/)).toBeVisible();
  await page.waitForTimeout(3500);expect(reads).toEqual(["0","1"]);
  await page.screenshot({path:info.outputPath("planning-conversation-reopened.png"),fullPage:true});

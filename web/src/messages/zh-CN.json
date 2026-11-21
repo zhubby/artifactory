@@ -297,7 +297,7 @@
     "advanced": "高级参数（可选）",
     "advancedHint": "通常无需填写。使用字符串键值的 JSON 对象，例如 {example}。",
     "parameterCount": "{count} 个高级参数",
-    "submitHint": "确认后将解析源码并由 AI 生成执行计划，随后分配给授权节点执行。",
+    "submitHint": "确认后将解析源码并由 AI 生成执行计划，计划通过校验后开始构建。",
     "noPermission": "当前账号没有发起构建的权限。",
     "noProjects": "还没有可构建的项目",
     "noProjectsHint": "请先接入 Git 项目，或联系管理员完成配置。",
@@ -730,6 +730,8 @@
     "plan": "AI 构建计划",
     "revisionCount": "已自动修订 {count} / 2 次",
     "callCount": "{count} 次模型调用",
+    "confirmedCallCount": "已确认 {count} 次模型调用",
+    "runtimeUnavailable": "实时状态暂不可用，以下为已确认统计。",
     "zeroIntrusion": "原仓库只读接入；分析记录、执行计划和脚本均保存在 Artifactory。每步结束检查受跟踪文件与子模块状态。",
     "sourceManifest": "源码清单",
     "continue": "提交回答并继续规划",
@@ -750,7 +752,23 @@
     "noConversations": "尚无规划对话。",
     "generation": "第 {generation} 次会话",
     "conversationInterrupted": "执行中断。已确认的消息保留，重试创建新会话。",
-    "moreMessages": "加载更多消息"
+    "moreMessages": "加载更多消息",
+    "messageTypes": {
+      "system": "系统指令",
+      "user": "用户消息",
+      "assistant": "模型消息",
+      "toolCall": "工具调用",
+      "toolResult": "工具结果",
+      "proposal": "规划提案",
+      "proposalResult": "提案结果",
+      "partial": "消息分片",
+      "unknown": "审计记录"
+    },
+    "messageAccepted": "已接受",
+    "messageRejected": "已拒绝",
+    "messageRecorded": "已记录",
+    "messageFailed": "失败",
+    "messageCompleted": "完成"
   },
   "tenants": {
     "choose": "选择租户",

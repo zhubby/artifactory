@@ -297,7 +297,7 @@
     "advanced": "Advanced parameters (optional)",
     "advancedHint": "Usually unnecessary. Use a JSON object with string values, such as {example}.",
     "parameterCount": "{count} advanced parameters",
-    "submitHint": "Confirmation starts source resolution and AI planning, followed by execution on authorized nodes.",
+    "submitHint": "Confirmation starts source resolution and AI planning. The build starts after the plan passes validation.",
     "noPermission": "Your account does not have permission to start builds.",
     "noProjects": "No projects to build yet",
     "noProjectsHint": "Connect a Git project first, or ask an administrator to configure one.",
@@ -730,6 +730,8 @@
     "plan": "AI build plan",
     "revisionCount": "Automatic revisions: {count} / 2",
     "callCount": "{count} model calls",
+    "confirmedCallCount": "{count} confirmed model calls",
+    "runtimeUnavailable": "Live status is unavailable. The statistics below are confirmed records.",
     "zeroIntrusion": "Repository access is read-only. Analysis, plans and scripts stay in Artifactory. Tracked files and submodule state are checked after every step.",
     "sourceManifest": "Source manifest",
     "continue": "Submit answer and continue",
@@ -750,7 +752,23 @@
     "noConversations": "No planning conversations yet.",
     "generation": "Session {generation}",
     "conversationInterrupted": "Execution was interrupted. Confirmed messages remain; retries start a new session.",
-    "moreMessages": "Load more messages"
+    "moreMessages": "Load more messages",
+    "messageTypes": {
+      "system": "System",
+      "user": "User",
+      "assistant": "Assistant",
+      "toolCall": "Tool call",
+      "toolResult": "Tool result",
+      "proposal": "Proposal",
+      "proposalResult": "Proposal result",
+      "partial": "Partial message",
+      "unknown": "Audit record"
+    },
+    "messageAccepted": "Accepted",
+    "messageRejected": "Rejected",
+    "messageRecorded": "Recorded",
+    "messageFailed": "Failed",
+    "messageCompleted": "Completed"
   },
   "tenants": {
     "choose": "Choose a tenant",

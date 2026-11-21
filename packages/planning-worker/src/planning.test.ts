@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖规划核心与本地 HTTP 模型桩。
- * [OUTPUT]: 验证协议能力、应用分类、工具权限和凭据隔离。
+ * [OUTPUT]: 验证协议能力、预算收敛、工具权限与凭据隔离。
  * [POS]: 规划核心的行为回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -200,6 +200,65 @@ test("planning deadline interrupts an awaited rate-limit delay", async () => {
   } finally {server.close();server.closeAllConnections();}
 });
 
+test("successful tool turns expose the remaining budget and preserve a validation correction", async () => {
+  const requests: { messages: { role: string; content: unknown }[] }[] = [];
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    requests.push(JSON.parse(body));
+    const name = ["git_metadata", "submit_plan", "request_input"][requests.length - 1];
+    const args = name === "submit_plan" ? { plan: { summary: "Candidate", recipe: { version: 1, targets: {} } } }
+      : name === "request_input" ? { question: "Where is the required runtime archive?" } : {};
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    for (const [delta, finish_reason] of [[{ role: "assistant", tool_calls: [{ index: 0, id: `budget-${requests.length}`, type: "function", function: { name, arguments: JSON.stringify(args) } }] }, null], [{}, "tool_calls"]]) {
+      response.write(`data: ${JSON.stringify({ id: "budget-test", object: "chat.completion.chunk", created: 1, model: "private-alias", choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
+    }
+    response.end("data: [DONE]\n\n");
+  });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const task: Task = { context: { source_manifest: manifest, goal: "Build the application" }, model: { api: "openai-completions", base_url: `http://127.0.0.1:${address.port}/v1`, model: "private-alias", api_key: "test-secret", parameters: {} }, timeout_seconds: 10, max_calls: 3 };
+  const tools: string[] = [];
+  try {
+    await runTask(task, async (method, payload) => {
+      if (method !== "tool") return { ok: true };
+      tools.push(String(payload.name));
+      if (payload.name === "submit_plan") return { error: "required targets missing" };
+      assert.equal(payload.name, "request_input"); return { accepted: true, needs_input: true };
+    }, new AbortController().signal);
+    assert.equal(requests.length, 3);
+    assert.deepEqual(tools, ["submit_plan", "request_input"]);
+    assert.match(JSON.stringify(requests[0]?.messages[0]?.content), /3 model calls.*10 seconds/);
+    for (const [index, remaining] of [[1, 2], [2, 1]] as const) {
+      const reminder = JSON.stringify(requests[index]?.messages.findLast(message => message.role === "user")?.content);
+      assert.match(reminder, new RegExp(`${remaining} model calls? remain`));
+      assert.match(reminder, /submit_plan.*request_input/);
+      assert.match(reminder, /evidence|validation/);
+    }
+    assert.match(JSON.stringify(requests[2]?.messages), /required targets missing/);
+  } finally { server.close(); server.closeAllConnections(); }
+});
+
+test("budget reminders do not extend the configured call limit", async () => {
+  let requests = 0;
+  const server = createServer(async (request, response) => {
+    for await (const _ of request) { /* consume request */ }
+    requests++;
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    for (const [delta, finish_reason] of [[{ role: "assistant", tool_calls: [{ index: 0, id: `loop-${requests}`, type: "function", function: { name: "git_metadata", arguments: "{}" } }] }, null], [{}, "tool_calls"]]) {
+      response.write(`data: ${JSON.stringify({ id: "limit-test", object: "chat.completion.chunk", created: 1, model: "private-alias", choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
+    }
+    response.end("data: [DONE]\n\n");
+  });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const task: Task = { context: { source_manifest: manifest }, model: { api: "openai-completions", base_url: `http://127.0.0.1:${address.port}/v1`, model: "private-alias", api_key: "test-secret", parameters: {} }, timeout_seconds: 10, max_calls: 2 };
+  try {
+    await assert.rejects(runTask(task, async () => ({ ok: true }), new AbortController().signal), /model call limit reached/);
+    assert.equal(requests, 2);
+  } finally { server.close(); server.closeAllConnections(); }
+});
+
 test("placement inference resumes and corrects prose using only placement completion tools", async () => {
   const node = "00000000-0000-0000-0000-000000000001";
   const placements = { app: { candidates: [{ node_id: node, metadata_digest: "a".repeat(64), reason: "native toolchain and available resources" }], resources: { min_available_memory_bytes: 4096 } } };
@@ -213,7 +272,7 @@ test("placement inference resumes and corrects prose using only placement comple
     assert.ok(names.includes("query_nodes") && names.includes("submit_placements"));
     for (const forbidden of ["submit_plan", "request_input", "read_file"]) assert.ok(!names.includes(forbidden));
     requests++;
-    if (requests <= 2) reminders.push(JSON.stringify(sent.messages.findLast((message: { role: string }) => message.role === "user").content));
+    if (requests <= 3) reminders.push(JSON.stringify(sent.messages.findLast((message: { role: string }) => message.role === "user").content));
     response.writeHead(200, { "content-type": "text/event-stream" });
     const chunk = (delta: unknown, finish_reason: string | null = null) => response.write(`data: ${JSON.stringify({ id: "placement-test", object: "chat.completion.chunk", created: 1, model: "gpt-4.1", choices: [{ index: 0, delta, finish_reason }] })}\n\n`);
     if (requests === 1) {
@@ -243,7 +302,9 @@ test("placement inference resumes and corrects prose using only placement comple
     }, new AbortController().signal);
     assert.deepEqual(calls, ["query_nodes", "submit_placements"]);
     assert.equal(requests, 3);
-    assert.equal(reminders.length, 2);
+    assert.equal(reminders.length, 3);
+    assert.match(reminders[1]!, /4 model calls remain/);
+    assert.match(reminders[2]!, /3 model calls remain.*Finish now/);
     for (const reminder of reminders.slice(1)) {
       assert.match(reminder, /submit_placements/);
       assert.doesNotMatch(reminder, /submit_plan\b|request_input|source read/);
