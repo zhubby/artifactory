@@ -14,15 +14,19 @@ build-wizard.tsx: 在 Release 内启动构建，提交补充要求与参数并�
 common.tsx: 提供内容骨架、共享字段、持久状态、无布局错误通知桥及复制下载反馈。
 command-palette.tsx: 复用当前范围的业务与设置导航，支持项目切换并恢复触发焦点。
 console.tsx: 组合工作区数据、请求生命周期和业务页面，交由独立组件呈现导航。
-emissary-ota.tsx: 配置节点发布与升级目标。
+emissary-ota.tsx: 使用设备字段对齐节点版本和升级阶段，配置发布、升级目标与节点池策略。
 forms.tsx: 提供项目、节点、凭据表单，复用下拉并统一提交通知。
 lifecycle.tsx: 使用 HTTP 兼容幂等键提交归档、恢复与删除，保留当前操作恢复入口。
 node-card.tsx: 直接消费列表快照，展示名称、主机名、短 ID、硬件与资源状态。
-node-detail-dialog.tsx: 组合身份、网络地址、遥测和授权操作，标题提供独立重命名入口。
-node-network-addresses.tsx: 按接口展示最后 IPv4/IPv6 快照、采样时间和截断状态。
-node-rename.tsx: 只提交名称，按 Unicode White_Space 裁剪后校验 UTF8 与控制字符，保护草稿和焦点。
-node-detail-parts.tsx: 提供节点字段、格式化时间与失败重试空态，错误详情通过通知。
-node-metadata.tsx: 按需读取节点元数据，首读显示详情骨架，刷新保留快照并提供失败重试。
+node-detail-dialog.tsx: 组合固定身份标题、五个详情标签和遥测生命周期，保留独立重命名。
+node-overview.tsx: 先展示四项设备摘要，再展示接口与标签，按需展开完整硬件和连接信息。
+node-resources.tsx: 按指标、成对内存负载字段、设备表展示遥测，手机逐行显示，采样诊断默认折叠。
+node-tools.tsx: 以单列工具行展示版本和可用状态，路径按需展开，签名配置独立分组。
+node-operations.tsx: 展示升级、节点配置、折叠运行诊断与授权吊销，保留轮询和嵌套弹窗流程。
+node-network-addresses.tsx: 在设备摘要后按接口对齐 IPv4/IPv6、采样时间和截断状态。
+node-rename.tsx: 提供具名图标入口，只提交名称，按 Unicode White_Space 裁剪后校验 UTF8 与控制字符，保护草稿和焦点。
+node-detail-parts.tsx: 提供分区、折叠区、对齐字段、时间与重试，零值可见且轮询保留展开状态。
+node-metadata.tsx: 按需读取元数据，直接展示普通值，复杂值与快照信息折叠，保留刷新快照。
 nodes-workspace.tsx: 复用 q 查询身份字段，刷新节点列表并关闭不再匹配的详情。
 notifications.tsx: 顶部居中显示通知，避开手机顶栏与抽屉导航，桥接校验和弹窗焦点。
 preferences-controls.tsx: 为登录页和个人设置提供自定义语言、主题下拉。

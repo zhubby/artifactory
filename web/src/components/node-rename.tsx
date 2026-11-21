@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖节点快照、名称 API、共享弹窗和全局通知。
- * [OUTPUT]: 提供 NodeRename 表单，按服务端 Unicode 空白与字节规则校验。
- * [POS]: 仅提交节点名称；编辑草稿与轮询快照隔离。
+ * [OUTPUT]: 提供具名图标入口与 NodeRename 表单，校验 Unicode 空白和字节。
+ * [POS]: 设备标题的紧凑编辑入口；仅提交名称，草稿与轮询隔离。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -66,12 +66,12 @@ export function NodeRename({ node, reload }: { node: Node; reload: () => Promise
   }
 
   return <>
-    <Button type="button" size="sm" variant="ghost" onClick={() => {
+    <Button type="button" size="icon" variant="ghost" aria-label={t("nodes.rename")} title={t("nodes.rename")} onClick={() => {
       setDraft(node.name);
       setOriginal(node.name);
       setInvalid(false);
       setOpen(true);
-    }}><Pencil size={14} aria-hidden="true" />{t("nodes.rename")}</Button>
+    }}><Pencil size={14} aria-hidden="true" /></Button>
     <Modal open={open} onOpenChange={(value) => { if (!busy) setOpen(value); }}
       title={t("nodes.rename")} description={t("nodes.renameHint")} initialFocus={input}>
       <form ref={form} onSubmit={save} className="form-stack" data-dirty={draft !== original}>

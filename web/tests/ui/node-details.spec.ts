@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证节点详情布局、分区查询、全局通知及管理操作。
+ * [OUTPUT]: 验证节点详情布局、折叠细节、分区查询、通知及管理操作。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -130,6 +130,8 @@ for (const theme of ["light", "dark"]) {
     await expect(
       dialog.getByText("Unavailable", { exact: true }),
     ).toBeVisible();
+    await dialog.locator(".node-tool").filter({ hasText: "xcode" })
+      .locator("summary").filter({ hasText: "Path" }).click();
     await expect(
       dialog.getByText("/Applications/Xcode.app", { exact: true }),
     ).toBeVisible();
@@ -137,6 +139,7 @@ for (const theme of ["light", "dark"]) {
     await expect(
       dialog.getByText("custom.site", { exact: true }),
     ).toBeVisible();
+    await dialog.locator("summary").filter({ hasText: "tools.cargo" }).click();
     await expect(
       dialog.getByText('"available": false', { exact: false }),
     ).toBeVisible();
@@ -298,6 +301,7 @@ test("missing and expired resource values stay unknown and failed data can be re
   await expect(page.locator('[data-notify][data-kind="error"]')).toContainText(
     "Telemetry temporarily unavailable",
   );
+  await dialog.locator("summary").filter({ hasText: "Identity and connection" }).click();
   await expect(dialog.getByText("node-main", { exact: true })).toBeVisible();
   available = true;
   await dialog
@@ -422,6 +426,9 @@ test("saving configuration and revoking a node refresh the open detail and card"
       dialog.evaluate((element) => element.contains(document.activeElement)),
     )
     .toBe(true);
+  await expect(
+    dialog.getByRole("tab", { name: "Operations", exact: true }),
+  ).toBeFocused();
   expect(writes).toHaveLength(2);
   expect(writes[1]).toMatchObject({ slots: 3, draining: true, revoked: true });
   await page.keyboard.press("Escape");
@@ -570,6 +577,9 @@ test("large metadata and tool output wrap while the dialog header remains visibl
   const dialog = await openDetails(page);
   await page.getByRole("tab", { name: "Toolchain", exact: true }).click();
   await expect(dialog.locator(".node-tool")).toHaveCount(41);
+  await dialog.locator(".node-tool").filter({
+    has: page.getByRole("heading", { name: "compiler-39", exact: true }),
+  }).locator("summary").first().click();
   await noOverflow(page);
   await page.getByRole("tab", { name: "Metadata", exact: true }).click();
   await expect(dialog.locator(".node-metadata-list > div")).toHaveCount(60);
@@ -580,6 +590,7 @@ test("large metadata and tool output wrap while the dialog header remains visibl
     .locator(".node-metadata-list > div")
     .last()
     .scrollIntoViewIfNeeded();
+  await dialog.locator(".node-metadata-list > div").last().locator("summary").first().click();
   const after = await page
     .getByRole("tab", { name: "Metadata", exact: true })
     .boundingBox();

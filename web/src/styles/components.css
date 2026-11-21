@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 tokens.css 的语义变量。
- * [OUTPUT]: 提供控件、表格、节点身份换行、内容骨架与反馈样式。
+ * [OUTPUT]: 提供控件、表格、节点列表、内容骨架与反馈样式。
  * [POS]: 业务组件共享的视觉基础。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -114,38 +114,6 @@ td a:not([data-slot="button"]):hover { text-decoration: underline; text-underlin
 .node-identity-line { overflow-wrap: anywhere; line-height: 1.6; }
 .node-icon { display: grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 5px; }
 .node-capacity-track { height: 3px; width: 100%; overflow: hidden; border-radius: 2px; background: var(--secondary); }
-.node-detail-tabs { display: flex; gap: 16px; padding: 0 20px; overflow-x: auto; border-bottom: 1px solid var(--border); }
-.node-detail-tabs button { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; min-height: 40px; border-bottom: 2px solid transparent; color: var(--muted-foreground); font-size: 12px; }
-.node-detail-tabs button[aria-selected="true"] { border-color: var(--foreground); color: var(--foreground); }
-.node-detail-section { margin-bottom: 24px; }
-.node-detail-section > h3 { padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; }
-.node-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; }
-.node-facts > div, .node-detail-panel { min-width: 0; }
-.node-facts dt { color: var(--muted-foreground); font-size: 11px; }
-.node-facts dd { margin: 4px 0 0; font-size: 12px; overflow-wrap: anywhere; }
-.node-empty { color: var(--muted-foreground); font-size: 12px; line-height: 1.8; }
-.node-resource-freshness { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; font-size: 11px; color: var(--muted-foreground); }
-.node-resource-freshness > span:first-child { display: inline-flex; align-items: center; gap: 5px; }
-.node-resource-freshness.is-fresh > span:first-child { color: var(--success); }
-.node-resource-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.node-resource-metric { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 5px; }
-.node-resource-metric > span { display: block; color: var(--muted-foreground); font-size: 11px; }
-.node-resource-metric strong { display: block; margin-top: 7px; font-size: 18px; font-weight: 500; }
-.node-detail-table { max-width: 100%; overflow: auto; }
-.node-detail-table th, .node-detail-table td { padding: 8px 10px; }
-.node-detail-table td { height: auto; font-size: 11px; overflow-wrap: anywhere; }
-.node-tool-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.node-tool { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 5px; }
-.node-tool h4 { margin-bottom: 7px; font-size: 12px; font-weight: 500; }
-.node-metadata-list > div { padding: 10px 0; border-bottom: 1px solid var(--border); }
-.node-metadata-list dt { color: var(--muted-foreground); font-size: 11px; }
-.node-metadata-list pre, .node-raw-data pre { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.8 var(--font-mono); }
-.node-raw-data { margin-top: 20px; }
-.node-raw-data summary { color: var(--muted-foreground); font-size: 12px; cursor: pointer; }
-.node-danger-zone { padding: 16px; border: 1px solid color-mix(in srgb, var(--destructive) 30%, var(--border)); border-radius: 5px; }
-.node-danger-zone > div { min-width: 0; }
-.node-danger-zone h3 { font-size: 13px; font-weight: 500; }
-.node-danger-zone p { font-size: 12px; color: var(--muted-foreground); line-height: 1.8; margin: 8px 0 14px; }
 @media (max-width: 1200px) {
   .node-card { grid-template-columns: minmax(160px, 1fr) 110px 110px auto; }
   .node-pool { display: none; }
@@ -161,14 +129,11 @@ td a:not([data-slot="button"]):hover { text-decoration: underline; text-underlin
   .node-capacity { grid-column: 1; }
   .node-card > .node-status { grid-column: 2; grid-row: 1; }
   .node-card > button { grid-column: 2; grid-row: 2; }
-  .node-resource-grid { grid-template-columns: minmax(0, 1fr); }
-  .node-tool-list { grid-template-columns: minmax(0, 1fr); }
-  .node-facts { grid-template-columns: minmax(0, 1fr); }
   .input, .workspace-filter, .preference-select { min-height: 44px; }
   .workspace-filter input { font-size: 16px; }
   .list-toolbar-controls { width: 100%; }
   .list-toolbar-controls .workspace-filter { flex: 1; }
-  .ui-tab, .node-detail-tabs button { min-width: 44px; min-height: 44px; }
+  .ui-tab { min-width: 44px; min-height: 44px; }
   label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) { min-height: 44px; }
   .table-scroll a { display: inline-flex; align-items: center; min-height: 44px; }
   .section-title { padding-inline: 12px; }

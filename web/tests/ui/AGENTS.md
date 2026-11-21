@@ -21,6 +21,7 @@ images.spec.ts: 验证已发布 Release 分发、候选只读、凭据清空，�
 monochrome-workspace.spec.ts: 验证中性色工作台、项目切换和导航状态。
 motion.spec.ts: 验证默认动效、系统减少动态适配、历史开关忽略及偏好界面无动效控制。
 node-details.spec.ts: 验证节点详情布局、分区查询和管理操作。
+node-detail-design.spec.ts: 验证紧凑标题、首屏设备摘要、细节展开、有效零值、轮询状态、五标签截图和窄屏长文本。
 node-identification.spec.ts: 验证身份、重名短 ID、重命名权限、草稿、UTF8、Unicode 空白与接口快照。
 notifications.spec.ts: 验证浮层布局、顶栏访问、字段校验、弹窗焦点、计时暂停、来源隔离与轮询恢复。
 node-pagination.spec.ts: 验证节点分页和筛选。

@@ -431,6 +431,13 @@
     "viewDetails": "查看详情",
     "viewNamed": "查看 {name} 的详情",
     "detailTabs": "节点详情",
+    "deviceSummary": "设备概况",
+    "detailLabels": "标签",
+    "deviceDetails": "设备详情",
+    "moreHardware": "更多硬件信息",
+    "memoryAndLoad": "内存与负载",
+    "sampleDiagnostics": "采样诊断",
+    "snapshotInfo": "快照信息",
     "tabs": {
       "overview": "概览",
       "resources": "资源",

@@ -1,28 +1,41 @@
 /**
  * [INPUT]: 依赖节点事实、全局错误通知与格式化词条。
- * [OUTPUT]: 提供节点字段、时间、失败重试空态和原始数据视图。
- * [POS]: 节点详情共用展示；稳定错误桥在请求恢复时清除通知。
+ * [OUTPUT]: 提供分区、折叠区、对齐字段、时间、重试和原始数据视图。
+ * [POS]: 设备详情的展示基础；字段保留零值，折叠状态与轮询隔离。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
 import type { ReactNode } from "react";
-import { RefreshCw } from "lucide-react";
+import { ChevronRight, RefreshCw } from "lucide-react";
 import { ErrorBox } from "@/components/common";
 import { useUI } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 
-export function NodeFacts({ entries }: { entries: [string, ReactNode][] }) {
+export function NodeSection({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="node-detail-section"><h3>{title}</h3>{children}</section>;
+}
+
+export function NodeDisclosure({ title, children }: { title: string; children: ReactNode }) {
+  return <details className="node-disclosure">
+    <summary><ChevronRight size={14} aria-hidden="true" /><h3>{title}</h3></summary>
+    <div className="node-disclosure-content">{children}</div>
+  </details>;
+}
+
+export function NodeFacts({ entries, optional = false }: {
+  entries: [string, ReactNode][];
+  optional?: boolean;
+}) {
   const { t } = useUI();
+  const present = (value: ReactNode) => value !== null && value !== undefined && value !== "";
   return (
     <dl className="node-facts">
-      {entries.map(([label, value]) => (
+      {entries.filter(([, value]) => !optional || present(value)).map(([label, value]) => (
         <div key={label}>
           <dt>{label}</dt>
           <dd>
-            {value === null || value === undefined || value === ""
-              ? t("nodes.unknown")
-              : value}
+            {!present(value) ? t("nodes.unknown") : typeof value === "boolean" ? String(value) : value}
           </dd>
         </div>
       ))}
@@ -77,9 +90,10 @@ export function NodeRawData({
 }) {
   const { t } = useUI();
   return (
-    <details className="node-raw-data">
-      <summary>{label || t("nodes.rawData")}</summary>
+    <NodeDisclosure title={label || t("nodes.rawData")}>
+      <div className="node-raw-data">
       <pre>{JSON.stringify(value, null, 2)}</pre>
-    </details>
+      </div>
+    </NodeDisclosure>
   );
 }

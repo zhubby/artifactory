@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 OTA API、统一通知、表单、Select 和节点类型。
- * [OUTPUT]: 提供 NodeOTA 与 EmissarySettings。
- * [POS]: 连接节点更新操作和 OTA 设置。
+ * [INPUT]: 依赖 OTA API、统一通知、表单、Select 和设备详情字段。
+ * [OUTPUT]: 提供对齐版本字段的 NodeOTA 与 EmissarySettings。
+ * [POS]: 为设备运维分区提供升级操作，为设置页提供发布和节点池策略。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -10,6 +10,7 @@ import { useState } from "react";
 import { useUI } from "@/components/providers";
 import { ErrorBox, Field, SectionTitle, Loading } from "@/components/common";
 import { SubmitForm } from "@/components/forms";
+import { NodeFacts } from "@/components/node-detail-parts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -45,13 +46,13 @@ export function NodeOTA({ node, user, releases, updates, reload, actionsReady = 
   const active = history.find(u => !u.finished_at);
   const supported = node.capabilities.includes("emissary-ota-v1");
   const desired = releases.find(r => r.id === node.emissary_desired_release)?.version;
-  return <div className="mt-4 space-y-3 border-t border-border pt-4 text-xs" data-testid="node-ota">
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
-      <dt className="text-muted-foreground">{t("ota.current")}</dt><dd className="break-all font-mono">{node.emissary_current_version || node.diagnostics.emissary_version || "—"}</dd>
-      <dt className="text-muted-foreground">{t("ota.target")}</dt><dd className="break-all font-mono">{active?.version || desired || t("ota.disabled")}</dd>
-      <dt className="text-muted-foreground">{t("ota.launcher")}</dt><dd className="font-mono">{node.emissary_launcher_version || "—"}</dd>
-      <dt className="text-muted-foreground">{t("ota.phase")}</dt><dd>{supported ? t(`ota.stages.${latest?.status || "idle"}`) : t("ota.bootstrap")}</dd>
-    </dl>
+  return <div className="space-y-4 text-xs" data-testid="node-ota">
+    <NodeFacts entries={[
+      [t("ota.current"), <span className="font-mono" key="current">{node.emissary_current_version || node.diagnostics.emissary_version || "—"}</span>],
+      [t("ota.target"), <span className="font-mono" key="target">{active?.version || desired || t("ota.disabled")}</span>],
+      [t("ota.launcher"), <span className="font-mono" key="launcher">{node.emissary_launcher_version || "—"}</span>],
+      [t("ota.phase"), supported ? t(`ota.stages.${latest?.status || "idle"}`) : t("ota.bootstrap")],
+    ]} />
     {node.ota_draining && <p className="notice">{t(active?.status === "activating" ? "ota.activatingHint" : "ota.drainHint")}</p>}
     {node.emissary_pool_paused && <p className="text-warning">{t("ota.poolPaused")}</p>}
     {latest?.error && <p className="break-words text-destructive" role="status">{latest.error}</p>}

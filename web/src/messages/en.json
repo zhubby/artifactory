@@ -431,6 +431,13 @@
     "viewDetails": "View details",
     "viewNamed": "View details for {name}",
     "detailTabs": "Node details",
+    "deviceSummary": "Device summary",
+    "detailLabels": "Labels",
+    "deviceDetails": "Device details",
+    "moreHardware": "More hardware details",
+    "memoryAndLoad": "Memory and load",
+    "sampleDiagnostics": "Sample diagnostics",
+    "snapshotInfo": "Snapshot information",
     "tabs": {
       "overview": "Overview",
       "resources": "Resources",
