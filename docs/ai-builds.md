@@ -68,7 +68,7 @@ Compose 供服务开发、控制台和鉴权验证。完整构建链需要 Kuber
 
 ## 临时源码
 
-每次构建创建独立临时 SourceTask。并发构建分别解析自己的引用。准备进程直接访问上游，以 CAS 固定引用对象和标签，再解析 commit、递归子模块 gitlink 和 LFS OID。完整 SourceManifest 与首次 PlanningRun 在同一事务提交。平台只保存 Manifest 元数据，不保存 Git bundle、源码包、仓库 checkout 或 Git/LFS 缓存。
+每次构建创建独立临时 SourceTask。并发构建分别解析自己的引用。准备进程直接访问上游，以 CAS 固定 commit 和标签对象。annotated tag 取同次引用广告中的剥离 commit，源码要求仍保存原 tag 引用。随后解析递归子模块 gitlink 和 LFS OID。完整 SourceManifest 与首次 PlanningRun 在同一事务提交。平台只保存 Manifest 元数据，不保存 Git bundle、源码包、仓库 checkout 或 Git/LFS 缓存。
 
 分支、标签和子模块 URL 在准备后固定。同一次构建的所有规划重试、目标架构和人工重试读取同一 Manifest。新构建重新解析所选分支或 Tag。上游拒绝获取原对象时明确失败，不能重新跟随分支或替换标签。Manifest 包含路径、上游 URL、commit、标签对象与 LFS OID/大小，摘要按排序后的仓库列表计算，元数据总量最多 4 MiB。
 

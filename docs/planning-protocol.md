@@ -24,7 +24,7 @@
 
 构建先进入 `resolving`。控制平面在 `source_tasks` 创建 `resolve` 任务。Operator 直接创建使用 `emptyDir` 的临时 Pod。source-preparer 通过投射令牌和实际 Pod 身份领取仓库地址及短期凭据。Control 核对 Pod→SourceTask 的完整 owner 身份与执行台账，不通过标签授权。
 
-首次解析引用后，任务向控制平面提交 `pinned_ref_oid`。后续重试只能得到第一个已提交 OID。每个仓库的 tag 对象也按任务固定。preparer 直接拉取该对象，解析 submodule 和 LFS，然后提交排序后的 `SourceManifest`。清单摘要为 `sha256(serde_json::to_vec(repositories))`。
+首次解析引用后，任务向控制平面提交 commit 对应的 `pinned_ref_oid`。annotated tag 使用同次上游引用广告中的剥离 commit；引用列表仍保留原 tag 对象 OID。后续重试只能得到第一个已提交 commit。每个仓库的 tag 对象另按任务固定。preparer 直接拉取固定 commit，解析 submodule 和 LFS，然后提交排序后的 `SourceManifest`。Control 要求清单根 commit 与固定 commit 完全相等。清单摘要为 `sha256(serde_json::to_vec(repositories))`。
 
 控制平面在同一事务中保存清单、切换 Build 为 `planning`、创建唯一规划记录，并由触发器写入规划 outbox。重复提交相同任务结果返回已有结果。不同结果拒绝。成功任务再次领取时返回已提交结果，不再返回凭据。
 

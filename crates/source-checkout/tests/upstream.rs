@@ -1,5 +1,5 @@
 // [INPUT]: 依赖源码边界、真实 Git 与本机 HTTP 夹具。
-// [OUTPUT]: 验证每次上游拉取、文件系统权限与内容校验。
+// [OUTPUT]: 验证引用剥离、每次上游拉取和源码完整性。
 // [POS]: 共享检出引擎的真实 Git 回归。
 // [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_source_checkout::{
@@ -251,6 +251,114 @@ async fn every_checkout_fetches_upstream_and_isolates_attempts() {
     for relative in ["../x", "a/../x", ".git/x", "/x", "C:/x", "a\\x"] {
         assert!(managed_path(&second, relative).is_err());
     }
+    server.abort();
+}
+
+#[tokio::test]
+async fn reference_resolution_pins_commits_and_preserves_annotated_tag_objects() {
+    let root = tempfile::tempdir().unwrap();
+    let upstream = root.path().join("repo.git");
+    fs::create_dir(&upstream).unwrap();
+    git(&upstream, &["init", "-b", "main"]);
+    fs::write(upstream.join("source.txt"), "first source\n").unwrap();
+    git(&upstream, &["add", "."]);
+    git(&upstream, &["commit", "-m", "first source"]);
+    let first = git(&upstream, &["rev-parse", "HEAD"]);
+    git(&upstream, &["tag", "lightweight"]);
+    git(&upstream, &["tag", "-a", "annotated", "-m", "first tag"]);
+    let tag_object = git(&upstream, &["rev-parse", "refs/tags/annotated"]);
+    assert_ne!(tag_object, first);
+    let app = Router::new().fallback(any(backend)).with_state(Fixture {
+        root: root.path().into(),
+        requests: Default::default(),
+        lfs_objects: Default::default(),
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let repository = format!("http://{}/git", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let checkout = Checkout::new(Options {
+        auth_root: root.path().join("auth"),
+        ..Default::default()
+    });
+    let cancel = CancellationToken::new();
+    let refs = checkout.list_refs(&repository, &[], &cancel).await.unwrap();
+    assert_eq!(refs.default_ref.as_deref(), Some("refs/heads/main"));
+    assert_eq!(
+        refs.tags
+            .iter()
+            .find(|tag| tag.name == "annotated")
+            .unwrap()
+            .oid,
+        tag_object,
+        "the refs API must retain the annotated tag object identity"
+    );
+    for reference in [
+        "HEAD",
+        "refs/heads/main",
+        "lightweight",
+        "refs/tags/annotated",
+    ] {
+        assert_eq!(
+            checkout
+                .resolve_reference(&repository, reference, &[], &cancel)
+                .await
+                .unwrap(),
+            first,
+            "{reference} must pin the commit that enters the source manifest"
+        );
+    }
+    let inspected = checkout
+        .inspect_repository(
+            &SourceRepository {
+                path: String::new(),
+                upstream_url: repository.clone(),
+                commit_sha: first.clone(),
+                tags: Default::default(),
+                lfs_objects: Vec::new(),
+            },
+            &[],
+            None,
+            &root.path().join("fixed"),
+            artifactory_source_checkout::TagSelection::Upstream,
+            &cancel,
+        )
+        .await
+        .unwrap();
+    assert_eq!(inspected.repository.commit_sha, first);
+    assert_eq!(
+        inspected.repository.tags.get("annotated"),
+        Some(&tag_object)
+    );
+    fs::write(upstream.join("source.txt"), "second source\n").unwrap();
+    git(&upstream, &["add", "."]);
+    git(&upstream, &["commit", "-m", "second source"]);
+    let second = git(&upstream, &["rev-parse", "HEAD"]);
+    git(
+        &upstream,
+        &["tag", "-f", "-a", "annotated", "-m", "moved tag"],
+    );
+    assert_eq!(
+        checkout
+            .resolve_reference(&repository, "refs/tags/annotated", &[], &cancel)
+            .await
+            .unwrap(),
+        second,
+        "a new build must resolve the moved tag independently"
+    );
+    assert_eq!(
+        git(&root.path().join("fixed"), &["rev-parse", "HEAD"]),
+        first,
+        "the previous snapshot must keep its original commit"
+    );
+    let canceled = CancellationToken::new();
+    canceled.cancel();
+    assert!(
+        checkout
+            .resolve_reference(&repository, "refs/tags/annotated", &[], &canceled)
+            .await
+            .is_err()
+    );
+    assert_eq!(fs::read_dir(root.path().join("auth")).unwrap().count(), 0);
     server.abort();
 }
 #[tokio::test]

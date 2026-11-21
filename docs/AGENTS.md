@@ -32,7 +32,7 @@ operations.md: 定义初始账号、部署、兼容追加迁移、备份和故�
 operator-operations.md: 定义临时源码、池级出口代理、内部直连和任务收尾。
 protocol.md: 定义 Emissary 会话、完整心跳预算和状态迁移。
 registration-acceptance-2026-11-11.md: 记录用户注册的本地验收。
-planning-protocol.md: 定义内嵌规划接口、预算引导、安全统计与提案围栏。
+planning-protocol.md: 定义源码提交固定、内嵌规划接口、预算引导与提案围栏。
 ephemeral-source-acceptance-2026-11-18.md: 记录临时源码验证、存储回收与正式切换。
 substrate-scheduling-assessment-2026-11-12.md: 评估可选调度后端的适用边界。
 tasknotes-application-acceptance-2026-11-18.md: 记录 TaskNotes 真实应用的构建、网关下载、运行证据和环境阻塞。

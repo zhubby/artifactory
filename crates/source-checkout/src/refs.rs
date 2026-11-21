@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离 Git 进程和上游引用广告。
-//! [OUTPUT]: 提供分支列表、tag 列表和首次对象固定。
+//! [OUTPUT]: 保留 tag 对象列表，将首次构建引用固定为剥离提交。
 //! [POS]: 只查询引用；不创建仓库或长期缓存。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::git::Git;
@@ -23,12 +23,28 @@ pub struct RepositoryRefs {
     pub tags: Vec<GitRef>,
 }
 
+struct Advertisement {
+    refs: RepositoryRefs,
+    peeled_tags: BTreeMap<String, String>,
+}
+
 pub async fn list_refs(
     options: &Options,
     repository: &str,
     credentials: &[SourceCredential],
     cancel: &CancellationToken,
 ) -> Result<RepositoryRefs> {
+    Ok(advertisement(options, repository, credentials, cancel)
+        .await?
+        .refs)
+}
+
+async fn advertisement(
+    options: &Options,
+    repository: &str,
+    credentials: &[SourceCredential],
+    cancel: &CancellationToken,
+) -> Result<Advertisement> {
     let git = Git::new(options, repository, credentials, None)?;
     let data = git
         .run(
@@ -78,7 +94,8 @@ impl Checkout {
         if valid_commit(reference) {
             return Ok(reference.to_owned());
         }
-        let refs = self.list_refs(repository, credentials, cancel).await?;
+        let advertised = advertisement(self.options(), repository, credentials, cancel).await?;
+        let refs = &advertised.refs;
         let requested = if reference == "HEAD" {
             refs.default_ref
                 .as_deref()
@@ -96,13 +113,19 @@ impl Checkout {
             matches.len() == 1,
             "Git reference is missing or ambiguous; select a full branch or tag reference"
         );
-        Ok(matches[0].oid.clone())
+        let selected = matches[0];
+        Ok(advertised
+            .peeled_tags
+            .get(&selected.reference)
+            .unwrap_or(&selected.oid)
+            .clone())
     }
 }
-fn parse(data: &[u8]) -> Result<RepositoryRefs> {
+fn parse(data: &[u8]) -> Result<Advertisement> {
     let mut default_ref = None;
     let mut branches = BTreeMap::new();
     let mut tags = BTreeMap::new();
+    let mut peeled_tags = BTreeMap::new();
     for line in std::str::from_utf8(data)?.lines().filter(|l| !l.is_empty()) {
         let (value, reference) = line
             .split_once('\t')
@@ -117,7 +140,9 @@ fn parse(data: &[u8]) -> Result<RepositoryRefs> {
         let (map, name) = if let Some(name) = reference.strip_prefix("refs/heads/") {
             (&mut branches, name)
         } else if let Some(name) = reference.strip_prefix("refs/tags/") {
-            if name.ends_with("^{}") {
+            if let Some(name) = name.strip_suffix("^{}") {
+                ensure!(!name.is_empty(), "invalid peeled tag reference");
+                peeled_tags.insert(format!("refs/tags/{name}"), value.to_owned());
                 continue;
             }
             (&mut tags, name)
@@ -137,9 +162,12 @@ fn parse(data: &[u8]) -> Result<RepositoryRefs> {
             },
         );
     }
-    Ok(RepositoryRefs {
-        default_ref: default_ref.filter(|r| branches.contains_key(r)),
-        branches: branches.into_values().collect(),
-        tags: tags.into_values().collect(),
+    Ok(Advertisement {
+        refs: RepositoryRefs {
+            default_ref: default_ref.filter(|r| branches.contains_key(r)),
+            branches: branches.into_values().collect(),
+            tags: tags.into_values().collect(),
+        },
+        peeled_tags,
     })
 }
