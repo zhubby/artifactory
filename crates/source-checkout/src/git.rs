@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖短期凭据、标准代理环境、私有临时目录和受控进程树。
-//! [OUTPUT]: 隔离 Git 环境、认证文件、验证索引和取消边界。
+//! [INPUT]: 依赖短期凭据、系统路径、标准代理环境和私有临时目录。
+//! [OUTPUT]: 隔离执行环境，保留 Windows 系统盘与代理；提供认证、索引和取消边界。
 //! [POS]: 检出引擎的唯一 Git 进程入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{GitCredential, SourceCredential, same_origin, validate_repository};
@@ -56,6 +56,7 @@ pub fn build_environment() -> BTreeMap<OsString, OsString> {
         "TEMP",
         "SystemRoot",
         "SYSTEMROOT",
+        "SystemDrive",
         "WINDIR",
         "COMSPEC",
         "PATHEXT",
@@ -391,5 +392,42 @@ impl Git {
         self.directory
             .close()
             .context("remove Git authentication directory")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_environment;
+    use std::{ffi::OsStr, process::Command};
+
+    #[test]
+    fn build_environment_keeps_system_drive_and_excludes_secrets() {
+        const MARKER: &str = "ARTIFACTORY_ENVIRONMENT_TEST_CHILD";
+        if std::env::var_os(MARKER).is_some() {
+            let environment = build_environment();
+            assert_eq!(
+                environment.get(OsStr::new("SystemDrive")),
+                Some(&"C:".into())
+            );
+            assert!(!environment.contains_key(OsStr::new("ARTIFACTORY_MASTER_KEY")));
+            return;
+        }
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "git::tests::build_environment_keeps_system_drive_and_excludes_secrets",
+                "--nocapture",
+            ])
+            .env(MARKER, "1")
+            .env("SystemDrive", "C:")
+            .env("ARTIFACTORY_MASTER_KEY", "must-not-reach-build")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

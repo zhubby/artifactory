@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖原生任务目录隔离和遗留目录清理。
-//! [OUTPUT]: 验证任务缓存、真实 JVM 路径和活动目录保护。
+//! [OUTPUT]: 验证任务缓存、JVM 路径、Windows .NET 系统路径和活动目录保护。
 //! [POS]: 原生源码生命周期回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_emissary::{config::Config, source};
@@ -32,6 +32,31 @@ fn task_environment_contains_all_writable_caches() {
     ] {
         assert!(!env.contains_key(std::ffi::OsStr::new(key)));
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn isolated_windows_dotnet_finds_common_application_data() {
+    let root = tempfile::tempdir().unwrap();
+    let mut environment = source::build_environment();
+    source::isolate_environment(root.path(), &mut environment).unwrap();
+    let output = std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "$path = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData); if ([string]::IsNullOrEmpty($path) -or -not [IO.Path]::IsPathRooted($path)) { exit 1 }; [Console]::WriteLine($path)",
+        ])
+        .env_clear()
+        .envs(&environment)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "isolated .NET CommonApplicationData failed: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

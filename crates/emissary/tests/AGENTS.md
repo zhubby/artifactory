@@ -1,7 +1,7 @@
 # crates/emissary/tests/
 > L2 | Parent: ../AGENTS.md
 
-source.rs: 验证真实 JVM/Maven 缓存隔离、活动目录保护和孤儿会话清理。
+source.rs: 验证 JVM/Maven 缓存隔离、Windows .NET 系统路径、活动目录保护和孤儿会话清理。
 contracts.rs: 验证制品边界、签名清单与 OTA 状态机。
 ota_download.rs: 验证更新下载失败不会替换当前二进制。
 live_protocol.rs: 复用隔离租户夹具，验证会话、租约、事件与存储协议。
