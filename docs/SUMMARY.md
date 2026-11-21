@@ -105,12 +105,14 @@
 - [加载反馈与租户大厅 Kubernetes 上线记录 · 2026-11-20](releases/2026-11-20-loading-tenant-kubernetes.md)
 - [自定义下拉与 HTTP 操作 Kubernetes 上线记录 · 2026-11-20](releases/2026-11-20-dropdown-http-kubernetes.md)
 - [设备识别 Kubernetes 上线记录 · 2026-11-20](releases/2026-11-20-node-identification-kubernetes.md)
+- [设备详情 Kubernetes 上线记录 · 2026-11-21](releases/2026-11-21-device-detail-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)
 
 # 文档维护地图
 
 - [文档模块地图](AGENTS.md)
+- [品牌模块地图](brand/AGENTS.md)
 - [验收模块地图](acceptance/AGENTS.md)
 - [界面验收模块地图](acceptance/ui/AGENTS.md)
 - [交付记录模块地图](releases/AGENTS.md)
