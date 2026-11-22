@@ -45,6 +45,7 @@
 # 验收记录
 
 - [实施与验收总览](acceptance.md)
+- [真实模型全流程 · 2026-11-22](acceptance/2026-11-22-model-workflows.md)
 - [TaskNotes 真实多平台应用 · 2026-11-18](tasknotes-application-acceptance-2026-11-18.md)
 - [TaskNotes 平台问题与修复 · 2026-11-18](tasknotes-platform-fixes-2026-11-18.md)
 - [临时源码执行 · 2026-11-18](ephemeral-source-acceptance-2026-11-18.md)
