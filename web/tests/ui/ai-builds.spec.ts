@@ -1,11 +1,12 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证应用分类、具名消息展开与折叠终态补读。
+ * [OUTPUT]: 验证方案目标切换、澄清及审计终态补读。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { expect, test } from "@playwright/test";
 import { fixtureAPI, build, tenantURL } from "./fixtures";
+import { chooseOption } from "./select-helpers";
 
 for (const locale of ["zh-CN", "en"] as const) {
   test(`${locale}: AI planning, clarification, plan history and model settings`, async ({
@@ -25,6 +26,7 @@ for (const locale of ["zh-CN", "en"] as const) {
       ...build,
       goal: "Build the native desktop executable",
       status: "needs_input",
+      current_plan_id: "plan-v1",
       revision_count: 1,
       source_manifest_id: "snapshot-pinned",
       clarification: { question: "Which application should be built?" },
@@ -96,6 +98,7 @@ for (const locale of ["zh-CN", "en"] as const) {
     await expect(
       page.getByText("Which application should be built?", { exact: true }),
     ).toBeVisible();
+    await page.getByText(locale === "en" ? "Pinned source details" : "固定源码信息", { exact: true }).click();
     await expect(
       page.getByText("snapshot-pinned", { exact: false }),
     ).toBeVisible();
@@ -108,20 +111,16 @@ for (const locale of ["zh-CN", "en"] as const) {
       })
       .click();
     await expect.poll(() => answer).toBe("The desktop client");
+    await page.locator("summary").filter({ hasText: locale === "en" ? /^Source evidence/ : /^源码证据/ }).click();
     await expect(page.getByText("src/main.c", { exact: true })).toBeVisible();
-    await page
-      .getByText(
-        locale === "en"
-          ? "Execution steps and external scripts"
-          : "查看执行步骤与外置脚本",
-        { exact: true },
-      )
-      .click();
     await expect(
       page.getByText("cc src/main.c -o dist/app", { exact: true }),
     ).toBeVisible();
+    await page.locator("summary").filter({ hasText: locale === "en" ? /^External scripts/ : /^外置脚本/ }).click();
     await expect(page.getByText("verify.sh", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: `native · macOS · ${locale === "en" ? "Host" : "宿主"} darwin/arm64`, exact: true })).toBeVisible();
+    const native = page.locator('.build-plan-targets > section[data-target="native"]');
+    await expect(native.getByRole("heading", { name: "native", exact: true })).toBeVisible();
+    await expect(native).toContainText(`macOS · ${locale === "en" ? "Host" : "宿主"} darwin/arm64`);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth + 1,
@@ -185,7 +184,7 @@ test("application platform labels distinguish iOS from a CLI on the same host", 
   const baseJob = build.jobs?.[0];
   if (!baseJob) throw new Error("build fixture must include a job");
   const item = {
-    ...build, goal: "Build the iOS simulator application and CLI", status: "succeeded",
+    ...build, goal: "Build the iOS simulator application and CLI", status: "succeeded", current_plan_id: "plan-platforms",
     jobs: Object.entries(targets).map(([name, target_config]) => ({ ...baseJob, id: name, target: name, target_config, attempts: [] })),
   };
   await page.route("**/api/v1/projects/by-slug/desktop-client/builds/128", route => route.fulfill({ json: item }));
@@ -198,9 +197,15 @@ test("application platform labels distinguish iOS from a CLI on the same host", 
   await expect(page.getByRole("button", { name: /^ios iOS · Host darwin\/arm64/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^cli Non-application · Host darwin\/arm64/ })).toBeVisible();
   await page.getByRole("tab", { name: "Plan", exact: true }).click();
-  await page.getByText("Execution steps and external scripts", { exact: true }).click();
-  await expect(page.getByRole("heading", { name: "ios · iOS · Host darwin/arm64", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "cli · Non-application · Host darwin/arm64", exact: true })).toBeVisible();
+  const ios = page.locator('.build-plan-targets > section[data-target="ios"]');
+  await expect(ios.getByRole("heading", { name: "ios", exact: true })).toBeVisible();
+  await expect(ios).toContainText("iOS · Host darwin/arm64");
+  const target = page.getByRole("combobox", { name: "Build target", exact: true });
+  if (await target.isVisible()) await chooseOption(target, "cli");
+  else await page.getByRole("navigation", { name: "Build target", exact: true }).getByRole("button").filter({ hasText: "cli" }).click();
+  const cli = page.locator('.build-plan-targets > section[data-target="cli"]');
+  await expect(cli.getByRole("heading", { name: "cli", exact: true })).toBeVisible();
+  await expect(cli).toContainText("Non-application · Host darwin/arm64");
   await page.screenshot({ path: info.outputPath("application-platforms.png"), fullPage: true });
 });
 

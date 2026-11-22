@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖构建目标摘要、Release 归属、构建 API、事件与统一通知。
- * [OUTPUT]: 按原生或镜像目标展示执行、日志与未创建任务的状态。
- * [POS]: Release 内的构建详情；镜像复用 ImageBuilds，候选由版本工作台交付。
+ * [INPUT]: 依赖 Release 归属、构建快照、规划工作台与日志事件。
+ * [OUTPUT]: 提供紧凑构建标题、目标合同和保留内容的三标签工作区。
+ * [POS]: Release 内的构建详情；首次按状态选标签，轮询保留用户选择。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -30,7 +30,6 @@ import {
   Empty,
   ErrorBox,
   Loading,
-  PageTitle,
   SectionTitle,
   Status,
   StepIcon,
@@ -48,6 +47,12 @@ import { notify } from "@/lib/notify";
 import type { Build, Release, User } from "@/lib/types";
 import { releasePath } from "@/lib/routes";
 import { cn, elapsed, short } from "@/lib/utils";
+
+function initialTab(build: Build) {
+  return ["resolving", "planning", "replanning", "needs_input"].includes(build.status)
+    || (["failed", "canceled"].includes(build.status) && !build.jobs?.length)
+    ? "plan" : "execution";
+}
 
 export function BuildDetail({
   projectSlug,
@@ -83,9 +88,20 @@ export function BuildDetail({
   const [watching, setWatching] = useState<string>();
   const live = !!id && (!isBuildTerminal(build?.status) || watching === id);
   const [error, setError] = useState<Error>();
-  const [tab, setTab] = useState("execution");
+  const [tabSelection, setTabSelection] = useState<{ buildId: string; value: string }>();
+  const tab = tabSelection && tabSelection.buildId === id ? tabSelection.value : build ? initialTab(build) : "execution";
+  const activeTab = useRef(tab);
+  activeTab.current = tab;
+  function setTab(value: string) {
+    if (id) setTabSelection({ buildId: id, value });
+  }
   const [clipped, setClipped] = useState(false);
   const terminal = useRef<HTMLDivElement>(null);
+  const pendingFollow = useRef(false);
+  useEffect(() => {
+    if (build) setTabSelection(previous => previous?.buildId === build.id
+      ? previous : { buildId: build.id, value: initialTab(build) });
+  }, [build]);
   useEffect(() => {
     setLogs([]);
     setSelected(undefined);
@@ -123,9 +139,18 @@ export function BuildDetail({
     return () => controller.abort();
   }, [id, live, remote.setData]);
   useEffect(() => {
-    if (tab === "execution" && follow && terminal.current)
+    pendingFollow.current = follow;
+    if (activeTab.current === "execution" && follow && terminal.current) {
       terminal.current.scrollTop = terminal.current.scrollHeight;
-  }, [logs, follow, filter, selected, tab]);
+      pendingFollow.current = false;
+    }
+  }, [logs, follow, filter, selected]);
+  useEffect(() => {
+    if (tab === "execution" && follow && pendingFollow.current && terminal.current) {
+      terminal.current.scrollTop = terminal.current.scrollHeight;
+      pendingFollow.current = false;
+    }
+  }, [tab, follow]);
   async function action(path: string, body: unknown = {}) {
     setError(undefined);
     try {
@@ -170,10 +195,10 @@ export function BuildDetail({
     : build.status === "needs_input" ? "redesign.needsInput"
     : active ? "builds.readingConfig" : "builds.noJobs");
   return (
-    <>
+    <div className="build-detail">
       <Link
         href={releasePath(projectSlug, build.release_id)}
-        className="mb-5 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-primary max-md:min-h-11"
+        className="build-detail-back"
       >
         <ArrowLeft size={13} />
         {t("releaseFlow.returnRelease", {version:build.release_version})}
@@ -186,15 +211,14 @@ export function BuildDetail({
             .join(" · ")}
         </p>
       )}
-      <PageTitle
-        eyebrow={t("builds.eyebrowId", { id: build.number })}
-        title={build.project_name}
-        description={t("builds.resultDescription", {
-          date: date(build.created_at),
-        })}
-      >
-        <Status value={build.status} />
-        {role !== "viewer" && active && (
+      <header className="build-detail-header">
+        <div className="build-detail-heading">
+          <h1>{t("buildDetail.title", {number: build.number})}</h1>
+          <Link className="tag font-mono" href={releasePath(projectSlug, build.release_id)}>{build.release_version}</Link>
+          <Status value={build.status} />
+        </div>
+        <div className="build-detail-actions">
+        {!readOnly && role !== "viewer" && active && (
           <Button
             variant="destructive"
             onClick={() => void action(`/builds/${id}/cancel`)}
@@ -203,32 +227,31 @@ export function BuildDetail({
             {t("builds.cancel")}
           </Button>
         )}
-      </PageTitle>
+        </div>
+      </header>
       <ErrorBox key="build-feedback" message={error || remote.error || release.error} />
       {build.error && <p className="mb-5 whitespace-pre-wrap break-words text-sm text-destructive" role="status" aria-atomic="true">{build.error}</p>}
-      <div className="build-meta">
+      <div className="build-detail-meta">
+        <span className="meta-item" title={t("buildDetail.project")}>{build.project_name}</span>
         <span className="meta-item">
           <GitBranch size={14} />
           {build.requested_ref}
         </span>
-        <span className="meta-item">
+        <span className="meta-item" title={t("buildDetail.commit")}>
           <GitCommitHorizontal size={14} />
-          {build.commit_sha || t("builds.resolving")}
+          <code title={build.commit_sha || undefined}>{build.commit_sha ? short(build.commit_sha) : t("builds.resolving")}</code>
+          {build.commit_sha && <CopyButton value={build.commit_sha} />}
         </span>
-        <span className="meta-item">
+        <span className="meta-item" title={t("buildDetail.duration")}>
           <Clock3 size={14} />
           {elapsed(build.created_at, build.finished_at)}
         </span>
         <span className="meta-item">{buildTargetSummary(build)}</span>
-        {build.release_version && (
-          <span className="meta-item text-primary">
-            <Link href={releasePath(projectSlug,build.release_id)}>{build.release_version}</Link>
-          </span>
-        )}
+        <span className="meta-item" title={t("buildDetail.created")}>{date(build.created_at)}</span>
       </div>
-      <section className="panel mb-5"><SectionTitle title={t("releaseFlow.targets")} />
+      <details className="build-detail-contract"><summary>{t("buildDetail.targetContract")}<span>{t("common.targetCount", {count:build.target_requirements.length})}</span></summary>
         <div className="table-scroll"><table><thead><tr><th>{t("releaseFlow.targetKey")}</th><th>{t("releaseFlow.targetKind")}</th><th>{t("releaseFlow.platforms")}</th><th>{t("releaseFlow.deliveryName")}</th></tr></thead><tbody>{build.target_requirements.map(target => <tr key={target.key}><td className="font-mono">{target.key}</td><td>{t(target.kind === "native" ? "releaseFlow.native" : "releaseFlow.image")}</td><td>{target.kind === "image" ? target.platforms.join(" · ") : `${target.application_platform || t("builds.nonApplication")} · ${target.os}/${target.arch}`}</td><td>{target.kind === "image" ? build.release_version : `${target.artifact_key || target.key} · ${target.format_suffix || t("releaseFlow.detectSuffix")}`}</td></tr>)}</tbody></table></div>
-      </section>
+      </details>
       {build.status === "needs_input" && <div className="notice build-attention" role="status">
         <span>{t("redesign.needsInput")}</span><Button size="sm" variant="secondary" onClick={() => setTab("plan")}>{t("redesign.viewPlan")}</Button>
       </div>}
@@ -248,6 +271,8 @@ export function BuildDetail({
               build.jobs.map((target) => (
                 <button
                   key={target.id}
+                  type="button"
+                  aria-pressed={job?.id === target.id}
                   className={cn(
                     "target-button",
                     job?.id === target.id && "selected",
@@ -305,6 +330,8 @@ export function BuildDetail({
               return (
                 <button
                   key={index}
+                  type="button"
+                  aria-pressed={filter === step.name}
                   className={cn(
                     "flex w-full items-center gap-3 border-b border-border px-5 py-3.5 text-left last:border-0 hover:bg-secondary",
                     filter === step.name && "bg-secondary",
@@ -422,9 +449,9 @@ export function BuildDetail({
           </div>
         </div>
         <div hidden={activeTab !== "plan"}>
-          {build.goal ? <BuildPlanning build={build} user={{ ...user, role: canMutate ? role : "viewer" }} refresh={remote.reload} />
+          {build.goal ? <BuildPlanning key={build.id} build={build} user={{ ...user, role: canMutate ? role : "viewer" }} refresh={remote.reload} />
             : <Empty title={t("redesign.plan")} detail={t("builds.noConfig")} />}
-      <details className="panel mt-5">
+      <details className="build-detail-contract mt-5">
         <summary className="cursor-pointer px-5 py-4 text-xs text-muted-foreground">
           {t("builds.snapshot")}
         </summary>
@@ -436,7 +463,7 @@ export function BuildDetail({
         </pre>
       </details>
         </div>
-      <section className="panel" hidden={activeTab !== "artifacts"}>
+      <section className="panel build-detail-output" hidden={activeTab !== "artifacts"}>
         <SectionTitle
           title={t("builds.verified")}
           detail={t("artifacts.shaVerified")}
@@ -453,6 +480,6 @@ export function BuildDetail({
       </section>
       </>}</Tabs>
 
-    </>
+    </div>
   );
 }

@@ -15,11 +15,11 @@ api.md: 定义 HTTP 输入、模型参数、安全规划摘要与项目权限边
 artifactory-rename-2026-11-11.md: 记录产品命名迁移。
 signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。
 configuration.md: 定义任务执行计划的结构与限制。
-design-system.md: 定义中性色、四步构建弹窗、工作区、设备档案和自定义下拉边界。
+design-system.md: 定义中性色、构建引导、方案版本、工作区与自定义下拉边界。
 direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、启动等待和故障依赖隔离的验证边界。
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。
-frontend-experience.md: 定义语言、主题、构建引导草稿、加载、系统动效与前端验证入口。
+frontend-experience.md: 定义语言、主题、方案版本、澄清草稿、日志与前端验证入口。
 helm.md: 定义最低 Kubernetes 1.28 安装、基线内追加迁移与持久身份保留。
 image-builds.md: 定义独立镜像池准入、容器镜像生命周期、整合网关、池代理和交付边界。
 image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像、独立 Operator、网关迁移与空闲连接验收。

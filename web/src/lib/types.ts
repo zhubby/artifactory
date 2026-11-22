@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供 Release、执行、规划实时摘要和模型兼容类型。
+ * [OUTPUT]: 提供 Release、计划目标、执行修订身份和规划实时摘要类型。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -133,6 +133,7 @@ export interface StepRun {
 }
 export interface Attempt {
   id: string;
+  plan_revision_id?: string | null;
   node_id: string;
   node_name: string;
   status: string;
@@ -149,6 +150,7 @@ export interface TargetPlatform {
   application_platform: ApplicationPlatform | null;
 }
 export interface Job {
+  plan_revision_id?: string | null;
   blocked_reason?: string | null;
   placement?: {
     reason: string | null;
@@ -496,6 +498,36 @@ export interface ModelProfile {
     };
   };
 }
+export interface ImageSpec {
+  name: string;
+  platforms: string[];
+  context?: string;
+  dockerfile?: string;
+  pool?: string;
+  allow_emulation?: boolean;
+  build_args?: Record<string, string>;
+  secrets?: Record<string, string>;
+  pull_credentials?: string[];
+  tags?: string[];
+}
+export interface RecipeStep {
+  name: string;
+  phase: string;
+  run: string;
+  shell?: string | null;
+  timeout_seconds?: number;
+}
+export interface RecipeTarget extends TargetPlatform {
+  executor?: "native" | "buildkit";
+  image?: ImageSpec | null;
+  timeout_seconds?: number;
+  steps: RecipeStep[];
+  artifacts?: string[];
+  signing_profiles?: string[];
+  signing_outputs?: { path: string; bundle?: string | null }[];
+  labels?: Record<string, string>;
+  capabilities?: string[];
+}
 export interface PlanRevision {
   id: string;
   revision: number;
@@ -506,12 +538,10 @@ export interface PlanRevision {
     evidence: { path: string; reason: string }[];
     scripts: { name: string; content: string }[];
     recipe: {
-      targets: Record<
-        string,
-        TargetPlatform & {
-          steps: { name: string; phase: string; run: string }[];
-        }
-      >;
+      version?: number;
+      parameters?: Record<string, string>;
+      release?: { enabled: boolean };
+      targets: Record<string, RecipeTarget>;
     };
   };
 }

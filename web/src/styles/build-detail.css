@@ -1,0 +1,202 @@
+/**
+ * [INPUT]: 依赖主题变量、构建详情分区和计划工作台语义类名。
+ * [OUTPUT]: 提供紧凑详情、目标导航、步骤命令与响应式计划布局。
+ * [POS]: 由 globals.css 加载；只约束构建详情与计划工作台。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+
+/* --- 详情标题与合同 --- */
+.build-detail { min-width: 0; }
+.build-detail-back { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; margin-bottom: 14px; color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
+.build-detail-back:hover { color: var(--foreground); }
+.build-detail-back > svg { flex-shrink: 0; }
+.build-detail-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px 24px; margin-bottom: 12px; min-width: 0; }
+.build-detail-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
+.build-detail-heading h1 { min-width: 0; font-size: 22px; font-weight: 600; line-height: 1.4; letter-spacing: -.55px; overflow-wrap: anywhere; }
+.build-detail-heading > a { min-width: 0; font-size: 13px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.build-detail-heading > a:hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; }
+.build-detail-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 8px; }
+.build-detail-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; min-width: 0; margin-bottom: 12px; color: var(--muted-foreground); font-size: 12px; line-height: 1.7; }
+.build-detail-meta > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.build-detail-meta .meta-item { align-items: baseline; }
+.build-detail-meta .meta-item > svg { position: relative; top: 2px; flex-shrink: 0; }
+.build-detail-meta code { font-size: 11px; overflow-wrap: anywhere; }
+.build-detail-contract { min-width: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.build-detail-contract > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 0 10px; list-style: none; color: var(--muted-foreground); font-size: 12px; }
+.build-detail-contract > summary::-webkit-details-marker { display: none; }
+.build-detail-contract > summary:hover { color: var(--foreground); }
+.build-detail-contract > summary::before { content: ""; width: 6px; height: 6px; border: solid currentColor; border-width: 1px 1px 0 0; transform: rotate(45deg); transition: transform .15s ease; }
+.build-detail-contract[open] > summary::before { transform: rotate(135deg); }
+.build-detail-contract > summary:has(> svg)::before { content: none; }
+.build-detail-contract > summary > span { color: var(--muted-foreground); font-size: 11px; }
+.build-detail-contract > summary > svg { flex-shrink: 0; transition: transform .15s ease; }
+.build-detail-contract[open] > summary > svg:first-child { transform: rotate(90deg); }
+.build-detail-contract .table-scroll { padding-bottom: 12px; }
+.build-detail-contract table { table-layout: fixed; font-size: 12px; }
+.build-detail-contract th, .build-detail-contract td { padding: 10px 12px; height: auto; overflow-wrap: anywhere; }
+.build-detail-contract th:first-child, .build-detail-contract td:first-child { width: 25%; min-width: 0; }
+.build-detail-contract td { vertical-align: top; }
+.build-detail-contract > pre { max-height: 360px; min-height: 0; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 4px; white-space: pre; overflow-wrap: normal; }
+.build-detail-tabs-wrap { min-width: 0; }
+.build-detail .ui-tabs { gap: 24px; margin-bottom: 20px; }
+.build-detail .ui-tab { min-height: 44px; }
+.build-detail .build-layout { grid-template-columns: 240px minmax(0, 1fr); gap: 24px; }
+.build-detail .build-layout > *, .build-detail .build-layout > div > * { min-width: 0; }
+.build-detail .build-layout > div:first-child > .panel { border: 0; border-radius: 0; background: transparent; }
+.build-detail .build-layout > div:first-child .section-title { min-height: 40px; padding: 6px 0 10px; }
+.build-detail .build-targets { padding: 6px 0; }
+.build-detail .target-button { min-height: 48px; padding: 10px; }
+.build-detail .target-button > svg { flex-shrink: 0; }
+.build-detail .target-button > div { overflow-wrap: anywhere; }
+.build-detail .target-button .status { margin-left: auto; }
+.build-detail-output { min-width: 0; }
+.build-detail-output table td { overflow-wrap: anywhere; }
+.build-detail .build-layout article, .build-detail-output article { padding: 16px 0; border-width: 0 0 1px; border-radius: 0; }
+.build-detail .build-layout article:first-child, .build-detail-output article:first-child { padding-top: 0; }
+.build-detail .build-layout article:last-child, .build-detail-output article:last-child { padding-bottom: 0; border-bottom: 0; }
+.build-detail .build-layout article strong, .build-detail-output article strong { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.build-detail .build-layout article > p, .build-detail-output article > p { overflow-wrap: anywhere; }
+.build-detail .build-layout article > details > summary, .build-detail-output article > details > summary { display: flex; align-items: center; min-height: 44px; color: var(--muted-foreground); font-size: 12px; }
+
+/* --- 计划状态、版本与摘要 --- */
+.build-plan { min-width: 0; }
+.build-plan-header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; min-width: 0; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.build-plan-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
+.build-plan-heading h2 { font-size: 14px; font-weight: 600; line-height: 1.5; }
+.build-plan-stats { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; color: var(--muted-foreground); font-size: 11px; font-variant-numeric: tabular-nums; }
+.build-plan-revision { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; margin-left: auto; }
+.build-plan-revision > label, .build-plan-revision > span { flex-shrink: 0; color: var(--muted-foreground); font-size: 11px; }
+.build-plan-revision .select-trigger { width: 230px; max-width: 100%; min-height: 34px; font-size: 12px; }
+.build-plan-body { display: grid; gap: 24px; min-width: 0; padding: 20px; }
+.build-plan-body > * { min-width: 0; }
+.build-plan-clarification { display: grid; gap: 16px; min-width: 0; padding: 16px; border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border)); border-radius: 5px; background: var(--quiet); }
+.build-plan-clarification h3, .build-plan-clarification > p:first-child { margin-bottom: 6px; font-size: 13px; font-weight: 500; }
+.build-plan-clarification p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; }
+.build-plan-clarification textarea { min-height: 100px; }
+.build-plan-clarification form { min-width: 0; }
+.build-plan-summary { min-width: 0; }
+.build-plan-summary-text { margin: 0; font-size: 13px; line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; }
+.build-plan-summary-text[data-expanded="false"] { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+.build-plan-summary > button { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; margin-top: 4px; padding: 4px 0; color: var(--muted-foreground); font-size: 12px; }
+.build-plan-summary > button:hover { color: var(--foreground); }
+.build-plan-sync, .build-plan-historical { color: var(--muted-foreground); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.build-plan-historical { padding: 10px 12px; border-left: 2px solid var(--border); background: var(--quiet); }
+.build-plan-fold { min-width: 0; border-top: 1px solid var(--border); }
+.build-plan-fold > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 0; list-style: none; color: var(--muted-foreground); font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
+.build-plan-fold > summary::-webkit-details-marker { display: none; }
+.build-plan-fold > summary:hover { color: var(--foreground); }
+.build-plan-fold > summary > svg { flex-shrink: 0; transition: transform .15s ease; }
+.build-plan-fold[open] > summary > svg:first-child { transform: rotate(90deg); }
+.build-plan-fold > summary::after { content: "+"; flex-shrink: 0; margin-left: auto; color: var(--muted-foreground); font: 16px/1 var(--font-mono); }
+.build-plan-fold[open] > summary::after { content: "−"; }
+.build-plan-fold > summary:has(> svg)::after { content: none; }
+.build-plan-fold > :not(summary) { min-width: 0; margin-bottom: 12px; }
+.build-plan-fold > p { font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* --- 目标导航与执行步骤 --- */
+.build-plan-workspace { display: grid; grid-template-columns: 240px minmax(0, 1fr); align-items: start; gap: 24px; min-width: 0; padding-top: 4px; }
+.build-plan-nav { display: grid; align-content: start; gap: 4px; min-width: 0; }
+.build-plan-nav-label { padding: 0 10px 8px; color: var(--muted-foreground); font-size: 11px; font-weight: 500; }
+.build-plan-nav-item { display: flex; align-items: flex-start; gap: 8px; min-width: 0; width: 100%; min-height: 56px; padding: 10px; border: 1px solid transparent; border-radius: 5px; text-align: left; transition: background .12s, border-color .12s; }
+.build-plan-nav-item:hover { background: var(--quiet); }
+.build-plan-nav-item[aria-pressed="true"] { border-color: var(--border); background: var(--secondary); }
+.build-plan-nav-item > svg { flex-shrink: 0; margin-top: 2px; color: var(--muted-foreground); }
+.build-plan-nav-item > div, .build-plan-nav-item > span { min-width: 0; }
+.build-plan-nav-kind { display: block; margin-bottom: 4px; color: var(--muted-foreground); font-size: 10px; line-height: 1.5; }
+.build-plan-nav-name { display: block; color: var(--foreground); font: 12px/1.7 var(--font-mono); overflow-wrap: anywhere; }
+.build-plan-nav-meta { display: block; margin-top: 4px; color: var(--muted-foreground); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.build-plan-mobile-target { display: none; min-width: 0; }
+.build-plan-targets, .build-plan-targets > section { min-width: 0; }
+.build-plan-target-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; min-width: 0; padding: 0 0 16px; }
+.build-plan-target-header h3 { min-width: 0; font: 500 14px/1.6 var(--font-mono); overflow-wrap: anywhere; }
+.build-plan-target-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.build-plan-retained { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 8px; color: var(--muted-foreground); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.build-plan-section-label { margin: 16px 0 8px; color: var(--muted-foreground); font-size: 11px; font-weight: 500; }
+.build-plan-steps { display: grid; gap: 0; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.build-plan-step { min-width: 0; border-top: 1px solid var(--border); }
+.build-plan-step:last-child { border-bottom: 1px solid var(--border); }
+.build-plan-step > details { min-width: 0; }
+.build-plan-step-heading { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 52px; padding: 12px 0; list-style: none; }
+.build-plan-step-heading::-webkit-details-marker { display: none; }
+.build-plan-step-heading:hover .build-plan-step-title { color: var(--foreground); }
+.build-plan-step-number { display: inline-grid; place-items: center; flex-shrink: 0; min-width: 24px; height: 24px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted-foreground); font: 11px/1 var(--font-mono); }
+.build-plan-step-title { flex: 1; min-width: 0; font-size: 12px; font-weight: 500; line-height: 1.7; overflow-wrap: anywhere; }
+.build-plan-step-heading > .tag { flex-shrink: 0; }
+.build-plan-step-heading .status { font-size: 11px; }
+.build-plan-step-chevron { flex-shrink: 0; color: var(--muted-foreground); transition: transform .15s ease; }
+.build-plan-step details[open] > .build-plan-step-heading .build-plan-step-chevron { transform: rotate(90deg); }
+.build-plan-step-body { display: grid; gap: 16px; min-width: 0; padding: 0 0 20px 34px; }
+.build-plan-step-body > * { min-width: 0; }
+.build-plan-code { min-width: 0; max-width: 100%; border: 1px solid var(--border); border-radius: 5px; overflow: clip; background: var(--log-background); }
+.build-plan-code-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-height: 34px; padding: 2px 6px; border-bottom: 1px solid var(--border); color: var(--muted-foreground); font-size: 11px; }
+.build-plan-code-toolbar > :first-child:not(:last-child) { margin-right: auto; min-width: 0; overflow-wrap: anywhere; }
+.build-plan-code pre { min-width: 0; max-width: 100%; max-height: 360px; margin: 0; overflow: auto; overscroll-behavior: contain; padding: 12px 14px; color: var(--log-foreground); font: 12px/1.8 var(--font-mono); tab-size: 2; white-space: pre; overflow-wrap: normal; word-break: normal; }
+.build-plan-code pre:focus-visible { outline-offset: -3px; }
+.build-plan-code code { display: block; min-width: max-content; font: inherit; white-space: inherit; }
+
+/* --- OCI 参数与次级审计 --- */
+.build-plan-fields { display: grid; min-width: 0; margin: 0; gap: 0; }
+.build-plan-fields > div { display: grid; grid-template-columns: 144px minmax(0, 1fr); align-items: baseline; gap: 16px; min-width: 0; padding: 8px 0; }
+.build-plan-fields dt { color: var(--muted-foreground); font-size: 11px; overflow-wrap: anywhere; }
+.build-plan-fields dd { min-width: 0; margin: 0; font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.build-plan-fields dd code { font-size: 11px; }
+.build-plan-image { display: grid; gap: 16px; min-width: 0; }
+.build-plan-image > p { font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.build-plan-secondary { display: grid; gap: 0; min-width: 0; color: var(--muted-foreground); font-size: 12px; }
+.build-plan-secondary .build-plan-fold:first-child { margin-top: 0; }
+.build-plan-secondary .build-plan-code { margin-top: 8px; }
+.build-plan-secondary pre:not(.build-plan-code pre) { max-width: 100%; max-height: 360px; overflow: auto; padding: 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--quiet); font: 11px/1.8 var(--font-mono); white-space: pre; overflow-wrap: normal; }
+.build-plan-secondary ul { display: grid; gap: 8px; padding: 0; list-style: none; }
+.build-plan-secondary li { min-width: 0; line-height: 1.8; overflow-wrap: anywhere; }
+.build-plan-secondary code { font-size: 11px; overflow-wrap: anywhere; }
+.build-plan-empty { padding: 24px 0; color: var(--muted-foreground); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.build-detail :is(.build-detail-back, .build-detail-heading > a, summary, .target-button, .build-plan-nav-item):focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 4px; }
+
+@media (max-width: 1199px) {
+  .build-plan-header { gap: 10px 20px; }
+  .build-plan-stats { order: 3; flex-basis: 100%; }
+}
+@media (max-width: 1023px) {
+  .build-detail .build-layout, .build-plan-workspace { grid-template-columns: minmax(0, 1fr); }
+  .build-plan-workspace { gap: 16px; padding-top: 0; }
+  .build-plan-nav { display: none; }
+  .build-plan-mobile-target { display: grid; gap: 8px; }
+  .build-plan-mobile-target > label { color: var(--muted-foreground); font-size: 12px; }
+  .build-plan-mobile-target .select-trigger { min-height: 44px; }
+  .build-plan-revision .select-trigger { min-height: 44px; }
+}
+@media (max-width: 767px) {
+  .build-detail-back { min-height: 44px; margin-bottom: 8px; }
+  .build-detail-header { flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+  .build-detail-heading { gap: 6px 10px; }
+  .build-detail-heading h1 { font-size: 20px; }
+  .build-detail-heading > a { display: inline-flex; align-items: center; min-height: 44px; }
+  .build-detail-actions { width: 100%; }
+  .build-detail-meta { gap: 6px 16px; font-size: 11px; }
+  .build-detail-contract > summary { min-height: 44px; }
+  .build-detail-contract table { min-width: 560px; }
+  .build-detail .ui-tabs { gap: 20px; margin-bottom: 16px; }
+  .build-detail .build-layout { gap: 16px; }
+  .build-plan-header { align-items: flex-start; padding: 16px; }
+  .build-plan-heading { width: 100%; }
+  .build-plan-stats { order: 0; gap: 6px 12px; }
+  .build-plan-revision { width: 100%; margin: 0; }
+  .build-plan-revision .select-trigger { flex: 1; width: 100%; }
+  .build-plan-body { gap: 20px; padding: 16px; }
+  .build-plan-clarification { gap: 12px; padding: 12px; }
+  .build-plan-summary > button { min-height: 44px; }
+  .build-plan-target-header { gap: 8px; padding-bottom: 12px; }
+  .build-plan-target-header h3 { font-size: 13px; }
+  .build-plan-target-meta { width: 100%; }
+  .build-plan-step-heading { flex-wrap: wrap; column-gap: 8px; padding-block: 12px; }
+  .build-plan-step-title { flex-basis: calc(100% - 56px); }
+  .build-plan-step-heading > .tag { margin-left: 32px; }
+  .build-plan-step-body { gap: 12px; padding-left: 0; }
+  .build-plan-code-toolbar { min-height: 44px; }
+  .build-plan-code pre { max-height: 320px; padding: 12px; font-size: 11px; }
+  .build-plan-fields > div { grid-template-columns: 104px minmax(0, 1fr); gap: 12px; }
+}
+@media (pointer: coarse) {
+  .build-detail-actions [data-slot="button"], .build-plan-summary > button, .build-plan-revision .select-trigger { min-height: 44px; }
+  .build-plan-code-toolbar [data-slot="button"] { min-width: 44px; min-height: 44px; }
+}

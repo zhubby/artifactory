@@ -1,7 +1,7 @@
 # web/src/messages/
 > L2 | Parent: ../AGENTS.md
 
-en.json: 提供英文界面、规划实时反馈、消息摘要、设备目标约束与 Release 引导文案。
-zh-CN.json: 提供简体中文界面、规划实时反馈、消息摘要、设备目标约束与 Release 引导文案。
+en.json: 提供英文界面、构建方案与修订导航、规划统计、消息审计、设备约束与 Release 引导文案。
+zh-CN.json: 提供简体中文界面、构建方案与修订导航、规划统计、消息审计、设备约束与 Release 引导文案。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

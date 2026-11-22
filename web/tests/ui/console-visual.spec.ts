@@ -56,7 +56,7 @@ for (const locale of ["zh-CN", "en"] as const)
         [
           "build-detail",
           tenantURL("/projects/desktop-client/builds/128"),
-          "Desktop Client",
+          en ? "Build #128" : "构建 #128",
         ],
         [
           "artifacts",

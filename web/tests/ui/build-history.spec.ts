@@ -164,7 +164,7 @@ test("publication polls only while pending and leaves historical logs untouched"
   await page.clock.fastForward(3000);
   await expect.poll(() => details).toBe(2);
   expect(statuses).toEqual(["pending", "succeeded"]);
-  await expect(page.locator(".page-actions .status-succeeded")).toContainText("成功");
+  await expect(page.locator(".build-detail-heading .status-succeeded")).toContainText("成功");
   await page.clock.fastForward(65000);
   expect(details).toBe(2);
   expect(logs).toBe(1);

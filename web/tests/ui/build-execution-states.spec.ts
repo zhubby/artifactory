@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖真实构建详情、原生与镜像任务夹具及规划状态。
- * [OUTPUT]: 验证镜像执行日志入口和未生成任务、计划的终态说明。
+ * [OUTPUT]: 验证镜像日志及默认计划标签的终态说明。
  * [POS]: 执行页与计划页的阶段边界回归；不请求真实构建资源。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -17,7 +17,7 @@ async function snapshot(page: Page, value: unknown) {
   await page.route(`**/api/v1/builds/${build.id}/events`, route => route.fulfill({ contentType: "text/event-stream", body: `retry: 600000\nevent: snapshot\ndata: ${JSON.stringify(value)}\n\n` }));
   await page.route(`**/api/v1/builds/${build.id}/plans`, route => route.fulfill({ json: { plans: [], runs: [], events: [] } }));
   await page.goto(tenantURL(`/projects/${project.slug}/releases/${release.id}/builds/${build.number}`));
-  await expect(page.locator(".build-layout")).toBeVisible();
+  await expect(page.getByRole("heading",{name:"构建 #128",exact:true})).toBeVisible();
 }
 
 for (const status of ["running", "succeeded", "failed", "canceled"]) test(`image-only ${status} shows image execution and logs without a native node wait`, async ({ page }, info) => {
@@ -67,6 +67,7 @@ test("mixed builds switch between native logs and the selected image execution",
 
 for (const status of ["failed", "canceled"]) test(`${status} without jobs never shows native allocation or an unfinished planning hint`, async ({page}) => {
   await snapshot(page,{...build,status,jobs:[],error:status==="failed"?"Pi planning failed":null});
+  await expect(page.getByRole("tab",{name:"计划",exact:true})).toHaveAttribute("aria-selected","true");
   const execution = page.locator(".build-layout");
   await expect(execution.getByText(matching,{exact:true})).toHaveCount(0);
   await expect(execution.getByRole("heading",{name:"执行步骤",exact:true})).toHaveCount(0);
@@ -78,6 +79,7 @@ for (const status of ["failed", "canceled"]) test(`${status} without jobs never 
 
 for (const status of ["planning", "needs_input"]) test(`${status} without a plan retains its own next action`, async ({page}) => {
   await snapshot(page,{...build,status,jobs:[],clarification:status==="needs_input"?{question:"Which application?"}:null});
+  await expect(page.getByRole("tab",{name:"计划",exact:true})).toHaveAttribute("aria-selected","true");
   await page.getByRole("tab",{name:"计划",exact:true}).click();
   if(status==="needs_input") {
     await expect(page.getByText("Which application?",{exact:true})).toBeVisible();
