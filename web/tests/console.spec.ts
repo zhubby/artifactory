@@ -206,7 +206,7 @@ test("self-registration requires explicit tenant and project grants before artif
   await page.goto(buildURL(evidence.build_number));
   await page.getByRole("tab", { name: "制品", exact: true }).click();
   const downloading = page.waitForEvent("download");
-  await page.getByRole("link", { name: "下载 dist/app", exact: true }).click();
+  await page.getByRole("link", { name: "下载 app", exact: true }).click();
   expect(await (await downloading).failure()).toBeNull();
   const logout = await page.request.post("/api/v1/auth/logout", {
     headers: { "x-artifactory-csrf": "1" },
@@ -258,7 +258,7 @@ test("real console, native logs, artifact download and immutable release", async
   });
   await page.getByRole("tab", { name: "制品", exact: true }).click();
   const downloadEvent = page.waitForEvent("download");
-  await page.getByRole("link", { name: "下载 dist/app", exact: true }).click();
+  await page.getByRole("link", { name: "下载 app", exact: true }).click();
   const download = await downloadEvent;
   expect(await download.failure()).toBeNull();
   await page.goto(

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户下载 API、全局通知和带验签证据的制品类型。
- * [OUTPUT]: 提供状态、内容骨架、通知错误桥和制品验签表。
+ * [OUTPUT]: 提供状态、内容骨架、通知错误桥和只显示文件名的制品验签表。
  * [POS]: 业务页面复用的展示与反馈边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -270,10 +270,11 @@ export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
             </tr>
           </thead>
           <tbody>
-            {artifacts.map((artifact) => (
-              <tr key={artifact.id}>
+            {artifacts.map((artifact) => {
+              const filename = (artifact.delivery_filename || artifact.path).split(/[\\/]/).pop() || "—";
+              return <tr key={artifact.id}>
                 <td>
-                  <div className="font-medium break-all">{artifact.delivery_filename || artifact.path}</div>
+                  <div className="font-medium break-all">{filename}</div>
                   <div className="mt-1 font-mono text-xs text-muted-foreground">
                     {artifact.target}{artifact.release_version ? ` · ${artifact.release_version}` : ""}
                   </div>
@@ -329,15 +330,15 @@ export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
                           .catch((error) => setError(asError(error)));
                       }}
                       aria-label={t("artifacts.download", {
-                        path: artifact.delivery_filename || artifact.path,
+                        path: filename,
                       })}
                     >
                       <Download />
                     </a>
                   </Button>
                 </td>
-              </tr>
-            ))}
+              </tr>;
+            })}
           </tbody>
         </table>
       </div>

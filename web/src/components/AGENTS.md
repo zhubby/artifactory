@@ -13,7 +13,7 @@ planning-conversations.tsx: 按 generation 按需读取审计；本地化摘要�
 build-table.tsx: 展示构建的 Release 归属、独立源码与目标和执行状态。
 build-wizard.tsx: 组合四步弹窗、授权设备默认目标、答案草稿和最终确认提交。
 build-target-picker.tsx: 按项目授权设备禁选原生平台，高级设置遵守同一设备约束。
-common.tsx: 提供内容骨架、共享字段、持久状态、无布局错误通知桥及复制下载反馈。
+common.tsx: 提供内容骨架、共享字段、通知与下载反馈，制品表及下载名称只显示文件名。
 command-palette.tsx: 复用当前范围的业务与设置导航，支持项目切换并恢复触发焦点。
 console.tsx: 组合工作区数据、请求生命周期和业务页面，交由独立组件呈现导航。
 emissary-ota.tsx: 使用设备字段对齐节点版本和升级阶段，配置发布、升级目标与节点池策略。
