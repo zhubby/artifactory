@@ -17,6 +17,6 @@
 
 2026-11-21-release-build-decoupling-kubernetes.md: 记录版本解耦固定镜像、业务库切换、身份保留与真实表单验收。
 2026-11-21-guided-build-kubernetes.md: 记录四步构建引导的 Web 镜像、身份保留与三视口线上验收。
-2026-11-23-notification-center-kubernetes.md: 记录通知中心迁移、固定镜像、身份保留与六组真实页面验收。
+2026-11-23-notification-center-kubernetes.md: 记录通知中心迁移、权限文案修复、真实交互验收与测试数据清理。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md
