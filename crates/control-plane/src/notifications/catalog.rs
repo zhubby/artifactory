@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖白名单事件类型、状态与安全上下文。
-//! [OUTPUT]: 提供中英文通知文案与受限资源链接。
+//! [INPUT]: 依赖白名单事件类型、状态、成员角色与安全上下文。
+//! [OUTPUT]: 提供双语事件摘要、成员权限变化与受限资源链接。
 //! [POS]: 收件箱和外部通道共用的安全展示边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use serde::{Deserialize, Serialize};
@@ -102,6 +102,62 @@ pub(crate) fn resource_url(context: &Value) -> Option<String> {
             Some(format!("{tenant_base}/settings/{section}"))
         }
         _ => None,
+    }
+}
+
+fn member_permission_summary(payload: &Value) -> LocalizedText {
+    let (member_zh, member_en, access_zh, access_en) = match payload["scope"].as_str() {
+        Some("tenant") => (
+            "工作区成员",
+            "workspace member",
+            "工作区访问权限",
+            "Workspace access",
+        ),
+        Some("project") => (
+            "项目成员",
+            "project member",
+            "项目访问权限",
+            "Project access",
+        ),
+        _ => ("成员", "member", "访问权限", "Access"),
+    };
+    let role = match (payload["scope"].as_str(), payload["role"].as_str()) {
+        (Some("tenant"), Some("owner")) => Some(("所有者", "owner")),
+        (Some("tenant" | "project"), Some("admin")) => Some(("管理员", "administrator")),
+        (Some("tenant"), Some("member")) => Some(("普通成员", "member")),
+        (Some("project"), Some("operator")) => Some(("操作者", "operator")),
+        (Some("project"), Some("viewer")) => Some(("只读", "viewer")),
+        _ => None,
+    };
+    match payload["status"].as_str() {
+        Some("added") => match role {
+            Some((zh, en)) => text(
+                &format!("已添加{member_zh}，角色为{zh}。"),
+                &format!("A {member_en} was added with the {en} role."),
+            ),
+            None => text(
+                &format!("已添加{member_zh}。"),
+                &format!("A {member_en} was added."),
+            ),
+        },
+        Some("role_changed") => match role {
+            Some((zh, en)) => text(
+                &format!("{member_zh}角色已变更为{zh}。"),
+                &format!("A {member_en}'s role changed to {en}."),
+            ),
+            None => text(
+                &format!("{member_zh}角色已变更。"),
+                &format!("A {member_en}'s role changed."),
+            ),
+        },
+        Some("removed" | "revoked") => text(
+            &format!("{access_zh}已撤销。"),
+            &format!("{access_en} was revoked."),
+        ),
+        _ => text(
+            &format!("{member_zh}访问权限已变更。"),
+            &format!("Access permissions for a {member_en} changed."),
+        ),
     }
 }
 
@@ -223,6 +279,13 @@ pub fn render(event_type: &str, payload: &Value) -> (LocalizedText, LocalizedTex
             }
             _ => summary,
         };
+    } else if event_type == "permission.member.changed" {
+        summary = member_permission_summary(payload);
+    } else if event_type == "permission.resources.changed" {
+        summary = text(
+            "项目资源授权已变更，请检查可用资源。",
+            "Project resource permissions changed. Review the available resources.",
+        );
     } else if event_type == "credential.status.changed" {
         summary = match status {
             "resolved" => text(
@@ -303,6 +366,106 @@ pub fn render(event_type: &str, payload: &Value) -> (LocalizedText, LocalizedTex
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn permission_member_changes_describe_scope_and_allowlisted_role() {
+        for (scope, role, scope_zh, scope_en, role_zh, role_en) in [
+            ("tenant", "owner", "工作区", "workspace", "所有者", "owner"),
+            (
+                "tenant",
+                "admin",
+                "工作区",
+                "workspace",
+                "管理员",
+                "administrator",
+            ),
+            (
+                "tenant",
+                "member",
+                "工作区",
+                "workspace",
+                "普通成员",
+                "member",
+            ),
+            (
+                "project",
+                "admin",
+                "项目",
+                "project",
+                "管理员",
+                "administrator",
+            ),
+            (
+                "project",
+                "operator",
+                "项目",
+                "project",
+                "操作者",
+                "operator",
+            ),
+            ("project", "viewer", "项目", "project", "只读", "viewer"),
+        ] {
+            for (status, action_zh, action_en) in [
+                ("added", "添加", "added"),
+                ("role_changed", "变更", "changed"),
+            ] {
+                let (_, summary) = render(
+                    "permission.member.changed",
+                    &serde_json::json!({"status":status,"scope":scope,"role":role}),
+                );
+                assert!(summary.zh.contains(scope_zh), "{status}: {}", summary.zh);
+                assert!(summary.en.contains(scope_en), "{status}: {}", summary.en);
+                assert!(summary.zh.contains(role_zh), "{status}: {}", summary.zh);
+                assert!(summary.en.contains(role_en), "{status}: {}", summary.en);
+                assert!(summary.zh.contains(action_zh), "{status}: {}", summary.zh);
+                assert!(summary.en.contains(action_en), "{status}: {}", summary.en);
+                assert!(!summary.zh.contains("查看详情"));
+                assert!(!summary.en.contains("for details"));
+            }
+        }
+    }
+    #[test]
+    fn permission_removal_describes_revocation_without_private_context() {
+        for (scope, zh, en) in [
+            ("tenant", "工作区", "Workspace"),
+            ("project", "项目", "Project"),
+        ] {
+            let (_, summary) = render(
+                "permission.member.changed",
+                &serde_json::json!({"status":"removed","scope":scope,"role":"admin",
+                    "tenant_name":"private-workspace","project_name":"private-project",
+                    "subject_user_id":"private-user","url":"https://private.example/secret"}),
+            );
+            assert!(summary.zh.contains(zh));
+            assert!(summary.zh.contains("撤销"));
+            assert!(summary.en.contains(en));
+            assert!(summary.en.contains("revoked"));
+            assert!(!format!("{summary:?}").contains("private"));
+            assert!(!summary.zh.contains("管理员"));
+            assert!(!summary.en.contains("administrator"));
+        }
+    }
+    #[test]
+    fn permission_unknown_values_do_not_leak_or_promise_missing_details() {
+        for status in ["added", "role_changed", "removed", "secret-status"] {
+            let (_, summary) = render(
+                "permission.member.changed",
+                &serde_json::json!({"status":status,"scope":"secret-scope","role":"secret-role"}),
+            );
+            assert!(!format!("{summary:?}").contains("secret"));
+            assert!(!summary.zh.contains("查看详情"));
+            assert!(!summary.en.contains("for details"));
+        }
+    }
+    #[test]
+    fn permission_resource_change_identifies_project_authorization() {
+        let (_, summary) = render(
+            "permission.resources.changed",
+            &serde_json::json!({"status":"resources_changed","resources":"secret-resources"}),
+        );
+        assert!(summary.zh.contains("项目资源授权"));
+        assert!(summary.en.contains("Project resource permissions"));
+        assert!(!format!("{summary:?}").contains("secret-resources"));
+    }
     #[test]
     fn arbitrary_diagnostics_are_never_rendered() {
         let (a, b) = render(
