@@ -111,6 +111,7 @@
 - [设备详情 Kubernetes 上线记录 · 2026-11-21](releases/2026-11-21-device-detail-kubernetes.md)
 - [Release 与构建解耦 Kubernetes 上线记录 · 2026-11-21](releases/2026-11-21-release-build-decoupling-kubernetes.md)
 - [四步构建引导 Kubernetes 上线记录 · 2026-11-21](releases/2026-11-21-guided-build-kubernetes.md)
+- [通知中心 Kubernetes 上线记录 · 2026-11-23](releases/2026-11-23-notification-center-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)
 
