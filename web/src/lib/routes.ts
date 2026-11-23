@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户、项目 slug 和页面段。
- * [OUTPUT]: 提供项目、Release 与其构建路由及合法性校验。
+ * [OUTPUT]: 提供业务路由校验及严格限定的邮箱验证返回地址。
  * [POS]: 签名设置与业务页面的公开地址边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -62,6 +62,7 @@ export function validTenantRoute(segments: string[]) {
       "ai",
       "audit",
       "lifecycle",
+      "integrations",
     ].includes(segments[1]);
   if (segments[0] === "projects" && isSlug(segments[1])) {
     if (segments.length === 2) return true;
@@ -76,6 +77,7 @@ export function validTenantRoute(segments: string[]) {
         "resources",
         "signing",
         "lifecycle",
+        "integrations",
       ].includes(segments[3]);
     if (segments.length === 4 && segments[2] === "releases")
       return segments[3] === "new" || /^[0-9a-f-]{36}$/.test(segments[3]);
@@ -88,4 +90,18 @@ export function validTenantRoute(segments: string[]) {
     }
   }
   return false;
+}
+
+
+/** 邮箱验证只接受本站的两条确认路由和单个不透明令牌。 */
+export function notificationReturnTo(value:string|null|undefined):string|undefined {
+ if(!value || value.length>4096 || !value.startsWith("/") || value.startsWith("//") || /[\\\u0000-\u0020\u007f]/.test(value))return undefined;
+ try{
+  const url=new URL(value,"https://artifactory.invalid");
+  if(url.origin!=="https://artifactory.invalid" || url.hash || !["/notifications/verify","/notifications/email/verify"].includes(url.pathname))return undefined;
+  if([...url.searchParams.keys()].some(key=>key!=="token") || url.searchParams.getAll("token").length!==1)return undefined;
+  const token=url.searchParams.get("token");
+  if(!token || !/^[A-Za-z0-9_-]{1,512}$/.test(token))return undefined;
+  return `${url.pathname}?token=${encodeURIComponent(token)}`;
+ }catch{return undefined;}
 }

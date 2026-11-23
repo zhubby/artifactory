@@ -1,11 +1,12 @@
 /**
  * [INPUT]: 依赖账户、租户 API、共享幂等键、表单与通知。
- * [OUTPUT]: 提供租户卡片选择、创建与邀请页面。
+ * [OUTPUT]: 提供租户卡片选择、创建、邀请和账户铃铛。
  * [POS]: 登录后的工作区入口；首次读取使用卡片骨架，失败提供重试。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
+import { NotificationBell } from "@/components/notification-center";
 import { Link } from "@/lib/tenant";
 import { useAccount } from "@/components/account";
 import { BrandMark } from "@/components/brand-mark";
@@ -56,7 +57,7 @@ export function TenantChooser() {
           </span>
           Artifactory
         </Link>
-        <a href="/docs">{t("navigation.docs")} ↗</a>
+        <div className="hall-notification-tools"><a href="/docs">{t("navigation.docs")} ↗</a>{account.data && <NotificationBell />}</div>
       </header>
       <main className="hall-main">
         <div className="hall-heading">

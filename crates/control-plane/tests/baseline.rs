@@ -7,7 +7,10 @@ use artifactory_control_plane::store::MIGRATIONS;
 #[test]
 fn new_baseline_has_a_distinct_identity() {
     let versions: Vec<_> = MIGRATIONS.migrations().iter().map(|m| m.id()).collect();
-    assert_eq!(versions, vec![2026112101, 2026112201]);
+    assert_eq!(
+        versions,
+        vec![2026112101, 2026112201, 2026112301, 2026112302, 2026112303]
+    );
 }
 
 #[tokio::test]

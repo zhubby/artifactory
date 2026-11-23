@@ -19,4 +19,8 @@ images.rs: 隔离构建与发布日志，仅分发已发布版本的固定标签
 artifact_gateway.rs: 将加密票据转换为网关内部对象 URL 与固定交付文件名。
 registry_guard.rs: 复核网关身份、仓库 JWT 与冻结租约，授权单次正式 Manifest。
 
+notification_channels.rs: 提供个人邮件验证、退订与管理员 Webhook 诊断接口。
+notifications.rs: 提供账户收件箱、完整筛选范围、版本安全已读和 SSE 失效信号。
+notification_health.rs: 提供租户管理员健康摘要和无身份标签的 Prometheus 指标。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

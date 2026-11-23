@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户 HTTP 处理器、统一鉴权和请求限制。
-//! [OUTPUT]: 组合含设备改名的业务路由及规划运行时。
+//! [OUTPUT]: 组合业务、账户通知、渠道运维和规划运行时路由。
 //! [POS]: 控制平面 HTTP 接口入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub(crate) mod ai_management;
@@ -10,6 +10,9 @@ mod emissary_updates;
 mod images;
 mod lifecycle;
 mod management;
+mod notification_channels;
+mod notification_health;
+mod notifications;
 mod projects;
 mod registry_guard;
 mod releases;
@@ -37,6 +40,18 @@ pub fn mount_planning(
 
 pub fn router(state: AppState) -> Router {
     health_routes()
+        .nest(
+            "/api/v1",
+            notifications::routes().merge(notification_channels::routes()),
+        )
+        .route(
+            "/api/v1/tenant/notification-health",
+            get(notification_health::health),
+        )
+        .route(
+            "/api/v1/tenant/notification-metrics",
+            get(notification_health::metrics),
+        )
         .route("/api/v1/tenants", get(tenants::list).post(tenants::create))
         .route("/api/v1/tenants/{slug}", get(tenants::resolve))
         .route("/api/v1/projects/by-slug/{slug}", get(projects::resolve))

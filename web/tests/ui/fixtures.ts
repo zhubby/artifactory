@@ -19,7 +19,7 @@ const created = "2026-11-10T08:30:00Z";
 export const tenantId = "11111111-1111-4111-8111-111111111111";
 export const tenantSlug = "build-team";
 export const tenantURL = (path: string, tenant = tenantSlug) =>
-  /^\/(?:login|register|tenants|join|docs)(?:\/|\?|$)/.test(path)
+  /^\/(?:login|register|tenants|join|docs|notifications)(?:\/|\?|$)/.test(path)
     ? path
     : `/tenants/${tenant}${path === "/" ? "" : path}`;
 export const artifact: Artifact = {
@@ -306,7 +306,7 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
     const request = route.request();
     const path = new URL(request.url()).pathname.slice("/api/v1".length);
     if (
-      !/^\/(auth|tenants|invitations|operations)(\/|$)/.test(path) &&
+      !/^\/(auth|tenants|invitations|operations|notifications)(\/|$)/.test(path) &&
       !request.headers()["x-artifactory-tenant"]
     )
       return route.fulfill({
@@ -320,6 +320,7 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
         json: { error: "UI fixtures do not accept writes" },
       });
     }
+    if (path === "/notifications/events") return route.fulfill({contentType:"text/event-stream",body:"retry: 600000\n\n"});
     if (path.endsWith("/events")) {
       events.streams++;
       return route.fulfill({
@@ -330,6 +331,13 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
     const responses: Record<string, unknown> = {
       "/auth/config": { registration_enabled: true },
       "/auth/me": { id: "user-main", username: "alex", display_name: "Alex" },
+      "/notifications": {items:[],next_cursor:null,watermark:0,unread_count:0,needs_action_count:0},
+      "/notifications/scopes": {tenants:[{id:tenantId,name:"Build Team",slug:tenantSlug}],projects:[{id:project.id,name:project.name,slug:project.slug,tenant_id:tenantId}]},
+      "/notifications/summary": {watermark:0,unread_count:0,needs_action_count:0},
+      "/notifications/preferences": {in_app:{},email:{},locale:"zh-CN",email_address:null,email_verified:false,email_available:true},
+      "/tenant/notification-webhooks": [],
+      [`/projects/${project.id}/notification-webhooks`]: [],
+      [`/projects/${project.id}/notification-subscription`]: {following:false},
       "/operations": [],
       "/tenant/lifecycle": {
         projects: 1,

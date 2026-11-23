@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖环境变量、私有签名密钥环与服务地址校验。
-//! [OUTPUT]: 提供服务启动设置与资源预算。
+//! [INPUT]: 依赖环境变量、私有签名密钥环、SMTP 与出口地址校验。
+//! [OUTPUT]: 提供服务启动设置、通知渠道配置与资源预算。
 //! [POS]: 部署配置进入业务进程的唯一转换边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
@@ -26,6 +26,85 @@ pub struct Settings {
     pub s3_secret_key: String,
     pub telemetry: Option<TelemetrySettings>,
     pub control: ControlLimits,
+    pub notifications: NotificationSettings,
+}
+
+/// 平台邮件配置与 Webhook 出口边界；用户订阅默认关闭。
+#[derive(Clone, Default)]
+pub struct NotificationSettings {
+    pub smtp: Option<SmtpSettings>,
+    pub webhook_private_allowlist: Vec<ipnet::IpNet>,
+}
+#[derive(Clone)]
+pub struct SmtpSettings {
+    pub host: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub from: String,
+    pub starttls: bool,
+}
+impl NotificationSettings {
+    fn from_env() -> Result<Self> {
+        let smtp = match env::var("ARTIFACTORY_SMTP_HOST")
+            .ok()
+            .filter(|v| !v.is_empty())
+        {
+            None => None,
+            Some(host) => {
+                ensure!(
+                    !host.contains('/')
+                        && !host.contains('@')
+                        && !host.chars().any(char::is_whitespace),
+                    "invalid SMTP host"
+                );
+                let from = env::var("ARTIFACTORY_SMTP_FROM")
+                    .context("ARTIFACTORY_SMTP_FROM is required")?;
+                from.parse::<lettre::message::Mailbox>()
+                    .context("invalid SMTP sender")?;
+                let starttls = env::var("ARTIFACTORY_SMTP_STARTTLS")
+                    .unwrap_or_else(|_| "false".into())
+                    .parse::<bool>()
+                    .context("invalid SMTP STARTTLS setting")?;
+                let port = env::var("ARTIFACTORY_SMTP_PORT")
+                    .ok()
+                    .filter(|v| !v.is_empty())
+                    .unwrap_or_else(|| if starttls { "587" } else { "465" }.into())
+                    .parse::<u16>()
+                    .context("invalid SMTP port")?;
+                ensure!(port > 0, "invalid SMTP port");
+                let username = env::var("ARTIFACTORY_SMTP_USERNAME")
+                    .ok()
+                    .filter(|v| !v.is_empty());
+                let password = env::var("ARTIFACTORY_SMTP_PASSWORD")
+                    .ok()
+                    .filter(|v| !v.is_empty());
+                ensure!(
+                    username.is_some() == password.is_some(),
+                    "SMTP username and password must be configured together"
+                );
+                Some(SmtpSettings {
+                    host,
+                    port,
+                    username,
+                    password,
+                    from,
+                    starttls,
+                })
+            }
+        };
+        let webhook_private_allowlist = env::var("ARTIFACTORY_WEBHOOK_PRIVATE_ALLOWLIST")
+            .unwrap_or_default()
+            .split(',')
+            .filter(|v| !v.trim().is_empty())
+            .map(|v| v.trim().parse::<ipnet::IpNet>())
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .context("invalid webhook private allowlist")?;
+        Ok(Self {
+            smtp,
+            webhook_private_allowlist,
+        })
+    }
 }
 
 /// Per-replica resource budgets; database capacity must cover their aggregate.
@@ -131,6 +210,7 @@ impl Settings {
         })?;
         Ok(Self {
             control: ControlLimits::from_env()?,
+            notifications: NotificationSettings::from_env()?,
             telemetry,
             database_url: required("DATABASE_URL")?,
             http_bind: env::var("ARTIFACTORY_HTTP_BIND")

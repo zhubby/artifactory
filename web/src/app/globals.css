@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 Tailwind、业务、设备和构建详情样式、下拉、顶部进度与通知样式。
+ * [INPUT]: 依赖 Tailwind、业务、设备和构建详情样式、下拉、顶部进度、临时提示与通知中心样式。
  * [OUTPUT]: 提供全局字体、主题映射、下拉浮层、加载反馈和系统动效适配。
  * [POS]: 由根布局加载的控制台样式入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -14,6 +14,7 @@
 @import "../styles/wizard.css";
 @import "../styles/notifications.css";
 @import "../styles/progress.css";
+@import "../styles/notification-center.css";
 
 @theme inline {
   --color-background: var(--background);

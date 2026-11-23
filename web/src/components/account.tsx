@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖账户 API、统一表单通知、Radix 弹窗和未保存保护。
  * [OUTPUT]: 提供 AccountProvider 与 useAccount。
- * [POS]: 统一个人设置入口，分区配置资料、安全和偏好。保留业务页面状态；退出错误桥独立于菜单开关。
+ * [POS]: 统一个人设置入口，分区配置资料、安全、偏好和通知。保留业务页面状态；退出错误桥独立于菜单开关。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   X,
+  Bell,
 } from "lucide-react";
 import { useRemote, mutation } from "@/lib/api";
 import type { Account } from "@/lib/types";
@@ -35,6 +36,8 @@ import { UnsavedChanges, confirmLeave } from "@/lib/unsaved";
 import { tenantFromPath } from "@/lib/routes";
 import { asError } from "@/lib/errors";
 import { isNotificationTarget, notify } from "@/lib/notify";
+import { NotificationProvider } from "@/components/notification-provider";
+import { NotificationSettings } from "@/components/notification-settings";
 import { NotificationFocusBranch } from "@/components/notifications";
 
 const Context = createContext<ReturnType<typeof useRemote<Account>> | null>(
@@ -48,13 +51,16 @@ export function useAccount() {
 export function AccountProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const account = useRemote<Account>(
-    /^\/(tenants|join)(\/|$)/.test(pathname) ? "/auth/me" : null,
+    /^\/(tenants|join|notifications)(\/|$)/.test(pathname) &&
+    !/^\/notifications\/(verify|unsubscribe|email)(\/|$)/.test(pathname)
+      ? "/auth/me"
+      : null,
     60000,
   );
   return (
     <Context.Provider value={account}>
       <UnsavedChanges />
-      {children}
+      <NotificationProvider>{children}</NotificationProvider>
       {account.data && (
         <AccountMenu account={account.data} update={account.setData} />
       )}
@@ -80,6 +86,7 @@ function AccountMenu({
     { id: "profile", icon: UserRound },
     { id: "security", icon: ShieldCheck },
     { id: "preferences", icon: SlidersHorizontal },
+    { id: "notifications", icon: Bell },
   ];
   function open() {
     setSection("profile");
@@ -342,7 +349,7 @@ function AccountMenu({
                     />
                   </Field>
                 </SubmitForm>
-              ) : (
+              ) : section === "notifications" ? <NotificationSettings /> : (
                 <div>
                   <h3 className="mb-3 text-lg">{t("account.preferences")}</h3>
                   <p className="mb-7 text-sm text-muted-foreground">

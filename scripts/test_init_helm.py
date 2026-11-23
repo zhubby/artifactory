@@ -20,6 +20,20 @@ SCRIPT = Path(__file__).with_name("init-helm.py")
 
 class HelmBootstrapTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_notification_smtp_secret_and_private_allowlist_are_explicit(self):
+        chart = str(SCRIPT.parents[1] / 'charts/artifactory')
+        base = ['helm', 'template', 'notifications', chart, '--kube-version', '1.28.3']
+        default = subprocess.run(base, check=True, capture_output=True, text=True).stdout
+        self.assertIn('ARTIFACTORY_WEBHOOK_PRIVATE_ALLOWLIST, value: ""', default)
+        configured = subprocess.run(base + [
+            '--set', 'notifications.smtpSecretName=platform-smtp',
+            '--set', 'notifications.webhookPrivateAllowlist=10.42.0.0/24',
+        ], check=True, capture_output=True, text=True).stdout
+        self.assertIn('name: "platform-smtp"', configured)
+        self.assertIn('ARTIFACTORY_WEBHOOK_PRIVATE_ALLOWLIST, value: "10.42.0.0/24"', configured)
+        self.assertNotIn('ARTIFACTORY_SMTP_PASSWORD:', configured)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_image_default_pool_and_readonly_pool_lookup_are_independent_from_native_pools(self):
         chart = SCRIPT.parents[1] / 'charts/artifactory'
         rendered = subprocess.run(['helm', 'template', 'images', str(chart), '--set',

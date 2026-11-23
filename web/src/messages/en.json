@@ -910,7 +910,8 @@
     "readOnly": "New work is restricted in this space. History and downloads remain available. Accepted tasks can finish or be canceled separately.",
     "adminRequired": "Administrator access is required.",
     "unsaved": "You have unsaved changes. Leave without saving?",
-    "section_signing": "Application signing"
+    "section_signing": "Application signing",
+    "settingsIntegrations": "Notification integrations"
   },
   "account": {
     "menu": "Personal menu",
@@ -928,7 +929,8 @@
     "newPassword": "New password",
     "confirmPassword": "Confirm new password",
     "passwordMismatch": "The new passwords do not match.",
-    "passwordNotice": "Use a password of 12–256 bytes. Changing it signs you out of every session."
+    "passwordNotice": "Use a password of 12–256 bytes. Changing it signs you out of every session.",
+    "notifications": "Notifications"
   },
   "lifecycle": {
     "title": "Workspace lifecycle",

@@ -1,5 +1,5 @@
 # [INPUT]: 服务镜像、私有凭据引用、节点预算和入口地址。
-# [OUTPUT]: Control、独立镜像默认池、统一 Pingora 和存储参数。
+# [OUTPUT]: Control、通知出口、镜像默认池、统一 Pingora 和存储参数。
 # [POS]: 只声明部署配置，持久 Secret 由初始化脚本生成。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 fullnameOverride: ""
@@ -47,6 +47,11 @@ controlPlane:
   temporaryStorage: 10Gi
   # Optional ConfigMap containing emissary-releases.json; mounted on every replica.
   releaseSourceConfigMap: ""
+# SMTP secret keys are ARTIFACTORY_SMTP_HOST/FROM/PORT/STARTTLS/USERNAME/PASSWORD.
+notifications:
+  smtpSecretName: ""
+  webhookPrivateAllowlist: "" # Deployment-controlled CIDRs, comma-separated.
+
 postgres:
   enabled: true
   maxConnections: 100

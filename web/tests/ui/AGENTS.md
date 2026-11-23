@@ -41,4 +41,8 @@ tenant-chooser.spec.ts: 验证租户卡片、HTTP 创建入口、幂等重试、
 tenancy.spec.ts: 验证租户与项目权限界面。
 workspace-hierarchy.spec.ts: 验证作用域侧栏、顶栏租户切换、设置别名、权限边界、草稿保护与生命周期。
 
+notification-center.spec.ts: 验证账户独立请求、修订收据、水位已读、邮箱确认与响应式收件箱。
+
+notification-followup.spec.ts: 验证完整范围、实时阅读窗口、停用渠道偏好、邮箱登录返回、跳转白名单及 WCAG AA。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

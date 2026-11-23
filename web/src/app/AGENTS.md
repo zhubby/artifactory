@@ -20,4 +20,6 @@ login/: 见 login/AGENTS.md。
 register/: 见 register/AGENTS.md。
 tenants/: 见 tenants/AGENTS.md。
 
+notifications/: 提供账户收件箱、显式邮箱验证与退订路由。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

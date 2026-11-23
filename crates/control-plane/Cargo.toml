@@ -54,6 +54,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls", "ring", "rustls-native-certs"] }
+ipnet = "2"
+hmac = "0.12"
+
 [dev-dependencies]
 artifactory-planning-operator = { path = "../../operators/planning-operator" }
 artifactory-image-operator = { path = "../../operators/image-operator" }

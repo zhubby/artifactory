@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖租户作用域、CSRF 边界、前台进度与 React 生命周期。
+ * [INPUT]: 依赖账户与租户作用域、邮箱返回地址校验、CSRF 和前台进度。
  * [OUTPUT]: 提供带进度的请求、变更、附件下载及静默轮询和显式重试的 useRemote。
  * [POS]: 控制台远端数据的请求与取消边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -14,7 +14,7 @@ import {
   type SetStateAction,
 } from "react";
 import { assertTenant, currentTenant, tenantHeaders } from "@/lib/tenant";
-import { projectFromPath } from "@/lib/routes";
+import { projectFromPath, notificationReturnTo } from "@/lib/routes";
 import { asError, LocalizedError, sameError } from "@/lib/errors";
 import { beginProgress } from "@/lib/progress";
 
@@ -38,7 +38,7 @@ export async function api<Type>(
   format: "json" | "attachment" = "json",
 ): Promise<Type> {
   const tenant = currentTenant();
-  const independent = /^\/(?:auth|tenants|invitations|operations)(?:\/|$)/.test(
+  const independent = /^\/(?:auth|tenants|invitations|operations|notifications)(?:\/|\?|$)/.test(
     path,
   );
   const scope = currentScope();
@@ -93,7 +93,10 @@ export async function api<Type>(
         typeof window !== "undefined"
       ) {
         if (!window.location.pathname.startsWith("/join/"))
-          window.location.replace("/login");
+          {
+            const returnTo=notificationReturnTo(window.location.pathname+window.location.search);
+            window.location.replace(returnTo?`/login?returnTo=${encodeURIComponent(returnTo)}`:"/login");
+          }
       }
       if (body?.code === "tenant_required" && typeof window !== "undefined")
         window.location.replace("/tenants");

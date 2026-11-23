@@ -11,7 +11,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 # web/
 > L2 | Parent: ../AGENTS.md
 
-src/: 提供租户控制台、签名配置和公开数据边界。
+src/: 提供租户控制台、账户收件箱、外部通知配置和公开数据边界。
 scripts/: 构建与检查嵌入式文档。
 tests/: 验证控制台、签名流程与文档页面。
 public/: 保存静态品牌资源及生成的文档。

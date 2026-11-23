@@ -78,8 +78,8 @@ test("tenant and project business sidebars expose only their own scope", async (
 test("settings reuse the sidebar with canonical groups and alias selection", async ({ page }) => {
   test.setTimeout(120000);
   const events = await fixtureAPI(page);
-  const tenantSections = ["general", "members", "ai", "emissary", "signing", "tokens", "credentials", "audit", "lifecycle"];
-  const projectSections = ["general", "members", "resources", "signing", "lifecycle"];
+  const tenantSections = ["general", "members", "ai", "emissary", "integrations", "signing", "tokens", "credentials", "audit", "lifecycle"];
+  const projectSections = ["general", "members", "resources", "signing", "integrations", "lifecycle"];
   for (const [scope, sections] of [["", tenantSections], ["/projects/desktop-client", projectSections]] as const) {
     const aliases = scope ? [] : [["security", "tokens"], ["resources", "ai"]];
     for (const [section, canonical] of [["", "general"], ...sections.map(value => [value, value]), ...aliases]) {
@@ -277,6 +277,7 @@ test("personal overlay preserves business drafts while profile writes are accoun
     "个人信息",
     "安全",
     "偏好",
+    "通知",
   ]);
   await expect(
     sections.getByRole("button", { name: "个人信息", exact: true }),

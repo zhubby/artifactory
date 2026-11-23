@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户、项目和业务状态。
-//! [OUTPUT]: 首次创建管理员，启动业务、规划运行时与调度服务。
+//! [OUTPUT]: 首次创建管理员，启动业务、规划、通知与调度服务。
 //! [POS]: 控制平面启动边界；已有账号不受初始密码配置影响。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
@@ -73,6 +73,7 @@ async fn main() -> Result<()> {
         connections: Arc::new(RwLock::new(HashMap::new())),
     };
     scheduler::start(state.clone());
+    artifactory_control_plane::notifications::start(state.clone());
     artifactory_control_plane::images::start(state.clone())?;
     let coordinator = if std::env::var_os("ARTIFACTORY_PLANNING_URL").is_some() {
         let database_url =

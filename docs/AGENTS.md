@@ -28,6 +28,7 @@ local-macmini-acceptance-2026-11-11.md: 记录本机和 Mac mini 的验收。
 module-layout.md: 定义模块命名和依赖边界。
 multitenancy.md: 定义租户权限和设备共享边界。
 node-placement.md: 定义节点识别、网络诊断、能力查询与 AI 选机。
+notifications.md: 定义跨租户收件、事务事件、渠道订阅、验签与通知运维。
 operations.md: 定义初始账号、部署、兼容追加迁移、备份和故障恢复。
 operator-operations.md: 定义临时源码、池级出口代理、内部直连和任务收尾。
 protocol.md: 定义 Emissary 会话、完整心跳预算和状态迁移。

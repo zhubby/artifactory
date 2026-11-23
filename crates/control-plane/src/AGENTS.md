@@ -13,8 +13,9 @@ grpc.rs: 共用名称与完整心跳预算校验，认证节点会话并接收�
 grpc_tests.rs: 验证完整 hello 的组合预算、重连与超额拒绝。
 lib.rs: 导出控制平面模块与协议。
 lifecycle.rs: 按游标执行工作区清理并清扫镜像日志前缀。
-main.rs: 首次创建默认管理员，启动 HTTP、gRPC、内嵌规划运行时和后台协调。
+main.rs: 首次创建默认管理员，启动 HTTP、gRPC、规划运行时、通知和后台协调。
 node_query.rs: 按项目授权查询节点能力和资源。
+notifications/: 投影事务事件，隔离邮件与 Webhook 投递，扫描持久异常。
 ota.rs: 校验节点升级包并协调升级状态。
 pki.rs: 创建服务和设备证书。
 planning.rs: 按冻结镜像默认池补全计划，复验本次构建的完整目标合同。

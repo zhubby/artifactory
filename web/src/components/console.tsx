@@ -22,6 +22,8 @@ import {
   X,
   GitBranch,
 } from "lucide-react";
+import { NotificationBell } from "@/components/notification-center";
+import { ProjectNotificationFollow } from "@/components/notification-settings";
 import { useUI } from "@/components/providers";
 import { useAccount } from "@/components/account";
 import { WorkspaceSidebar, WorkspaceBreadcrumb } from "@/components/workspace-navigation";
@@ -213,6 +215,7 @@ function Workspace({
           />
           <div className="workspace-tools">
             {user && <CommandPalette tenantName={context.data?.tenant.name} projects={projects.data || []} project={project} user={user} readOnly={readOnly || (!!project && project.status !== "active")} />}
+            {user && <NotificationBell />}
             <div id="workspace-page-actions" />
           </div>
         </header>
@@ -505,6 +508,7 @@ function ProjectWorkspace({
           column === "overview" ? project.repository_url : project.name
         }
       >
+        {column === "overview" && <ProjectNotificationFollow projectId={project.id} />}
         {!readOnly &&
           project.effective_role !== "viewer" &&
           ["overview", "releases"].includes(column) && (

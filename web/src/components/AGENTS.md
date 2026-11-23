@@ -1,7 +1,7 @@
 # web/src/components/
 > L2 | Parent: ../AGENTS.md
 
-account.tsx: 提供个人设置和跨导航操作通知，保存反馈不占面板布局。
+account.tsx: 提供个人通知设置、持久通知上下文和跨导航操作通知，保存反馈不占面板布局。
 ai-settings.tsx: 使用共享下拉配置任意模型、调用预算与独立接口兼容字段。
 auth-shell.tsx: 渲染认证页面布局。
 brand-mark.tsx: 渲染 Artifactory 品牌标记。
@@ -49,5 +49,10 @@ ui/: 提供统一基础控件。
 image-builds.tsx: 只读展示镜像候选与增量平台日志，后台轮询和终态补读静默，正式分发从 Release 发起。
 image-catalog.tsx: 按项目查询正式镜像、所属版本与来源构建，复制摘要拉取引用。
 image-credentials.tsx: 配置项目仓库凭据与 BuildKit Secret 引用。
+
+notification-provider.tsx: 在账户边界维护单 SSE 连接，合并失效并静默补读摘要。
+notification-center.tsx: 查询完整授权范围，后台重验原阅读窗口，列表与记录保留分页和滚动。
+notification-settings.tsx: 配置站内偏好、可编辑邮箱主动订阅与项目关注，保留停用渠道的原偏好。
+notification-webhooks.tsx: 在管理员设置配置端点、一次密钥、测试与投递重试。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

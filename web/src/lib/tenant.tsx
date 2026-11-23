@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖工作区 URL、Next 导航状态、未保存保护和前台进度计数。
- * [OUTPUT]: 提供租户请求头、作用域链接与带加载反馈的路由操作。
+ * [OUTPUT]: 提供租户请求头、账户与租户链接与带加载反馈的路由操作。
  * [POS]: 连接工作区地址、授权请求与导航生命周期。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -24,7 +24,7 @@ export function tenantPath(path: string, tenant = currentTenant()) {
   if (
     !tenant ||
     !path.startsWith("/") ||
-    /^\/(?:tenants|join|login|register|api|docs)(?:\/|\?|$)/.test(path)
+    /^\/(?:tenants|join|login|register|api|docs|notifications)(?:\/|\?|$)/.test(path)
   )
     return path;
   return `/tenants/${tenant}${path === "/" ? "" : path}`;

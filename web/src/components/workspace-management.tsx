@@ -1,10 +1,11 @@
 /**
- * [INPUT]: 依赖统一设置导航、项目 API 与签名配置。
+ * [INPUT]: 依赖统一设置导航、项目 API、Webhook 与签名配置。
  * [OUTPUT]: 提供 WorkspaceManagement 工作区设置。
  * [POS]: 渲染当前设置内容，侧栏独立提供分区导航。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
+import { NotificationWebhooks } from "@/components/notification-webhooks";
 import { useState } from "react";
 import { useUI } from "@/components/providers";
 import { useRemote, mutation } from "@/lib/api";
@@ -83,6 +84,8 @@ export function WorkspaceManagement({
     );
   else if (!admin && !(!project && section === "tokens"))
     content = <p className="notice">{t("workspace.adminRequired")}</p>;
+  else if (section === "integrations")
+    content = <fieldset disabled={readOnly}><NotificationWebhooks projectId={project?.id} /></fieldset>;
   else if (section === "lifecycle")
     content = (
       <LifecycleSettings

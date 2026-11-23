@@ -910,7 +910,8 @@
     "readOnly": "当前空间已限制新增操作。历史记录与下载仍可访问，已接受的任务可继续完成或单独取消。",
     "adminRequired": "此页面需要管理员权限。",
     "unsaved": "你有尚未保存的修改，确定离开吗？",
-    "section_signing": "应用签名"
+    "section_signing": "应用签名",
+    "settingsIntegrations": "通知集成"
   },
   "account": {
     "menu": "个人菜单",
@@ -928,7 +929,8 @@
     "newPassword": "新密码",
     "confirmPassword": "再次输入新密码",
     "passwordMismatch": "两次输入的新密码不一致。",
-    "passwordNotice": "使用 12–256 字节的新密码。修改成功后，所有已登录会话都会退出。"
+    "passwordNotice": "使用 12–256 字节的新密码。修改成功后，所有已登录会话都会退出。",
+    "notifications": "通知"
   },
   "lifecycle": {
     "title": "空间生命周期",

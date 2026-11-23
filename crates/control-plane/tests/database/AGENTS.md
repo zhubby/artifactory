@@ -27,4 +27,9 @@ image_pool_admission.rs: 验证查池不占行锁、缺池无 Job、403/503 无�
 image_regressions.rs: 验证终态材料回收、失败摘要、发布失败分类与日志隔离和发布快照。
 image_completion.rs: 验证候选提交与失败诊断的 UID、spec 和 generation 围栏。
 
+notification_channels.rs: 验证邮箱单次令牌、订阅重置、绑定代数与撤权取消。
+notifications.rs: 验证聚合版本、账户水位、完整范围与读取权限。
+notification_followup.rs: 验证取消项目关注后静默关闭已有待处理事项。
+notification_events.rs: 验证真实业务触发器、异常恢复、事务回滚和健康查询。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

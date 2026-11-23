@@ -135,7 +135,9 @@ curl --fail-with-body -X POST 'https://build.example.com/api/v1/projects/PROJECT
 
 生命周期状态、清理顺序和管理页面见[工作台](workspaces.md)。操作记录与目标业务行独立保存，状态为 waiting/running/succeeded/failed/canceled；等待阶段可取消，实际清理开始后只能查询或重试。归档保持查询下载，禁止新增业务写入。
 
-当前列表为内部小团队规模的有界查询，并未提供全量导出、复杂分页或外部商店发布 API；Webhook 和 OIDC 尚未实现。
+账户级通知、邮件验证、项目关注及管理员 Webhook API 见[通知中心](notifications.md#http-接口)。通知个人接口不要求当前租户头，仍校验会话及写请求 CSRF。
+
+当前业务列表为内部小团队规模的有界查询，并未提供全量导出或外部商店发布 API；OIDC 尚未实现。
 
 OCI 客户端通过公开网关的 `/v2/` 访问内建仓库。Registry Token realm 为 `/api/v1/registry/token`，使用 HTTP Basic 携带平台 API Token 或执行专属短期身份，不使用浏览器 Cookie。返回的仓库 JWT 有效期为 60 秒，scope 严格约束租户、项目和仓库。普通 API Token 对正式仓只读；平台发布 JWT 额外绑定 Release 与发布租约代次。构建回执与 publication 接口只接受执行专属 Bearer Token。部署与取消边界见 [镜像构建与网关](image-builds.md)。
 

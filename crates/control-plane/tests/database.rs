@@ -28,6 +28,12 @@ mod fixture;
 mod image_pool_admission;
 #[path = "database/images.rs"]
 mod images;
+#[path = "database/notification_channels.rs"]
+mod notification_channels;
+#[path = "database/notification_events.rs"]
+mod notification_events;
+#[path = "database/notifications.rs"]
+mod notifications;
 #[path = "database/planning_basics.rs"]
 mod planning_basics;
 #[path = "database/planning_bridge.rs"]

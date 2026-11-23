@@ -87,6 +87,7 @@ async fn storage_error_probe_helper() {
         let server = tokio::spawn(serve_fault(listener, operation, fault));
         let directory = tempfile::tempdir().unwrap();
         let storage = Storage::new(&Settings {
+            notifications: Default::default(),
             control: Default::default(),
             database_url: "unused".into(),
             http_bind: "unused".into(),

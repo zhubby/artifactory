@@ -1,13 +1,13 @@
 /**
  * [INPUT]: 依赖项目权限、项目路由和 Lucide 图标。
- * [OUTPUT]: 提供工作区导航、设置分组与规范分区判断。
+ * [OUTPUT]: 提供工作区导航、通知集成设置和规范分区判断。
  * [POS]: 统一侧栏、设置内容与命令面板的导航契约。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import {
   Archive, BookOpen, Cpu, FileClock, FolderKanban, KeyRound,
   LayoutDashboard, Settings, ShieldCheck, SlidersHorizontal,
-  Sparkles, Users, Workflow, type LucideIcon,
+  Sparkles, Users, Workflow, Webhook, type LucideIcon,
 } from "lucide-react";
 import { projectPath } from "@/lib/routes";
 import type { Project } from "@/lib/types";
@@ -60,6 +60,7 @@ export function settingsNavigation(context: NavigationContext): NavigationGroup[
     { label: "workspace.settingsDelivery", items: [
       item("resources", "workspace.settingsProjectResources", Cpu),
       item("signing", "workspace.settingsSigningDefaults", ShieldCheck),
+      item("integrations", "workspace.settingsIntegrations", Webhook),
     ] },
     { label: "workspace.settingsDanger", items: [lifecycle] },
   ] : [];
@@ -70,6 +71,7 @@ export function settingsNavigation(context: NavigationContext): NavigationGroup[
     { label: "workspace.settingsDelivery", items: [
       item("ai", "ai.settings", Sparkles),
       item("emissary", "ota.title", Workflow),
+      item("integrations", "workspace.settingsIntegrations", Webhook),
       item("signing", "workspace.settingsSigningManagement", ShieldCheck),
     ] },
     { label: "workspace.settingsAccess", items: [

@@ -13,4 +13,6 @@ tokens.css: 全部控制台样式的颜色与尺寸来源。
 wizard.css: 定义四步弹窗、平台禁选卡片与固定操作的响应式布局。
 workspace.css: 连接租户卡片、顶栏、侧栏与认证；偏好整框触发，手机触控至少 44px。
 
+notification-center.css: 定义紧凑收件行、440px 抽屉和手机全屏通知中心。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

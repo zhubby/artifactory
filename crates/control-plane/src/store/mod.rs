@@ -13,6 +13,7 @@ pub use tenancy::{NodeAccess, NodeAccessMode};
 pub mod dto;
 mod management;
 mod models;
+pub mod notifications;
 mod planning_management;
 mod projects;
 mod signing;
@@ -30,6 +31,11 @@ pub struct ControlStore {
 }
 
 impl ControlStore {
+    /// 通知后台任务复用现有连接预算。
+    pub(crate) fn notification_db(&self) -> toasty::Db {
+        self.pool.clone()
+    }
+
     pub fn new(pool: toasty::Db) -> Self {
         Self { pool, scope: None }
     }

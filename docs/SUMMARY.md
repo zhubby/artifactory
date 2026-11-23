@@ -13,6 +13,7 @@
 - [零侵入 AI 构建](ai-builds.md)
 - [多租户、项目权限与共享设备](multitenancy.md)
 - [租户与项目工作台、个人设置及生命周期](workspaces.md)
+- [通知中心与外部渠道](notifications.md)
 - [节点元数据、MCP 与 AI 选机](node-placement.md)
 - [应用签名与凭据下发](signing.md)
 - [执行配方与历史配置](configuration.md)

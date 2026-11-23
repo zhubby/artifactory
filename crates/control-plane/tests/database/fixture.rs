@@ -54,6 +54,7 @@ impl Database {
             .await
             .unwrap();
         let settings = Settings {
+            notifications: Default::default(),
             database_url: scoped,
             http_bind: "127.0.0.1:0".into(),
             grpc_bind: "127.0.0.1:0".into(),
