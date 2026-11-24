@@ -1,5 +1,5 @@
 # [INPUT]: 网关多端口入口类型与私有后端端口。
-# [OUTPUT]: 单个公开网关 Service 和按 Pod 分离的后端 Service。
+# [OUTPUT]: 公开网关 Service 和含终端私有流的后端 Service。
 # [POS]: 公开协议共用网关地址；内部 HTTPS 保持独立 ClusterIP。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 {{- if or (hasKey .Values.console "service") (hasKey (.Values.grpc | default dict) "service") }}
@@ -72,6 +72,7 @@ spec:
       name: {{ $target }}
     {{- if eq $component "control-plane" }}
     - {port: 8443, targetPort: grpc, name: grpc}
+    - {port: {{ $.Values.controlPlane.terminalRelayPort }}, targetPort: terminal-relay, name: terminal-relay}
     {{- end }}
   selector:
     {{- include "artifactory.selector" $ | nindent 4 }}

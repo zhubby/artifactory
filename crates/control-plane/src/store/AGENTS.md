@@ -15,8 +15,8 @@ projects.rs: 写入项目配置和源码授权。
 signing.rs: 写入凭据版本、默认方案并投影方案当前可用性。
 signing_execution.rs: 锁定当前授权并执行材料领取及最终证据登记。
 tenancy.rs: 锁定租户权限并校验资源范围。
-lifecycle.rs: 维护归档、删除租约和 Release 审计资源清单。
-lifecycle_cleanup.rs: 依据删除清单清除业务状态和签名密文。
+lifecycle.rs: 围栏租户准入，排空终端租约并维护归档、删除与 Release 清单。
+lifecycle_cleanup.rs: 等待终端回收窗口，按删除清单清除业务状态与签名密文。
 builds.rs: 创建构建，读取原生及镜像 Release、制品与日志游标。
 executions.rs: 以兼容取消外键的写锁维护节点 session、事件与不可变制品登记。
 scheduling.rs: 分配任务、汇总构建并对两类执行失败发起有限修订。
@@ -37,6 +37,7 @@ build_activity.sql: 合并真实源码、规划、执行和归档时间，标注
 releases_tests.rs: 验证版本元数据、设备授权准入、源码隔离与交付封存围栏。
 lookups.rs: 读取调度、构建和授权对象。
 node_metadata.rs: 记录启动元数据和能力摘要。
+terminals.rs: 原子登记设备终端、Session 票据和实例租约，审计真实账户与字节计数。
 node_queries.rs: 聚合项目授权原生平台，查询构建冻结范围内的设备。
 ota.rs: 记录节点升级命令和健康回执。
 ota_management.rs: 写入节点发布及升级目标。

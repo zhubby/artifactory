@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户与项目权限、路由类型、账户插槽和统一导航。
- * [OUTPUT]: 提供首读骨架、失败重试、作用域侧栏与面包屑。
+ * [OUTPUT]: 提供首读骨架、重试、侧栏和含设备终端的面包屑。
  * [POS]: 权限就绪后展示导航，后台失败保留链接；账户位于侧栏底部。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -173,6 +173,7 @@ export function WorkspaceBreadcrumb(context: WorkspaceContext) {
       ) : state.current && <><ChevronRight aria-hidden="true" /><span>{t(state.current.label)}</span></>}
       {releaseRoute && <><ChevronRight aria-hidden="true" />{releaseRoute[1] === "new" ? <span>{t("releaseFlow.create")}</span> : <Link href={`${state.base}/releases/${releaseRoute[1]}`}>{release.data?.version || t("releaseFlow.version")}</Link>}</>}
       {build && <><ChevronRight aria-hidden="true" /><span>#{build}</span></>}
+      {/^\/nodes\/[^/]+\/terminal$/.test(relativePath) && <><ChevronRight aria-hidden="true" /><span>{t("terminal.title")}</span></>}
     </nav>
   );
 }

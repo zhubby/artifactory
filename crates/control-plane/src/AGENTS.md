@@ -30,6 +30,7 @@ source_tasks.rs: 固定源码 CR UID，授权直接 Pod 的材料、阶段进度
 source_tasks_tests.rs: 验证绑定令牌、直接 CR 归属、重试身份及授权响应。
 state.rs: 组合存储、配置和进程内连接状态。
 storage.rs: 校验私有 S3 对象，签发绑定方法、对象与交付文件名的网关票据。
+terminals/: 提供设备终端会话、真实就绪转发、输出窗口和内部认证流。
 store/: 持久化业务状态、租约、权限和任务事件。
 
 images/: 协调固定源码镜像执行与仓库认证。

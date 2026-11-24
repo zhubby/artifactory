@@ -1,0 +1,26 @@
+# [INPUT]: 依赖 Control 标签、HTTP/gRPC 和终端私有端口。
+# [OUTPUT]: 保留同命名空间 HTTP/gRPC，终端 relay 仅允许同实例 Control。
+# [POS]: 应用签名认证以外的网络边界；不创建公网端口。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
+{{- if .Values.gateway.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "artifactory.fullname" . }}-terminal-relay
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "artifactory.selector" . | nindent 6 }}
+      app.kubernetes.io/component: control-plane
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{port: 8080, protocol: TCP}, {port: 8443, protocol: TCP}]
+      from:
+        - podSelector: {}
+    - ports: [{port: {{ .Values.controlPlane.terminalRelayPort }}, protocol: TCP}]
+      from:
+        - podSelector:
+            matchLabels:
+              {{- include "artifactory.selector" . | nindent 14 }}
+              app.kubernetes.io/component: control-plane
+{{- end }}

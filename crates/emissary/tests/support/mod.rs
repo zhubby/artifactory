@@ -1,8 +1,9 @@
 //! [INPUT]: 依赖 loopback mTLS、HTTP Git、测试任务和日志存储。
-//! [OUTPUT]: 提供跨平台原生服务源码夹具和首连诊断。
+//! [OUTPUT]: 提供跨平台源码与独立终端 mTLS 夹具和首连诊断。
 //! [POS]: Emissary 集成测试共享支持；诊断不输出配置和命令。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Loopback mTLS peer for runtime lifecycle tests; no business scheduler is simulated.
+#![allow(dead_code, reason = "共享夹具由独立集成测试按需调用")]
 use artifactory_emissary::{config::Config, protocol as pb};
 use rcgen::{BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, KeyPair};
 use std::{
@@ -53,10 +54,55 @@ impl Connection {
 #[derive(Clone)]
 struct Peer {
     connected: mpsc::Sender<Connection>,
+    terminals: mpsc::Sender<TerminalConnection>,
     logs: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     ack_delay: Duration,
     metrics: Arc<TransportMetrics>,
     materials: Arc<Mutex<HashMap<String, String>>>,
+}
+
+pub struct TerminalConnection {
+    pub hello: pb::TerminalFrame,
+    pub commands: mpsc::Sender<Result<pb::TerminalFrame, Status>>,
+    pub events: mpsc::Receiver<pb::TerminalFrame>,
+}
+
+#[tonic::async_trait]
+impl pb::terminal_server::Terminal for Peer {
+    type ConnectStream = ReceiverStream<Result<pb::TerminalFrame, Status>>;
+
+    async fn connect(
+        &self,
+        request: Request<Streaming<pb::TerminalFrame>>,
+    ) -> Result<Response<Self::ConnectStream>, Status> {
+        if request.extensions().get::<tonic::transport::server::TlsConnectInfo<tonic::transport::server::TcpConnectInfo>>()
+            .and_then(|info| info.peer_certs()).is_none() {
+            return Err(Status::unauthenticated("client certificate required"));
+        }
+        let mut incoming = request.into_inner();
+        let hello = incoming
+            .message()
+            .await?
+            .ok_or_else(|| Status::invalid_argument("terminal hello required"))?;
+        let (commands, response) = mpsc::channel(64);
+        let (events, receiver) = mpsc::channel(64);
+        self.terminals
+            .send(TerminalConnection {
+                hello,
+                commands,
+                events: receiver,
+            })
+            .await
+            .map_err(|_| Status::unavailable("fixture completed"))?;
+        tokio::spawn(async move {
+            while let Ok(Some(frame)) = incoming.message().await {
+                if events.send(frame).await.is_err() {
+                    break;
+                }
+            }
+        });
+        Ok(Response::new(ReceiverStream::new(response)))
+    }
 }
 
 #[derive(Default)]
@@ -246,6 +292,7 @@ impl pb::control_server::Control for Peer {
 pub struct Fixture {
     pub cfg: Config,
     pub connections: mpsc::Receiver<Connection>,
+    pub terminals: mpsc::Receiver<TerminalConnection>,
     pub metrics: Arc<TransportMetrics>,
     #[cfg_attr(
         windows,
@@ -339,10 +386,12 @@ impl Fixture {
             },
         );
         let (connected, connections) = mpsc::channel(8);
+        let (terminals, terminal_connections) = mpsc::channel(8);
         let logs = Arc::new(Mutex::new(HashMap::new()));
         let materials = Arc::new(Mutex::new(HashMap::new()));
         let peer = Peer {
             connected,
+            terminals,
             logs: logs.clone(),
             ack_delay,
             metrics: metrics.clone(),
@@ -352,7 +401,8 @@ impl Fixture {
         let shutdown = cancel.clone();
         let server = tokio::spawn(async move {
             tonic::transport::Server::builder()
-                .add_service(pb::control_server::ControlServer::new(peer))
+                .add_service(pb::control_server::ControlServer::new(peer.clone()))
+                .add_service(pb::terminal_server::TerminalServer::new(peer))
                 .serve_with_incoming_shutdown(incoming, shutdown.cancelled())
                 .await
                 .unwrap();
@@ -369,6 +419,7 @@ impl Fixture {
                 ..Default::default()
             },
             connections,
+            terminals: terminal_connections,
             metrics,
             materials,
             #[cfg(unix)]

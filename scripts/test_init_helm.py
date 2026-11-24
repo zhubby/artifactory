@@ -1,5 +1,5 @@
 """[INPUT]: Helm 模板与独立 Secret 初始化脚本。
-[OUTPUT]: 验证固定账号、镜像默认池与只读查池权限、服务边界和持久凭据。
+[OUTPUT]: 验证账号、镜像池、持久凭据及 Registry 与终端的入站隔离。
 [POS]: 部署契约回归；不连接 Kubernetes。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -78,6 +78,26 @@ class HelmBootstrapTests(unittest.TestCase):
         self.assertNotIn('  ingress:', broad)
         internal = next(doc for doc in trial_policies if '  ingress:' in doc)
         self.assertIn('key: app.kubernetes.io/name\n        operator: NotIn\n        values: [artifactory-registry]', internal)
+
+    @unittest.skipUnless(shutil.which('helm'), 'requires helm')
+    def test_terminal_relay_cannot_inherit_namespace_wide_ingress(self):
+        root = SCRIPT.parents[1]
+        rendered = subprocess.run([
+            'helm', 'template', 'terminal-test', str(root / 'charts/artifactory'),
+            '--kube-version', '1.28.3', '--set', 'controlPlane.replicas=3',
+        ], check=True, capture_output=True, text=True).stdout
+        policy = next(doc for doc in rendered.split('\n---\n')
+                      if 'name: artifactory-terminal-relay\n' in doc)
+        existing_ports = policy.split('    - ports: [{port: 8446, protocol: TCP}]', 1)[0]
+        self.assertIn('from:\n        - podSelector: {}', existing_ports)
+        source = policy.split('    - ports: [{port: 8446, protocol: TCP}]', 1)[1]
+        self.assertIn('app.kubernetes.io/component: control-plane', source)
+        self.assertIn('app.kubernetes.io/instance: terminal-test', source)
+        self.assertNotIn('podSelector: {}', source)
+        trial = (root / 'deploy/kubernetes-trial.yaml').read_text()
+        internal = next(doc for doc in trial.split('\n---\n')
+                        if 'name: artifactory-trial-internal\n' in doc)
+        self.assertIn('key: app.kubernetes.io/component\n        operator: NotIn\n        values: [control-plane]', internal)
 
     @unittest.skipUnless(shutil.which('helm'), 'requires helm')
     def test_planning_pool_and_coordinator_settings_reach_control(self):

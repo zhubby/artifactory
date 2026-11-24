@@ -1,6 +1,6 @@
 # [INPUT]: 试用命名空间、部署账号和私有仓库入口边界。
-# [OUTPUT]: 配额、部署权限、出站策略和排除仓库的内部入站策略。
-# [POS]: Registry Chart 独立约束仓库入站，防止相加策略绕过 Gateway。
+# [OUTPUT]: 配额、部署权限、出站策略及排除仓库与 Control 的内部入站策略。
+# [POS]: Registry 与终端 Chart 独立约束入站，防止相加策略绕过私有端口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 apiVersion: v1
 kind: Namespace
@@ -112,6 +112,9 @@ spec:
       - key: app.kubernetes.io/name
         operator: NotIn
         values: [artifactory-registry]
+      - key: app.kubernetes.io/component
+        operator: NotIn
+        values: [control-plane]
   policyTypes: [Ingress]
   ingress:
     - from:

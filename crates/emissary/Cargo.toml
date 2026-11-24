@@ -7,7 +7,7 @@ default-run = "artifactory-emissary"
 [dependencies]
 artifactory-source-checkout = { path = "../source-checkout" }
 artifactory-emissary-protocol = { path = "../emissary-protocol" }
-artifactory-execution-support = { path = "../execution-support" }
+artifactory-execution-support = { path = "../execution-support", features = ["terminal"] }
 anyhow = "1"
 base64 = "0.22"
 cap-std = "4"

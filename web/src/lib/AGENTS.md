@@ -17,7 +17,7 @@ repository-refs.ts: 查询项目引用，取消过期请求并隔离迟到响应
 build-platforms.ts: 查询项目授权原生平台，优先在线默认并隔离项目迟到响应。
 releases.ts: 校验严格 SemVer，按 SemVer 比较版本。
 build-targets.ts: 校验构建目标合同，组合独立源码与目标的交付候选摘要。
-routes.ts: 校验独立项目目录、工作区与设置地址，生成 Release 路由；邮箱登录返回只接受确认页面和单个令牌。
+routes.ts: 校验设备终端、项目目录、工作区和设置地址；邮箱返回只接受确认页和单个令牌。
 tenant.tsx: 提供租户作用域和请求头，以 Next 导航状态连接顶部进度并保留未保存保护。
 types.ts: 定义 Release、原生与镜像计划目标、执行修订身份、规划实时摘要、节点身份与会话审计。
 unsaved.tsx: 保护未保存编辑。
@@ -26,5 +26,8 @@ workspace-navigation.ts: 租户概览和项目目录使用独立地址；统一�
 
 notification-types.ts: 声明账户收件箱、完整授权范围、修订、偏好与外部投递合同。
 notification-copy.ts: 共享通知中心、关注星标与失败重试的中英文文案。
+
+terminal-types.ts: 定义设备终端能力、会话与浏览器字节消息。
+terminal.ts: 复核票据入口，提供消费 ACK、原页面重连和离开清理。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

@@ -24,6 +24,7 @@ pub mod source;
 pub mod source_tasks;
 pub mod state;
 pub mod storage;
+pub mod terminals;
 
 pub mod protocol {
     pub use artifactory_emissary_protocol::*;

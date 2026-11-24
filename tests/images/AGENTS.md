@@ -2,6 +2,7 @@
 > L2 | Parent: ../AGENTS.md
 
 gateway.py: 验证监听就绪、固定下载文件名、正式 Manifest 围栏、空闲回收和设备 mTLS。
+terminal_gateway.py: 验证真实 WebSocket 字节、空闲存活和终端独立配额。
 run.py: 经 Release 创建镜像构建，发布后验证正式版本标签、外仓分发和材料清理。
 setup.py: 配置 Registry 专用存储、Gateway 网络白名单和发布停机核验权限。
 faults.py: 用 UID/CAS 和临时 finalizer 保存 deadline 终态；CRI 137 与内核同组记录证明 OOM。

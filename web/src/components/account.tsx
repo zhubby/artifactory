@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖账户 API、顶栏与侧栏插槽、Radix 弹窗和未保存保护。
- * [OUTPUT]: 提供 AccountProvider、useAccount 与 AccountSlot。
+ * [OUTPUT]: 提供账户上下文、菜单和退出后的会话清理信号。
  * [POS]: 单实例菜单在插槽间移动；记录宿主焦点以恢复断点隐藏造成的失焦。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -203,6 +203,7 @@ function AccountMenu({
                   setLogoutError(undefined);
                   try {
                     await mutation("/auth/logout", {});
+                    window.dispatchEvent(new Event("artifactory:session-ended"));
                     notify.success(t("common.operationSucceeded"), { persist: true });
                     window.location.assign("/login");
                   } catch (error) {

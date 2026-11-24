@@ -1,6 +1,6 @@
-//! [INPUT]: 依赖工作区删除租约和资源清单。
-//! [OUTPUT]: 删除项目状态与租户签名密文。
-//! [POS]: 持久化生命周期清理的数据库阶段。
+//! [INPUT]: 依赖工作区删除租约、终端回收窗口和资源清单。
+//! [OUTPUT]: 删除项目状态、租户终端记录与签名密文。
+//! [POS]: 设备终端租约到期后执行持久化清理。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{ControlStore, lifecycle::Lease};
 use crate::error::{ApiError, Result};
@@ -125,6 +125,20 @@ impl ControlStore {
         if !valid {
             return Err(ApiError::Conflict("operation lease expired".into()));
         }
+        if lease.project_id.is_none() {
+            let waiting: bool = sql::scalar(&mut tx,r#"
+                SELECT EXISTS(SELECT 1 FROM terminal_sessions s JOIN lifecycle_operations o ON o.id=$1
+                    WHERE s.tenant_id=o.tenant_id AND (s.generation>0 OR s.attached_at IS NOT NULL)
+                        AND (s.finished_at IS NULL OR s.finished_at>=o.created_at-$2::bigint*interval '1 second')
+                        AND (o.manifest->>'terminal_drain_until' IS NULL
+                            OR (o.manifest->>'terminal_drain_until')::timestamptz>clock_timestamp()))
+            "#,params![lease.id,super::lifecycle::TERMINAL_DRAIN_SECONDS]).await?;
+            if waiting {
+                return Err(ApiError::Conflict(
+                    "device terminal lease is still draining".into(),
+                ));
+            }
+        }
         let projects: Vec<Uuid> = serde_json::from_value(lease.manifest["projects"].clone())
             .map_err(anyhow::Error::from)?;
         // Persist link tombstones before removing identities; all statements commit atomically.
@@ -169,6 +183,7 @@ impl ControlStore {
         sql::execute(&mut tx,"UPDATE api_tokens SET project_ids=ARRAY(SELECT p FROM unnest(project_ids) p WHERE NOT p=ANY($1)) WHERE tenant_id=$2 AND project_ids && $1",params![&projects,lease.tenant_id]).await?;
         if lease.project_id.is_none() {
             for table in [
+                "terminal_sessions",
                 "signing_profiles",
                 "signing_credentials",
                 "emissary_updates",

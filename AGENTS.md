@@ -49,5 +49,8 @@ Release 只交付一次完整构建，正式版本不可覆盖。
 所有下拉使用自定义触发器与弹层，禁止原生选择菜单。
 概览由服务端按授权范围聚合完整窗口，不从截断列表推算统计。
 构建过程使用持久阶段与真实执行历史，缺失记录不得推造。
+设备终端只授予租户 owner/admin 的原登录 Session，设备默认关闭。
+终端字节走独立 mTLS 与私有认证流，Control 不执行 Shell。
+终端固定 owner，授权五秒截止，设备四十五秒租约回收进程树。
 变更后检查文件契约、模块地图与项目地图。
 [PROTOCOL]: Update this header on change, then check AGENTS.md

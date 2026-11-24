@@ -1,6 +1,6 @@
-//! [INPUT]: 依赖租户状态、工作区任务和镜像执行。
-//! [OUTPUT]: 持久化归档、删除租约、镜像日志前缀及写入宽限期。
-//! [POS]: 在清理前等待原生和镜像执行结束。
+//! [INPUT]: 依赖租户状态、工作区任务、镜像执行和设备终端租约。
+//! [OUTPUT]: 持久化归档、删除租约、终端排空及写入宽限期。
+//! [POS]: 在清理前等待构建结束与设备终端的回收安全窗口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use crate::{
@@ -13,6 +13,39 @@ use uuid::Uuid;
 
 const PUBLIC: &str =
     "to_jsonb(o)-'manifest'-'lease_owner'-'lease_until'-'generation'-'object_cursor'";
+
+/// 撤权最多五秒，最后一份设备执行租约再存活四十五秒。
+pub(super) const TERMINAL_DRAIN_SECONDS: i64 =
+    artifactory_emissary_protocol::terminal::LEASE_SECONDS as i64 + 5;
+
+const DRAIN_TERMINALS: &str = r#"
+WITH stopped AS (
+    UPDATE terminal_sessions SET
+        state=CASE WHEN generation=0 AND attached_at IS NULL THEN 'closed' ELSE 'closing' END,
+        finished_at=CASE WHEN generation=0 AND attached_at IS NULL THEN clock_timestamp() ELSE NULL END,
+        updated_at=clock_timestamp(),reason='tenant_draining',ticket_hash=NULL,ticket_expires_at=NULL
+    WHERE tenant_id=$1 AND finished_at IS NULL
+    RETURNING id,tenant_id,reason,exit_code,exit_signal,finished_at
+)
+INSERT INTO audit_events(tenant_id,actor,action,resource_id,details)
+SELECT tenant_id,'terminal-runtime','terminal_closed',id::text,
+    jsonb_build_object('reason',reason,'code',exit_code,'signal',exit_signal,
+        'account',NULL,'input_bytes',0,'output_bytes',0)
+FROM stopped WHERE finished_at IS NOT NULL
+"#;
+
+const CLOSE_DRAINED_TERMINALS: &str = r#"
+WITH stopped AS (
+    UPDATE terminal_sessions SET state='closed',finished_at=clock_timestamp(),
+        updated_at=clock_timestamp(),reason='tenant_draining',ticket_hash=NULL,ticket_expires_at=NULL
+    WHERE tenant_id=$1 AND finished_at IS NULL
+    RETURNING id,tenant_id,reason,exit_code,exit_signal
+)
+INSERT INTO audit_events(tenant_id,actor,action,resource_id,details)
+SELECT tenant_id,'terminal-runtime','terminal_closed',id::text,
+    jsonb_build_object('reason',reason,'code',exit_code,'signal',exit_signal)
+FROM stopped
+"#;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Lease {
@@ -200,6 +233,10 @@ impl ControlStore {
             "tenants"
         };
         sql::execute(&mut tx,&format!("UPDATE {table} SET status=$2,archived_at=CASE WHEN $2='active' THEN NULL ELSE archived_at END WHERE id=$1"),params![project.unwrap_or(tenant),if restored{"active"}else{"draining"}]).await?;
+        if project.is_none() && !restored {
+            // 先围栏租户准入，再保留曾附着终端的关闭记录。
+            sql::execute(&mut tx, DRAIN_TERMINALS, params![tenant]).await?;
+        }
         tx.commit().await?;
         self.lifecycle_operation(auth.user_id, id).await
     }
@@ -276,7 +313,27 @@ impl ControlStore {
         tenant: Uuid,
         project: Option<Uuid>,
     ) -> Result<Vec<Value>> {
-        Ok(sql::scalars(&mut self.pool.clone(),"WITH target AS (SELECT id FROM builds WHERE tenant_id=$1 AND ($2::uuid IS NULL OR project_id=$2)) SELECT jsonb_build_object('kind','build','id',b.id,'status',b.status,'tenant_slug',tn.slug,'project_slug',p.slug,'number',b.number) FROM builds b JOIN target t ON t.id=b.id JOIN projects p ON p.id=b.project_id JOIN tenants tn ON tn.id=b.tenant_id WHERE b.status NOT IN ('succeeded','failed','canceled','lost') UNION ALL SELECT jsonb_build_object('kind','publication','id',b.id,'status',b.publish_status) FROM builds b JOIN target t ON t.id=b.id WHERE b.publish_status='pending' AND b.status NOT IN ('failed','canceled','lost') UNION ALL SELECT jsonb_build_object('kind','planning','id',r.id,'status',r.state) FROM planning_runs r JOIN target t ON t.id=r.build_id WHERE r.state IN ('queued','leased') UNION ALL SELECT jsonb_build_object('kind','attempt','id',a.id,'status',a.status) FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN target t ON t.id=j.build_id WHERE a.status IN ('leased','running') UNION ALL SELECT jsonb_build_object('kind','image_execution','id',e.id,'status',e.status) FROM image_executions e WHERE e.tenant_id=$1 AND ($2::uuid IS NULL OR e.project_id=$2) AND e.status IN ('preparing','running') UNION ALL SELECT jsonb_build_object('kind','device_update','id',u.id,'status',u.status) FROM emissary_updates u WHERE u.tenant_id=$1 AND ($2::uuid IS NULL OR EXISTS(SELECT 1 FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN target t ON t.id=j.build_id WHERE a.node_id=u.node_id)) AND u.status NOT IN ('succeeded','failed','rolled_back','canceled') UNION ALL SELECT jsonb_build_object('kind',kind,'id',id,'status','running') FROM workspace_tasks WHERE tenant_id=$1 AND ($2::uuid IS NULL OR project_id=$2) AND expires_at>clock_timestamp()",params![tenant,project]).await?)
+        let mut blockers = sql::scalars(&mut self.pool.clone(),"WITH target AS (SELECT id FROM builds WHERE tenant_id=$1 AND ($2::uuid IS NULL OR project_id=$2)) SELECT jsonb_build_object('kind','build','id',b.id,'status',b.status,'tenant_slug',tn.slug,'project_slug',p.slug,'number',b.number) FROM builds b JOIN target t ON t.id=b.id JOIN projects p ON p.id=b.project_id JOIN tenants tn ON tn.id=b.tenant_id WHERE b.status NOT IN ('succeeded','failed','canceled','lost') UNION ALL SELECT jsonb_build_object('kind','publication','id',b.id,'status',b.publish_status) FROM builds b JOIN target t ON t.id=b.id WHERE b.publish_status='pending' AND b.status NOT IN ('failed','canceled','lost') UNION ALL SELECT jsonb_build_object('kind','planning','id',r.id,'status',r.state) FROM planning_runs r JOIN target t ON t.id=r.build_id WHERE r.state IN ('queued','leased') UNION ALL SELECT jsonb_build_object('kind','attempt','id',a.id,'status',a.status) FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN target t ON t.id=j.build_id WHERE a.status IN ('leased','running') UNION ALL SELECT jsonb_build_object('kind','image_execution','id',e.id,'status',e.status) FROM image_executions e WHERE e.tenant_id=$1 AND ($2::uuid IS NULL OR e.project_id=$2) AND e.status IN ('preparing','running') UNION ALL SELECT jsonb_build_object('kind','device_update','id',u.id,'status',u.status) FROM emissary_updates u WHERE u.tenant_id=$1 AND ($2::uuid IS NULL OR EXISTS(SELECT 1 FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN target t ON t.id=j.build_id WHERE a.node_id=u.node_id)) AND u.status NOT IN ('succeeded','failed','rolled_back','canceled') UNION ALL SELECT jsonb_build_object('kind',kind,'id',id,'status','running') FROM workspace_tasks WHERE tenant_id=$1 AND ($2::uuid IS NULL OR project_id=$2) AND expires_at>clock_timestamp()",params![tenant,project]).await?;
+        if project.is_none() {
+            // Control 的 closed 不是设备回收确认；删除前保守等待最后一份租约。
+            let terminals = sql::scalars(
+                &mut self.pool.clone(),
+                r#"
+                SELECT jsonb_build_object('kind','terminal','id',s.id,'status','lease_expiring')
+                FROM terminal_sessions s JOIN lifecycle_operations o ON o.tenant_id=s.tenant_id
+                WHERE s.tenant_id=$1 AND (s.generation>0 OR s.attached_at IS NOT NULL)
+                    AND (s.finished_at IS NULL OR s.finished_at>=o.created_at-$2::bigint*interval '1 second')
+                    AND o.project_id IS NULL AND o.action IN ('archive','delete')
+                    AND o.state IN ('waiting','running','failed')
+                    AND (o.manifest->>'terminal_drain_until' IS NULL
+                        OR (o.manifest->>'terminal_drain_until')::timestamptz>clock_timestamp())
+            "#,
+                params![tenant, TERMINAL_DRAIN_SECONDS],
+            )
+            .await?;
+            blockers.extend(terminals);
+        }
+        Ok(blockers)
     }
 
     pub async fn advance_lifecycle_drain(&self, lease: &Lease) -> Result<()> {
@@ -292,6 +349,17 @@ impl ControlStore {
         if !valid {
             return Ok(());
         }
+        if lease.project_id.is_none() {
+            // 首次观察已提交的租户围栏后计时；锁等待和提交延迟不消耗回收窗口。
+            sql::execute(&mut tx,r#"
+                UPDATE lifecycle_operations o SET manifest=jsonb_set(manifest,'{terminal_drain_until}',
+                    to_jsonb((clock_timestamp()+$2::bigint*interval '1 second')::text))
+                WHERE o.id=$1 AND NOT o.manifest ? 'terminal_drain_until'
+                    AND EXISTS(SELECT 1 FROM terminal_sessions s WHERE s.tenant_id=o.tenant_id
+                        AND (s.generation>0 OR s.attached_at IS NOT NULL)
+                        AND (s.finished_at IS NULL OR s.finished_at>=o.created_at-$2::bigint*interval '1 second'))
+            "#,params![lease.id,TERMINAL_DRAIN_SECONDS]).await?;
+        }
         // Admission is already fenced. Ongoing work can only decrease; the final transaction
         // still rechecks the durable task rows before changing the workspace state.
         let blockers = self
@@ -300,6 +368,9 @@ impl ControlStore {
         if !blockers.is_empty() {
             sql::execute(&mut tx,"UPDATE lifecycle_operations SET blockers=$3,lease_owner=NULL,lease_until=NULL,next_run_at=clock_timestamp()+interval '2 seconds',updated_at=clock_timestamp() WHERE id=$1 AND generation=$2",params![lease.id,lease.generation,json!(blockers)]).await?;
         } else if lease.action == "archive" {
+            if lease.project_id.is_none() {
+                sql::execute(&mut tx, CLOSE_DRAINED_TERMINALS, params![lease.tenant_id]).await?;
+            }
             let table = if lease.project_id.is_some() {
                 "projects"
             } else {
@@ -315,6 +386,9 @@ impl ControlStore {
             .await?;
             sql::execute(&mut tx,"UPDATE lifecycle_operations SET state='succeeded',phase='complete',blockers='[]',lease_owner=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE id=$1 AND generation=$2",params![lease.id,lease.generation]).await?;
         } else {
+            if lease.project_id.is_none() {
+                sql::execute(&mut tx, CLOSE_DRAINED_TERMINALS, params![lease.tenant_id]).await?;
+            }
             let table = if lease.project_id.is_some() {
                 "projects"
             } else {
@@ -328,6 +402,12 @@ impl ControlStore {
             .await?;
             // Hold the parent admission lock while recording a complete, durable inventory.
             let mut manifest:Value=sql::scalar(&mut tx,"SELECT jsonb_build_object('projects',(SELECT coalesce(jsonb_agg(id),'[]') FROM projects WHERE tenant_id=$1 AND ($2::uuid IS NULL OR id=$2)),'nodes',(SELECT coalesce(jsonb_agg(id),'[]') FROM nodes WHERE tenant_id=$1 AND $2::uuid IS NULL),'builds',(SELECT coalesce(jsonb_agg(id),'[]') FROM builds WHERE tenant_id=$1 AND ($2::uuid IS NULL OR project_id=$2)),'objects',(SELECT coalesce(jsonb_agg(DISTINCT key),'[]') FROM (SELECT u.object_key AS key FROM uploads u JOIN attempts a ON a.id=u.attempt_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.tenant_id=$1 AND ($2::uuid IS NULL OR b.project_id=$2) UNION SELECT 'artifacts/'||u.id::text FROM uploads u JOIN attempts a ON a.id=u.attempt_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.tenant_id=$1 AND ($2::uuid IS NULL OR b.project_id=$2) UNION SELECT ar.object_key FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.tenant_id=$1 AND ($2::uuid IS NULL OR b.project_id=$2) UNION SELECT l.object_key FROM image_logs l JOIN image_executions e ON e.id=l.execution_id WHERE e.tenant_id=$1 AND ($2::uuid IS NULL OR e.project_id=$2) UNION SELECT l.object_key FROM log_chunks l JOIN attempts a ON a.id=l.attempt_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.tenant_id=$1 AND ($2::uuid IS NULL OR b.project_id=$2)) keys),'uploads_expire_at',(SELECT coalesce(max(u.expires_at),clock_timestamp()) FROM uploads u JOIN attempts a ON a.id=u.attempt_id JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.tenant_id=$1 AND ($2::uuid IS NULL OR b.project_id=$2)))",params![lease.tenant_id,lease.project_id]).await?;
+            let terminal_drain: Value = sql::scalar(&mut tx,
+                "SELECT coalesce(manifest->'terminal_drain_until','null'::jsonb) FROM lifecycle_operations WHERE id=$1",
+                params![lease.id]).await?;
+            if !terminal_drain.is_null() {
+                manifest["terminal_drain_until"] = terminal_drain;
+            }
             manifest["attempts"]=sql::scalar(&mut tx,"SELECT coalesce(jsonb_agg(a.id),'[]') FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN builds b ON b.id=j.build_id WHERE b.tenant_id=$1 AND ($2::uuid IS NULL OR b.project_id=$2)",params![lease.tenant_id,lease.project_id]).await?;
             manifest["image_log_projects"]=sql::scalar(&mut tx,"SELECT coalesce(jsonb_agg(DISTINCT project_id),'[]') FROM image_executions WHERE tenant_id=$1 AND ($2::uuid IS NULL OR project_id=$2)",params![lease.tenant_id,lease.project_id]).await?;
             manifest["audit_ids"] = sql::scalar(&mut tx,"WITH target AS (SELECT id FROM builds WHERE tenant_id=$1 AND ($2::uuid IS NULL OR project_id=$2)), resources AS (SELECT id FROM projects WHERE tenant_id=$1 AND ($2::uuid IS NULL OR id=$2) UNION SELECT id FROM target UNION SELECT j.id FROM jobs j JOIN target t ON t.id=j.build_id UNION SELECT a.id FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN target t ON t.id=j.build_id UNION SELECT ar.id FROM artifacts ar JOIN attempts a ON a.id=ar.attempt_id JOIN jobs j ON j.id=a.job_id JOIN target t ON t.id=j.build_id UNION SELECT id FROM releases WHERE tenant_id=$1 AND ($2::uuid IS NULL OR project_id=$2) UNION SELECT id FROM planning_runs WHERE build_id IN (SELECT id FROM target) UNION SELECT id FROM source_manifests WHERE tenant_id=$1 AND ($2::uuid IS NULL OR project_id=$2)) SELECT coalesce(jsonb_agg(id),'[]') FROM resources",params![lease.tenant_id,lease.project_id]).await?;

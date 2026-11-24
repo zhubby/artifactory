@@ -1,5 +1,5 @@
 // [INPUT]: 依赖节点名称规范、节点配置、服务控制与运行时库。
-// [OUTPUT]: 校验注册名称，提供诊断、服务与更新初始化命令。
+// [OUTPUT]: 提供注册、服务、更新与隔离终端 Worker 命令。
 // [POS]: 原生节点的 CLI 入口，不承载构建业务。
 // [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
@@ -27,6 +27,8 @@ enum Action {
     OtaInit(OtaInit),
     #[command(hide = true)]
     Worker,
+    #[command(hide = true)]
+    TerminalWorker,
     #[command(hide = true)]
     ServiceRun(Common),
 }
@@ -139,6 +141,7 @@ async fn run(cli: Cli) -> Result<()> {
             );
         }
         Action::Worker => return emissary::worker::stdin_worker(cancel).await,
+        Action::TerminalWorker => return emissary::terminal::stdin_worker(cancel).await,
         Action::Register(args) => {
             ensure!(
                 !args.common.config.as_os_str().is_empty() && !args.root.as_os_str().is_empty(),

@@ -18,4 +18,6 @@ workspace.css: 连接共享顶栏工具、账户插槽与侧栏骨架，手机�
 
 notification-center.css: 定义顶栏未读数、名称旁星标、单行筛选和通知抽屉。
 
+terminal.css: 定义设备终端工具栏、状态、明暗主题和窄屏局部滚动。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

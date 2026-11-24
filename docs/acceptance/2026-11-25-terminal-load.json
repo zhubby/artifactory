@@ -1,0 +1,26 @@
+{
+  "scope": "10 virtual mTLS devices; 3 independent Control states/TLS listeners in one test process; real PostgreSQL and WS; no PTY, gateway, physical devices or Windows service account",
+  "sessions": 10,
+  "bulk_bytes": 20971520,
+  "maximum_inflight_bytes": 1048576,
+  "credit_limit_bytes": 1048576,
+  "slow_sessions": 5,
+  "slow_credit_stalled": 5,
+  "echo_samples": 30,
+  "echo_p50_ms": 793.7171669999999,
+  "echo_p95_ms": 2123.0649169999997,
+  "heartbeat_samples": 434,
+  "heartbeat_p50_ms": 64.138625,
+  "heartbeat_p95_ms": 927.415375,
+  "heartbeat_max_ms": 1071.9987500000002,
+  "device_close_max_ms": 1980.098,
+  "control_close_max_ms": 1980.6514160000002,
+  "rss_baseline_bytes": 60932096,
+  "resources": {
+    "database_active_peak": 7,
+    "database_connections_peak": 13,
+    "rss_peak_bytes": 99614720,
+    "samples": 64
+  },
+  "database_scope": "pg_stat_activity for entire shared test database; fixture pool maximum 10 plus admin pool maximum 2"
+}

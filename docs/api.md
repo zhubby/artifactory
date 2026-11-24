@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 当前 HTTP 路由、模型能力和租户项目授权。
-[OUTPUT]: 定义公开接口、协议兼容参数和目标准入边界。
+[OUTPUT]: 定义公开接口、协议兼容参数和目标准入边界，并关联设备终端契约。
 [POS]: 控制台与外部集成共用的 HTTP 契约入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -179,6 +179,21 @@ curl --fail-with-body -X POST 'https://build.example.com/api/v1/projects/PROJECT
 当前业务列表为内部小团队规模的有界查询，并未提供全量导出或外部商店发布 API；OIDC 尚未实现。
 
 OCI 客户端通过公开网关的 `/v2/` 访问内建仓库。Registry Token realm 为 `/api/v1/registry/token`，使用 HTTP Basic 携带平台 API Token 或执行专属短期身份，不使用浏览器 Cookie。返回的仓库 JWT 有效期为 60 秒，scope 严格约束租户、项目和仓库。普通 API Token 对正式仓只读；平台发布 JWT 额外绑定 Release 与发布租约代次。构建回执与 publication 接口只接受执行专属 Bearer Token。部署与取消边界见 [镜像构建与网关](image-builds.md)。
+
+## 设备终端
+
+设备终端接口见[设备终端](terminals.md)。以下接口只允许当前租户 owner/admin 的原登录 Session，拒绝 API Token。写入沿用 CSRF 与租户 Header。
+
+| 方法 | 路径 | 输入与结果 |
+| --- | --- | --- |
+| GET | `/api/v1/nodes/{id}/terminal-capabilities` | 返回 enabled、online、profiles、实际 account 和不可用原因 |
+| POST | `/api/v1/nodes/{id}/terminal-sessions` | idempotency_key、renderer_id、profile、columns、rows、term；返回会话 id |
+| GET | `/api/v1/terminal-sessions/{id}` | 仅原创建者及原 Session 读取会话元数据 |
+| POST | `/api/v1/terminal-sessions/{id}/attach` | renderer_id、offset；返回一次性 ticket、stream_url、expires_at |
+| GET | `/api/v1/terminal-sessions/{id}/stream` | WebSocket；严格 Origin，首帧提交 authenticate/ticket/renderer_id/offset |
+| POST | `/api/v1/terminal-sessions/{id}/close` | 空对象；原 Session 幂等关闭，撤权后仍可清理自己的会话 |
+
+终端帧的 output.offset 是该块起始字节偏移；ack.offset 是已消费的结束偏移。input 使用从 1 开始的 sequence，data 为 Base64 原始字节。窗口为 1–500 行列；term 固定为 xterm-256color。输入不自动重放，刷新不接管原渲染器。
 
 ## Emissary 版本与升级
 

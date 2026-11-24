@@ -1,13 +1,13 @@
 /**
- * [INPUT]: 依赖节点授权、OTA API、节点表单与详情共用展示。
- * [OUTPUT]: 提供升级、配置、折叠诊断和吊销，成功吊销后恢复标签焦点。
+ * [INPUT]: 依赖节点授权、终端路由、OTA API 与节点展示。
+ * [OUTPUT]: 提供终端入口、升级、配置、诊断和吊销。
  * [POS]: 设备详情的运维分区；保留授权校验、轮询与嵌套弹窗流程。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
 import { useRef, useState } from "react";
-import { Settings2 } from "lucide-react";
+import { Settings2, Terminal } from "lucide-react";
 import { ErrorBox } from "@/components/common";
 import { NodeOTA } from "@/components/emissary-ota";
 import { NodeForm } from "@/components/forms";
@@ -26,6 +26,7 @@ import { asError } from "@/lib/errors";
 import { notify } from "@/lib/notify";
 import type { EmissaryRelease, EmissaryUpdate, Node, Pool, User } from "@/lib/types";
 import { bytes } from "@/lib/utils";
+import { Link } from "@/lib/tenant";
 
 export function NodeOperations({
   node,
@@ -78,6 +79,17 @@ export function NodeOperations({
   }
   return (
     <div className="node-section-stack" ref={content}>
+      {user.role === "admin" && <NodeSection title={t("terminal.title")}>
+        <p className="mb-4 text-sm leading-6 text-muted-foreground">
+          {!node.capabilities.includes("terminal-v1") ? t("terminal.disabled")
+            : !node.online ? t("terminal.offline") : t("terminal.entryHint")}
+        </p>
+        {node.online && !node.revoked && !node.draining && !node.ota_draining && node.capabilities.includes("terminal-v1") ? (
+          <Button variant="secondary" asChild><Link href={`/nodes/${encodeURIComponent(node.id)}/terminal`}>
+            <Terminal size={15} />{t("terminal.open")}
+          </Link></Button>
+        ) : <Button variant="secondary" disabled><Terminal size={15} />{t("terminal.open")}</Button>}
+      </NodeSection>}
       <NodeSection title={t("ota.title")}>
         <NodeDataError error={releases.error || updates.error} retry={refresh} />
         <NodeOTA

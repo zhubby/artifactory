@@ -14,6 +14,7 @@ projects.rs: 提供项目配置、授权原生平台与源码引用查询接口�
 signing.rs: 提供租户凭据、签名方案和项目默认设置。
 telemetry.rs: 提供设备与构建时序查询接口。
 tenants.rs: 提供租户、成员与项目授权接口。
+terminals.rs: 校验设备终端票据和同源 WebSocket，以关闭码区分撤权、终态和内部短断。
 
 images.rs: 隔离构建与发布日志，仅分发已发布版本的固定标签。
 

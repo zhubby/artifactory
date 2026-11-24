@@ -6,5 +6,6 @@ events.rs: 提供有界事件管道，保留 Worker 事件编码。
 fs.rs: 写入私有文件，保留独占创建和持久化语义。
 process.rs: 启动进程树，按取消和超时回收并读取有界输出。
 redact.rs: 在事件写入前替换跨分块秘密。
+terminal/: 提供可选 PTY/ConPTY、窗口调整和终端进程树回收。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

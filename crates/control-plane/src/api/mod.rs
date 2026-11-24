@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户 HTTP 处理器、统一鉴权和请求限制。
-//! [OUTPUT]: 组合构建概览、业务、账户通知和规划运行时路由。
+//! [OUTPUT]: 组合构建概览、业务、设备终端、账户通知和规划路由。
 //! [POS]: 控制平面 HTTP 接口入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub(crate) mod ai_management;
@@ -20,6 +20,7 @@ mod releases;
 mod signing;
 mod telemetry;
 mod tenants;
+mod terminals;
 
 use crate::{auth, state::AppState};
 use axum::{
@@ -41,6 +42,7 @@ pub fn mount_planning(
 
 pub fn router(state: AppState) -> Router {
     health_routes()
+        .merge(terminals::routes())
         .nest(
             "/api/v1",
             notifications::routes().merge(notification_channels::routes()),

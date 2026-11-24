@@ -4,7 +4,6 @@
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use artifactory_control_plane::{dispatch, grpc::EmissaryService, pki, protocol as pb};
-use rcgen::{BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair};
 use serde_json::{Value, json};
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
@@ -18,52 +17,15 @@ mod load;
 #[path = "node_metadata.rs"]
 mod node_metadata;
 
-struct Certificates {
-    ca: String,
-    issuer: rcgen::Issuer<'static, KeyPair>,
-    server: String,
-    server_key: String,
-}
+#[path = "terminal_routing.rs"]
+mod terminal_routing;
 
-impl Certificates {
-    fn new() -> Self {
-        let key = KeyPair::generate().unwrap();
-        let mut params = CertificateParams::default();
-        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-        params
-            .distinguished_name
-            .push(DnType::CommonName, "Artifactory test CA");
-        let ca = params.self_signed(&key).unwrap().pem();
-        let issuer = rcgen::Issuer::new(params, key);
-        let key = KeyPair::generate().unwrap();
-        let mut params =
-            CertificateParams::new(vec!["localhost".into(), "127.0.0.1".into()]).unwrap();
-        params
-            .distinguished_name
-            .push(DnType::CommonName, "localhost");
-        params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
-        let server = params.signed_by(&key, &issuer).unwrap().pem();
-        Self {
-            ca,
-            issuer,
-            server,
-            server_key: key.serialize_pem(),
-        }
-    }
+#[path = "terminal_load.rs"]
+mod terminal_load;
 
-    fn device(&self) -> (String, String) {
-        let key = KeyPair::generate().unwrap();
-        let mut params = CertificateParams::default();
-        params
-            .distinguished_name
-            .push(DnType::CommonName, "Artifactory test device");
-        params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ClientAuth];
-        (
-            params.signed_by(&key, &self.issuer).unwrap().pem(),
-            key.serialize_pem(),
-        )
-    }
-}
+#[path = "transport_certificates.rs"]
+mod certificates;
+use certificates::Certificates;
 
 struct Replica {
     state: AppState,
@@ -86,10 +48,12 @@ impl Replica {
             ))
             .client_ca_root(Certificate::from_pem(&certificates.ca));
         let service = EmissaryService(state.clone());
+        let terminal_service = artifactory_control_plane::terminals::rpc::Device(state.clone());
         let server = tokio::spawn(async move {
             Server::builder()
                 .tls_config(tls)
                 .unwrap()
+                .add_service(pb::terminal_server::TerminalServer::new(terminal_service))
                 .add_service(pb::control_server::ControlServer::new(service))
                 .serve_with_incoming(incoming)
                 .await
@@ -226,7 +190,7 @@ impl Device {
             }
         })
         .await
-        .expect("expected command timed out")
+        .unwrap_or_else(|_| panic!("expected command {kind} timed out"))
     }
 
     async fn renew(&mut self, assignment: &pb::Command) -> Duration {

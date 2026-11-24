@@ -1,0 +1,40 @@
+/**
+ * [INPUT]: 依赖控制台主题、字体和 xterm 结构。
+ * [OUTPUT]: 提供设备终端工作区、状态、工具栏和窄屏局部滚动。
+ * [POS]: 终端独立视图的布局边界，不改变设备详情样式。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.terminal-workspace { min-width: 0; }
+.terminal-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 0 0 18px; }
+.terminal-controls > label { min-width: 160px; max-width: 280px; margin: 0; }
+.terminal-unavailable { color: var(--muted-foreground); font-size: 13px; line-height: 1.7; margin: 12px 0 20px; }
+.terminal-surface { min-width: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--log-background); }
+.terminal-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; border-bottom: 1px solid var(--border); padding: 8px 12px; background: var(--quiet); }
+.terminal-target { display: flex; align-items: center; min-width: 0; gap: 10px; font: 11px/1.5 var(--font-mono); color: var(--muted-foreground); }
+.terminal-target > span:not(.terminal-state) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.terminal-toolbar-actions { display: flex; gap: 4px; }
+.terminal-state { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; font: 11px/1.5 var(--font-sans); }
+.terminal-state::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.terminal-state-running { color: var(--success); }
+.terminal-state-reconnecting, .terminal-state-connecting { color: var(--warning); }
+.terminal-state-error { color: var(--destructive); }
+.terminal-canvas { min-width: 0; height: clamp(320px, 58dvh, 720px); padding: 12px 8px 8px 12px; }
+.terminal-canvas .xterm { height: 100%; }
+.terminal-canvas:focus-within { box-shadow: inset 0 0 0 1px var(--ring); }
+.terminal-footer { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; border-top: 1px solid var(--border); padding: 7px 12px; font-size: 11px; color: var(--muted-foreground); }
+.terminal-footer > span { overflow-wrap: anywhere; }
+.terminal-footer > button { margin-left: auto; }
+.terminal-account-hint { color: var(--muted-foreground); margin: 12px 0 0; max-width: 76ch; font-size: 12px; line-height: 1.7; }
+.terminal-paste-preview { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: 5px; padding: 12px; background: var(--quiet); font-size: 12px; }
+@media (max-width: 640px) {
+  .terminal-controls { gap: 10px; }
+  .terminal-controls > label { flex: 1 1 100%; max-width: none; }
+  .terminal-controls > button { flex: 1; }
+  .terminal-toolbar { padding: 8px; }
+  .terminal-target { flex-wrap: wrap; gap: 4px 10px; }
+  .terminal-target > span:not(.terminal-state) { max-width: 180px; }
+  .terminal-toolbar-actions { width: 100%; justify-content: end; }
+  .terminal-toolbar-actions > button { flex: 1; min-width: 0; height: auto; min-height: 44px; padding: 8px; white-space: normal; }
+  .terminal-canvas { height: 52dvh; min-height: 280px; padding: 8px 4px 4px 8px; }
+  .terminal-footer { padding: 7px 8px; }
+}

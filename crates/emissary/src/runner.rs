@@ -1,11 +1,11 @@
 //! [INPUT]: 依赖 mTLS 会话、固定主机诊断、遥测缓存和持久化事件队列。
-//! [OUTPUT]: 提供任务领取、携带主机识别的租约心跳和 Worker 监督。
+//! [OUTPUT]: 提供任务领取、租约心跳、构建和独立终端 Worker 监督。
 //! [POS]: 节点主进程；向 Worker 仅交付被授权的本机方案。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
     client,
     config::{Config, atomic_json, private_dir},
-    doctor, ota, process, protocol as pb, source,
+    doctor, ota, protocol as pb, source,
     worker::{Event, Input, Lease},
 };
 use anyhow::{Context, Result, ensure};
@@ -15,17 +15,14 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::PathBuf,
-    process::Stdio,
     time::{Duration, Instant},
 };
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::Command,
-    sync::mpsc,
-    task::JoinSet,
-};
+use tokio::{sync::mpsc, task::JoinSet};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
+
+mod worker;
+use worker::worker_task;
 
 struct Task {
     token: String,
@@ -173,6 +170,7 @@ struct State {
     telemetry: Option<crate::telemetry::Handle>,
     startup: Option<artifactory_emissary_protocol::nodes::MetadataSnapshot>,
     metadata_acked: bool,
+    terminal_workers: usize,
 }
 enum Action {
     Start(String, u32),
@@ -198,6 +196,7 @@ impl State {
             telemetry: None,
             startup: None,
             metadata_acked: false,
+            terminal_workers: 0,
         })
     }
     fn heartbeat(&mut self, kind: &str) -> pb::EmissaryEvent {
@@ -221,6 +220,14 @@ impl State {
         diagnostics["buffered_log_bytes"] = json!(self.spool.bytes);
         pb::EmissaryEvent{emissary_id:self.cfg.emissary_id.clone(),kind:kind.into(),command_id:id,protocol_major:1,payload_json:json!({"active_attempts":self.tasks.iter().map(|(id,t)|json!({"attempt_id":id,"lease_token":t.token})).collect::<Vec<_>>(),"startup":if kind=="hello" {self.startup.as_ref()} else {None},"diagnostics":diagnostics,"ota":ota}).to_string(),..Default::default()}
     }
+    fn terminal_draining(&self) -> bool {
+        self.stopping
+            || self.ota_directory.as_ref().is_some_and(|directory| {
+                ota::snapshot(directory)
+                    .map(|state| state.active())
+                    .unwrap_or(true)
+            })
+    }
     fn ota_snapshot(&mut self, request: &str) -> Option<ota::State> {
         let directory = self.ota_directory.as_ref()?;
         let mut state = ota::snapshot(directory).ok()?;
@@ -228,6 +235,7 @@ impl State {
             && self.tasks.is_empty()
             && self.workers == 0
             && self.spool.bytes == 0
+            && self.terminal_workers == 0
         {
             state.phase = "activating".into();
             state.activation_pending = true;
@@ -521,91 +529,6 @@ async fn connect(
     }
     let _ = send.send(Message::Disconnected(session)).await;
 }
-async fn worker_task(
-    mut cfg: Config,
-    id: String,
-    token: String,
-    assignment: pb::Assignment,
-    seconds: u32,
-    (mut controls, registry): (mpsc::Receiver<Input>, crate::telemetry::Registry),
-    send: mpsc::Sender<Message>,
-) -> Result<()> {
-    crate::signing::ready(&cfg)?;
-    source::ready(&cfg)?;
-    cfg.signing_profiles.retain(|name, _| {
-        assignment.managed_signing_json.is_empty() && assignment.signing_profiles.contains(name)
-    });
-    let mut command = Command::new(std::env::current_exe()?);
-    command
-        .arg("worker")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
-    let mut child = process::spawn_worker(command)?;
-    source::register_session(&cfg, &id, child.id().context("worker PID missing")?)?;
-    let attempt = uuid::Uuid::parse_str(&id)?;
-    let _managed = if let Some(pid) = child.id() {
-        registry.register(attempt, pid).await.ok()
-    } else {
-        None
-    };
-    let result = async {
-        let mut stdin = child.stdin().take().context("worker stdin missing")?;
-        let stdout = child.stdout().take().context("worker stdout missing")?;
-        let initial = Input {
-            kind: "start".into(),
-            config: cfg.clone(),
-            attempt_id: id.clone(),
-            lease_token: token,
-            lease_seconds: seconds,
-            assignment: Some(assignment),
-            ..Default::default()
-        };
-        let mut bytes = serde_json::to_vec(&initial)?;
-        bytes.push(b'\n');
-        stdin.write_all(&bytes).await?;
-        let writer = tokio::spawn(async move {
-            while let Some(input) = controls.recv().await {
-                let mut bytes = serde_json::to_vec(&input)?;
-                bytes.push(b'\n');
-                stdin.write_all(&bytes).await?;
-            }
-            Ok::<_, anyhow::Error>(())
-        });
-        let read = async {
-            let mut lines = BufReader::new(stdout).lines();
-            while let Some(line) = lines.next_line().await? {
-                let event: Event = serde_json::from_str(&line)?;
-                if event.kind == "step_started" {
-                    registry.step(
-                        attempt,
-                        event.payload["index"]
-                            .as_u64()
-                            .and_then(|n| u32::try_from(n).ok()),
-                    );
-                }
-                if event.kind == "step_finished" {
-                    registry.step(attempt, None);
-                }
-                send.send(Message::Event(id.clone(), event)).await?;
-            }
-            Ok::<_, anyhow::Error>(())
-        }
-        .await;
-        writer.abort();
-        let _ = writer.await;
-        read
-    }
-    .await;
-    if result.is_err() {
-        let _ = child.start_kill();
-    }
-    let waited = child.wait().await;
-    source::settle_attempt(&cfg, &id).await?;
-    result?;
-    waited?;
-    Ok(())
-}
 pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
     ensure!(
         source::valid_id(&cfg.emissary_id),
@@ -619,20 +542,34 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
     )
     .await?;
     source::sweep(&cfg).await?;
+    crate::terminal::sweep(&cfg).await?;
     crate::signing::sweep(&cfg).await?;
     let (diagnostics, mut capabilities) = doctor::doctor(&cfg).await;
     if std::env::var_os("ARTIFACTORY_OTA_DIRECTORY").is_some() {
         capabilities.push("emissary-ota-v1".into());
     }
+    let terminal_capabilities = crate::terminal::capabilities(&cfg.terminal).await?;
+    if terminal_capabilities.enabled {
+        capabilities.push(artifactory_emissary_protocol::terminal::CAPABILITY.into());
+    }
     let mut state = State::new(cfg.clone(), diagnostics, capabilities)?;
     let startup_id = uuid::Uuid::new_v4();
-    let (snapshot, inventory) = crate::telemetry::startup(
+    let (mut snapshot, inventory) = crate::telemetry::startup(
         &cfg,
         startup_id,
         &state.diagnostics,
         state.capabilities.clone(),
     )
     .await?;
+    if terminal_capabilities.enabled {
+        snapshot.metadata.insert(
+            "emissary.terminal".into(),
+            serde_json::to_value(&terminal_capabilities)?,
+        );
+        snapshot.validate()?;
+    }
+    let mut terminals =
+        crate::terminal::Supervisor::new(cfg.clone(), startup_id, terminal_capabilities.account);
     state.startup = Some(snapshot);
     if !cfg.telemetry_endpoint.is_empty() {
         state.telemetry = Some(crate::telemetry::Handle::start(
@@ -674,9 +611,12 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
             jobs.spawn(connect(cfg, session, hello, send, token));
         }
         tokio::select! {
-            _=cancel.cancelled(),if shutdown.is_none()=>{state.stop();shutdown=Some(Instant::now()+Duration::from_secs(5));},
+            _=cancel.cancelled(),if shutdown.is_none()=>{state.stop();terminals.drain();shutdown=Some(Instant::now()+Duration::from_secs(5));},
             _=tick.tick()=>{
                 crate::signing::ready(&cfg)?;
+                terminals.tick();
+                state.terminal_workers=terminals.len();
+                terminals.set_draining(state.terminal_draining() || source::ready(&cfg).is_err());
                 let now=Instant::now();
                 let expired=state.tasks.iter().filter(|(_,task)|task.lease.expired(now)).map(|(id,_)|id.clone()).collect::<Vec<_>>();
                 for id in expired {state.drop_task(&id,"execution lease expired")?;}
@@ -713,8 +653,18 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
                         task.sent_sequence=0;task.replay_at=None;task.last_accept_at=None;
                     }
                 },
-                Message::Disconnected(id) if id==session=>{outbound=None;connecting=false;retry=Instant::now()+client::retry_delay(backoff);backoff=(backoff*2).min(30);if shutdown.is_none(){eprintln!("control connection interrupted; reconnecting");}},
+                Message::Disconnected(id) if id==session=>{terminals.disconnect();outbound=None;connecting=false;retry=Instant::now()+client::retry_delay(backoff);backoff=(backoff*2).min(30);if shutdown.is_none(){eprintln!("control connection interrupted; reconnecting");}},
                 Message::Command(id,command) if id==session=>{
+                    if command.kind == "metadata_ack" && command.request_id == startup_id.to_string()
+                        && let Ok(control_session)=uuid::Uuid::parse_str(&command.signing_session_id) {
+                        terminals.control_session(control_session);
+                    }
+                    if command.kind.starts_with("terminal_") {
+                        terminals.set_draining(state.terminal_draining());
+                        if terminals.command(&command).is_err() { eprintln!("device terminal command rejected"); }
+                        state.terminal_workers=terminals.len();
+                        continue;
+                    }
                     let actions=state.command(*command,Instant::now())?;
                     for action in actions {match action {
                         Action::Control(id,input)=>if let Some(task)=state.tasks.get(&id)&& let Some(tx)=&task.control {let _=tx.try_send(*input);},
@@ -757,6 +707,7 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
     }
     transport.cancel();
     state.stop();
+    terminals.shutdown().await;
     // Give EOF-triggered worker cleanup a chance even when the control plane is down.
     let _ = tokio::time::timeout(Duration::from_secs(3), async {
         while jobs.join_next().await.is_some() {}

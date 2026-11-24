@@ -39,6 +39,7 @@ substrate-scheduling-assessment-2026-11-12.md: 评估可选调度后端的适用
 tasknotes-application-acceptance-2026-11-18.md: 记录 TaskNotes 真实应用的构建、网关下载、运行证据和环境阻塞。
 tasknotes-platform-fixes-2026-11-18.md: 罗列 TaskNotes 暴露的平台缺陷、修复验证与剩余能力边界。
 telemetry.md: 定义主机与构建的时序观测、私有双端口 Service 和设备 mTLS。
+terminals.md: 定义设备终端权限、配置、字节协议、多副本与进程回收。
 toasty-acceptance-2026-11-13.md: 记录 Toasty 数据迁移验收。
 versioning.md: 定义统一版本与交付约束。
 release-delivery.md: 定义版本元数据、四步构建确认、独立源码与目标、单次不可变交付。

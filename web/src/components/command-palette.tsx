@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖统一工作区导航、授权项目与 Modal。
+ * [INPUT]: 依赖工作区导航、授权项目、终端键盘边界与 Modal。
  * [OUTPUT]: 提供 CommandPalette 快捷导航面板。
  * [POS]: 按当前作用域搜索业务与设置，保留项目切换。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -31,6 +31,7 @@ export function CommandPalette({ projects, project, user, readOnly, tenantName }
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+      if (event.target instanceof Element && event.target.closest("[data-terminal-input]")) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k" && !event.isComposing) {
         event.preventDefault();
         const anotherModal = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'))

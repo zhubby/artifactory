@@ -8,6 +8,7 @@ live_protocol.rs: 复用隔离租户夹具，验证会话、租约、事件与�
 process_tree.rs: 验证前台与服务入口在配置缺失时退出。
 native_service.rs: 隔离测试账户的上游仓库与服务私有目录，验证原生服务生命周期。
 runtime.rs: 在线源码准备后验证 EOF、运行中租约和 SIGTERM 回收，并输出提前退出诊断。
+terminal_protocol.rs: 通过真实 Emissary、mTLS 和 PTY 验证字节、租约与即刻退出码。
 support/: 共享平台证书夹具、首连超时诊断与真实租户协议夹具。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定后端、交付票据、发布围栏与请求预算。
-//! [OUTPUT]: 流式代理 HTTP；固定下载文件名并拦截正式 Manifest。
+//! [OUTPUT]: 隔离终端连接预算并流式代理 HTTP；约束下载与 Manifest。
 //! [POS]: 不缓存认证结果，不缓冲镜像层，不重放写请求。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::config::Config;
@@ -50,6 +50,7 @@ pub struct Gateway {
     next: AtomicUsize,
     http: reqwest::Client,
     requests: Arc<tokio::sync::Semaphore>,
+    terminals: Arc<tokio::sync::Semaphore>,
     manifests: tokio::sync::Semaphore,
     ca: Option<Arc<pingora::protocols::tls::CaType>>,
 }
@@ -91,6 +92,7 @@ impl Gateway {
         }
         Ok(Self {
             requests: Arc::new(tokio::sync::Semaphore::new(config.max_http)),
+            terminals: Arc::new(tokio::sync::Semaphore::new(config.max_terminal)),
             // 八个四 MiB 正文上限，避免普通 HTTP 预算放大缓冲内存。
             manifests: tokio::sync::Semaphore::new(8),
             config,
@@ -184,7 +186,12 @@ impl ProxyHttp for Gateway {
                 .await?;
             return Ok(true);
         }
-        let Ok(permit) = self.requests.clone().try_acquire_owned() else {
+        let budget = if terminal_stream(path) {
+            &self.terminals
+        } else {
+            &self.requests
+        };
+        let Ok(permit) = budget.clone().try_acquire_owned() else {
             session.respond_error(503).await?;
             return Ok(true);
         };
@@ -404,6 +411,12 @@ impl ProxyHttp for Gateway {
         error.set_retry(false);
         error
     }
+}
+
+fn terminal_stream(path: &str) -> bool {
+    path.strip_prefix("/api/v1/terminal-sessions/")
+        .and_then(|tail| tail.strip_suffix("/stream"))
+        .is_some_and(|id| !id.is_empty() && !id.contains('/'))
 }
 
 #[cfg(test)]

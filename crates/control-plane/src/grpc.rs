@@ -39,7 +39,7 @@ fn peer_certificate_hash<T>(request: &Request<T>) -> Result<String, Status> {
         .ok_or_else(|| Status::unauthenticated("node certificate required"))?;
     Ok(crypto::hash(certificate.as_ref()))
 }
-async fn identity<T>(state: &AppState, request: &Request<T>) -> Result<Uuid, Status> {
+pub(crate) async fn identity<T>(state: &AppState, request: &Request<T>) -> Result<Uuid, Status> {
     state
         .store
         .node_identity(peer_certificate_hash(request)?)
@@ -679,6 +679,7 @@ async fn metadata_ack(
         .send(Ok(Command {
             kind: "metadata_ack".into(),
             request_id: snapshot.startup_id.to_string(),
+            signing_session_id: session.to_string(),
             ..Default::default()
         }))
         .await

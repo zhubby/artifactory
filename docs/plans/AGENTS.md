@@ -10,4 +10,6 @@
 2026-11-20-release-centered-delivery.md: 跟踪 Release 目标合同、固定源码、不可变交付与限定实例部署。
 2026-11-20-node-identification.md: 跟踪稳定设备名称、主机识别信息、重命名和双平台上线验收。
 
+2026-11-24-001-feat-interactive-terminals-plan.md: 记录已实施设备终端、Uplink/Tunshell边界及分层验收进度。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

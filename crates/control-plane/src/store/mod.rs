@@ -9,6 +9,7 @@ mod auth;
 pub mod lifecycle;
 mod lifecycle_cleanup;
 mod tenancy;
+pub mod terminals;
 pub use tenancy::{NodeAccess, NodeAccessMode};
 mod build_activity;
 mod dashboard;

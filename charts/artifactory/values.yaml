@@ -36,6 +36,8 @@ secrets:
 
 controlPlane:
   replicas: 1
+  # Private Control-to-Control terminal stream; never added to the public gateway.
+  terminalRelayPort: 8446
   databaseConnections: 20
   artifactVerifications: 4
   schedulerBatch: 64
@@ -149,6 +151,7 @@ gateway:
   # Secret key token; empty selects <prefix>-gateway.
   secretName: ''
   httpConnections: 1024
+  terminalConnections: 128
   deviceConnections: 4096
   telemetryConnections: 4096
   internalConnections: 1024

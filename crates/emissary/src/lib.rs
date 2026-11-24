@@ -14,6 +14,7 @@ pub mod service;
 pub mod signing;
 pub mod source;
 pub mod telemetry;
+pub mod terminal;
 pub mod worker;
 
 pub const VERSION: &str = match option_env!("ARTIFACTORY_BUILD_VERSION") {

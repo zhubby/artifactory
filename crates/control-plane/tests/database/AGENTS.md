@@ -20,6 +20,12 @@ planning_bridge.rs: 验证无条件规划 outbox 与取消版本。
 signing.rs: 验证真实 PKCS12、固定版本、撤权、可用性与摘要证据。
 source_refs.rs: 验证受权引用任务与错误脱敏。
 tenancy.rs: 提供租户 HTTP 与设备夹具，验证成员和构建权限。
+terminals.rs: 验证设备终端原子限额、原账户 Session、一次性票据和设备围栏。
+terminal_lifecycle.rs: 验证租户终端排空、设备租约窗口、删除清扫和项目隔离。
+terminal_routing.rs: 以真实 TLS 验证三副本、丢 ACK 与内部断流恢复、慢快照授权截止。
+terminal_recovery.rs: 为三副本测试重取附着票据，断言内部短断不产生终态。
+terminal_load.rs: 量化十个虚拟设备会话的输出 credit、RTT、心跳、关闭和测试进程资源。
+transport_certificates.rs: 为设备和终端传输验收签发独立 CA、服务与客户端证书。
 tenancy_regressions.rs: 验证租户隔离和管理权限回归。
 transport.rs: 组合真实 Tonic/mTLS、设备负载与制品传输回归。
 workspace_lifecycle.rs: 以显式授权设备验证构建排空、归档、删除和恢复。

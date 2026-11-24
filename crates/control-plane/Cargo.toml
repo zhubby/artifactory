@@ -19,7 +19,7 @@ aes-gcm = "0.10"
 anyhow = "1"
 argon2 = "0.5"
 async-stream = "0.3"
-axum = { version = "0.8", features = ["macros"] }
+axum = { version = "0.8", features = ["macros", "ws"] }
 base64 = "0.22"
 ed25519-dalek = "2"
 chrono = { version = "0.4", features = ["serde"] }
@@ -44,7 +44,7 @@ zeroize = "1"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["net"] }
 tokio-util = { version = "0.7", features = ["io", "rt"] }
 tonic = { version = "0.14", features = ["tls-ring"] }
 tonic-prost = "0.14"
@@ -57,8 +57,10 @@ uuid = { version = "1", features = ["v4", "serde"] }
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls", "ring", "rustls-native-certs"] }
 ipnet = "2"
 hmac = "0.12"
+rcgen = "0.14"
 
 [dev-dependencies]
+tokio-tungstenite = "0.29"
 artifactory-planning-operator = { path = "../../operators/planning-operator" }
 artifactory-image-operator = { path = "../../operators/image-operator" }
 rcgen = "0.14"

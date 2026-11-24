@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖节点配置文件、源码私有目录和共享私有写入。
-//! [OUTPUT]: 提供节点设置、私有文件入口和原子记录写入。
+//! [OUTPUT]: 提供节点及默认关闭的终端设置、私有文件与原子记录写入。
 //! [POS]: Runner 与 Worker 共用的配置和本机文件边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
@@ -32,6 +32,7 @@ pub struct Config {
     pub signing_profiles: BTreeMap<String, BTreeMap<String, String>>,
     pub log_buffer_bytes: u64,
     pub allow_http_uploads: bool,
+    pub terminal: crate::terminal::TerminalSettings,
 }
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
@@ -44,6 +45,7 @@ impl Config {
             "endpoint, CA file and managed root are required"
         );
         cfg.root = std::path::absolute(cfg.root)?;
+        cfg.terminal.validate()?;
         if cfg.log_buffer_bytes == 0 {
             cfg.log_buffer_bytes = 256 << 20;
         }

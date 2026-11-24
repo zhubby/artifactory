@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 节点 mTLS、签名版本清单和固定启动器。
-[OUTPUT]: 定义升级信任、排空、确认和失败恢复。
+[OUTPUT]: 定义升级信任、排空、确认和失败恢复，并关联设备终端契约。
 [POS]: 原生节点升级的发布与运维契约。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -89,6 +89,8 @@ artifactory-emissary service --action start --config /path/to/emissary.json
 节点页显示版本、启动器、目标、进度、失败原因和回滚结果。设置页的 Emissary 自动升级标签提供导入、池并发 / 暂停策略与历史操作。未初始化 OTA 的 Emissary 显示“需要安装 OTA 支持”。
 
 ## 验证边界
+
+设备终端 Worker 计入 OTA 排空条件。实际 downloading、draining、activating 阶段拒绝新终端并取消已有终端；取消、下载失败与回退后允许显式创建新终端。终端关闭与真实进程回收完成后才计为零；已关闭会话不恢复。见[设备终端](terminals.md)。
 
 `cargo test -p artifactory-emissary --all-targets` 覆盖签名、下载中断、generation、排空和真实子进程经 mTLS 确认的升级 / 回滚。PostgreSQL 测试覆盖节点锁竞争、池限流 / 暂停、权限、过期会话、吊销和证书期限。六平台 CI 覆盖 Darwin、Windows、Linux 各自的 arm64 / amd64，使用 Rust 原生构建；具体通过结果以 CI run 为准。
 

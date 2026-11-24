@@ -1,7 +1,7 @@
 # web/src/components/
 > L2 | Parent: ../AGENTS.md
 
-account.tsx: 通过固定宿主与响应式插槽保持单实例账户菜单、个人设置草稿和焦点。
+account.tsx: 保持单实例账户菜单、设置草稿和焦点，退出后发出活动会话清理信号。
 ai-settings.tsx: 使用共享下拉配置任意模型、调用预算与独立接口兼容字段。
 auth-shell.tsx: 渲染认证页面布局。
 brand-mark.tsx: 渲染 Artifactory 品牌标记。
@@ -16,8 +16,8 @@ build-table.tsx: 展示构建的 Release 归属、独立源码与目标和执行
 build-wizard.tsx: 组合四步弹窗、授权设备默认目标、答案草稿和最终确认提交。
 build-target-picker.tsx: 按项目授权设备禁选原生平台，高级设置遵守同一设备约束。
 common.tsx: 提供内容骨架、正文标题动作与名称附件，统一字段、通知及下载反馈。
-command-palette.tsx: 复用当前范围的业务与设置导航，支持项目切换并恢复触发焦点。
-console.tsx: 由租户布局持续挂载，校验地址并按租户与项目隔离工作区，组合顶栏、权限骨架与项目星标。
+command-palette.tsx: 复用当前范围导航，保留项目切换和焦点，不抢占终端输入快捷键。
+console.tsx: 按租户与项目隔离工作区，组合顶栏、设备终端路由、权限骨架与项目星标。
 dashboard.tsx: 读取完整窗口指标和近期活动，范围切换使用共享下拉，后台刷新保留内容。
 dashboard-charts.tsx: 按需加载 Recharts，呈现当前构建结果和成功构建周转时长，保留空样本断点。
 emissary-ota.tsx: 等待节点池和发布选项后开放表单，历史首读可重试，轮询保留池策略草稿。
@@ -28,7 +28,7 @@ node-detail-dialog.tsx: 组合固定身份标题、五个详情标签和遥测�
 node-overview.tsx: 先展示四项设备摘要，再展示接口与标签，按需展开完整硬件和连接信息。
 node-resources.tsx: 按指标、成对内存负载字段、设备表展示遥测，手机逐行显示，采样诊断默认折叠。
 node-tools.tsx: 以单列工具行展示版本和可用状态，路径按需展开，签名配置独立分组。
-node-operations.tsx: 展示升级、节点配置、折叠运行诊断与授权吊销，保留轮询和嵌套弹窗流程。
+node-operations.tsx: 提供设备终端入口、升级、节点配置、运行诊断与授权吊销。
 node-network-addresses.tsx: 在设备摘要后按接口对齐 IPv4/IPv6、采样时间和截断状态。
 node-rename.tsx: 提供具名图标入口，只提交名称，按 Unicode White_Space 裁剪后校验 UTF8 与控制字符，保护草稿和焦点。
 node-detail-parts.tsx: 提供分区、折叠区、对齐字段、时间与重试，零值可见且轮询保留展开状态。
@@ -47,7 +47,7 @@ tenant-chooser.tsx: 展示租户卡片与邀请，HTTP 创建使用共享幂等�
 top-progress.tsx: 根据并发前台计数延迟显示顶部细进度条，最后请求结束后淡出。
 tenant-members.tsx: 配置租户与项目成员，邀请首读显示列表骨架并提供失败重试。
 workspace-management.tsx: 按权限渲染设置分区，必需资源就绪后挂载表单，按分区隔离状态。
-workspace-navigation.tsx: 渲染作用域侧栏与面包屑，权限首读显示分组骨架，失败可重试。
+workspace-navigation.tsx: 渲染作用域侧栏和设备终端面包屑，权限首读显示分组骨架，失败可重试。
 ui/: 提供统一基础控件。
 
 header-tools.tsx: 工作区、租户大厅与通知页共用文档、账户插槽和最右铃铛。
@@ -59,5 +59,8 @@ notification-provider.tsx: 在账户边界维护单 SSE 连接，合并失效并
 notification-center.tsx: 顶栏铃铛与独立页面共用抽屉和未读数，后台重验保留原阅读窗口及滚动。
 notification-settings.tsx: 配置站内偏好、邮箱订阅及项目名称旁的关注星标，保存失败保留既有状态。
 notification-webhooks.tsx: 在管理员设置配置端点、一次密钥、测试与投递重试。
+
+terminal-workspace.tsx: 提供独立设备终端、显式创建结束、权限状态和粘贴确认。
+terminal-view.tsx: 按需加载 xterm，渲染字节、反馈消费并隔离终端键盘。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

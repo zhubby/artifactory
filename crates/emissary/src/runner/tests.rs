@@ -359,6 +359,33 @@ fn ota_health_requires_current_outstanding_heartbeat() {
     );
     assert_eq!(state.health_at, Some(now));
 }
+#[test]
+fn terminal_admission_resumes_after_ota_cancel_or_failure() {
+    let root = tempfile::tempdir().unwrap();
+    let mut state = test_state(root.path());
+    state.ota_directory = Some(root.path().into());
+    for (phase, expected) in [
+        ("downloading", true),
+        ("draining", true),
+        ("activating", true),
+        ("canceled", false),
+        ("failed", false),
+        ("rolled_back", false),
+    ] {
+        atomic_json(
+            &root.path().join("state.json"),
+            &ota::State {
+                phase: phase.into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(state.terminal_draining(), expected, "{phase}");
+    }
+    state.stopping = true;
+    assert!(state.terminal_draining());
+}
+
 fn test_state(root: &Path) -> State {
     State::new(
         Config {

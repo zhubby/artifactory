@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 租户路由、成员权限与共享设备授权契约。
-[OUTPUT]: 定义多租户页面、权限及接口边界。
+[OUTPUT]: 定义多租户页面、权限及接口边界，并关联设备终端契约。
 [POS]: 连接控制台工作区与服务端租户隔离模型。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -42,6 +42,8 @@ Session 业务请求必须携带 `X-Artifactory-Tenant`，服务端每次读取�
 普通成员可读取获授权项目的可用设备及总槽位占用；设备详情隐藏运维诊断和 OTA 错误，其他项目的任务、日志和凭证通过项目权限隔离。源码准备进程、Telemetry 和规划协调器通过控制平面确认的任务、设备或租约访问，不接受客户端自报的租户作为授权依据。规划 Worker 使用绑定 Pod 的投射令牌领取当前运行，模型密钥从该任务的租户配置获取。
 
 ## 接口
+
+设备终端只允许当前租户 owner/admin 的登录 Session。项目设备授权、项目 admin、普通成员和 API Token 均不能打开 Shell。会话绑定原创建者、原 Session 与页面内存 renderer；其他管理员和同账户的新登录也不能附着。运行期最多每五秒复核权限，撤权关闭输入输出。终端使用设备实际服务账户，不能作为项目文件隔离。见[设备终端](terminals.md)。
 
 路径均以 `/api/v1` 开头。修改 Session 请求继续要求 CSRF header。
 

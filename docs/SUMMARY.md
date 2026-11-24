@@ -15,6 +15,7 @@
 - [租户与项目工作台、个人设置及生命周期](workspaces.md)
 - [通知中心与外部渠道](notifications.md)
 - [节点元数据、MCP 与 AI 选机](node-placement.md)
+- [设备终端](terminals.md)
 - [应用签名与凭据下发](signing.md)
 - [执行配方与历史配置](configuration.md)
 - [控制台语言、主题与动效](frontend-experience.md)
@@ -46,6 +47,7 @@
 # 验收记录
 
 - [实施与验收总览](acceptance.md)
+- [设备终端本地验收 · 2026-11-25](acceptance/2026-11-25-device-terminals.md)
 - [真实模型全流程 · 2026-11-22](acceptance/2026-11-22-model-workflows.md)
 - [TaskNotes 真实多平台应用 · 2026-11-18](tasknotes-application-acceptance-2026-11-18.md)
 - [TaskNotes 平台问题与修复 · 2026-11-18](tasknotes-platform-fixes-2026-11-18.md)
@@ -75,6 +77,8 @@
 - [Agent OTA · 2026-11-11](agent-ota-acceptance-2026-11-11.md)
 
 # 设计与计划归档
+
+- [设备交互终端实施计划 · 2026-11-24](plans/2026-11-24-001-feat-interactive-terminals-plan.md)
 
 - [设备命名与辨识度改进 · 2026-11-20](plans/2026-11-20-node-identification.md)
 - [Kubernetes 1.28 一次性镜像构建方案 · 2026-11-18](plans/2026-11-18-001-refactor-kubernetes-128-build-plan.md)

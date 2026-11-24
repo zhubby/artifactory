@@ -1,6 +1,6 @@
 <!--
 [INPUT]: Emissary 公共协议、设备执行与规划协调器身份。
-[OUTPUT]: 定义设备会话、心跳预算、执行租约与临时源码边界。
+[OUTPUT]: 定义设备会话、心跳预算、执行租约与临时源码边界，并关联设备终端契约。
 [POS]: 设备通信入口；规划 Pod 的恢复细节由规划协调器协议定义。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -67,6 +67,14 @@ Emissary 在租约内断线保持 Worker，重连后补报；无续租则本地�
 ## Emissary 级 OTA 扩展
 
 协议主版本仍为 1。启动快照的 capabilities（旧节点为 hello 的 capabilities）包含 `emissary-ota-v1` 才调度升级。心跳的独立 `ota` 对象报告持久化阶段；`emissary_update` 命令使用 Command.payload_json（新增字段 10），没有 attempt_id / lease_token；`emissary_health` 引用当前心跳 command_id。所有状态及确认继续验证节点 mTLS 身份、当前 session、吊销和证书期限。升级确认没有收到时不提交候选版本。
+
+## 设备交互终端
+
+`terminal-v1` 能力与 `emissary.terminal` 启动元数据表示设备本地显式启用。`metadata_ack.signing_session_id` 回传服务端当前控制 session。`terminal_open` 绑定 terminal_id、node_session、startup_id、profile、尺寸与短期限，重复通知不重复执行。
+
+新增 `Terminal.Connect` 使用独立 mTLS 双向通道。首帧 hello 绑定实际节点证书与当前设备启动身份；Control 返回 start 后才能创建 Worker。设备完成真实 PTY 与父监督登记后发送 ready，随后传递原始字节、单调 offset、input sequence、resize、ack、lease、close 和真实 exit。每帧 16 KiB，最多 1 MiB 未确认输出，45 秒设备租约。
+
+`TerminalRelay.Connect` 只在私有 Control 端口注册，以实例证书及签名短期委托转发浏览器或设备流。Control 不启动 PTY。终端内容不进入任务事件、spool、数据库或 NOTIFY。详细生命周期与预算见[设备终端](terminals.md)。
 
 ## AI 与临时源码
 

@@ -1,4 +1,7 @@
-//! Process-local connection ownership and wakeups backed by durable database work.
+//! [INPUT]: 依赖持久设备归属、进程停止信号与终端运行时。
+//! [OUTPUT]: 提供副本身份、准入预算、排空和一次性终端运行时。
+//! [POS]: 副本本地协调；数据库保存跨副本租约和命令。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -27,6 +30,7 @@ pub struct Coordination {
     // budget. The permit covers authorization, session replacement and hello.
     pub(crate) admissions: Arc<Semaphore>,
     pub(crate) telemetry_client: tokio::sync::OnceCell<reqwest::Client>,
+    pub(crate) terminals: tokio::sync::OnceCell<Arc<crate::terminals::Runtime>>,
     draining: AtomicBool,
 }
 
@@ -50,6 +54,7 @@ impl Coordination {
             )),
             draining: AtomicBool::new(false),
             telemetry_client: tokio::sync::OnceCell::new(),
+            terminals: tokio::sync::OnceCell::new(),
         }
     }
 
