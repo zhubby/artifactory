@@ -8,7 +8,7 @@ build-source-edge.spec.ts: 验证构建弹窗三视口源码建议等宽对齐�
 build-history.spec.ts: 验证终态静态日志、分页锚点、尾部事件与发布状态轮询。
 build-detail-design.spec.ts: 验证当前计划身份、历史选择轮询、执行归属、澄清草稿、日志标签生命周期与双语主题响应式无障碍。
 build-execution-states.spec.ts: 验证无设备尝试的镜像执行、混合目标切换和无任务、无计划的终态说明。
-build-process.spec.ts: 验证源码失败、历史缺失和中英文明暗主题的过程可读性。
+build-process.spec.ts: 验证源码失败、历史缺失、耗时容器边界和双语主题可读性。
 build-guide.spec.ts: 验证四步弹窗、混合目标、草稿与失败重试、最终确认、中英文明暗主题和无障碍。
 build-device-targets.spec.ts: 验证项目授权平台禁选、在线默认、高级约束和失败重试。
 build-wizard.spec.ts: 验证严格 SemVer、Release 说明、独立源码与目标、轮询稳定的单构建交付、候选失效重选、失败重试和权限。

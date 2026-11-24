@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖真实构建页、阶段夹具和受权过程接口。
- * [OUTPUT]: 验证源码失败、历史缺失、静默刷新和过程布局。
+ * [OUTPUT]: 验证源码失败、历史缺失、静默刷新与耗时容器边界。
  * [POS]: 观察者过程视图的浏览器回归，不创建真实构建。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -83,6 +83,11 @@ for (const locale of ["zh-CN", "en"] as const) for (const theme of ["light", "da
     await page.goto(tenantURL(`/projects/${project.slug}/releases/${release.id}/builds/${build.number}`));
     await expect(page.locator(".build-process-summary h2")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    const summary = await page.locator(".build-process-summary").boundingBox();
+    const duration = await page.locator(".build-process-duration").boundingBox();
+    expect(summary).not.toBeNull();
+    expect(duration).not.toBeNull();
+    expect(duration!.x + duration!.width).toBeLessThanOrEqual(summary!.x + summary!.width + 1);
     const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
     expect(result.violations.map(item => ({ id: item.id, nodes: item.nodes.map(node => node.target) }))).toEqual([]);
     await page.screenshot({ path: info.outputPath(`${locale}-${theme}-build-process.png`), fullPage: true });

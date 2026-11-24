@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖中性主题和过程组件的语义类名。
- * [OUTPUT]: 提供当前动作、阶段导航和响应式事件时间线。
+ * [OUTPUT]: 提供当前动作、窄屏有界耗时和响应式事件时间线。
  * [POS]: 构建过程专属样式；轮询不触发布局动画。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -70,7 +70,7 @@
   .build-process-summary { flex-wrap: wrap; gap: 12px; padding-bottom: 20px; }
   .build-process-summary-icon { width: 34px; height: 34px; }
   .build-process-summary h2 { font-size: 18px; }
-  .build-process-duration { width: 100%; margin-left: 46px; }
+  .build-process-duration { width: calc(100% - 46px); margin-left: 46px; }
   .build-process-stages { grid-template-columns: minmax(0,1fr); padding-block: 8px; }
   .build-process-stage,.build-process-stage:first-child { min-height: 50px; padding: 8px 6px; gap: 12px; }
   .build-process-stage > span:nth-child(2) { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
