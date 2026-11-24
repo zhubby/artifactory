@@ -19,4 +19,6 @@
 2026-11-21-guided-build-kubernetes.md: 记录四步构建引导的 Web 镜像、身份保留与三视口线上验收。
 2026-11-23-notification-center-kubernetes.md: 记录通知中心迁移、权限文案修复、真实交互验收与测试数据清理。
 
+2026-11-24-build-observability-kubernetes.md: 记录源码诊断、过程页面、窄屏修复与真实失败构建验收。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md
