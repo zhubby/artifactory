@@ -1,5 +1,5 @@
 # [INPUT]: 依赖业务初始化 SQL 与追加迁移。
-# [OUTPUT]: 声明业务基线、镜像失败分类与通知基础设施迁移。
+# [OUTPUT]: 声明业务基线、通知基础设施与概览时间索引迁移。
 # [POS]: 控制平面数据库身份；未知历史由启动校验拒绝。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 version = 1
@@ -28,3 +28,8 @@ snapshot_name = "0003_snapshot.toml"
 id = 2026112303
 name = "0004_notification_producers.sql"
 snapshot_name = "0004_snapshot.toml"
+
+[[migrations]]
+id = 2026112401
+name = "0005_dashboard_indexes.sql"
+snapshot_name = "0005_snapshot.toml"

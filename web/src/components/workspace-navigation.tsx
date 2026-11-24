@@ -1,14 +1,15 @@
 /**
- * [INPUT]: 依赖当前租户、项目、全局错误通知和统一导航定义。
- * [OUTPUT]: 提供工作区侧栏与顶栏面包屑。
- * [POS]: 同一侧栏在业务和设置之间切换；跨租户选择留在顶栏，项目选择留在侧栏。
+ * [INPUT]: 依赖租户与项目权限、路由类型、账户插槽和统一导航。
+ * [OUTPUT]: 提供首读骨架、失败重试、作用域侧栏与面包屑。
+ * [POS]: 权限就绪后展示导航，后台失败保留链接；账户位于侧栏底部。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
 import type { Ref } from "react";
-import { ArrowLeft, BookOpen, ChevronRight, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, X } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
+import { AccountSlot } from "@/components/account";
 import { ProjectSwitcher, TenantSwitcher } from "@/components/space-switcher";
 import { Button } from "@/components/ui/button";
 import { useUI } from "@/components/providers";
@@ -58,16 +59,21 @@ function NavigationLink({ item, active }: { item: NavigationItem; active: boolea
 }
 
 export function WorkspaceSidebar({
-  tenant, project, tenantAdmin, relativePath, projects, ready, mobile, onClose, navigationRef,
+  tenant, project, tenantAdmin, relativePath, projects, ready, error, onRetry, mobile, onClose, navigationRef,
 }: WorkspaceContext & {
   projects: Project[];
   ready: boolean;
+  error?: Error;
+  onRetry: () => void;
   mobile: boolean;
   onClose: () => void;
   navigationRef: Ref<HTMLElement>;
 }) {
   const { t } = useUI();
   const state = navigationState({ tenant, project, tenantAdmin, relativePath });
+  const projectScope = /^\/projects\/[^/]+(?:\/|$)/.test(relativePath);
+  const settingsScope = /^\/(?:projects\/[^/]+\/)?settings(?:\/|$)/.test(relativePath);
+  const skeletonType = settingsScope ? "settings" : projectScope ? "project" : "tenant";
   return (
     <aside ref={navigationRef} id="workspace-navigation"
       role={mobile ? "dialog" : undefined} aria-modal={mobile ? true : undefined}
@@ -94,6 +100,24 @@ export function WorkspaceSidebar({
         </div>
       )}
       <div className="sidebar-navigation">
+        {!ready && (error ? (
+          <div className="sidebar-load-error"><Button variant="secondary" onClick={onRetry}>{t("common.retry")}</Button></div>
+        ) : (
+          <div className={`loading-state sidebar-skeleton sidebar-skeleton-${skeletonType}`} role="status" aria-busy="true" data-scope={skeletonType}>
+            <span className="sr-only">{t("common.loading")}</span>
+            <div aria-hidden="true">
+              <div className="sidebar-skeleton-context"><span className="skeleton-block" /><span className="skeleton-block" /></div>
+              {Array.from({ length: settingsScope ? 3 : 1 }, (_, group) => (
+                <div className="sidebar-skeleton-group" key={group}>
+                  {settingsScope && <span className="skeleton-block sidebar-skeleton-label" />}
+                  {Array.from({ length: settingsScope ? 2 : projectScope ? 2 : 3 }, (_, row) => (
+                    <div className="sidebar-skeleton-link" key={row}><span className="skeleton-block" /><span className="skeleton-block" /></div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
         {ready && (state.settings ? (
           <nav className="workspace-settings-navigation" aria-label={t("workspace.managementSections")}>
             {state.groups.map((group, index) => (
@@ -117,7 +141,7 @@ export function WorkspaceSidebar({
         {ready && !state.settings && state.navigation.settings && (
           <NavigationLink item={state.navigation.settings} active={false} />
         )}
-        <a className="nav-item" href="/docs"><BookOpen aria-hidden="true" />{t("navigation.docs")}</a>
+        <AccountSlot placement="sidebar" />
       </div>
     </aside>
   );

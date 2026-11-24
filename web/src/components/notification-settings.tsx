@@ -1,12 +1,12 @@
 /**
  * [INPUT]: 依赖账户偏好、邮箱验证、项目订阅和统一表单保护。
- * [OUTPUT]: 提供邮件主动订阅、邮箱确认和项目关注控件。
- * [POS]: 账户通知配置边界；只提交可编辑渠道，读取不启用外发。
+ * [OUTPUT]: 提供邮件主动订阅、邮箱确认和可重试的项目星标。
+ * [POS]: 账户配置与项目关注边界；星标读取和写入失败保留既有状态。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 import { useState, useEffect } from "react";
-import { Bell, BellRing } from "lucide-react";
+import { Star } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { ErrorBox, Field, Loading } from "@/components/common";
 import { SubmitForm } from "@/components/forms";
@@ -202,15 +202,25 @@ export function ProjectNotificationFollow({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Error>();
+  const retryRead = !subscription.data && !!subscription.error;
+  const label = retryRead ? c("retryFollow") : subscription.data?.following ? c("unfollow") : c("follow");
   return (
     <>
       <ErrorBox message={error || subscription.error} />
       <Button
-        variant="secondary"
-        disabled={busy || !subscription.data}
-        title={c("followHint")}
-        aria-pressed={subscription.data?.following || false}
+        variant="ghost"
+        size="icon"
+        className="project-follow-star"
+        disabled={busy || (!subscription.data && !subscription.error)}
+        title={`${label} · ${c("followHint")}`}
+        aria-label={label}
+        aria-pressed={subscription.data?.following ?? false}
+        aria-busy={busy || (!subscription.data && !subscription.error)}
         onClick={async () => {
+          if (!subscription.data) {
+            void subscription.reload();
+            return;
+          }
           setBusy(true);
           setError(undefined);
           try {
@@ -228,12 +238,7 @@ export function ProjectNotificationFollow({
           }
         }}
       >
-        {subscription.data?.following ? (
-          <BellRing size={15} />
-        ) : (
-          <Bell size={15} />
-        )}{" "}
-        {subscription.data?.following ? c("following") : c("follow")}
+        <Star size={18} aria-hidden="true" fill={subscription.data?.following ? "currentColor" : "none"} />
       </Button>
     </>
   );

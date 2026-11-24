@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖独立 Release 说明、Build 目标、源码夹具和共享下拉。
- * [OUTPUT]: 验证版本创建、说明编辑、独立构建与轮询稳定的单构建交付。
+ * [OUTPUT]: 验证项目导航、版本创建、说明编辑与轮询稳定的单构建交付。
  * [POS]: Release 与 Build 职责边界的浏览器回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -35,7 +35,7 @@ test("project navigation creates a Release using only version and multiline note
   });
   await page.goto(tenantURL(`/projects/${project.slug}`));
   await openNavigation(page);
-  await expect(page.locator(".sidebar .nav-item")).toHaveText(["项目概览","Release 版本","项目设置","文档"]);
+  await expect(page.locator(".sidebar .nav-item")).toHaveText(["项目概览","Release 版本","项目设置"]);
   if (page.viewportSize()!.width < 1024) await page.keyboard.press("Escape");
   await page.getByRole("link",{name:"新建 Release",exact:true}).click();
   await page.locator('input[name="version"]').fill("v1.2.0");
@@ -212,9 +212,10 @@ for (const status of ["draft", "publishing", "published", "publish_failed"] as c
   await page.route(`**/api/v1/releases/${release.id}`, route => route.fulfill({json:{...release,status}}));
   await page.route(`**/api/v1/projects/by-slug/${project.slug}/builds/${build.number}`, route => route.fulfill({json:failed}));
   await page.goto(tenantURL(`${path}/builds/${build.number}`));
-  await expect(page.locator(".build-meta")).toContainText(build.requested_ref);
-  await expect(page.locator(".build-meta")).toContainText(build.commit_sha!);
-  await expect(page.locator(".build-meta")).toContainText("macos (darwin/arm64)");
+  const metadata = page.locator(".build-detail-meta");
+  await expect(metadata).toContainText(build.requested_ref);
+  await expect(metadata.locator("code")).toHaveAttribute("title", build.commit_sha!);
+  await expect(metadata).toContainText("macos (darwin/arm64)");
   await expect(page.getByRole("button", {name:"以新 attempt 重试此目标",exact:true})).toHaveCount(status === "draft" ? 1 : 0);
 });
 

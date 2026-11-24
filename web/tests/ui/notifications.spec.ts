@@ -1,11 +1,11 @@
 /**
- * [INPUT]: 依赖真实通知浮层、浏览器几何信息和受控 API 失败。
- * [OUTPUT]: 验证浮层布局、顶栏访问、计时暂停、来源隔离和轮询恢复。
+ * [INPUT]: 依赖真实通知浮层、概览聚合、浏览器几何信息和受控 API 失败。
+ * [OUTPUT]: 验证浮层布局、顶栏访问、计时暂停及交互期间的来源隔离与轮询恢复。
  * [POS]: 通知机制的桌面、平板和手机回归；不访问线上数据。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { fixtureAPI, tenantURL } from "./fixtures";
+import { dashboardFixture, fixtureAPI, tenantURL } from "./fixtures";
 
 const errors = (page: Page) => page.locator('[data-notify][data-kind="error"]');
 const successes = (page: Page) => page.locator('[data-notify][data-kind="success"]');
@@ -145,28 +145,32 @@ test("login success survives the full navigation exactly once", async ({ page })
 test("independent failures keep their ownership through recovery and recurrence", async ({ page }) => {
   await page.clock.install();
   await fixtureAPI(page);
-  let buildsFail = true;
-  let buildCalls = 0;
-  await page.route(/\/api\/v1\/builds\?/, route => {
-    buildCalls++;
-    return buildsFail
+  let dashboardFail = true;
+  let dashboardCalls = 0;
+  await page.route(/\/api\/v1\/dashboard\?/, route => {
+    dashboardCalls++;
+    return dashboardFail
       ? route.fulfill({ status: 503, json: { error: "查询服务暂不可用" } })
-      : route.fulfill({ json: [] });
+      : route.fulfill({ json: dashboardFixture({ projectId: "project-main" }) });
   });
-  await page.route(/\/api\/v1\/releases\?/, route => route.fulfill({ status: 503, json: { error: "查询服务暂不可用" } }));
+  await page.route("**/api/v1/projects/*/notification-subscription", route => route.fulfill({ status: 503, json: { error: "查询服务暂不可用" } }));
   await page.goto(tenantURL("/projects/desktop-client"));
   await expect(errors(page)).toHaveCount(2);
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
-  const initialCalls = buildCalls;
-  buildsFail = false;
-  await page.clock.fastForward(5000);
-  await expect.poll(() => buildCalls).toBeGreaterThan(initialCalls);
+  // 悬停和键盘焦点分别暂停两个来源，避免轮询等待触发通知超时。
+  await errors(page).first().hover();
+  await errors(page).last().getByRole("button", { name: "关闭通知" }).focus();
+  const initialCalls = dashboardCalls;
+  dashboardFail = false;
+  await page.clock.fastForward(10000);
+  await expect.poll(() => dashboardCalls).toBeGreaterThan(initialCalls);
   await expect(errors(page)).toHaveCount(1);
   await expect(errors(page)).toContainText("查询服务暂不可用");
+  await page.getByRole("combobox", { name: "统计时间范围", exact: true }).focus();
   await page.keyboard.press("F8");
   await expect(errors(page).getByRole("button", { name: "关闭通知" })).toBeFocused();
-  buildsFail = true;
-  await page.clock.fastForward(5000);
+  dashboardFail = true;
+  await page.clock.fastForward(10000);
   await expect(errors(page)).toHaveCount(2);
 });
 

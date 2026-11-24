@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖项目权限、项目路由和 Lucide 图标。
- * [OUTPUT]: 提供工作区导航、通知集成设置和规范分区判断。
- * [POS]: 统一侧栏、设置内容与命令面板的导航契约。
+ * [OUTPUT]: 提供独立租户概览、项目目录、项目业务和设置导航。
+ * [POS]: 统一侧栏与命令面板；租户概览和项目目录使用独立地址。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import {
@@ -34,7 +34,8 @@ export function workspaceNavigation(context: NavigationContext): {
   }
   return {
     primary: [
-      { id: "projects", path: "/", label: "navigation.projects", icon: FolderKanban },
+      { id: "overview", path: "/", label: "navigation.tenantOverview", icon: LayoutDashboard },
+      { id: "projects", path: "/projects", label: "navigation.projects", icon: FolderKanban },
       { id: "nodes", path: "/nodes", label: "workspace.sharedDevices", icon: Cpu },
     ],
     settings: {

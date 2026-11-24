@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖生命周期 API、共享幂等键、统一表单和通知。
  * [OUTPUT]: 提供归档、恢复、删除及当前操作的撤销、重试入口。
- * [POS]: 设置仅展示当前范围的必要操作；请求反馈通过顶部通知展示。
+ * [POS]: 影响与当前操作首读就绪后开放动作；轮询保留已展示内容。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -61,6 +61,7 @@ export function LifecycleSettings({
     allowed ? `${path}/lifecycle` : null,
     10000,
   );
+  const actionsReady = !!impact.data && !!operations.data;
   function begin(action: "archive" | "restore" | "delete") {
     setKey(createIdempotencyKey());
     setAction(action);
@@ -90,19 +91,20 @@ export function LifecycleSettings({
         <ErrorBox message={impact.error || operations.error || recoveryError} />
         <ErrorBox message={current?.state === "failed" ? current.error || t("common.operationFailed") : undefined} />
         {allowed && !impact.data && !impact.error && <Loading variant="form" />}
-        <div className="lifecycle-counts">
-          {Object.entries(impact.data || {}).map(([key, value]) => (
+        {allowed && !operations.data && !operations.error && <Loading variant="detail" />}
+        {impact.data && <div className="lifecycle-counts">
+          {Object.entries(impact.data).map(([key, value]) => (
             <div key={key}>
               <strong>{value}</strong>
               <span>{t(`lifecycle.count_${key}`)}</span>
             </div>
           ))}
-        </div>
+        </div>}
         {allowed && ((impact.error && !impact.data) || (operations.error && !operations.data)) && <Button variant="secondary" className="mb-4" onClick={() => {
           void impact.reload();
           void operations.reload();
         }}>{t("common.retry")}</Button>}
-        {allowed ? (
+        {allowed ? actionsReady && (
           <div className="lifecycle-actions">
             {status === "active" && (
               <Button variant="secondary" onClick={() => begin("archive")}>

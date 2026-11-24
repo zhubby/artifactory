@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖公开 JSON 字段和数据库解码。
-//! [OUTPUT]: 提供版本元数据、构建快照与安全规划摘要的公开投影。
+//! [OUTPUT]: 提供构建概览、版本元数据与安全规划摘要的公开投影。
 //! [POS]: HTTP 响应的数据边界；不包含秘密信封。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Explicit API projections. These types never contain ORM models or database handles.
@@ -30,6 +30,68 @@ response! { Overview {
     queued: i64,
     releases: i64,
     builds_today: i64,
+}}
+
+response! { Dashboard {
+    window: DashboardWindow,
+    summary: DashboardSummary,
+    daily: Vec<DashboardDay>,
+    recent_projects: Vec<DashboardProject>,
+    recent_builds: Vec<DashboardBuild>,
+}}
+
+response! { DashboardWindow {
+    days: u32,
+    timezone: String,
+    start: String,
+    end: String,
+    generated_at: String,
+}}
+
+response! { DashboardSummary {
+    total_projects: i64,
+    active_projects: i64,
+    builds_created: i64,
+    succeeded: i64,
+    failed: i64,
+    canceled: i64,
+    ongoing: i64,
+    current_ongoing: i64,
+    success_rate: Option<f64>,
+    median_turnaround_seconds: Option<f64>,
+}}
+
+response! { DashboardDay {
+    date: String,
+    total: i64,
+    succeeded: i64,
+    failed: i64,
+    canceled: i64,
+    ongoing: i64,
+    median_turnaround_seconds: Option<f64>,
+}}
+
+response! { DashboardProject {
+    id: Uuid,
+    name: String,
+    slug: String,
+    status: String,
+    activity_at: String,
+    last_build: DashboardBuild,
+}}
+
+response! { DashboardBuild {
+    id: Uuid,
+    number: i64,
+    status: String,
+    release_id: Uuid,
+    release_version: String,
+    project_id: Uuid,
+    project_name: String,
+    project_slug: String,
+    created_at: String,
+    finished_at: Option<String>,
+    activity_at: String,
 }}
 
 response! { UserSummary {

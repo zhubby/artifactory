@@ -1,11 +1,12 @@
 //! [INPUT]: 依赖租户 HTTP 处理器、统一鉴权和请求限制。
-//! [OUTPUT]: 组合业务、账户通知、渠道运维和规划运行时路由。
+//! [OUTPUT]: 组合构建概览、业务、账户通知和规划运行时路由。
 //! [POS]: 控制平面 HTTP 接口入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub(crate) mod ai_management;
 mod artifact_gateway;
 mod build_logs;
 mod builds;
+mod dashboard;
 mod emissary_updates;
 mod images;
 mod lifecycle;
@@ -166,6 +167,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/auth/me", get(auth::me).patch(auth::update_profile))
         .route("/api/v1/auth/password", post(auth::change_password))
         .route("/api/v1/overview", get(management::overview))
+        .route("/api/v1/dashboard", get(dashboard::dashboard))
         .route(
             "/api/v1/users",
             get(tenants::members).post(tenants::add_member),

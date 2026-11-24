@@ -15,11 +15,11 @@ api.md: 定义 HTTP 输入、模型参数、安全规划摘要与项目权限边
 artifactory-rename-2026-11-11.md: 记录产品命名迁移。
 signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。
 configuration.md: 定义任务执行计划的结构与限制。
-design-system.md: 定义中性色、构建引导、方案版本、工作区与自定义下拉边界。
+design-system.md: 定义中性色、顶栏工具、正文动作、关注星标与导航骨架。
 direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、启动等待和故障依赖隔离的验证边界。
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。
-frontend-experience.md: 定义语言、主题、方案版本、澄清草稿、日志与前端验证入口。
+frontend-experience.md: 定义导航首读、表单草稿、个人偏好、日志生命周期与前端验证。
 helm.md: 定义最低 Kubernetes 1.28 安装、基线内追加迁移与持久身份保留。
 image-builds.md: 定义独立镜像池准入、容器镜像生命周期、整合网关、池代理和交付边界。
 image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像、独立 Operator、网关迁移与空闲连接验收。
@@ -28,7 +28,7 @@ local-macmini-acceptance-2026-11-11.md: 记录本机和 Mac mini 的验收。
 module-layout.md: 定义模块命名和依赖边界。
 multitenancy.md: 定义租户权限和设备共享边界。
 node-placement.md: 定义节点识别、网络诊断、能力查询与 AI 选机。
-notifications.md: 定义跨租户收件、事务事件、渠道订阅、验签与通知运维。
+notifications.md: 定义顶栏收件箱、项目星标、事务事件、渠道订阅和通知运维。
 operations.md: 定义初始账号、部署、兼容追加迁移、备份和故障恢复。
 operator-operations.md: 定义临时源码、池级出口代理、内部直连和任务收尾。
 protocol.md: 定义 Emissary 会话、完整心跳预算和状态迁移。
@@ -42,7 +42,7 @@ telemetry.md: 定义主机与构建的时序观测、私有双端口 Service 和
 toasty-acceptance-2026-11-13.md: 记录 Toasty 数据迁移验收。
 versioning.md: 定义统一版本与交付约束。
 release-delivery.md: 定义版本元数据、四步构建确认、独立源码与目标、单次不可变交付。
-workspaces.md: 定义租户和项目导航、个人设置与生命周期流程。
+workspaces.md: 定义两层概览、项目目录、导航骨架、页面动作与个人设置流程。
 acceptance/: 保存子系统在真实环境中的验收记录。
 brand/: 保存品牌规范和视觉资源。
 fonts/: 保存文档构建生成的字体资产。

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证切换器键盘、窄屏布局、个人设置与全局通知。
+ * [OUTPUT]: 验证切换器键盘、顶栏工具焦点顺序、窄屏布局与个人设置。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -48,13 +48,13 @@ test("short viewports keep the bottom of navigation reachable by scrolling", asy
   if (page.viewportSize()!.width < 1024)
     await page.getByRole("button", { name: "打开导航", exact: true }).click();
   const sidebar = page.locator(".sidebar");
-  const docs = sidebar.getByRole("link", { name: "文档", exact: true });
+  const settings = sidebar.getByRole("link", { name: "项目设置", exact: true });
   await sidebar.getByRole("link", { name: "项目概览", exact: true }).hover();
   await page.mouse.wheel(0, 900);
-  await expect(docs).toBeInViewport({ ratio: 1 });
-  await docs.focus();
-  await page.keyboard.press("Shift+Tab");
-  await expect(sidebar.getByRole("link", { name: "项目设置", exact: true })).toBeFocused();
+  await expect(settings).toBeInViewport({ ratio: 1 });
+  await settings.focus();
+  await expect(settings).toBeFocused();
+  await expect(sidebar.getByRole("link", { name: "文档", exact: true })).toHaveCount(0);
   if (page.viewportSize()!.width < 1024) {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "打开导航", exact: true })).toBeFocused();
@@ -82,7 +82,7 @@ test("personal settings keep their close control and form inside short viewports
   }
 });
 
-test("short settings sidebars keep lifecycle links and documentation reachable", async ({ page }, info) => {
+test("short settings sidebars keep lifecycle links reachable and docs in topbar", async ({ page }, info) => {
   await page.setViewportSize({ width: info.project.name === "desktop" ? 1280 : 844, height: 390 });
   await fixtureAPI(page);
   for (const scope of ["", "/projects/desktop-client"]) {
@@ -93,9 +93,9 @@ test("short settings sidebars keep lifecycle links and documentation reachable",
     const lifecycle = navigation.getByRole("link", { name: "归档与删除", exact: true });
     await lifecycle.scrollIntoViewIfNeeded();
     await expect(lifecycle).toBeInViewport({ ratio: 1 });
-    const docs = sidebar.getByRole("link", { name: "文档", exact: true });
-    await docs.scrollIntoViewIfNeeded();
-    await expect(docs).toBeInViewport({ ratio: 1 });
+    await expect(sidebar.getByRole("link", { name: "文档", exact: true })).toHaveCount(0);
+    if (page.viewportSize()!.width < 1024) await page.keyboard.press("Escape");
+    await expect(page.locator(".workspace-topbar").getByRole("link", { name: "文档", exact: true })).toBeInViewport({ ratio: 1 });
     await expect(page.locator(".management-tabs")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   }
@@ -200,7 +200,7 @@ for (const locale of ["zh-CN", "en"]) {
       name: "artifactory-locale", value: locale,
       url: String(info.project.use.baseURL),
     }]);
-    await page.goto(tenantURL("/"));
+    await page.goto(tenantURL("/projects"));
     await page.getByRole("button", { name: locale === "en" ? "Connect project" : "接入项目", exact: true }).click();
     const dialog = page.getByRole("dialog");
     const name = dialog.locator('input[name="name"]');

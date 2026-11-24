@@ -2,7 +2,7 @@
 /**
  * [INPUT]: 依赖租户会话、签名公开 API、通知、统一表单和 Select。
  * [OUTPUT]: 提供凭据导入、版本停用、方案和项目默认方案。
- * [POS]: 租户与项目共用界面；方案加载后初始化默认选择。
+ * [POS]: 凭据与方案就绪后挂载表单；预览首读显示骨架，刷新保留草稿。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { useState } from "react";
@@ -115,6 +115,11 @@ export function SigningSettings() {
   return (
     <div className="space-y-6">
       <ErrorBox message={error || credentials.error || profiles.error} />
+      {((!credentials.data && credentials.error) || (!profiles.data && profiles.error)) && (
+        <Button variant="secondary" onClick={() => void Promise.all([credentials.reload(), profiles.reload()])}>
+          {t("common.retry")}
+        </Button>
+      )}
       <section className="panel management-section">
         <h2>{t("signing.title")}</h2>
         <p className="management-description">{t("signing.description")}</p>
@@ -123,7 +128,7 @@ export function SigningSettings() {
             {t("signing.notConfigured")}
           </p>
         )}
-        <fieldset disabled={!credentials.data?.configured}>
+        {!credentials.data ? !credentials.error && <Loading variant="form" /> : <fieldset disabled={!credentials.data.configured}>
           <SubmitForm
             key={generation}
             onSubmit={async (form) => {
@@ -272,7 +277,7 @@ export function SigningSettings() {
               </>
             )}
           </SubmitForm>
-        </fieldset>
+        </fieldset>}
       </section>
       <section className="panel management-section">
         <h2>{t("signing.credentials")}</h2>
@@ -334,7 +339,7 @@ export function SigningSettings() {
       <section className="panel management-section">
         <h2>{t("signing.profiles")}</h2>
         <p className="management-description">{t("signing.nodeHint")}</p>
-        <fieldset
+        {!credentials.data ? !credentials.error && <Loading variant="form" /> : <fieldset
           disabled={
             !credentials.data?.configured ||
             !credentials.data.credentials.length
@@ -375,8 +380,8 @@ export function SigningSettings() {
               {t("signing.notarizeRequired")}
             </label>
           </SubmitForm>
-        </fieldset>
-        {profiles.data?.map((profile) => (
+        </fieldset>}
+        {!profiles.data ? !profiles.error && <Loading variant="list" /> : profiles.data.map((profile) => (
           <div
             className="flex flex-wrap items-center justify-between gap-3 border-b py-3"
             key={profile.profile}
@@ -420,13 +425,18 @@ export function ProjectSigning({
       <h2>{t("signing.defaults")}</h2>
       <p className="management-description">{t("signing.defaultsHint")}</p>
       <ErrorBox message={profiles.error || preview.error} />
-      <SigningSummary bindings={preview.data || []} />
+      {((!preview.data && preview.error) || (editable && !profiles.data && profiles.error)) && (
+        <Button variant="secondary" onClick={() => void Promise.all([preview.reload(), profiles.reload()])}>
+          {t("common.retry")}
+        </Button>
+      )}
+      {!preview.data ? !preview.error && <Loading variant="detail" /> : <SigningSummary bindings={preview.data} />}
       {editable &&
         (!profiles.data ? (
           !profiles.error && <Loading variant="form" />
         ) : (
           <SubmitForm
-            key={JSON.stringify(project.signing_defaults)}
+            key={project.id}
             onSubmit={async (form) => {
               const defaults = Object.fromEntries(
                 ["macos", "android"]

@@ -2,6 +2,7 @@
 > L2 | Parent: ../AGENTS.md
 
 fixture.rs: 初始化新数据库，提供版本元数据、创建时固定要求和目标的构建、固定源码夹具。
+dashboard.rs: 验证概览租户与项目授权、撤权后的统计及非法参数拒绝。
 release_contract.rs: 验证版本元数据、平台授权查询和原生构建设备准入。
 planning_basics.rs: 验证模型兼容配置持久化、密钥脱敏、注册和规划状态边界。
 account_settings.rs: 验证个人设置和项目资源权限。

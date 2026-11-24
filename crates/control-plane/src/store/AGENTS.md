@@ -5,6 +5,9 @@ mod.rs: 组合持久化接口、租户作用域和迁移。
 notifications/: 按当前授权读取账户收件箱，投影聚合版本并保护已读水位。
 auth.rs: 查询登录账户并维护认证状态。
 dto.rs: 定义公开业务响应、安全规划摘要、节点识别与验签证据投影。
+dashboard.rs: 校验统计参数，按当前租户和可见项目读取完整窗口概览。
+dashboard.sql: 以窄投影和统一读取时刻计算自然日、状态摘要与近期构建活动。
+dashboard_tests.rs: 验证全量构建、状态分母、归档活动、空范围与夏令时边界。
 errors.rs: 转换数据库约束为业务错误。
 models.rs: 定义 Toasty 私有 CRUD 投影。
 management.rs: 事务改名并审计，投影可见识别摘要与节点搜索。

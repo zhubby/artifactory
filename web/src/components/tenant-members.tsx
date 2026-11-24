@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖成员与邀请 API、统一表单、Select 和全局通知。
  * [OUTPUT]: 提供租户成员、邀请和项目成员编辑界面。
- * [POS]: 成员变更反馈通过通知展示，列表保留成员状态。
+ * [POS]: 成员与邀请独立展示首读骨架，刷新保留列表和表单草稿。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -173,8 +173,10 @@ export function TenantMembers({ user }: { user: User }) {
             <CopyButton value={link} />
           </div>
         )}
-        <ul className="mt-4 divide-y divide-border">
-          {invites.data?.map((invite) => (
+        {!invites.data ? (
+          !invites.error && <Loading variant="list" />
+        ) : <ul className="mt-4 divide-y divide-border">
+          {invites.data.map((invite) => (
             <li
               key={invite.id}
               className="flex flex-wrap items-center gap-3 py-3 text-xs"
@@ -205,7 +207,7 @@ export function TenantMembers({ user }: { user: User }) {
                 )}
             </li>
           ))}
-        </ul>
+        </ul>}
       </section>
       <Modal
         description={t("tenants.memberDetail")}

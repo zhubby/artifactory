@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离数据库、授权设备和租户 HTTP 会话。
-//! [OUTPUT]: 验证多租户、成员和签名管理边界。
+//! [OUTPUT]: 验证概览、多租户、成员和签名管理边界。
 //! [POS]: 数据库验收中的租户测试入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Real PostgreSQL and HTTP authorization tests. Accounts start with no membership.
@@ -12,6 +12,9 @@ use serde_json::{Value, json};
 
 #[path = "tenancy_regressions.rs"]
 mod regressions;
+
+#[path = "dashboard.rs"]
+mod dashboard;
 
 #[path = "readable_routes.rs"]
 mod readable_routes;

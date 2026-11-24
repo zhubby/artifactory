@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖账户通知 API、共享下拉、修订收据和失效上下文。
- * [OUTPUT]: 提供账户铃铛、范围筛选及保留阅读窗口的实时列表与记录。
- * [POS]: 账户级通知阅读入口；业务导航始终使用服务端授权后的地址。
+ * [INPUT]: 依赖账户通知 API、单行筛选、共享下拉和失效上下文。
+ * [OUTPUT]: 提供顶栏铃铛及保留阅读窗口的实时列表与记录。
+ * [POS]: 账户通知页面复用共享顶栏；铃铛共用抽屉与授权地址。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { useAccount } from "@/components/account";
+import { HeaderTools } from "@/components/header-tools";
 import { useNotificationCenter } from "@/components/notification-provider";
 import { NotificationSettings } from "@/components/notification-settings";
 import { ErrorBox, Loading } from "@/components/common";
@@ -49,7 +50,7 @@ function comparePosition(a: NotificationItem, b: NotificationItem) {
     return a.updated_at > b.updated_at ? 1 : -1;
   return a.id === b.id ? 0 : a.id > b.id ? 1 : -1;
 }
-export function NotificationBell() {
+export function NotificationBell({ variant = "icon" }: { variant?: "icon" | "sidebar" }) {
   const c = useNotificationCopy();
   const { summary } = useNotificationCenter();
   const [open, setOpen] = useState(false);
@@ -59,10 +60,11 @@ export function NotificationBell() {
       <Dialog.Trigger asChild>
         <button
           ref={trigger}
-          className="inbox-bell"
+          className={variant === "sidebar" ? "nav-item inbox-nav" : "inbox-bell"}
           aria-label={`${c("title")}${summary.unread_count ? ` · ${summary.unread_count} ${c("unread")}` : ""}`}
         >
-          <Bell size={18} />
+          <Bell size={18} aria-hidden="true" />
+          {variant === "sidebar" && <span>{c("title")}</span>}
           {summary.unread_count > 0 && (
             <span className="inbox-badge">
               {summary.unread_count > 99 ? "99+" : summary.unread_count}
@@ -253,7 +255,7 @@ export function NotificationInbox({ full = false }: { full?: boolean }) {
           </button>
         ))}
       </nav>
-      <div className="inbox-filters">
+      <div className="inbox-filters filter-controls">
         <Select
           aria-label={c("category")}
           value={category}
@@ -533,13 +535,14 @@ function NotificationTimeline({ id, back }: { id: string; back: () => void }) {
 }
 export function NotificationPage() {
   const c = useNotificationCopy();
+  const { t } = useUI();
   const account = useAccount();
   const [settings, setSettings] = useState(false);
   return (
     <div className="notification-page">
       <header className="notification-page-header">
         <Link href="/tenants">Artifactory</Link>
-        <NotificationBell />
+        <HeaderTools notification={account.data && <NotificationBell />} />
       </header>
       <main>
         <div className="notification-page-title">
@@ -566,7 +569,7 @@ export function NotificationPage() {
         </div>
         <ErrorBox message={account.error} />
         {!account.data ? (
-          <Loading variant="list" />
+          account.error ? <Button variant="secondary" onClick={() => void account.reload()}>{t("common.retry")}</Button> : <Loading variant="list" />
         ) : settings ? (
           <NotificationSettings />
         ) : (

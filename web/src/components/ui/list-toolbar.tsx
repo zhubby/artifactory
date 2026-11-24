@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 UI 搜索词条、可选查询提示、图标和受控查询。
- * [OUTPUT]: 提供 ListToolbar 列表筛选栏。
- * [POS]: 统一业务列表的筛选、计数和辅助操作。
+ * [OUTPUT]: 提供单行滚动的 ListToolbar 列表筛选栏。
+ * [POS]: 统一业务列表的查询和筛选，结果计数独立对齐。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -19,7 +19,7 @@ export function ListToolbar({ query, onQueryChange, count, children, placeholder
 }) {
   const { t, number } = useUI();
   return <div className="list-toolbar">
-    <div className="list-toolbar-controls">
+    <div className="list-toolbar-controls filter-controls">
       <label className="workspace-filter">
         <Search size={15} aria-hidden="true" />
         <input value={query} onChange={event => onQueryChange(event.target.value)}

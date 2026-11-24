@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
- * [OUTPUT]: 验证多语言工作台、侧栏设置与个人设置布局。
+ * [OUTPUT]: 验证多语言概览、独立项目目录、侧栏设置与个人设置布局。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -47,6 +47,7 @@ for (const locale of ["zh-CN", "en"] as const)
       const routes = [
         ["hall", "/tenants", en ? "Welcome, Alex" : "你好，Alex"],
         ["tenant", tenantURL("/"), "Build Team"],
+        ["projects", tenantURL("/projects"), en ? "Projects" : "项目"],
         ["project", tenantURL("/projects/desktop-client"), "Desktop Client"],
         [
           "builds",

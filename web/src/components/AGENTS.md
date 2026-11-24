@@ -1,7 +1,7 @@
 # web/src/components/
 > L2 | Parent: ../AGENTS.md
 
-account.tsx: 提供个人通知设置、持久通知上下文和跨导航操作通知，保存反馈不占面板布局。
+account.tsx: 通过固定宿主与响应式插槽保持单实例账户菜单、个人设置草稿和焦点。
 ai-settings.tsx: 使用共享下拉配置任意模型、调用预算与独立接口兼容字段。
 auth-shell.tsx: 渲染认证页面布局。
 brand-mark.tsx: 渲染 Artifactory 品牌标记。
@@ -13,12 +13,14 @@ planning-conversations.tsx: 按 generation 按需读取审计；本地化摘要�
 build-table.tsx: 展示构建的 Release 归属、独立源码与目标和执行状态。
 build-wizard.tsx: 组合四步弹窗、授权设备默认目标、答案草稿和最终确认提交。
 build-target-picker.tsx: 按项目授权设备禁选原生平台，高级设置遵守同一设备约束。
-common.tsx: 提供内容骨架、共享字段、通知与下载反馈，制品表及下载名称只显示文件名。
+common.tsx: 提供内容骨架、正文标题动作与名称附件，统一字段、通知及下载反馈。
 command-palette.tsx: 复用当前范围的业务与设置导航，支持项目切换并恢复触发焦点。
-console.tsx: 组合工作区数据、请求生命周期和业务页面，交由独立组件呈现导航。
-emissary-ota.tsx: 使用设备字段对齐节点版本和升级阶段，配置发布、升级目标与节点池策略。
+console.tsx: 由租户布局持续挂载，校验地址并按租户与项目隔离工作区，组合顶栏、权限骨架与项目星标。
+dashboard.tsx: 读取完整窗口指标和近期活动，范围切换使用共享下拉，后台刷新保留内容。
+dashboard-charts.tsx: 按需加载 Recharts，呈现当前构建结果和成功构建周转时长，保留空样本断点。
+emissary-ota.tsx: 等待节点池和发布选项后开放表单，历史首读可重试，轮询保留池策略草稿。
 forms.tsx: 提供项目、节点、凭据表单，复用下拉并统一提交通知。
-lifecycle.tsx: 使用 HTTP 兼容幂等键提交归档、恢复与删除，保留当前操作恢复入口。
+lifecycle.tsx: 分别等待影响与当前操作，使用 HTTP 幂等键提交归档、恢复与删除。
 node-card.tsx: 直接消费列表快照，展示名称、主机名、短 ID、硬件与资源状态。
 node-detail-dialog.tsx: 组合固定身份标题、五个详情标签和遥测生命周期，保留独立重命名。
 node-overview.tsx: 先展示四项设备摘要，再展示接口与标签，按需展开完整硬件和连接信息。
@@ -36,23 +38,24 @@ providers.tsx: 组合账户、语言、主题、顶部进度和全局通知，�
 release-detail.tsx: 组合版本说明、构建历史与单构建交付；发布弹窗固定候选，候选失效须重选；各状态可编辑说明，已发布镜像分发使用固定版本标签。
 release-form.tsx: 创建版本并编辑多行说明，版本创建后只读；源码与目标归属构建引导。
 release-table.tsx: 展示版本、生命周期、说明和构建次数。
-settings.tsx: 配置令牌、源码凭据和审计。
-signing-settings.tsx: 导入凭据、停用版本并在方案就绪后初始化项目默认选择。
+settings.tsx: 配置令牌、源码凭据和审计，首读失败提供重试。
+signing-settings.tsx: 等待签名预览和必需凭据后开放配置，按项目身份保留默认方案草稿。
 space-switcher.tsx: 切换租户和项目，查询失败通过全局通知反馈。
 tenant-chooser.tsx: 展示租户卡片与邀请，HTTP 创建使用共享幂等键，首读骨架且失败可重试。
 top-progress.tsx: 根据并发前台计数延迟显示顶部细进度条，最后请求结束后淡出。
-tenant-members.tsx: 配置租户与项目成员。
-workspace-management.tsx: 渲染规范设置分区及授权内容，导航由工作区侧栏提供。
-workspace-navigation.tsx: 渲染作用域侧栏与面包屑，版本查询错误通过通知反馈。
+tenant-members.tsx: 配置租户与项目成员，邀请首读显示列表骨架并提供失败重试。
+workspace-management.tsx: 按权限渲染设置分区，必需资源就绪后挂载表单，按分区隔离状态。
+workspace-navigation.tsx: 渲染作用域侧栏与面包屑，权限首读显示分组骨架，失败可重试。
 ui/: 提供统一基础控件。
 
+header-tools.tsx: 工作区、租户大厅与通知页共用文档、账户插槽和最右铃铛。
 image-builds.tsx: 只读展示镜像候选与增量平台日志，后台轮询和终态补读静默，正式分发从 Release 发起。
 image-catalog.tsx: 按项目查询正式镜像、所属版本与来源构建，复制摘要拉取引用。
-image-credentials.tsx: 配置项目仓库凭据与 BuildKit Secret 引用。
+image-credentials.tsx: 配置仓库凭据和 BuildKit Secret，列表首读显示骨架并提供失败重试。
 
 notification-provider.tsx: 在账户边界维护单 SSE 连接，合并失效并静默补读摘要。
-notification-center.tsx: 查询完整授权范围，后台重验原阅读窗口，列表与记录保留分页和滚动。
-notification-settings.tsx: 配置站内偏好、可编辑邮箱主动订阅与项目关注，保留停用渠道的原偏好。
+notification-center.tsx: 顶栏铃铛与独立页面共用抽屉和未读数，后台重验保留原阅读窗口及滚动。
+notification-settings.tsx: 配置站内偏好、邮箱订阅及项目名称旁的关注星标，保存失败保留既有状态。
 notification-webhooks.tsx: 在管理员设置配置端点、一次密钥、测试与投递重试。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

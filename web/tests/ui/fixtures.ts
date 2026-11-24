@@ -1,10 +1,11 @@
 /**
  * [INPUT]: 依赖 Playwright 路由拦截与控制台业务类型。
- * [OUTPUT]: 提供构建目标、授权设备平台、租户数据和 HTTP 夹具。
+ * [OUTPUT]: 提供构建目标、授权设备平台、概览聚合和租户 HTTP 夹具。
  * [POS]: UI 测试的默认服务响应；专项测试覆盖对应响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import type { Page } from "@playwright/test";
+import type { DashboardBuild, DashboardData } from "../../src/lib/dashboard-types";
 import type {
   Artifact,
   Build,
@@ -300,11 +301,59 @@ export const release: Release = {
   artifacts: [artifact],
 };
 
+export function dashboardFixture({ days = 30, timezone = "UTC", projectId }: {
+  days?: number;
+  timezone?: string;
+  projectId?: string | null;
+} = {}): DashboardData {
+  const end = "2026-11-24T12:00:00Z";
+  const start = new Date(Date.UTC(2026, 10, 25 - days)).toISOString();
+  const visible = !projectId || projectId === project.id;
+  const summary = {
+    total_projects: visible ? 1 : 0,
+    active_projects: visible ? 1 : 0,
+    builds_created: visible ? 1248 : 0,
+    succeeded: visible ? 1180 : 0,
+    failed: visible ? 40 : 0,
+    canceled: visible ? 20 : 0,
+    ongoing: visible ? 8 : 0,
+    current_ongoing: visible ? 14 : 0,
+    success_rate: visible ? 1180 / 1220 : null,
+    median_turnaround_seconds: visible ? 480 : null,
+  };
+  const recent: DashboardBuild[] = visible ? [
+    { id: build.id, number: build.number, status: "running", created_at: "2026-11-24T11:00:00Z", finished_at: null, activity_at: "2026-11-24T11:00:00Z" },
+    { id: "build-complete", number: 127, status: "succeeded", created_at: "2026-11-24T10:00:00Z", finished_at: "2026-11-24T10:08:00Z", activity_at: "2026-11-24T10:08:00Z" },
+    { id: "build-failed", number: 126, status: "failed", created_at: "2026-11-24T09:00:00Z", finished_at: "2026-11-24T09:12:00Z", activity_at: "2026-11-24T09:12:00Z" },
+  ].map(value => ({ ...value, project_id: project.id, project_name: project.name, project_slug: project.slug,
+    release_id: release.id, release_version: release.version })) : [];
+  const share = (total: number, index: number) => Math.floor(total / days) + (index < total % days ? 1 : 0);
+  return {
+    window: { days, timezone, start, end, generated_at: end },
+    summary,
+    daily: Array.from({ length: days }, (_, index) => {
+      const succeeded = share(summary.succeeded, index);
+      const failed = share(summary.failed, index);
+      const canceled = share(summary.canceled, index);
+      const ongoing = share(summary.ongoing, index);
+      return {
+        date: new Date(Date.UTC(2026, 10, 25 - days + index)).toISOString().slice(0, 10),
+        total: succeeded + failed + canceled + ongoing, succeeded, failed, canceled, ongoing,
+        median_turnaround_seconds: succeeded ? 240 + index * 15 : null,
+      };
+    }),
+    recent_projects: recent.length ? [{ id: project.id, name: project.name, slug: project.slug,
+      status: project.status, activity_at: recent[0].activity_at, last_build: recent[0] }] : [],
+    recent_builds: recent,
+  };
+}
+
 export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
   const events = { streams: 0, writes: [] as string[] };
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname.slice("/api/v1".length);
+    const url = new URL(request.url());
+    const path = url.pathname.slice("/api/v1".length);
     if (
       !/^\/(auth|tenants|invitations|operations|notifications)(\/|$)/.test(path) &&
       !request.headers()["x-artifactory-tenant"]
@@ -321,6 +370,11 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
       });
     }
     if (path === "/notifications/events") return route.fulfill({contentType:"text/event-stream",body:"retry: 600000\n\n"});
+    if (path === "/dashboard") return route.fulfill({ json: dashboardFixture({
+      days: Number(url.searchParams.get("days") || 30),
+      timezone: url.searchParams.get("timezone") || "UTC",
+      projectId: url.searchParams.get("project_id"),
+    }) });
     if (path.endsWith("/events")) {
       events.streams++;
       return route.fulfill({

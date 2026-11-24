@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
- * [OUTPUT]: 验证租户隔离、权限边界、创建反馈与侧栏切换。
+ * [OUTPUT]: 验证租户隔离、独立项目目录权限、创建反馈与侧栏切换。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -128,8 +128,8 @@ test("two tabs keep tenant headers independent and switching clears dialogs and 
       });
     });
   }
-  await page.goto(tenantURL("/"));
-  await other.goto(tenantURL("/", secondSlug));
+  await page.goto(tenantURL("/projects"));
+  await other.goto(tenantURL("/projects", secondSlug));
   await expect(
     page.getByRole("link", { name: "Alpha Project", exact: true }),
   ).toBeVisible();
@@ -162,7 +162,7 @@ test("two tabs keep tenant headers independent and switching clears dialogs and 
   finish!();
   await expect(page).toHaveURL(new RegExp(`/tenants/${secondSlug}$`));
   await expect(page.getByText("ALPHA_ONLY")).toHaveCount(0);
-  await expect(other).toHaveURL(new RegExp(`/tenants/${secondSlug}$`));
+  await expect(other).toHaveURL(new RegExp(`/tenants/${secondSlug}/projects$`));
   await expect(
     other.getByRole("link", { name: "Beta Project", exact: true }),
   ).toBeVisible();
@@ -191,7 +191,7 @@ test("project members without grants get an authorization prompt", async ({
   await page.route("**/api/v1/tenant", (route) =>
     route.fulfill({ json: { tenant: tenants[1], project_roles: {} } }),
   );
-  await page.goto(tenantURL("/", secondSlug));
+  await page.goto(tenantURL("/projects", secondSlug));
   await expect(page.getByText("暂无项目权限", { exact: true })).toBeVisible();
   await expect(
     page.getByText("请联系租户管理员申请项目授权。", { exact: true }),
@@ -401,7 +401,7 @@ test("new projects wait for the tenant default pool before initializing grants",
       json: [{ id: "pool-main", name: "default", is_default: true }],
     });
   });
-  await page.goto(tenantURL("/"));
+  await page.goto(tenantURL("/projects"));
   await page.getByRole("button", { name: "接入项目", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.locator('input[name="name"]')).toHaveCount(0);
@@ -473,7 +473,10 @@ test("direct build links use project permissions when the recent build list is e
   );
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: project.name, exact: true }),
+    page.getByRole("heading", { name: `构建 #${build.number}`, exact: true, level: 1 }),
+  ).toBeVisible();
+  await expect(
+    page.locator(".build-detail-meta").getByText(project.name, { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "取消构建", exact: true }),

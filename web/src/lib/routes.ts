@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户、项目 slug 和页面段。
- * [OUTPUT]: 提供业务路由校验及严格限定的邮箱验证返回地址。
+ * [OUTPUT]: 提供含独立项目目录的业务路由校验及邮箱验证返回地址。
  * [POS]: 签名设置与业务页面的公开地址边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -48,7 +48,7 @@ export function projectSwitchPath(path: string, slug: string) {
 
 export function validTenantRoute(segments: string[]) {
   if (!segments.length) return true;
-  if (segments.length === 1) return ["nodes", "settings"].includes(segments[0]);
+  if (segments.length === 1) return ["projects", "nodes", "settings"].includes(segments[0]);
   if (segments[0] === "settings" && segments.length === 2)
     return [
       "general",

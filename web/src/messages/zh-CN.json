@@ -88,7 +88,11 @@
     "scripts": "外置脚本 · {count} 项",
     "rawPlan": "原始计划配置",
     "sourceDetails": "固定源码信息",
-    "phases": { "build": "构建", "sign": "签名", "verify": "验证" }
+    "phases": {
+      "build": "构建",
+      "sign": "签名",
+      "verify": "验证"
+    }
   },
   "common": {
     "save": "保存",
@@ -182,7 +186,8 @@
     "toolchains": "原生工具链 · 专用签名节点",
     "leases": "主动连接 · 任务租约保护",
     "workspaceGroup": "工作空间导航",
-    "adminGroup": "管理"
+    "adminGroup": "管理",
+    "tenantOverview": "概览"
   },
   "login": {
     "failed": "登录失败",
@@ -1127,5 +1132,47 @@
     "editGoal": "修改构建要求",
     "editTargets": "修改交付目标",
     "unavailable": "当前 Release 或项目已不可构建。你的选择仍保留，请关闭引导返回版本页。"
+  },
+  "dashboard": {
+    "tenantOverview": "租户概览",
+    "projectOverview": "项目构建概览",
+    "tenantDescription": "查看构建趋势、交付效率和近期活跃项目。",
+    "projectDescription": "查看此项目的构建结果与交付效率。",
+    "period": "统计时间范围",
+    "lastDays": "近 {days} 天",
+    "periodHint": "按完整时间范围统计，包含今天。",
+    "windowHint": "按 {timezone} 的自然日统计，包含今天。",
+    "activeProjects": "活跃项目",
+    "activeProjectsHint": "期间有构建创建或完成的项目",
+    "buildsCreated": "构建次数",
+    "buildsCreatedHint": "期间创建的构建",
+    "successRate": "成功率",
+    "successRateHint": "成功 ÷（成功 + 失败），排除取消",
+    "turnaround": "构建周转时长",
+    "turnaroundHint": "成功构建的中位数，含规划和排队",
+    "currentOngoing": "当前进行中",
+    "currentOngoingHint": "当前所有非终态构建，不限日期",
+    "dailyResults": "每日构建结果",
+    "dailyResultsHint": "按创建日期分组，显示当前结果",
+    "turnaroundTrend": "成功构建周转时长",
+    "turnaroundTrendHint": "每日成功构建的周转时长中位数",
+    "ongoing": "进行中",
+    "resultLegend": "构建结果图例",
+    "median": "周转时长中位数",
+    "resultsNote": "失败包含连接丢失；取消和进行中不计入成功率。",
+    "turnaroundNote": "从创建到最终完成，包含规划、排队和执行；无成功样本时保留断点。",
+    "noBuilds": "此时间范围内还没有新建构建",
+    "noSuccessfulBuilds": "此时间范围内还没有成功构建",
+    "dailyResultData": "每日构建结果数据",
+    "turnaroundData": "每日成功构建周转数据",
+    "noSample": "无成功样本",
+    "recentProjects": "近期活跃项目",
+    "recentBuilds": "近期构建活动",
+    "activityHint": "按最近一次构建创建或完成时间排序",
+    "allProjects": "全部项目",
+    "allBuilds": "全部构建",
+    "noActivity": "此时间范围内暂无构建活动",
+    "noBuildActivityHint": "发起构建后，这里会显示最近的构建进展。",
+    "noProjectActivityHint": "查看全部项目，或接入项目后开始构建。"
   }
 }

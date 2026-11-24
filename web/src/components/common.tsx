@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户下载 API、全局通知和带验签证据的制品类型。
- * [OUTPUT]: 提供状态、内容骨架、通知错误桥和只显示文件名的制品验签表。
+ * [OUTPUT]: 提供内容标题、标题附件、页面动作、骨架和制品验签表。
  * [POS]: 业务页面复用的展示与反馈边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -19,8 +19,7 @@ import {
   LoaderCircle,
   XCircle,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Artifact, ApplicationPlatform, TargetPlatform } from "@/lib/types";
@@ -172,32 +171,25 @@ export function PageTitle({
   eyebrow,
   title,
   description,
+  titleAccessory,
   children,
 }: {
   eyebrow: string;
   title: string;
   description: string;
+  titleAccessory?: ReactNode;
   children?: ReactNode;
 }) {
-  const [actionTarget, setActionTarget] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    const desktop = window.matchMedia("(min-width: 1024px)");
-    const sync = () => setActionTarget(desktop.matches ? document.getElementById("workspace-page-actions") : null);
-    sync();
-    desktop.addEventListener("change", sync);
-    return () => desktop.removeEventListener("change", sync);
-  }, []);
-  const actions = children && <div className="page-actions">{children}</div>;
   return (
     <div className="page-title">
       <div>
         <p className="eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
+        <div className="page-title-heading"><h1>{title}</h1>{titleAccessory}</div>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           {description}
         </p>
       </div>
-      {actionTarget ? createPortal(actions, actionTarget) : actions}
+      {children && <div className="page-actions">{children}</div>}
     </div>
   );
 }

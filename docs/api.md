@@ -28,6 +28,7 @@
 | 方法 / 路径 | 输入 / 说明 |
 |---|---|
 | `GET /overview` | 概览统计，仅会话 |
+| `GET /dashboard` | 完整窗口的构建统计和近期活动；仅会话，参数与口径见下文 |
 | `GET, POST /tenant/members` | 当前租户成员；添加已有账号 `{username,role}`，不创建全局账号 |
 | `GET, PATCH /tenant` | 读取租户上下文；PATCH `{name}` 改名并保持 slug |
 | `GET /tenant/lifecycle`、`GET /projects/{id}/lifecycle` | 返回受影响项目、构建、制品和设备数量 |
@@ -82,6 +83,29 @@
 | `GET /releases/{id}/manifest`、`GET /releases/{id}/checksums` | published 版本的命名交付清单与 SHA256SUMS |
 
 创建租户和项目返回 `{id,slug}`，构建返回 `{id,number,project_slug}`；其他资源创建通常返回 `{id}`；Token 类创建还返回明文值；修改操作通常返回 `{ok:true}`。所有查询使用真实数据库，不返回演示对象。
+
+## 构建概览统计
+
+`GET /dashboard?days=30&timezone=Asia/Shanghai&project_id={id}` 返回完整聚合。
+`days` 只接受7、30、90，默认30。`timezone` 使用 PostgreSQL 支持的时区名称，默认UTC。
+`project_id` 可省略；指定时复核项目读取权限。
+所有数据同时限定当前租户和可见项目，包含保留的归档项目。
+
+响应包含 `window`、`summary`、`daily`、`recent_projects` 和 `recent_builds`。
+`window` 返回起止时间、天数、时区和生成时间。
+窗口从所选时区今天前N−1天的零点开始，到同一数据库时钟的当前时刻结束。
+`daily` 返回升序的自然日及零值桶。
+各桶和摘要中的构建数按 `created_at` 归属，结果使用构建当前状态。
+`failed` 合并失败和失联；取消单独计数，其他非终态归入 `ongoing`。
+`success_rate` 为0到1的成功数／成功与失败数之和，无结果时为 `null`。
+`median_turnaround_seconds` 只统计成功构建的完成时间减创建时间，中位数单位为秒；无样本时为 `null`。
+`current_ongoing` 统计当前范围全部非终态，不限所选日期。
+
+活跃项目数和近期活动按构建创建或最终完成时间判断。
+`recent_projects` 每项目只出现一次，包含触发最近活动的 `last_build`。
+两类近期列表均按活动时间倒序，最多5条，提供构建编号、Release归属与项目slug。
+响应来自完整数据库聚合，与 `/builds` 的100条读取上限无关。
+旧 `/overview` 继续保留原字段和Job计数语义。
 
 遥测历史使用 ISO 8601 `from/to` 左闭右开区间，`resolution=raw|minute|hour`，默认 minute；单次范围分别限 6 小时、2 天、31 天，并受数据保留期约束。历史及清单查询返回 `{"samples":[],"truncated":false}`，结果超过行数或字节预算时标记截断。采集范围、未知值、权限和保留策略见 [时序观测](telemetry.md)。
 

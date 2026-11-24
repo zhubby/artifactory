@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
- * [OUTPUT]: 验证作用域侧栏、顶栏租户切换、设置分区与草稿保护。
+ * [OUTPUT]: 验证概览与项目目录导航、顶栏全局入口、顶栏租户切换及草稿保护。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -51,10 +51,11 @@ test("tenant and project business sidebars expose only their own scope", async (
   const events = await fixtureAPI(page);
   const sidebar = page.locator(".sidebar");
   for (const [path, labels, active] of [
-    ["/", ["项目", "构建节点", "租户设置", "文档"], "项目"],
-    ["/nodes", ["项目", "构建节点", "租户设置", "文档"], "构建节点"],
-    ["/projects/desktop-client", ["项目概览", "Release 版本", "项目设置", "文档"], "项目概览"],
-    [`/projects/desktop-client/releases/${release.id}/builds/128`, ["项目概览", "Release 版本", "项目设置", "文档"], "Release 版本"],
+    ["/", ["概览", "项目", "构建节点", "租户设置"], "概览"],
+    ["/projects", ["概览", "项目", "构建节点", "租户设置"], "项目"],
+    ["/nodes", ["概览", "项目", "构建节点", "租户设置"], "构建节点"],
+    ["/projects/desktop-client", ["项目概览", "Release 版本", "项目设置"], "项目概览"],
+    [`/projects/desktop-client/releases/${release.id}/builds/128`, ["项目概览", "Release 版本", "项目设置"], "Release 版本"],
   ] as const) {
     await page.goto(tenantURL(path));
     await expect(page.locator(".workspace-breadcrumb > .space-selector.tenant")).toBeVisible();
@@ -389,7 +390,7 @@ test("navigation drawer traps focus, closes on Escape and returns focus", async 
   const first = drawer.getByRole("button", { name: "关闭导航", exact: true });
   await first.focus();
   await page.keyboard.press("Shift+Tab");
-  await expect(drawer.getByRole("link", { name: /文档/ })).toBeFocused();
+  await expect(drawer.getByRole("link", { name: "项目设置", exact: true })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(first).toBeFocused();
   const switcher = drawer.locator(".space-selector.project summary");

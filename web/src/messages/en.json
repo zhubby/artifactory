@@ -88,7 +88,11 @@
     "scripts": "External scripts · {count}",
     "rawPlan": "Raw plan configuration",
     "sourceDetails": "Pinned source details",
-    "phases": { "build": "Build", "sign": "Sign", "verify": "Verify" }
+    "phases": {
+      "build": "Build",
+      "sign": "Sign",
+      "verify": "Verify"
+    }
   },
   "common": {
     "save": "Save",
@@ -182,7 +186,8 @@
     "toolchains": "Native toolchains · Dedicated signing nodes",
     "leases": "Outbound connections · Protected leases",
     "workspaceGroup": "Workspace",
-    "adminGroup": "Administration"
+    "adminGroup": "Administration",
+    "tenantOverview": "Overview"
   },
   "login": {
     "failed": "Sign-in failed",
@@ -1127,5 +1132,47 @@
     "editGoal": "Edit build goal",
     "editTargets": "Edit delivery targets",
     "unavailable": "This Release or project can no longer accept builds. Your answers are preserved; close the guide to return to the Release."
+  },
+  "dashboard": {
+    "tenantOverview": "Tenant overview",
+    "projectOverview": "Project build overview",
+    "tenantDescription": "Build trends, delivery efficiency, and recently active projects.",
+    "projectDescription": "Build results and delivery efficiency for this project.",
+    "period": "Reporting period",
+    "lastDays": "Last {days} days",
+    "periodHint": "Full-period statistics, including today.",
+    "windowHint": "Calendar days in {timezone}, including today.",
+    "activeProjects": "Active projects",
+    "activeProjectsHint": "Projects with builds created or completed",
+    "buildsCreated": "Builds created",
+    "buildsCreatedHint": "Builds created during the period",
+    "successRate": "Success rate",
+    "successRateHint": "Succeeded ÷ (succeeded + failed), excluding canceled",
+    "turnaround": "Build turnaround",
+    "turnaroundHint": "Median successful build, including planning and queues",
+    "currentOngoing": "Currently in progress",
+    "currentOngoingHint": "All current nonterminal builds, across all dates",
+    "dailyResults": "Daily build results",
+    "dailyResultsHint": "Grouped by creation date, showing current results",
+    "turnaroundTrend": "Successful build turnaround",
+    "turnaroundTrendHint": "Median turnaround of successful builds by day",
+    "ongoing": "In progress",
+    "resultLegend": "Build result legend",
+    "median": "Median turnaround",
+    "resultsNote": "Failed includes lost connections. Canceled and ongoing builds are excluded from the success rate.",
+    "turnaroundNote": "Creation to final completion, including planning, queues, and execution. Days without successful builds remain gaps.",
+    "noBuilds": "No builds were created during this period",
+    "noSuccessfulBuilds": "No successful builds during this period",
+    "dailyResultData": "Daily build result data",
+    "turnaroundData": "Daily successful build turnaround data",
+    "noSample": "No successful sample",
+    "recentProjects": "Recently active projects",
+    "recentBuilds": "Recent build activity",
+    "activityHint": "Ordered by the latest build creation or completion",
+    "allProjects": "All projects",
+    "allBuilds": "All builds",
+    "noActivity": "No build activity during this period",
+    "noBuildActivityHint": "Start a build to see its latest progress here.",
+    "noProjectActivityHint": "Browse all projects, or connect a project to start building."
   }
 }

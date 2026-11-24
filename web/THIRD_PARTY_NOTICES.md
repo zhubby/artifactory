@@ -6,6 +6,7 @@ licenses accompany the pinned `@fontsource-variable/inter` and
 `@fontsource/ibm-plex-mono` packages in `node_modules`.
 
 The interface uses Radix UI (MIT), Tailwind CSS (MIT), and Lucide (ISC).
+Dashboard charts use Recharts 3.11.1 (MIT) and react-is (MIT).
 Package versions and dependency licenses are recorded by npm in
 `package-lock.json` and the installed packages.
 

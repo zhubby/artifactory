@@ -16,17 +16,21 @@ test("node reads show a skeleton without visible reading text and settle on fail
     await route.fulfill({ status: 503, json: { error: "Node query unavailable" } });
   });
   await page.goto(tenantURL("/nodes"));
+  const content = page.locator("#workspace-content");
+  const skeleton = content.locator(".loading-state");
   try {
-    await expect(page.locator(".loading-state[aria-busy='true']")).toBeVisible();
-    expect(await page.locator(".loading-state").evaluate(node => Array.from(node.childNodes)
+    await expect(content.getByRole("heading", { name: "构建节点", exact: true, level: 1 })).toBeVisible();
+    await expect(skeleton).toHaveAttribute("aria-busy", "true");
+    await expect(skeleton).toBeVisible();
+    expect(await skeleton.evaluate(node => Array.from(node.childNodes)
       .filter(child => child.nodeType === Node.TEXT_NODE).map(child => child.textContent).join(""))).not.toContain("正在读取");
-    await expect(page.locator(".loading-state .sr-only")).toHaveText("正在读取控制平面…");
-    await expect(page.locator(".loading-state .skeleton-block").first()).toBeVisible();
+    await expect(skeleton.locator(".sr-only")).toHaveText("正在读取控制平面…");
+    await expect(skeleton.locator(".skeleton-block").first()).toBeVisible();
   } finally {
     finish();
   }
   await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("Node query unavailable");
-  await expect(page.locator(".loading-state")).toHaveCount(0);
+  await expect(skeleton).toHaveCount(0);
 });
 
 test("history starts with a log skeleton and keeps existing output while paging", async ({ page }) => {

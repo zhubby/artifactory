@@ -1,5 +1,5 @@
 # Artifactory - 跨平台构建与制品交付
-Rust 2024 + Toasty 0.11.0 + PostgreSQL 17 + Next.js 16.4.5 + React 19.3.1
+Rust 2024 + Toasty 0.11.0 + PostgreSQL 17 + Next.js 16.4.5 + React 19.3.1 + Recharts 3.11.1
 
 <directory>
 .github/ - 平台验证与不可变镜像交付。
@@ -47,5 +47,6 @@ Release 只交付一次完整构建，正式版本不可覆盖。
 首次读取使用内容骨架，前台请求与导航共用顶部细进度条。
 后台轮询与日志订阅不显示加载进度。
 所有下拉使用自定义触发器与弹层，禁止原生选择菜单。
+概览由服务端按授权范围聚合完整窗口，不从截断列表推算统计。
 变更后检查文件契约、模块地图与项目地图。
 [PROTOCOL]: Update this header on change, then check AGENTS.md

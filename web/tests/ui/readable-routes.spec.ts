@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、slug 路由和租户 HTTP 夹具。
- * [OUTPUT]: 验证可读路由、浏览历史及租户请求隔离。
+ * [OUTPUT]: 验证项目目录与概览深链接、浏览历史及租户请求隔离。
  * [POS]: 约束作用域导航与异步租户解析的回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -58,7 +58,7 @@ test("readable deep links retain UUID API authority and browser navigation", asy
     if (new URL(request.url()).pathname.startsWith("/api/v1/projects"))
       headers.push(request.headers()["x-artifactory-tenant"]);
   });
-  await page.goto(home);
+  await page.goto(`${home}/projects`);
   await page
     .locator(".project-card-title")
     .filter({ hasText: project.name })
@@ -67,16 +67,14 @@ test("readable deep links retain UUID API authority and browser navigation", asy
   await expect(
     page.getByRole("heading", { name: project.name, exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("link", { name: `查看构建 ${buildNumber}`, exact: true })
-    .click();
+  await page.locator(`.dashboard-activity a[href="${buildURL}"]`).first().click();
   await expect(page).toHaveURL(buildURL);
   await expect(
     page.getByText(`构建 #${buildNumber}`, { exact: true }),
   ).toBeVisible();
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: project.name, exact: true }),
+    page.getByRole("heading", { name: `构建 #${buildNumber}`, exact: true }),
   ).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(projectURL);
@@ -151,7 +149,7 @@ test("a delayed tenant lookup cannot send requests after switching tenants", asy
     const path = new URL(request.url()).pathname;
     if (
       path.startsWith("/api/v1/") &&
-      !/^\/api\/v1\/(?:auth|tenants|operations)(?:\/|$)/.test(path)
+      !/^\/api\/v1\/(?:auth|tenants|invitations|operations|notifications)(?:\/|$)/.test(path)
     )
       sent.push(request.headers()["x-artifactory-tenant"]);
   });
@@ -160,9 +158,7 @@ test("a delayed tenant lookup cannot send requests after switching tenants", asy
   await page.evaluate(() =>
     window.history.pushState(null, "", "/tenants/beta-team"),
   );
-  await expect(
-    page.locator(".project-card-title").filter({ hasText: project.name }),
-  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "租户概览", exact: true })).toBeVisible();
   const finished = page.waitForResponse(`**/api/v1/tenants/${tenantSlug}`);
   release();
   await finished;

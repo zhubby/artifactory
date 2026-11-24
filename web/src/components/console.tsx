@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖共享 Select、租户 API、项目路由及业务页面。
- * [OUTPUT]: 提供 Console 项目控制台。
- * [POS]: 组合工作区数据与业务页面。独立组件呈现导航与面包屑；工作区错误桥固定挂载。
+ * [INPUT]: 依赖合法租户路由、租户 API、共享顶栏与聚合概览。
+ * [OUTPUT]: 提供保留作用域身份的 Console 控制台。
+ * [POS]: 由租户布局持续挂载，按租户与项目隔离状态，非法路径让位于 404。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -12,18 +12,17 @@ import { usePathname } from "next/navigation";
 import {
   ArrowRight,
   ArrowUpRight,
-  Boxes,
   FolderGit2,
   Menu,
-  Package,
   Plus,
   Search,
   Settings2,
   X,
   GitBranch,
 } from "lucide-react";
-import { NotificationBell } from "@/components/notification-center";
 import { ProjectNotificationFollow } from "@/components/notification-settings";
+import { HeaderTools } from "@/components/header-tools";
+import { NotificationBell } from "@/components/notification-center";
 import { useUI } from "@/components/providers";
 import { useAccount } from "@/components/account";
 import { WorkspaceSidebar, WorkspaceBreadcrumb } from "@/components/workspace-navigation";
@@ -37,6 +36,7 @@ import { ReleaseCreate } from "@/components/release-form";
 import { ReleaseTable } from "@/components/release-table";
 import { ReleaseDetail } from "@/components/release-detail";
 import { ImageCatalog } from "@/components/image-catalog";
+import { Dashboard } from "@/components/dashboard";
 import { ProjectForm } from "@/components/forms";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
@@ -46,12 +46,11 @@ import {
   ErrorBox,
   Loading,
   PageTitle,
-  SectionTitle,
   Status,
 } from "@/components/common";
 import { useRemote, cancelBusinessRequests } from "@/lib/api";
 import { Link } from "@/lib/tenant";
-import { projectFromPath, tenantFromPath, projectPath, buildPath } from "@/lib/routes";
+import { projectFromPath, tenantFromPath, projectPath, validTenantRoute } from "@/lib/routes";
 import type {
   TenantContext,
   User,
@@ -66,7 +65,14 @@ import { compareReleaseVersions } from "@/lib/releases";
 
 export function Console() {
   const pathname = usePathname();
-  const tenant = tenantFromPath(pathname)!;
+  const tenant = tenantFromPath(pathname);
+  let path: string[];
+  try {
+    path = pathname.split("/").slice(3).filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return null;
+  }
+  if (!tenant || !validTenantRoute(path)) return null;
   const project = projectFromPath(pathname);
   return (
     <Workspace
@@ -172,6 +178,12 @@ function Workspace({
   const base = projectSlug ? projectPath(projectSlug) : "";
   const readOnly = context.data?.tenant.status !== "active";
   const workspaceError = account.error || context.error || projects.error || detail.error;
+  const retryWorkspace = () => {
+    void account.reload();
+    void context.reload();
+    void projects.reload();
+    if (projectSlug) void detail.reload();
+  };
   return (
     <div className="app-shell workspace-shell">
       {mobile && (
@@ -191,6 +203,8 @@ function Workspace({
         relativePath={relative}
         projects={projects.data || []}
         ready={!!user && (!projectSlug || !!project)}
+        error={account.error || context.error || detail.error}
+        onRetry={retryWorkspace}
         mobile={mobile}
         onClose={() => setMobile(false)}
       />
@@ -213,21 +227,14 @@ function Workspace({
             tenantAdmin={user?.role === "admin"}
             relativePath={relative}
           />
-          <div className="workspace-tools">
+          <HeaderTools workspace notification={account.data && <NotificationBell />}>
             {user && <CommandPalette tenantName={context.data?.tenant.name} projects={projects.data || []} project={project} user={user} readOnly={readOnly || (!!project && project.status !== "active")} />}
-            {user && <NotificationBell />}
-            <div id="workspace-page-actions" />
-          </div>
+          </HeaderTools>
         </header>
         <main className="main" id="workspace-content">
           <ErrorBox message={workspaceError} />
           {workspaceError && <div className="mb-5">
-            <Button variant="secondary" onClick={() => {
-              void account.reload();
-              void context.reload();
-              void projects.reload();
-              if (projectSlug) void detail.reload();
-            }}>{t("common.retry")}</Button>
+            <Button variant="secondary" onClick={retryWorkspace}>{t("common.retry")}</Button>
           </div>}
           {!user || !context.data || !projects.data || (projectSlug && !project) ? (
             workspaceError ? null : <Loading variant="detail" />
@@ -280,13 +287,19 @@ function Workspace({
                     void projects.reload();
                   }}
                 />
-              ) : (
-                <TenantHome
+              ) : pieces[0] === "projects" ? (
+                <ProjectsWorkspace
                   context={context.data}
                   user={user}
                   projects={projects.data}
                   reload={projects.reload}
                 />
+              ) : (
+                <>
+                  <PageTitle eyebrow={t("workspace.tenantWorkbench")}
+                    title={context.data.tenant.name} description={t("dashboard.tenantDescription")} />
+                  <Dashboard />
+                </>
               )}
             </>
           )}
@@ -296,7 +309,7 @@ function Workspace({
   );
 }
 
-function TenantHome({
+function ProjectsWorkspace({
   context,
   user,
   projects,
@@ -312,7 +325,6 @@ function TenantHome({
   const [creating, setCreating] = useState(false);
   const pools = useRemote<Pool[]>(creating ? "/pools" : null);
   const credentials = useRemote<Credential[]>(creating ? "/credentials" : null);
-  const activity = useRemote<Build[]>("/builds", 10000);
   const filtered = projects?.filter((project) =>
     `${project.name} ${project.slug} ${project.repository_url}`
       .toLowerCase()
@@ -320,10 +332,9 @@ function TenantHome({
   );
   return (
     <>
-      <ErrorBox message={activity.error} />
       <PageTitle
-        eyebrow={t("workspace.tenantWorkbench")}
-        title={context.tenant.name}
+        eyebrow={context.tenant.name}
+        title={t("navigation.projects")}
         description={t("workspace.projectsDescription")}
       >
         {user.role === "admin" && context.tenant.status === "active" && (
@@ -394,16 +405,6 @@ function TenantHome({
           ))}
         </div>
       )}
-      <section className="panel tenant-activity">
-        <SectionTitle title={t("workspace.recentActivity")} />
-        {activity.data ? (
-          <BuildTable builds={activity.data.slice(0, 5)} />
-        ) : activity.error ? (
-          <Button variant="secondary" className="m-4" onClick={() => void activity.reload()}>{t("common.retry")}</Button>
-        ) : (
-          <Loading variant="table" />
-        )}
-      </section>
       <Modal
         open={creating}
         onOpenChange={setCreating}
@@ -455,7 +456,7 @@ function ProjectWorkspace({
   const column = pieces[0] || "overview";
   const base = projectPath(project.slug);
   const builds = useRemote<Build[]>(
-    ["overview", "builds"].includes(column) && !pieces[1]
+    column === "builds" && !pieces[1]
       ? `/builds?project_id=${project.id}`
       : null,
     5000,
@@ -464,7 +465,7 @@ function ProjectWorkspace({
     column === "artifacts" ? `/artifacts?project_id=${project.id}` : null,
   );
   const releases = useRemote<Release[]>(
-    ["overview", "releases"].includes(column) && !pieces[1]
+    column === "releases" && !pieces[1]
       ? `/releases?project_id=${project.id}`
       : null,
   );
@@ -496,19 +497,17 @@ function ProjectWorkspace({
     matches(String(build.number), build.requested_ref, build.release_version, build.status)).sort(chronological);
   const visibleArtifacts = artifacts.data?.filter(artifact => matches(artifact.delivery_filename,artifact.path,artifact.target,artifact.release_version)).sort(chronological);
   const visibleReleases = releases.data?.filter(release => (!status || release.status === status) && matches(release.version, release.notes)).sort((a,b) => compareReleaseVersions(b.version,a.version) * (order === "newest" ? 1 : -1));
-  const running = builds.data?.filter(build => ["planning", "resolving", "queued", "running", "needs_input", "replanning"].includes(build.status)) || [];
-  const failed = builds.data?.filter(build => build.status === "failed") || [];
   const listRequest = column === "builds" ? builds : column === "artifacts" ? artifacts : releases;
   return (
     <>
       <PageTitle
         eyebrow={t("workspace.projectWorkbench")}
         title={column === "overview" ? project.name : t(`navigation.${column}`)}
+        titleAccessory={column === "overview" ? <ProjectNotificationFollow key={project.id} projectId={project.id} /> : undefined}
         description={
           column === "overview" ? project.repository_url : project.name
         }
       >
-        {column === "overview" && <ProjectNotificationFollow projectId={project.id} />}
         {!readOnly &&
           project.effective_role !== "viewer" &&
           ["overview", "releases"].includes(column) && (
@@ -534,50 +533,7 @@ function ProjectWorkspace({
             </span>
             <Status small value={project.status} />
           </div>
-          {(running.length > 0 || failed.length > 0) && <div className="project-focus">
-            {running.length > 0 && <Link href={buildPath(project.slug, running[0].number,running[0].release_id)}><Status small value={running[0].status} />{t("redesign.runningFocus", { count: running.length })} · {running[0].release_version}</Link>}
-            {failed.length > 0 && <Link href={buildPath(project.slug, failed[0].number,failed[0].release_id)}><Status small value="failed" />{t("redesign.failedFocus", { count: failed.length })} · {failed[0].release_version}</Link>}
-          </div>}
-          <section className="panel">
-            <SectionTitle title={t("navigation.releases")} detail={t("releaseFlow.projectHint")}><Link href={`${base}/releases`} className="text-xs text-primary">{t("releaseFlow.allReleases")} ↗</Link></SectionTitle>
-            <ErrorBox message={releases.error} />
-            {visibleReleases ? <ReleaseTable releases={visibleReleases.slice(0,5)} /> : releases.error
-              ? <Button variant="secondary" className="m-4" onClick={() => void releases.reload()}>{t("common.retry")}</Button>
-              : <Loading variant="table" />}
-          </section>
-          <section className="panel">
-            <SectionTitle title={t("projects.builds")}>
-              <Link href={`${base}/builds`} className="text-xs text-primary">
-                {t("builds.all")} ↗
-              </Link>
-            </SectionTitle>
-            <ErrorBox message={builds.error} />
-            {builds.data ? (
-              <BuildTable builds={builds.data.slice(0, 10)} />
-            ) : builds.error ? (
-              <Button variant="secondary" className="m-4" onClick={() => void builds.reload()}>{t("common.retry")}</Button>
-            ) : (
-              <Loading variant="table" />
-            )}
-          </section>
-          <div className="project-shortcuts">
-            <Link href={`${base}/artifacts`}>
-              <Boxes />
-              <div>
-                <strong>{t("navigation.artifacts")}</strong>
-                <span>{t("workspace.artifactShortcut")}</span>
-              </div>
-              <ArrowRight />
-            </Link>
-            <Link href={`${base}/builds`}>
-              <Package />
-              <div>
-                <strong>{t("releaseFlow.allBuilds")}</strong>
-                <span>{t("releaseFlow.aggregateHint")}</span>
-              </div>
-              <ArrowRight />
-            </Link>
-          </div>
+          <Dashboard project={project} />
         </>
       ) : (
         <>

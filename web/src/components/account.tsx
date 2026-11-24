@@ -1,17 +1,20 @@
 /**
- * [INPUT]: 依赖账户 API、统一表单通知、Radix 弹窗和未保存保护。
- * [OUTPUT]: 提供 AccountProvider 与 useAccount。
- * [POS]: 统一个人设置入口，分区配置资料、安全、偏好和通知。保留业务页面状态；退出错误桥独立于菜单开关。
+ * [INPUT]: 依赖账户 API、顶栏与侧栏插槽、Radix 弹窗和未保存保护。
+ * [OUTPUT]: 提供 AccountProvider、useAccount 与 AccountSlot。
+ * [POS]: 单实例菜单在插槽间移动；记录宿主焦点以恢复断点隐藏造成的失焦。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 import {
   createContext,
+  useCallback,
   useContext,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
@@ -43,6 +46,15 @@ import { NotificationFocusBranch } from "@/components/notifications";
 const Context = createContext<ReturnType<typeof useRemote<Account>> | null>(
   null,
 );
+type AccountPlacement = "header" | "sidebar";
+type AccountSlots = Record<AccountPlacement, HTMLDivElement | null>;
+const PlacementContext = createContext<((placement: AccountPlacement, element: HTMLDivElement | null) => void) | null>(null);
+
+export function AccountSlot({ placement }: { placement: AccountPlacement }) {
+  const register = useContext(PlacementContext);
+  const ref = useCallback((element: HTMLDivElement | null) => register?.(placement, element), [placement, register]);
+  return <div ref={ref} className={`account-slot account-slot-${placement}`} />;
+}
 export function useAccount() {
   const value = useContext(Context);
   if (!value) throw new Error("Account provider missing");
@@ -50,6 +62,10 @@ export function useAccount() {
 }
 export function AccountProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const [slots, setSlots] = useState<AccountSlots>({ header: null, sidebar: null });
+  const register = useCallback((placement: AccountPlacement, element: HTMLDivElement | null) => {
+    setSlots((current) => current[placement] === element ? current : { ...current, [placement]: element });
+  }, []);
   const account = useRemote<Account>(
     /^\/(tenants|join|notifications)(\/|$)/.test(pathname) &&
     !/^\/notifications\/(verify|unsubscribe|email)(\/|$)/.test(pathname)
@@ -59,23 +75,51 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   );
   return (
     <Context.Provider value={account}>
-      <UnsavedChanges />
-      <NotificationProvider>{children}</NotificationProvider>
-      {account.data && (
-        <AccountMenu account={account.data} update={account.setData} />
-      )}
+      <PlacementContext.Provider value={register}>
+        <UnsavedChanges />
+        <NotificationProvider>{children}</NotificationProvider>
+        {account.data && (
+          <AccountMenu account={account.data} update={account.setData} slots={slots} />
+        )}
+      </PlacementContext.Provider>
     </Context.Provider>
   );
 }
 function AccountMenu({
   account,
   update,
+  slots,
 }: {
   account: Account;
   update: (account: Account) => void;
+  slots: AccountSlots;
 }) {
   const { t } = useUI();
   const pathname = usePathname();
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
+  const [compact, setCompact] = useState(false);
+  const lastFocused = useRef<HTMLElement | null>(null);
+  const sidebar = !!tenantFromPath(pathname) && !compact && !!slots.sidebar;
+  useLayoutEffect(() => {
+    const element = document.createElement("div");
+    setHost(element);
+    const media = window.matchMedia("(max-width: 1023px)");
+    const sync = () => setCompact(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => { media.removeEventListener("change", sync); element.remove(); };
+  }, []);
+  useLayoutEffect(() => {
+    if (!host) return;
+    const target = sidebar ? slots.sidebar : slots.header;
+    host.className = target ? "account-host" : "account-host account-fallback";
+    const active = document.activeElement;
+    const focused = host.contains(active) ? active as HTMLElement
+      : active === document.body && lastFocused.current && host.contains(lastFocused.current)
+        ? lastFocused.current : null;
+    if (host.parentElement !== (target || document.body)) (target || document.body).appendChild(host);
+    focused?.focus({ preventScroll: true });
+  }, [host, sidebar, slots]);
   const [menu, setMenu] = useState(false);
   const [panel, setPanel] = useState(false);
   const [section, setSection] = useState("profile");
@@ -96,7 +140,11 @@ function AccountMenu({
   return (
     <>
       <ErrorBox message={logoutError} />
-      <div className={cn("account-anchor", tenantFromPath(pathname) ? "workspace-account" : "global-account")}>
+      {host && createPortal(<div className={cn("account-anchor", sidebar ? "workspace-account" : "global-account")}
+        onFocusCapture={(event) => { lastFocused.current = event.target; }}
+        onBlurCapture={(event) => {
+          if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) lastFocused.current = null;
+        }}>
         {menu && (
           <>
             <button
@@ -187,7 +235,7 @@ function AccountMenu({
           <span className="account-trigger-name">{account.display_name}</span>
           <Settings2 size={15} />
         </button>
-      </div>
+      </div>, host)}
       <Dialog.Root
         open={panel}
         onOpenChange={(value) => {

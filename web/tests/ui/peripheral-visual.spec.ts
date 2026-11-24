@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证入口边界、全局错误通知与构建阶段布局。
+ * [OUTPUT]: 验证入口边界、项目目录空态、全局错误通知与构建阶段布局。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -45,7 +45,7 @@ for (const locale of ["zh-CN", "en"] as const)
       await capture("not-found");
 
       await page.route("**/api/v1/projects", route => route.fulfill({ json: [] }));
-      await page.goto(tenantURL("/"));
+      await page.goto(tenantURL("/projects"));
       await expect(page.locator(".empty-state")).toBeVisible();
       await capture("empty-projects");
       await page.unroute("**/api/v1/projects");

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖账户通知夹具与浏览器交互。
- * [OUTPUT]: 验证收件箱、修订已读、跨租户请求与确认验证。
+ * [OUTPUT]: 验证顶栏通知入口、抽屉焦点、修订已读与跨租户请求。
  * [POS]: 持久通知的确定性浏览器验收。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -74,7 +74,7 @@ async function setup(page: import("@playwright/test").Page) {
     });
   });
 }
-test("bell opens compact inbox, restores focus, keeps revision and watermark", async ({
+test("topbar opens compact inbox, restores bell focus, keeps revision and watermark", async ({
   page,
 }, info) => {
   await setup(page);
@@ -93,7 +93,15 @@ test("bell opens compact inbox, restores focus, keeps revision and watermark", a
     });
   });
   await page.goto(tenantURL("/"));
-  const bell = page.getByRole("button", { name: /通知中心/ });
+  const bell = page.locator(".workspace-topbar").getByRole("button", { name: /通知中心/ });
+  await expect(bell).toBeVisible();
+  await expect(page.locator(".sidebar").getByRole("button", { name: /通知中心/ })).toHaveCount(0);
+  await expect(bell).toContainText("1");
+  await page.addStyleTag({ content: "nextjs-portal {display:none}" });
+  await page.screenshot({
+    path: info.outputPath("notification-topbar.png"),
+    fullPage: false,
+  });
   await bell.click();
   await expect(page.getByRole("dialog", { name: "通知中心" })).toBeVisible();
   await expect(page.getByText(item.title.zh, { exact: true })).toBeVisible();
@@ -101,13 +109,14 @@ test("bell opens compact inbox, restores focus, keeps revision and watermark", a
   expect(read).toEqual({ attention_revision: 3 });
   await page.getByRole("button", { name: "全部标为已读", exact: true }).click();
   expect(all).toEqual({ watermark: 7 });
-  await page.addStyleTag({ content: "nextjs-portal {display:none}" });
   await page.screenshot({
     path: info.outputPath("notification-drawer.png"),
     fullPage: false,
   });
   await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "通知中心", exact: true })).not.toBeVisible();
   await expect(bell).toBeFocused();
+  await expect(page.getByRole("dialog", { name: "主导航", exact: true })).toHaveCount(0);
 });
 test("personal inbox loads without tenant and offers filters and timeline", async ({
   page,
@@ -170,7 +179,7 @@ test("one account stream survives navigation and invalidates without progress", 
   });
   await page.goto(tenantURL("/"));
   await expect.poll(() => summaries).toBeGreaterThan(0);
-  await page.getByRole("button", { name: /通知中心/ }).click();
+  await page.locator(".workspace-topbar").getByRole("button", { name: /通知中心/ }).click();
   await page.getByRole("link", { name: "查看全部通知" }).click();
   await expect(page).toHaveURL("/notifications");
   expect(
@@ -308,7 +317,7 @@ test("project follow uses scoped API and webhook creation requires explicit opt 
   await page.goto(tenantURL("/projects/desktop-client"));
   await page.getByRole("button", { name: "关注项目", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "已关注", exact: true }),
+    page.getByRole("button", { name: "取消关注项目", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   let endpoints: unknown[] = [];
   await page.route(

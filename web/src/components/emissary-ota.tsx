@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 OTA API、统一通知、表单、Select 和设备详情字段。
  * [OUTPUT]: 提供对齐版本字段的 NodeOTA 与 EmissarySettings。
- * [POS]: 为设备运维分区提供升级操作，为设置页提供发布和节点池策略。
+ * [POS]: 设置首读展示骨架；节点池等待发布选项，轮询保留策略草稿。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -83,6 +83,7 @@ export function EmissarySettings({ user }: { user: User }) {
   async function reload() { await Promise.all([releases.reload(), pools.reload(), updates.reload()]); }
   return <div className="space-y-6" data-testid="emissary-settings">
     <ErrorBox message={releases.error || pools.error || updates.error} />
+    {((!releases.data && releases.error) || (!pools.data && pools.error) || (!updates.data && updates.error)) && <Button variant="secondary" onClick={() => void reload()}>{t("common.retry")}</Button>}
     <section className="panel"><SectionTitle title={t("ota.releases")} detail={t("ota.importHint")} />
       <div className="space-y-4 p-6 pt-0">
         {admin && <SubmitForm label={t("ota.import")} onSubmit={async form => { await mutation("/emissary-releases", { tag: form.get("tag") }); await reload(); }}>
@@ -92,7 +93,7 @@ export function EmissarySettings({ user }: { user: User }) {
       </div>
     </section>
     <section className="panel"><SectionTitle title={t("ota.pools")} detail={t("ota.poolHint")} />
-      <div className="grid gap-6 p-6 pt-0 md:grid-cols-2">{pools.data?.map(pool => <div className="space-y-3 rounded-lg border border-border p-4" key={`${pool.id}:${pool.emissary_target_release}:${pool.emissary_updates_paused}:${pool.emissary_update_concurrency}`}>
+      {!pools.data || !releases.data ? !(pools.error || releases.error) && <Loading variant="form" /> : <div className="grid gap-6 p-6 pt-0 md:grid-cols-2">{pools.data.map(pool => <div className="space-y-3 rounded-lg border border-border p-4" key={pool.id}>
         <h3 className="text-sm font-medium">{pool.name}</h3>
         {admin ? <SubmitForm onSubmit={async form => {
           await mutation(`/pools/${pool.id}/emissary-update`, { release_id: form.get("release") || null, concurrency: Number(form.get("concurrency")), paused: form.get("paused") === "on" }, "PATCH"); await reload();
@@ -101,12 +102,12 @@ export function EmissarySettings({ user }: { user: User }) {
           <Field label={t("ota.concurrency")}><Input name="concurrency" type="number" required min={1} max={32} defaultValue={pool.emissary_update_concurrency || 1} /></Field>
           <label className="flex gap-2 text-xs"><input type="checkbox" name="paused" defaultChecked={pool.emissary_updates_paused} />{t("ota.pause")}</label>
         </SubmitForm> : <p className="text-xs">{releases.data?.find(r => r.id === pool.emissary_target_release)?.version || t("ota.disabled")} · {pool.emissary_updates_paused ? t("ota.pause") : t("ota.stages.idle")}</p>}
-      </div>)}</div>
+      </div>)}</div>}
     </section>
     <section className="panel"><SectionTitle title={t("ota.history")} />
-      <div className="table-scroll"><table><thead><tr>{[t("common.name"),t("ota.target"),t("ota.phase"),t("common.time"),t("ota.reason"),""].map((s,i)=><th key={i}>{s}</th>)}</tr></thead><tbody>
-        {updates.data?.map(u => <tr key={u.id}><td>{u.node_name}</td><td className="font-mono">{u.previous_version} → {u.version}</td><td>{t(`ota.stages.${u.status}`)}</td><td className="text-xs">{date(u.updated_at)}</td><td className="max-w-sm break-words text-xs">{u.error || "—"}</td><td>{admin && <UpdateActions update={u} reload={reload} />}</td></tr>)}
-      </tbody></table></div>
+      {!updates.data ? !updates.error && <Loading variant="table" /> : <div className="table-scroll"><table><thead><tr>{[t("common.name"),t("ota.target"),t("ota.phase"),t("common.time"),t("ota.reason"),""].map((s,i)=><th key={i}>{s}</th>)}</tr></thead><tbody>
+        {updates.data.map(u => <tr key={u.id}><td>{u.node_name}</td><td className="font-mono">{u.previous_version} → {u.version}</td><td>{t(`ota.stages.${u.status}`)}</td><td className="text-xs">{date(u.updated_at)}</td><td className="max-w-sm break-words text-xs">{u.error || "—"}</td><td>{admin && <UpdateActions update={u} reload={reload} />}</td></tr>)}
+      </tbody></table></div>}
     </section>
   </div>;
 }

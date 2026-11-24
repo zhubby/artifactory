@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖真实通知组件、账户跳转、分页和无障碍扫描。
- * [OUTPUT]: 验证完整范围、实时记录、登录后确认与 WCAG AA。
+ * [INPUT]: 依赖真实通知组件、顶栏入口、账户跳转、分页和无障碍扫描。
+ * [OUTPUT]: 验证顶栏抽屉、完整范围、实时记录、登录后确认与 WCAG AA。
  * [POS]: 通知中心集成审查发现的边界回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -306,6 +306,7 @@ test("verification returns through login and still waits for confirmation", asyn
   await page.goto("/notifications/verify?token=return-token");
   await page.getByRole("button", { name: "确认验证邮箱", exact: true }).click();
   await expect(page).toHaveURL(/\/login\?returnTo=/);
+  await expect(page.getByRole("link", { name: "创建账号", exact: true })).toBeVisible();
   await page.locator('input[name="username"]').fill("alex");
   await page.locator('input[name="password"]').fill("test-password");
   await page.getByRole("button", { name: "进入工作空间", exact: true }).click();
@@ -364,7 +365,7 @@ for (const theme of ["light", "dark"]) {
       ).toEqual([]);
     }
     await page.goto(tenantURL("/"));
-    await page.getByRole("button", { name: /通知中心/ }).click();
+    await page.locator(".workspace-topbar").getByRole("button", { name: /通知中心/ }).click();
     await expect(page.getByText("构建进展", { exact: true })).toBeVisible();
     await audit();
     await page.keyboard.press("Escape");

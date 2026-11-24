@@ -1,12 +1,12 @@
 /**
- * [INPUT]: 依赖主题变量、工作区范围导航和账户面板类名。
- * [OUTPUT]: 提供租户卡片、页首切换与整框触发的偏好入口。
- * [POS]: 统一业务与设置侧栏，固定文档入口并保留账户面板布局。
+ * [INPUT]: 依赖主题变量、范围导航、共享顶栏工具与账户插槽。
+ * [OUTPUT]: 提供侧栏骨架、响应式顶栏、租户卡片与账户面板布局。
+ * [POS]: 统一业务与设置侧栏；手机工具同排，面包屑独立换行。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 /* One workspace frame, shared by every business page. */
 .authenticated-spaces, .app-shell { min-height: 100dvh; }
-.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 30; display: flex; flex-direction: column; width: 240px; padding: 16px 12px 76px; border-right: 1px solid var(--border); background: var(--sidebar); }
+.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 30; display: flex; flex-direction: column; width: 240px; padding: 16px 12px 12px; border-right: 1px solid var(--border); background: var(--sidebar); }
 .brand { display: inline-flex; align-items: center; gap: 9px; padding: 4px 8px 20px; font-size: 15px; font-weight: 600; letter-spacing: -.45px; }
 .brand-mark { display: inline-grid; place-items: center; flex-shrink: 0; width: 26px; height: 26px; border-radius: 5px; color: var(--primary-foreground); background: var(--primary); }
 .brand-mark svg { width: 19px; height: 19px; }
@@ -32,7 +32,22 @@
 .workspace { min-width: 0; margin-left: 240px; }
 .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 0 24px; border-bottom: 1px solid var(--border); background: var(--header); }
 .workspace-breadcrumb { display: flex; flex: 1; gap: 8px; align-items: center; min-width: 0; color: var(--muted-foreground); font-size: 12px; }
-.workspace-tools, .workspace-tools .page-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.header-tools { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.header-docs { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 4px 8px; border-radius: 5px; color: var(--muted-foreground); font-size: 12px; font-weight: 400; white-space: nowrap; }
+.header-docs:hover { background: var(--secondary); color: var(--foreground); }
+.header-docs:focus-visible, .account-trigger:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.header-tools .account-trigger-name { max-width: 140px; }
+.workspace-tools > .account-slot-header { display: none; }
+.sidebar-skeleton { padding: 0 9px; }
+.sidebar-skeleton-context { display: grid; gap: 12px; margin: 10px 0 22px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+.sidebar-skeleton-context > :first-child { width: 38%; height: 9px; }
+.sidebar-skeleton-context > :last-child { width: 72%; height: 14px; }
+.sidebar-skeleton-group { display: grid; gap: 3px; margin-bottom: 20px; }
+.sidebar-skeleton-label { width: 34%; height: 9px; margin: 5px 0 8px; }
+.sidebar-skeleton-link { display: flex; align-items: center; gap: 10px; min-height: 34px; }
+.sidebar-skeleton-link > :first-child { width: 16px; height: 16px; }
+.sidebar-skeleton-link > :last-child { width: 56%; }
+.sidebar-load-error { padding: 12px 9px; }
 .workspace-breadcrumb > a, .workspace-breadcrumb > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .workspace-breadcrumb > a:hover { color: var(--foreground); }
 .workspace-breadcrumb > :last-child { color: var(--foreground); }
@@ -118,10 +133,10 @@
 .lifecycle-counts span { color: var(--muted-foreground); font-size: 11px; }
 .lifecycle-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
-/* Account controls sit at the bottom of the sidebar; overlays preserve drafts. */
-.account-anchor { position: fixed; z-index: 35; }
-.workspace-account { left: 12px; bottom: 12px; width: 216px; }
-.global-account { top: 18px; right: 24px; }
+/* 账户宿主在插槽间移动，菜单和设置面板保持同一实例。 */
+.account-host, .account-anchor { position: relative; z-index: 35; }
+.account-fallback { position: fixed; top: 18px; right: 24px; }
+.workspace-account { width: 100%; }
 .account-trigger { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 38px; padding: 5px 8px; border-radius: 5px; text-align: left; }
 .account-trigger:hover { background: var(--secondary); }
 .account-trigger-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
@@ -175,7 +190,7 @@
 .login-preferences { position: absolute; top: 28px; right: 28px; z-index: 10; }
 .pipeline-line { display: flex; align-items: center; gap: 10px; padding: 13px 0; border-bottom: 1px solid var(--border); }
 .tenant-hall { min-height: 100dvh; }
-.hall-header { display: flex; align-items: center; justify-content: space-between; min-height: 72px; padding: 16px 230px 16px 32px; border-bottom: 1px solid var(--border); }
+.hall-header { display: flex; align-items: center; justify-content: space-between; min-height: 72px; padding: 16px 32px; gap: 16px; border-bottom: 1px solid var(--border); }
 .hall-header .brand { padding: 0; }
 .hall-header > a:last-child { color: var(--muted-foreground); font-size: 12px; }
 .hall-main { max-width: 1040px; margin-inline: auto; padding: 48px 32px 64px; }
@@ -188,7 +203,6 @@
 .hall-tenants .workspace-section-heading { margin: 0 0 16px; }
 .hall-tenants .workspace-section-heading h2 { font-size: 14px; }
 .hall-tenants .workspace-section-heading > div > span { display: grid; place-items: center; min-width: 24px; height: 22px; padding-inline: 6px; border-radius: 4px; background: var(--secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
-.hall-tenants .workspace-filter { min-height: 36px; }
 .tenant-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .tenant-card { position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 20px; min-width: 0; min-height: 156px; padding: 20px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); transition: border-color .15s, background .15s; }
 .tenant-card:hover { border-color: var(--placeholder); background: var(--quiet); }
@@ -236,17 +250,24 @@
   .mobile-menu { display: inline-flex; flex-shrink: 0; }
   .sidebar-close { position: absolute; top: 10px; right: 10px; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; }
   .workspace-nav-dismiss { display: block; position: fixed; inset: 0; z-index: 40; background: #00000055; }
-  .topbar { padding: 0 64px 0 12px; gap: 8px; justify-content: flex-start; min-height: 56px; }
+  .topbar { padding: 0 12px; gap: 8px; justify-content: flex-start; min-height: 56px; }
   .workspace-breadcrumb { flex: 1; }
-  .workspace-account { left: auto; right: 12px; top: 8px; bottom: auto; width: auto; }
-  .workspace-account .account-trigger-name, .workspace-account .account-trigger > svg { display: none; }
-  .workspace-account .account-trigger { padding: 0; min-width: 44px; min-height: 44px; justify-content: center; }
-  .workspace-account .account-menu { top: calc(100% + 8px); bottom: auto; left: auto; right: 0; }
+  .workspace-tools > .account-slot-header { display: block; }
+  .workspace-topbar > .mobile-menu { min-width: 44px; min-height: 44px; }
+  .account-slot-sidebar { display: none; }
+  .header-tools { gap: 4px; }
+  .header-docs { min-width: 44px; min-height: 44px; padding: 0; }
+  .header-docs span, .header-tools .account-trigger-name, .header-tools .account-trigger > svg { display: none; }
+  .header-tools .account-trigger { width: 44px; min-width: 44px; min-height: 44px; padding: 0; justify-content: center; }
+  .sidebar-skeleton-link { min-height: 44px; }
   .nav-item, .sidebar-back, .space-selector summary, .space-option, .space-menu-actions a { min-height: 44px; }
   .workspace-breadcrumb .space-selector.tenant summary { min-height: 44px; }
   .workspace-breadcrumb .space-selector-menu { max-width: calc(100vw - 84px); }
 }
 @media (max-width: 767px) {
+  .workspace-topbar { flex-wrap: wrap; padding-block: 6px; }
+  .workspace-topbar > .workspace-tools { margin-left: auto; }
+  .workspace-topbar > .workspace-breadcrumb { order: 3; flex-basis: 100%; }
   .main { padding: 24px 16px 48px; }
   .nav-item { min-height: 44px; }
   .account-trigger { min-width: 44px; min-height: 44px; }
@@ -277,9 +298,9 @@
   .login-story .story-body, .login-story > footer { display: none; }
   .login-form { padding: 48px 24px; align-items: start; }
   .login-preferences { top: 18px; right: 20px; }
-  .global-account { top: 18px; right: 16px; }
+  .account-fallback { right: 16px; }
   .global-account .account-trigger-name, .global-account .account-trigger > svg { display: none; }
-  .hall-header { min-height: 76px; padding: 16px 76px 16px 16px; gap: 16px; }
+  .hall-header { min-height: 76px; padding: 16px; gap: 8px; }
   .hall-main { padding: 32px 16px 48px; }
   .hall-heading { align-items: start; flex-direction: column; gap: 20px; margin-bottom: 28px; }
   .hall-heading h1 { font-size: 24px; }

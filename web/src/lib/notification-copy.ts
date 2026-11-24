@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖当前界面语言与通知中心中英文文案。
- * [OUTPUT]: 提供按语言选择的通知文案。
+ * [OUTPUT]: 提供按语言选择的通知与项目星标操作文案。
  * [POS]: 收件箱与投递设置共享的语言边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -43,6 +43,8 @@ export const notificationCopy = {
   full: ["查看全部通知", "View all notifications"],
   settings: ["通知设置", "Notification settings"],
   follow: ["关注项目", "Follow project"],
+  unfollow: ["取消关注项目", "Unfollow project"],
+  retryFollow: ["重试读取项目关注状态", "Retry loading project follow status"],
   following: ["已关注", "Following"],
   followHint: [
     "接收此项目的构建和发布通知",

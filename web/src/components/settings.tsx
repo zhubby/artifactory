@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖设置 API、统一通知、表单及 UI 词条。
  * [OUTPUT]: 提供 Settings 设置分区。
- * [POS]: 在工作区内编辑凭据、令牌和审计设置。
+ * [POS]: 在独立分区实例内编辑设置；首读失败提供重试。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -89,6 +89,7 @@ export function Settings({
         )}
       </div>
       <ErrorBox message={error || remote.error} />
+      {!entries && remote.error && <Button variant="secondary" onClick={() => void remote.reload()}>{t("common.retry")}</Button>}
       <div
         id="settings-panel"
         role="region"

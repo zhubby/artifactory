@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖统一设置导航、项目 API、Webhook 与签名配置。
  * [OUTPUT]: 提供 WorkspaceManagement 工作区设置。
- * [POS]: 渲染当前设置内容，侧栏独立提供分区导航。
+ * [POS]: 按分区隔离设置状态；项目表单等待必需资源后挂载。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -26,6 +26,7 @@ import { TenantMembers, ProjectMembers } from "@/components/tenant-members";
 import { ProjectForm, SubmitForm } from "@/components/forms";
 import { PageTitle, Field, ErrorBox, Loading } from "@/components/common";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { canonicalSettingsSection, settingsNavigation } from "@/lib/workspace-navigation";
 
 export function WorkspaceManagement({
@@ -60,11 +61,10 @@ export function WorkspaceManagement({
       ? "/pools"
       : null,
   );
-  const credentials = useRemote<Credential[]>(
-    project && user.role === "admin" && section === "resources"
-      ? "/credentials"
-      : null,
-  );
+  const credentialsRequired = !!project && user.role === "admin" && section === "resources";
+  const credentials = useRemote<Credential[]>(credentialsRequired ? "/credentials" : null);
+  const projectResourcesReady = !!pools.data && (!credentialsRequired || !!credentials.data);
+  const projectResourcesError = pools.error || credentials.error;
   let content;
   if (section === "signing")
     content = project ? (
@@ -118,9 +118,13 @@ export function WorkspaceManagement({
               : "workspace.projectConfiguration",
           )}
         </h2>
-        <ErrorBox message={pools.error || credentials.error} />
-        {!pools.data ? (
-          !pools.error && <Loading variant="form" />
+        <ErrorBox message={projectResourcesError} />
+        {!projectResourcesReady ? (
+          projectResourcesError ? (
+            <Button variant="secondary" onClick={() => void Promise.all([pools.reload(), credentials.reload()])}>
+              {t("common.retry")}
+            </Button>
+          ) : <Loading variant="form" />
         ) : (
           <fieldset
             disabled={
@@ -131,7 +135,7 @@ export function WorkspaceManagement({
               key={`${project.id}/${section}/${formVersion}`}
               section={section === "resources" ? "resources" : "general"}
               project={project}
-              pools={pools.data}
+              pools={pools.data!}
               credentials={credentials.data || []}
               canManageResources={user.role === "admin"}
               onCancel={() => setFormVersion(value => value + 1)}
@@ -183,6 +187,7 @@ export function WorkspaceManagement({
     content = (
       <fieldset disabled={readOnly}>
         <Settings
+          key={section}
           user={user}
           projects={projects}
           section={section}

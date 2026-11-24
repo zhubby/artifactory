@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖中性主题、持久通知和账户设置类名。
- * [OUTPUT]: 提供紧凑行、440px 抽屉和手机全屏布局。
- * [POS]: 通知中心专属布局；临时提示继续使用独立样式。
+ * [INPUT]: 依赖中性主题、共享顶栏、单行筛选和账户设置类名。
+ * [OUTPUT]: 提供未读数、单行筛选、紧凑行和通知抽屉布局。
+ * [POS]: 通知中心专属布局；铃铛位于共享顶栏最右侧。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 .inbox-bell {
@@ -32,6 +32,19 @@
   font-size: 9px;
   line-height: 15px;
   font-weight: 600;
+}
+.inbox-nav {
+  width: 100%;
+  text-align: left;
+}
+.inbox-nav .inbox-badge {
+  position: static;
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 18px;
 }
 .inbox-overlay {
   position: fixed;
@@ -97,18 +110,7 @@
 }
 .inbox-filters {
   padding: 16px 20px 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.inbox-filters .select-ui {
-  display: block;
-  min-width: 0;
-  flex: 1;
-}
-.inbox-filters .select-trigger {
-  min-width: 110px;
-  font-size: 12px;
+  margin: 0;
 }
 .inbox-list-tools {
   display: flex;
@@ -254,7 +256,6 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  padding-right: 220px;
   font-weight: 600;
 }
 .notification-page > main {
@@ -279,7 +280,8 @@
   color: var(--muted-foreground);
 }
 .notification-page .inbox-filters {
-  padding-inline: 0;
+  padding-inline: 4px;
+  margin-inline: -4px;
 }
 .notification-page .inbox-list-tools {
   padding-inline: 0;
@@ -437,17 +439,12 @@
   border-top: 1px solid var(--border);
   padding: 12px 0;
 }
-.hall-notification-tools {
-  display: flex;
-  gap: 20px;
-  align-items: center;
-}
 @media (max-width: 1023px) {
   .workspace-tools {
     gap: 4px;
   }
   .inbox-bell {
-    width: 40px;
+    width: 44px;
     height: 44px;
   }
   .inbox-badge {
@@ -456,9 +453,6 @@
   }
 }
 @media (max-width: 600px) {
-  .notification-page .inbox-filters {
-    flex-direction: column;
-  }
   .inbox-drawer {
     width: 100%;
     border-left: 0;
@@ -483,7 +477,6 @@
   }
   .notification-page-header {
     padding-inline: 16px;
-    padding-right: 76px;
   }
   .notification-page > main {
     padding: 28px 16px 60px;
@@ -494,12 +487,6 @@
   }
   .notification-page-title h1 {
     font-size: 24px;
-  }
-  .hall-notification-tools {
-    gap: 12px;
-  }
-  .hall-header {
-    padding-right: 72px;
   }
   .notification-preference-row {
     grid-template-columns: 1fr 70px 70px;

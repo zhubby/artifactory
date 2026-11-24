@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离 PostgreSQL、旧版本基线身份和当前初始化基线。
-//! [OUTPUT]: 验证基线及追加迁移身份与误连未知历史时的无损拒绝。
+//! [OUTPUT]: 验证基线、概览索引追加迁移与误连未知历史时的无损拒绝。
 //! [POS]: 业务数据库安装与兼容升级边界回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_control_plane::store::MIGRATIONS;
@@ -9,7 +9,9 @@ fn new_baseline_has_a_distinct_identity() {
     let versions: Vec<_> = MIGRATIONS.migrations().iter().map(|m| m.id()).collect();
     assert_eq!(
         versions,
-        vec![2026112101, 2026112201, 2026112301, 2026112302, 2026112303]
+        vec![
+            2026112101, 2026112201, 2026112301, 2026112302, 2026112303, 2026112401
+        ]
     );
 }
 
@@ -52,6 +54,10 @@ async fn image_failure_migration_preserves_existing_rows_and_unknown_failures() 
         migrate(&db,&MIGRATIONS).await?;
         validate(&db,&MIGRATIONS).await?;
         migrate(&db,&MIGRATIONS).await?;
+        let indexes:i64=sql::scalar(&mut db,"SELECT count(*) FROM pg_indexes WHERE schemaname=current_schema() AND indexname IN ('builds_project_created_at','builds_project_finished_at')",params![]).await?;
+        assert_eq!(indexes,2);
+        let preserved_builds:i64=sql::scalar(&mut db,"SELECT count(*) FROM builds WHERE id=$1",params![build]).await?;
+        assert_eq!(preserved_builds,1);
         let after:serde_json::Value=sql::scalar(&mut db,"SELECT to_jsonb(e) FROM image_executions e WHERE id=$1",params![execution]).await?;
         assert!(after["failure_kind"].is_null());
         let mut original=after.as_object().unwrap().clone();
