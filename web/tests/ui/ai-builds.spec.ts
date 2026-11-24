@@ -96,7 +96,7 @@ for (const locale of ["zh-CN", "en"] as const) {
     await page.goto(tenantURL("/projects/desktop-client/builds/128"));
     await page.getByRole("tab", { name: locale === "en" ? "Plan" : "计划", exact: true }).click();
     await expect(
-      page.getByText("Which application should be built?", { exact: true }),
+      page.locator(".build-plan").getByText("Which application should be built?", { exact: true }),
     ).toBeVisible();
     await page.getByText(locale === "en" ? "Pinned source details" : "固定源码信息", { exact: true }).click();
     await expect(
@@ -194,6 +194,7 @@ test("application platform labels distinguish iOS from a CLI on the same host", 
     } }], runs: [], events: [],
   } }));
   await page.goto(tenantURL("/projects/desktop-client/builds/128"));
+  await page.getByRole("tab", { name: "Execution", exact: true }).click();
   await expect(page.getByRole("button", { name: /^ios iOS · Host darwin\/arm64/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^cli Non-application · Host darwin\/arm64/ })).toBeVisible();
   await page.getByRole("tab", { name: "Plan", exact: true }).click();

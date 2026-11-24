@@ -1,7 +1,8 @@
-//! [INPUT]: 依赖隔离 Git 进程和上游引用广告。
+//! [INPUT]: 依赖隔离 Git、引用广告和安全失败分类。
 //! [OUTPUT]: 保留 tag 对象列表，将首次构建引用固定为剥离提交。
 //! [POS]: 只查询引用；不创建仓库或长期缓存。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
+use crate::diagnostics::{GitFailure, GitFailureKind};
 use crate::git::Git;
 use crate::{Checkout, Options, SourceCredential, valid_commit};
 use anyhow::{Context, Result, ensure};
@@ -109,10 +110,9 @@ impl Checkout {
             .chain(refs.tags.iter())
             .filter(|r| r.reference == requested || r.name == requested)
             .collect::<Vec<_>>();
-        ensure!(
-            matches.len() == 1,
-            "Git reference is missing or ambiguous; select a full branch or tag reference"
-        );
+        if matches.len() != 1 {
+            return Err(GitFailure(GitFailureKind::Reference).into());
+        }
         let selected = matches[0];
         Ok(advertised
             .peeled_tags

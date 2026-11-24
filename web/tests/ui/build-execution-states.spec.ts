@@ -11,13 +11,14 @@ const matching = "等待匹配具备能力的授权节点。";
 const planningHint = "正在等待源码解析或 AI 规划，生成有效计划后自动执行。";
 const digest = `sha256:${"a".repeat(64)}`;
 
-async function snapshot(page: Page, value: unknown) {
+async function snapshot(page: Page, value: unknown, tab = "执行") {
   await fixtureAPI(page);
   await page.route(`**/api/v1/projects/by-slug/${project.slug}/builds/${build.number}`, route => route.fulfill({ json: value }));
   await page.route(`**/api/v1/builds/${build.id}/events`, route => route.fulfill({ contentType: "text/event-stream", body: `retry: 600000\nevent: snapshot\ndata: ${JSON.stringify(value)}\n\n` }));
   await page.route(`**/api/v1/builds/${build.id}/plans`, route => route.fulfill({ json: { plans: [], runs: [], events: [] } }));
   await page.goto(tenantURL(`/projects/${project.slug}/releases/${release.id}/builds/${build.number}`));
   await expect(page.getByRole("heading",{name:"构建 #128",exact:true})).toBeVisible();
+  if (tab !== "过程") await page.getByRole("tab",{name:tab,exact:true}).click();
 }
 
 for (const status of ["running", "succeeded", "failed", "canceled"]) test(`image-only ${status} shows image execution and logs without a native node wait`, async ({ page }, info) => {
@@ -66,8 +67,8 @@ test("mixed builds switch between native logs and the selected image execution",
 });
 
 for (const status of ["failed", "canceled"]) test(`${status} without jobs never shows native allocation or an unfinished planning hint`, async ({page}) => {
-  await snapshot(page,{...build,status,jobs:[],error:status==="failed"?"Pi planning failed":null});
-  await expect(page.getByRole("tab",{name:"计划",exact:true})).toHaveAttribute("aria-selected","true");
+  await snapshot(page,{...build,status,jobs:[],error:status==="failed"?"Pi planning failed":null},"过程");
+  await expect(page.getByRole("tab",{name:"过程",exact:true})).toHaveAttribute("aria-selected","true");
   const execution = page.locator(".build-layout");
   await expect(execution.getByText(matching,{exact:true})).toHaveCount(0);
   await expect(execution.getByRole("heading",{name:"执行步骤",exact:true})).toHaveCount(0);
@@ -78,11 +79,11 @@ for (const status of ["failed", "canceled"]) test(`${status} without jobs never 
 });
 
 for (const status of ["planning", "needs_input"]) test(`${status} without a plan retains its own next action`, async ({page}) => {
-  await snapshot(page,{...build,status,jobs:[],clarification:status==="needs_input"?{question:"Which application?"}:null});
-  await expect(page.getByRole("tab",{name:"计划",exact:true})).toHaveAttribute("aria-selected","true");
+  await snapshot(page,{...build,status,jobs:[],clarification:status==="needs_input"?{question:"Which application?"}:null},"过程");
+  await expect(page.getByRole("tab",{name:"过程",exact:true})).toHaveAttribute("aria-selected","true");
   await page.getByRole("tab",{name:"计划",exact:true}).click();
   if(status==="needs_input") {
-    await expect(page.getByText("Which application?",{exact:true})).toBeVisible();
+    await expect(page.locator(".build-plan").getByText("Which application?",{exact:true})).toBeVisible();
     await expect(page.getByText("请回答上述问题后继续规划。",{exact:true})).toBeVisible();
     await expect(page.locator('textarea[name="answer"]')).toBeVisible();
     await expect(page.getByText(planningHint,{exact:true})).not.toBeVisible();

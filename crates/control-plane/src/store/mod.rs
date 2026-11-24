@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 Toasty 连接、租户作用域和业务存储。
-//! [OUTPUT]: 组合控制平面持久化接口、构建概览及迁移。
+//! [OUTPUT]: 组合持久化接口、构建概览、过程记录及迁移。
 //! [POS]: 业务服务与数据库的统一入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Persistence operations for the control plane.
@@ -10,6 +10,7 @@ pub mod lifecycle;
 mod lifecycle_cleanup;
 mod tenancy;
 pub use tenancy::{NodeAccess, NodeAccessMode};
+mod build_activity;
 mod dashboard;
 pub mod dto;
 mod management;
@@ -19,6 +20,7 @@ mod planning_management;
 mod projects;
 mod signing;
 mod signing_execution;
+mod source_progress;
 pub use signing_execution::SigningAccess;
 
 pub use auth::LoginAccount;

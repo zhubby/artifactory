@@ -1,12 +1,12 @@
 //! [INPUT]: 依赖源码清单、任务身份和项目凭据引用。
-//! [OUTPUT]: 固定单次构建的解析身份、部分 pin 和源码清单。
+//! [OUTPUT]: 固定解析身份、pin、清单及不含秘密的失败诊断。
 //! [POS]: 源码任务以 Build 归属；按版本、构建、任务顺序加锁，隔离解析结果。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use anyhow::{Context, Result, ensure};
 use artifactory_database::{params, sql};
 use artifactory_source_checkout::{
-    GitCredential, PrepareResponse, SourceCredential, SourceManifest,
+    GitCredential, PrepareResponse, SourceCredential, SourceDiagnostic, SourceManifest,
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -34,7 +34,10 @@ fn source_execution(task: &Value, execution: &SourceTaskExecution) -> Result<()>
     Ok(())
 }
 
-fn current_source_execution(task: &Value, execution: &SourceTaskExecution) -> Result<()> {
+pub(super) fn current_source_execution(
+    task: &Value,
+    execution: &SourceTaskExecution,
+) -> Result<()> {
     source_execution(task, execution)?;
     ensure!(
         task["source_execution"] == serde_json::to_value(execution)?,
@@ -169,10 +172,19 @@ impl ControlStore {
         ensure_live_source_task(&mut tx, id, &task).await?;
         if let Some(error) = result["error"].as_str() {
             ensure!(error.len() <= 2000, "source error exceeds limit");
+            let diagnostic = result
+                .get("diagnostic")
+                .map(|value| serde_json::from_value::<SourceDiagnostic>(value.clone()))
+                .transpose()?;
+            let message = diagnostic
+                .as_ref()
+                .map(|value| value.code.message())
+                .unwrap_or(error);
+            let saved = diagnostic.map(|value| json!({"diagnostic":value}));
             sql::execute(
                 &mut tx,
-                "UPDATE source_tasks SET status='failed',error=$2 WHERE id=$1",
-                params![id, error],
+                "UPDATE source_tasks SET status='failed',error=$2,result=$3 WHERE id=$1",
+                params![id, message, saved],
             )
             .await?;
             tx.commit().await?;
@@ -389,7 +401,7 @@ impl ControlStore {
     }
 }
 
-async fn lock_source_task(tx: &mut dyn toasty::Executor, id: Uuid) -> Result<Value> {
+pub(super) async fn lock_source_task(tx: &mut dyn toasty::Executor, id: Uuid) -> Result<Value> {
     let scope:Value=sql::scalar(tx,"SELECT jsonb_build_object('tenant',s.tenant_id,'project',s.project_id,'build',s.build_id,'release',b.release_id) FROM source_tasks s LEFT JOIN builds b ON b.id=s.build_id WHERE s.id=$1",params![id]).await?;
     let tenant = scope["tenant"]
         .as_str()
@@ -435,7 +447,7 @@ async fn lock_source_task(tx: &mut dyn toasty::Executor, id: Uuid) -> Result<Val
     .await?)
 }
 
-async fn ensure_live_source_task(
+pub(super) async fn ensure_live_source_task(
     tx: &mut dyn toasty::Executor,
     id: Uuid,
     task: &Value,

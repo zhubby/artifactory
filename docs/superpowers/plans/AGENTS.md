@@ -8,5 +8,6 @@
 2026-11-16-managed-signing.md: 定义签名材料、任务领取、原生验签和部署验收步骤。
 2026-11-17-image-builds-and-operators.md: 定义独立 Operator、镜像构建、仓库与网关实施步骤。
 2026-11-21-release-build-decoupling.md: 定义版本元数据、独立构建源码与目标、单次正式交付的解耦实施。
+2026-11-24-build-observability.md: 跟踪源码诊断、构建过程和 Kubernetes 验收。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

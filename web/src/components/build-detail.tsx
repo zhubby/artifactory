@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖 Release 归属、构建快照、规划工作台与日志事件。
- * [OUTPUT]: 提供紧凑构建标题、目标合同和保留内容的三标签工作区。
- * [POS]: Release 内的构建详情；首次按状态选标签，轮询保留用户选择。
+ * [OUTPUT]: 提供过程总览、目标合同和保留内容的详情标签。
+ * [POS]: Release 内的构建详情；首次展示过程，轮询保留用户选择。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { ImageBuilds } from "@/components/image-builds";
 import { BuildPlanning } from "@/components/build-planning";
+import { BuildProcess } from "@/components/build-process";
 import { BuildLogHistory } from "@/components/build-log-history";
 import { isBuildTerminal, type BuildLog } from "@/lib/build-state";
 import { mutation, useRemote } from "@/lib/api";
@@ -48,10 +49,8 @@ import type { Build, Release, User } from "@/lib/types";
 import { releasePath } from "@/lib/routes";
 import { cn, elapsed, short } from "@/lib/utils";
 
-function initialTab(build: Build) {
-  return ["resolving", "planning", "replanning", "needs_input"].includes(build.status)
-    || (["failed", "canceled"].includes(build.status) && !build.jobs?.length)
-    ? "plan" : "execution";
+function initialTab() {
+  return "process";
 }
 
 export function BuildDetail({
@@ -89,7 +88,7 @@ export function BuildDetail({
   const live = !!id && (!isBuildTerminal(build?.status) || watching === id);
   const [error, setError] = useState<Error>();
   const [tabSelection, setTabSelection] = useState<{ buildId: string; value: string }>();
-  const tab = tabSelection && tabSelection.buildId === id ? tabSelection.value : build ? initialTab(build) : "execution";
+  const tab = tabSelection && tabSelection.buildId === id ? tabSelection.value : initialTab();
   const activeTab = useRef(tab);
   activeTab.current = tab;
   function setTab(value: string) {
@@ -100,7 +99,7 @@ export function BuildDetail({
   const pendingFollow = useRef(false);
   useEffect(() => {
     if (build) setTabSelection(previous => previous?.buildId === build.id
-      ? previous : { buildId: build.id, value: initialTab(build) });
+      ? previous : { buildId: build.id, value: initialTab() });
   }, [build]);
   useEffect(() => {
     setLogs([]);
@@ -230,7 +229,7 @@ export function BuildDetail({
         </div>
       </header>
       <ErrorBox key="build-feedback" message={error || remote.error || release.error} />
-      {build.error && <p className="mb-5 whitespace-pre-wrap break-words text-sm text-destructive" role="status" aria-atomic="true">{build.error}</p>}
+      {build.error && tab !== "process" && <p className="mb-5 whitespace-pre-wrap break-words text-sm text-destructive" role="status" aria-atomic="true">{build.error}</p>}
       <div className="build-detail-meta">
         <span className="meta-item" title={t("buildDetail.project")}>{build.project_name}</span>
         <span className="meta-item">
@@ -239,7 +238,7 @@ export function BuildDetail({
         </span>
         <span className="meta-item" title={t("buildDetail.commit")}>
           <GitCommitHorizontal size={14} />
-          <code title={build.commit_sha || undefined}>{build.commit_sha ? short(build.commit_sha) : t("builds.resolving")}</code>
+          <code title={build.commit_sha || undefined}>{build.commit_sha ? short(build.commit_sha) : t(isBuildTerminal(build.status) ? "process.commitNotPinned" : "builds.resolving")}</code>
           {build.commit_sha && <CopyButton value={build.commit_sha} />}
         </span>
         <span className="meta-item" title={t("buildDetail.duration")}>
@@ -256,8 +255,10 @@ export function BuildDetail({
         <span>{t("redesign.needsInput")}</span><Button size="sm" variant="secondary" onClick={() => setTab("plan")}>{t("redesign.viewPlan")}</Button>
       </div>}
       <Tabs value={tab} onChange={setTab} label={t("redesign.buildTabs")} items={[
+        { value: "process", label: t("process.tab") },
         { value: "execution", label: t("redesign.execution") }, { value: "plan", label: t("redesign.plan") }, { value: "artifacts", label: t("redesign.output") },
       ]}>{activeTab => <>
+        <div hidden={activeTab !== "process"}><BuildProcess key={id} build={build} navigate={setTab} /></div>
         <div hidden={activeTab !== "execution"}>
           <div className="build-layout">
             <div className="min-w-0 space-y-4">

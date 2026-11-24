@@ -1,7 +1,8 @@
 //! [INPUT]: 依赖短期凭据、系统路径、标准代理环境和私有临时目录。
-//! [OUTPUT]: 隔离执行环境，保留 Windows 系统盘与代理；提供认证、索引和取消边界。
+//! [OUTPUT]: 隔离环境与进程；有界读取 stderr，仅返回安全分类。
 //! [POS]: 检出引擎的唯一 Git 进程入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
+use crate::diagnostics::{GitFailure, GitFailureKind, classify_stderr};
 use crate::{GitCredential, SourceCredential, same_origin, validate_repository};
 use anyhow::{Context, Result, bail, ensure};
 use process_wrap::tokio::{CommandWrap, KillOnDrop};
@@ -299,6 +300,18 @@ impl Git {
         input: Option<&[u8]>,
         cancel: &CancellationToken,
     ) -> Result<(ExitStatus, Vec<u8>)> {
+        let (status, bytes, _) = self
+            .diagnosed_output(directory, args, input, cancel)
+            .await?;
+        Ok((status, bytes))
+    }
+    async fn diagnosed_output(
+        &self,
+        directory: &Path,
+        args: &[&str],
+        input: Option<&[u8]>,
+        cancel: &CancellationToken,
+    ) -> Result<(ExitStatus, Vec<u8>, GitFailureKind)> {
         let mut command = Command::new(&self.options.git);
         command
             .current_dir(directory)
@@ -323,7 +336,7 @@ impl Git {
                 Stdio::null()
             })
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
         let mut wrap = CommandWrap::from(command);
         wrap.wrap(KillOnDrop);
         #[cfg(unix)]
@@ -332,6 +345,7 @@ impl Git {
         wrap.wrap(process_wrap::tokio::JobObject);
         let mut child = wrap.spawn().context("start Git process")?;
         let stdout = child.stdout().take().context("Git stdout missing")?;
+        let mut stderr = child.stderr().take().context("Git stderr missing")?;
         let stdin = child.stdin().take();
         let read = async {
             let mut bytes = Vec::new();
@@ -352,18 +366,32 @@ impl Git {
             }
             Ok::<_, anyhow::Error>(())
         };
+        let diagnose = async {
+            let mut retained = Vec::new();
+            let mut chunk = [0u8; 4096];
+            loop {
+                let count = stderr.read(&mut chunk).await?;
+                if count == 0 {
+                    break;
+                }
+                let keep = count.min((64 * 1024usize).saturating_sub(retained.len()));
+                retained.extend_from_slice(&chunk[..keep]);
+            }
+            Ok::<_, anyhow::Error>(classify_stderr(&retained))
+        };
         let operation = async {
-            let (status, bytes, ()) = tokio::try_join!(
+            let (status, bytes, (), diagnostic) = tokio::try_join!(
                 async { Ok::<_, anyhow::Error>(child.wait().await?) },
                 read,
-                write
+                write,
+                diagnose
             )?;
-            Ok::<_, anyhow::Error>((status, bytes))
+            Ok::<_, anyhow::Error>((status, bytes, diagnostic))
         };
         let result = tokio::select! {
             result = operation => result,
-            _ = cancel.cancelled() => Err(anyhow::anyhow!("source preparation canceled")),
-            _ = tokio::time::sleep(self.options.timeout) => Err(anyhow::anyhow!("Git operation timed out")),
+            _ = cancel.cancelled() => Err(GitFailure(GitFailureKind::Canceled).into()),
+            _ = tokio::time::sleep(self.options.timeout) => Err(GitFailure(GitFailureKind::Timeout).into()),
         };
         if result.is_err() {
             let _ = child.start_kill();
@@ -377,12 +405,11 @@ impl Git {
         args: &[&str],
         cancel: &CancellationToken,
     ) -> Result<Vec<u8>> {
-        let (status, bytes) = self.output(directory, args, cancel).await?;
-        ensure!(
-            status.success(),
-            "Git {} operation failed; check upstream objects, credentials and host trust",
-            args.first().copied().unwrap_or("unknown")
-        );
+        let (status, bytes, diagnostic) =
+            self.diagnosed_output(directory, args, None, cancel).await?;
+        if !status.success() {
+            return Err(GitFailure(diagnostic).into());
+        }
         Ok(bytes)
     }
     pub(crate) fn directory(&self) -> &Path {

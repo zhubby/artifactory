@@ -1,0 +1,87 @@
+/**
+ * [INPUT]: 依赖中性主题和过程组件的语义类名。
+ * [OUTPUT]: 提供当前动作、阶段导航和响应式事件时间线。
+ * [POS]: 构建过程专属样式；轮询不触发布局动画。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.build-process { min-width: 0; }
+.build-process-summary { display: flex; align-items: flex-start; gap: 16px; padding: 12px 0 26px; }
+.build-process-summary-icon { display: grid; place-items: center; flex-shrink: 0; width: 42px; height: 42px; margin-top: 4px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted-foreground); }
+.build-process-summary.has-failure .build-process-summary-icon { color: var(--destructive); border-color: color-mix(in srgb,var(--destructive) 25%,var(--border)); }
+.build-process-summary > div:nth-child(2) { flex: 1; min-width: 0; }
+.build-process-eyebrow { margin-bottom: 5px; color: var(--muted-foreground); font-size: 11px; }
+.build-process-eyebrow span { margin-left: 3px; }
+.build-process-summary h2 { margin: 0 0 8px; font-size: 20px; font-weight: 600; letter-spacing: -.4px; line-height: 1.5; overflow-wrap: anywhere; }
+.build-process-summary > div > p:not(.build-process-eyebrow) { max-width: 720px; margin-top: 7px; color: var(--muted-foreground); font-size: 12px; line-height: 1.9; overflow-wrap: anywhere; }
+.build-process-downstream { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; color: var(--muted-foreground); font-size: 12px; }
+.build-process-downstream > span::before { display: inline-block; width: 4px; height: 4px; margin: 0 7px 3px 0; border-radius: 50%; background: var(--placeholder); content: ""; }
+.build-process-duration { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; margin-top: 5px; color: var(--muted-foreground); font: 11px/1.7 var(--font-mono); }
+.build-process-stages { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); min-width: 0; margin-bottom: 20px; padding-block: 4px; border-block: 1px solid var(--border); }
+.build-process-stage { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 82px; padding: 12px; border-radius: 4px; text-align: left; transition: background .12s; }
+.build-process-stage:first-child { padding-left: 4px; }
+.build-process-stage:hover,.build-process-stage[aria-pressed="true"] { background: var(--quiet); }
+.build-process-stage > span:nth-child(2) { flex: 1; min-width: 0; }
+.build-process-stage strong { display: block; font-size: 12px; font-weight: 500; line-height: 1.7; overflow-wrap: anywhere; }
+.build-process-stage small { display: block; margin-top: 3px; color: var(--muted-foreground); font-size: 11px; }
+.build-process-stage > svg { flex-shrink: 0; color: var(--placeholder); }
+.build-process-stage:last-child > svg { visibility: hidden; }
+.build-process-stage-number { display: grid; place-items: center; flex-shrink: 0; width: 25px; height: 25px; border: 1px solid var(--border); border-radius: 50%; color: var(--muted-foreground); font: 11px/1 var(--font-mono); }
+.stage-succeeded .build-process-stage-number { border-color: transparent; color: var(--success); background: var(--secondary); }
+.stage-failed .build-process-stage-number { border-color: color-mix(in srgb,var(--destructive) 30%,var(--border)); color: var(--destructive); }
+.stage-running .build-process-stage-number,.stage-needs_input .build-process-stage-number { border-color: var(--foreground); color: var(--foreground); }
+.stage-not_started strong { color: var(--muted-foreground); }
+.build-process-history-note { margin: 12px 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.8; }
+.build-process-detail-links { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 4px 0 28px; }
+.build-process-detail-links > button { gap: 8px; padding-inline: 0; color: var(--muted-foreground); }
+.build-process-timeline { min-width: 0; margin-bottom: 24px; }
+.build-process-timeline > header { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 12px; }
+.build-process-timeline h3 { font-size: 13px; font-weight: 600; }
+.build-process-timeline > header p { margin-top: 5px; color: var(--muted-foreground); font-size: 11px; line-height: 1.8; }
+.build-process-timeline > header > span { margin-left: auto; color: var(--muted-foreground); font-size: 11px; }
+.build-process-events { padding: 0; margin: 0 0 16px; list-style: none; }
+.build-process-events > li { display: flex; align-items: flex-start; gap: 16px; min-width: 0; }
+.build-process-event-dot { position: relative; flex-shrink: 0; width: 7px; height: 7px; margin: 22px 0 0 5px; border: 1px solid var(--placeholder); border-radius: 50%; background: var(--background); }
+.build-process-events > li:not(:last-child) > .build-process-event-dot::after { position: absolute; top: 11px; bottom: -41px; left: 2px; width: 1px; background: var(--border); content: ""; }
+.build-process-event-dot.event-failed,.build-process-event-dot.event-lost { border-color: var(--destructive); background: var(--destructive); }
+.build-process-event-dot.event-succeeded { border-color: var(--success); background: var(--success); }
+.build-process-events details { flex: 1; min-width: 0; border-bottom: 1px solid var(--border); }
+.build-process-events summary { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 54px; padding: 10px 0; list-style: none; }
+.build-process-events summary::-webkit-details-marker { display: none; }
+.build-process-events summary > div { flex: 1; min-width: 0; }
+.build-process-event-action { font-size: 12px; font-weight: 500; }
+.build-process-event-target { margin-left: 10px; font: 11px/1.8 var(--font-mono); }
+.build-process-event-actor { display: block; margin-top: 3px; color: var(--muted-foreground); font-size: 10px; }
+.build-process-events summary > div > span { overflow-wrap: anywhere; }
+.build-process-events summary > .status { flex-shrink: 0; font-size: 10px; }
+.build-process-event-state { flex-shrink: 0; color: var(--muted-foreground); font-size: 10px; }
+.build-process-events time { flex-shrink: 0; color: var(--muted-foreground); font-size: 10px; font-variant-numeric: tabular-nums; }
+.build-process-events summary > svg { flex-shrink: 0; color: var(--muted-foreground); transition: transform .15s; }
+.build-process-events details[open] > summary > svg { transform: rotate(90deg); }
+.build-process-events dl { display: grid; gap: 8px; min-width: 0; padding: 4px 0 16px; }
+.build-process-events dl > div { display: grid; grid-template-columns: 120px minmax(0,1fr); gap: 12px; font-size: 11px; line-height: 1.8; }
+.build-process-events dt { color: var(--muted-foreground); }
+.build-process-events dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.build-process-empty { padding: 20px 0; color: var(--muted-foreground); font-size: 12px; }
+.build-process-error { margin-top: 20px; border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: 12px; }
+.build-process-error summary { min-height: 44px; padding-block: 13px; }
+.build-process-error p { padding-bottom: 12px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; }
+@media (max-width:1199px) { .build-process-stage { gap: 7px; padding-inline: 7px; } .build-process-stage > svg { display: none; } }
+@media (max-width:767px) {
+  .build-process-summary { flex-wrap: wrap; gap: 12px; padding-bottom: 20px; }
+  .build-process-summary-icon { width: 34px; height: 34px; }
+  .build-process-summary h2 { font-size: 18px; }
+  .build-process-duration { width: 100%; margin-left: 46px; }
+  .build-process-stages { grid-template-columns: minmax(0,1fr); padding-block: 8px; }
+  .build-process-stage,.build-process-stage:first-child { min-height: 50px; padding: 8px 6px; gap: 12px; }
+  .build-process-stage > span:nth-child(2) { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .build-process-stage small { flex-shrink: 0; margin: 0; }
+  .build-process-stage > svg { display: block; width: 12px; }
+  .build-process-stage:last-child > svg { visibility: visible; }
+  .build-process-detail-links { gap: 8px 20px; margin-bottom: 20px; }
+  .build-process-detail-links > button { min-height: 44px; }
+  .build-process-events > li { gap: 12px; }
+  .build-process-events summary { flex-wrap: wrap; gap: 4px 10px; padding: 12px 0; }
+  .build-process-events summary > div { flex-basis: calc(100% - 75px); }
+  .build-process-events time { order: 4; width: 100%; }
+  .build-process-events dl > div { grid-template-columns: 88px minmax(0,1fr); }
+}

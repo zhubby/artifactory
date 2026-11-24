@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖实际 init 二进制与临时 HTTP 控制面。
-//! [OUTPUT]: 验证完成态不领凭据，丢失回执不重复解析。
+//! [OUTPUT]: 验证完成态短路、回执重试和阶段诊断安全投递。
 //! [POS]: prepare/commit 任务生命周期回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_source_checkout::PrepareResponse;
@@ -44,6 +44,70 @@ fn command(root: &Path, url: &str, mode: &str) -> tokio::process::Command {
         .env("ARTIFACTORY_SOURCE_AUTH_ROOT", root.join("auth"))
         .env("ARTIFACTORY_SOURCE_METADATA", root.join("metadata.json"));
     command
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn source_failure_reports_actual_stage_and_a_safe_diagnostic() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let bin = root.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let git = bin.join("git");
+    std::fs::write(&git,"#!/bin/sh\nprintf 'Authentication failed for https://user:super-secret@private.example\\n' >&2\nexit 128\n").unwrap();
+    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let progress = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let outcome = Arc::new(Mutex::new(Value::Null));
+    let seen = progress.clone();
+    let saved = outcome.clone();
+    let app = Router::new()
+        .route("/prepare", post(|| async { Json(material()) }))
+        .route(
+            "/prepare/progress",
+            post(move |Json(body): Json<Value>| {
+                let seen = seen.clone();
+                async move {
+                    seen.lock().unwrap().push(body["progress"].clone());
+                    Json(json!({"accepted":true}))
+                }
+            }),
+        )
+        .route(
+            "/prepare/commit",
+            post(move |Json(body): Json<Value>| {
+                let saved = saved.clone();
+                async move {
+                    *saved.lock().unwrap() = body["result"].clone();
+                    Json(json!({"accepted":true}))
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let mut process = command(root.path(), &format!("http://{address}/prepare"), "resolve");
+    let inherited_paths = std::env::var_os("PATH").unwrap();
+    let paths = std::iter::once(bin).chain(std::env::split_paths(&inherited_paths));
+    process.env("PATH", std::env::join_paths(paths).unwrap());
+    let output = process.output().await.unwrap();
+    assert!(!output.status.success());
+    let result = outcome.lock().unwrap().clone();
+    assert_eq!(
+        result["diagnostic"],
+        json!({"stage":"resolve_ref","code":"authentication"})
+    );
+    let records = progress.lock().unwrap();
+    assert_eq!(records.last().unwrap()["stage"], "resolve_ref");
+    assert_eq!(records.last().unwrap()["state"], "started");
+    assert!(
+        records
+            .windows(2)
+            .all(|pair| pair[0]["sequence"].as_u64() < pair[1]["sequence"].as_u64())
+    );
+    assert!(!result.to_string().contains("super-secret"));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("super-secret"));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("private.example"));
+    server.abort();
 }
 #[tokio::test]
 async fn completed_tasks_do_not_checkout_or_commit_again() {

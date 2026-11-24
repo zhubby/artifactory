@@ -30,6 +30,10 @@ replication.rs: 协调副本归属和持久化唤醒。
 planning_bridge.rs: 投影冻结镜像池和两类失败诊断，按 generation 和终态围栏保存调用与用量。
 sources.rs: 以构建为归属固定源码 CR UID、pin 和清单，隔离取消与失败传播。
 sources_tests.rs: 验证 CR UID、执行围栏、事务幂等和独立构建源码取消。
+source_progress_tests.rs: 验证阶段重放、执行围栏和安全诊断持久化。
+source_progress.rs: 在现有源码锁与执行围栏内幂等追加有界阶段记录。
+build_activity.rs: 按当前租户读取有界构建过程，不读取秘密数据。
+build_activity.sql: 合并真实源码、规划、执行和归档时间，标注历史缺失。
 releases_tests.rs: 验证版本元数据、设备授权准入、源码隔离与交付封存围栏。
 lookups.rs: 读取调度、构建和授权对象。
 node_metadata.rs: 记录启动元数据和能力摘要。

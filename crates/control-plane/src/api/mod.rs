@@ -168,6 +168,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/auth/password", post(auth::change_password))
         .route("/api/v1/overview", get(management::overview))
         .route("/api/v1/dashboard", get(dashboard::dashboard))
+        .route("/api/v1/builds/{id}/activity", get(builds::activity))
         .route(
             "/api/v1/users",
             get(tenants::members).post(tenants::add_member),

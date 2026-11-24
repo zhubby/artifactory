@@ -1,10 +1,10 @@
 //! [INPUT]: 依赖 Kubernetes 绑定身份、临时源码任务和业务存储。
-//! [OUTPUT]: 固定 CR UID，授权直接归属当前 CR 的 Pod。
+//! [OUTPUT]: 固定 CR UID，授权源码材料、进度和结果写入。
 //! [POS]: TokenReview、Pod UID 与不可变任务契约的凭据边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{state::AppState, store::sources::SourceTaskExecution};
 use anyhow::{Context, Result, ensure};
-use artifactory_source_checkout::PrepareResponse;
+use artifactory_source_checkout::{PrepareResponse, SourceProgress};
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
@@ -102,6 +102,7 @@ pub fn routes(state: AppState) -> Router {
     Router::new()
         .route("/internal/source/prepare", post(prepare))
         .route("/internal/source/prepare/pin", post(pin))
+        .route("/internal/source/prepare/progress", post(progress))
         .route("/internal/source/prepare/commit", post(commit))
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
         .with_state(state)
@@ -627,6 +628,20 @@ async fn pin(
             .pin_source(id(&task, "id")?, &execution, &request["pin"])
             .await?,
     ))
+}
+async fn progress(
+    State(state): State<AppState>,
+    Json(request): Json<Value>,
+) -> SourceResult<Json<Value>> {
+    let (task, execution) = authorize_task(&state, &request)
+        .await
+        .map_err(SourceError::authorization)?;
+    let progress: SourceProgress = serde_json::from_value(request["progress"].clone())?;
+    state
+        .store
+        .record_source_progress(id(&task, "id")?, &execution, &progress)
+        .await?;
+    Ok(Json(json!({"accepted":true})))
 }
 async fn commit(
     State(state): State<AppState>,

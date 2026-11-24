@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户鉴权、构建存储与私有制品存储。
-//! [OUTPUT]: 提供构建、规划、发布和制品下载接口。
+//! [OUTPUT]: 提供构建过程、规划、发布和制品下载接口。
 //! [POS]: HTTP 输入边界，权限检查后调用业务与存储层。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 
@@ -82,6 +82,23 @@ pub async fn detail(
 ) -> Result<Json<Value>> {
     auth.project(state.store.build_project(id).await?, "read")?;
     Ok(Json(build_detail(&state, id).await?))
+}
+
+pub async fn activity(
+    TenantState(state): TenantState,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>> {
+    auth.project(state.store.build_project(id).await?, "read")?;
+    let mut activity = state.store.build_activity(id).await?;
+    let planning = crate::planning_runtime::plans(&state.store, id, &auth, |run| async move {
+        crate::planning_bridge::coordinator()?
+            .post("/v1/get", &json!({"run_id":run}))
+            .await
+    })
+    .await?;
+    activity["planning"] = serde_json::to_value(planning).map_err(anyhow::Error::from)?;
+    Ok(Json(activity))
 }
 
 pub async fn resolve(

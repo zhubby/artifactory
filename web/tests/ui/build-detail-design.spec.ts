@@ -99,6 +99,9 @@ async function setup(page: Page, options: { status?: string; current?: number; p
     async open() {
       await page.goto(tenantURL(`/projects/${project.slug}/releases/${release.id}/builds/${build.number}`));
       await expect(page.getByRole("heading", { level: 1, name: /^(构建|Build) #128$/, exact: true })).toBeVisible();
+      await expect(page.getByRole("tab", {name:/^(过程|Process)$/,exact:true})).toHaveAttribute("aria-selected","true");
+      await tab(page,["resolving","planning","replanning","needs_input"].includes(snapshot.status)
+        || (["failed","canceled"].includes(snapshot.status) && !snapshot.jobs?.length) ? "plan" : "execution").click();
     },
     async poll() {
       const before = planReads;

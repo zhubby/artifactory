@@ -212,6 +212,7 @@ for (const status of ["draft", "publishing", "published", "publish_failed"] as c
   await page.route(`**/api/v1/releases/${release.id}`, route => route.fulfill({json:{...release,status}}));
   await page.route(`**/api/v1/projects/by-slug/${project.slug}/builds/${build.number}`, route => route.fulfill({json:failed}));
   await page.goto(tenantURL(`${path}/builds/${build.number}`));
+  await page.getByRole("tab", {name:"执行",exact:true}).click();
   const metadata = page.locator(".build-detail-meta");
   await expect(metadata).toContainText(build.requested_ref);
   await expect(metadata.locator("code")).toHaveAttribute("title", build.commit_sha!);

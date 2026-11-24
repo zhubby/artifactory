@@ -29,6 +29,7 @@
 |---|---|
 | `GET /overview` | 概览统计，仅会话 |
 | `GET /dashboard` | 完整窗口的构建统计和近期活动；仅会话，参数与口径见下文 |
+| `GET /builds/{id}/activity` | 受权构建过程、源码诊断与安全规划摘要；最近 500 条事件 |
 | `GET, POST /tenant/members` | 当前租户成员；添加已有账号 `{username,role}`，不创建全局账号 |
 | `GET, PATCH /tenant` | 读取租户上下文；PATCH `{name}` 改名并保持 slug |
 | `GET /tenant/lifecycle`、`GET /projects/{id}/lifecycle` | 返回受影响项目、构建、制品和设备数量 |
@@ -83,6 +84,20 @@
 | `GET /releases/{id}/manifest`、`GET /releases/{id}/checksums` | published 版本的命名交付清单与 SHA256SUMS |
 
 创建租户和项目返回 `{id,slug}`，构建返回 `{id,number,project_slug}`；其他资源创建通常返回 `{id}`；Token 类创建还返回明文值；修改操作通常返回 `{ok:true}`。所有查询使用真实数据库，不返回演示对象。
+
+## 构建过程
+
+`GET /builds/{id}/activity` 复核当前租户及项目读取权限。
+响应包含 `source`、`planning`、`events` 和 `truncated`。
+`source` 返回源码状态、执行尝试、Pod 名称和安全失败分类。
+`history_available=false` 表示没有保存详细源码动作。
+旧构建保持原记录，不补造阶段时间或底层错误。
+`planning` 沿用计划接口的安全投影与运行时降级规则。
+`events` 按时间升序返回最近 500 条真实事件。
+每条事件包含稳定标识、阶段、动作、当时状态和服务端时间。
+执行记录保留尝试、计划和目标归属。
+`truncated=true` 时，使用执行日志与 AI 审计读取各自详情。
+响应不包含 Git stderr、凭据、代理地址或租约令牌。
 
 ## 构建概览统计
 

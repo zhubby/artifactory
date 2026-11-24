@@ -11,7 +11,7 @@ ai-builds.md: 定义模型兼容、目标准入、两类执行失败修订与构
 ai-builds-acceptance-2026-11-11.md: 记录零侵入 AI 构建验收。
 ai-workspace-build-acceptance-2026-11-16.md: 记录固定源码的双平台真实构建、故障修复与内部发布证据。
 ai-workspace-signing-acceptance-2026-11-17.md: 记录真实 Developer ID 托管签名、制品读回、材料清理及公证边界。
-api.md: 定义 HTTP 输入、模型参数、安全规划摘要与项目权限边界。
+api.md: 定义 HTTP 输入、构建过程、安全规划摘要与项目权限边界。
 artifactory-rename-2026-11-11.md: 记录产品命名迁移。
 signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。
 configuration.md: 定义任务执行计划的结构与限制。

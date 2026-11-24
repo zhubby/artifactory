@@ -93,6 +93,8 @@
 - [托管应用签名实施计划 · 2026-11-16](superpowers/plans/2026-11-16-managed-signing.md)
 - [镜像构建与独立 Operator 实施计划 · 2026-11-17](superpowers/plans/2026-11-17-image-builds-and-operators.md)
 - [Release 元数据与独立构建实施计划 · 2026-11-21](superpowers/plans/2026-11-21-release-build-decoupling.md)
+- [构建过程与源码诊断设计 · 2026-11-24](superpowers/specs/2026-11-24-build-observability.md)
+- [构建过程实施计划 · 2026-11-24](superpowers/plans/2026-11-24-build-observability.md)
 
 # 品牌与变更记录
 
@@ -124,5 +126,6 @@
 - [交付记录模块地图](releases/AGENTS.md)
 - [文档主题模块地图](theme/AGENTS.md)
 - [设计与计划模块地图](superpowers/AGENTS.md)
+- [设计合同模块地图](superpowers/specs/AGENTS.md)
 - [实施计划模块地图](superpowers/plans/AGENTS.md)
 - [原型实施计划地图](plans/AGENTS.md)

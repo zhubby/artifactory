@@ -16,6 +16,9 @@ mod regressions;
 #[path = "dashboard.rs"]
 mod dashboard;
 
+#[path = "build_activity.rs"]
+mod build_activity;
+
 #[path = "readable_routes.rs"]
 mod readable_routes;
 

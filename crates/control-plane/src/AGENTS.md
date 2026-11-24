@@ -26,7 +26,7 @@ scheduler.rs: 注入固定版本，分配任务并验证停止后的交付推广
 signing/: 提供托管材料加密、导入和默认签名约束。
 settings.rs: 读取启动配置与密钥路径。
 source.rs: 复用共享仓库校验与凭据引用契约。
-source_tasks.rs: 固定源码 CR UID，核验令牌、直接 Pod 归属与不可变任务契约。
+source_tasks.rs: 固定源码 CR UID，授权直接 Pod 的材料、阶段进度与结果。
 source_tasks_tests.rs: 验证绑定令牌、直接 CR 归属、重试身份及授权响应。
 state.rs: 组合存储、配置和进程内连接状态。
 storage.rs: 校验私有 S3 对象，签发绑定方法、对象与交付文件名的网关票据。

@@ -8,5 +8,6 @@
 0003_notification_channels.sql: 创建邮件地址绑定、Webhook 密文与带租约的外部投递队列。
 0004_notification_producers.sql: 同事务生成业务事件，扫描异常、关闭失效项目签名告警并清除删除快照。
 0005_dashboard_indexes.sql: 追加构建项目创建和完成时间索引，支持概览窗口与近期活动。
+0006_source_progress.sql: 兼容追加有界源码阶段记录，不伪造历史进度。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

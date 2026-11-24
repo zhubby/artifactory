@@ -1,5 +1,5 @@
 //! [INPUT]: 隔离 PostgreSQL、新初始化基线和真实源码事务。
-//! [OUTPUT]: 验证 CR UID、固定对象及锁等待后的任务授权。
+//! [OUTPUT]: 验证 CR UID、阶段诊断、固定对象与锁等待后的授权。
 //! [POS]: 源码元数据存储的并发与权限回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{ControlStore, sources::SourceTaskExecution};
@@ -8,6 +8,9 @@ use artifactory_database::{PoolSettings, connect, params, sql, with_options};
 use artifactory_source_checkout::{GitCredential, SourceManifest, SourceRepository};
 use serde_json::json;
 use uuid::Uuid;
+
+#[path = "source_progress_tests.rs"]
+mod progress;
 
 fn execution() -> SourceTaskExecution {
     SourceTaskExecution {

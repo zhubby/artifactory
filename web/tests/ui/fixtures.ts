@@ -542,6 +542,7 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
       "/model-options": [],
       "/model-profiles": [],
       [`/builds/${build.id}/plans`]: { plans: [], runs: [], events: [] },
+      [`/builds/${build.id}/activity`]: { build_id: build.id, generated_at: created, source: {status:"succeeded",created_at:created,finished_at:created,attempt:1,pod:null,history_available:false,diagnostic:null}, planning:{plans:[],runs:[],events:[]}, events:[], truncated:false },
       "/users": [{ id: "user-main", username: "alex", role }],
       "/audit": [
         {

@@ -1,12 +1,13 @@
 //! [INPUT]: 依赖 prepare/pin/commit API 与 Pod 投影令牌。
-//! [OUTPUT]: 固定源码清单或写入独立临时 checkout。
+//! [OUTPUT]: 固定源码清单，上报阶段与安全诊断，或写入临时 checkout。
 //! [POS]: 只向控制平面回传元数据，凭据不进入工作区。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::Mode;
 use anyhow::{Context, Result, ensure};
 use artifactory_source_checkout::{
-    Checkout, Options, PrepareResponse, SourceManifest, SourceRepository, TagSelection,
-    private_dir, same_origin, valid_commit,
+    Checkout, GitFailure, GitFailureKind, Options, PrepareResponse, SourceDiagnostic,
+    SourceManifest, SourceProgress, SourceProgressState, SourceRepository, SourceStage,
+    TagSelection, private_dir, same_origin, valid_commit,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -103,18 +104,81 @@ impl Api {
         anyhow::bail!("source bootstrap or metadata commit did not complete before retry deadline")
     }
 }
+struct Progress {
+    stage: SourceStage,
+    sequence: u32,
+}
+impl Progress {
+    async fn report(&mut self, api: &Api, stage: SourceStage, state: SourceProgressState) {
+        self.stage = stage;
+        if api.identity["kind"] != "source-task" {
+            return;
+        }
+        self.sequence += 1;
+        let progress = SourceProgress {
+            sequence: self.sequence,
+            stage,
+            state,
+        };
+        // 观测写入失败不改变构建结果；终态提交仍携带当前阶段。
+        let _ = tokio::time::timeout(
+            Duration::from_secs(3),
+            api.post::<Value>(
+                "/progress",
+                json!({"progress":progress}),
+                &CancellationToken::new(),
+            ),
+        )
+        .await;
+    }
+    async fn start(&mut self, api: &Api, stage: SourceStage) {
+        self.report(api, stage, SourceProgressState::Started).await;
+    }
+    async fn complete(&mut self, api: &Api) {
+        self.report(api, self.stage, SourceProgressState::Completed)
+            .await;
+    }
+}
 pub async fn run(mode: Mode, cancel: &CancellationToken) -> Result<()> {
     let api = Api::new().await?;
-    let result = execute(mode, &api, cancel).await;
-    if result.is_err() && !matches!(mode, Mode::Checkout) {
-        let _=api.post::<Value>("/commit",json!({"result":{"error":"source preparation failed; check upstream access, pinned objects and host trust"}}),&CancellationToken::new()).await;
+    let mut progress = Progress {
+        stage: SourceStage::Authorization,
+        sequence: 0,
+    };
+    let result = execute(mode, &api, &mut progress, cancel).await;
+    if let Err(error) = &result
+        && !matches!(mode, Mode::Checkout)
+    {
+        let code = error
+            .downcast_ref::<GitFailure>()
+            .map(GitFailure::kind)
+            .unwrap_or(GitFailureKind::Unknown);
+        let diagnostic = SourceDiagnostic {
+            stage: progress.stage,
+            code,
+        };
+        let _ = api
+            .post::<Value>(
+                "/commit",
+                json!({"result":{"error":code.message(),"diagnostic":diagnostic}}),
+                &CancellationToken::new(),
+            )
+            .await;
     }
     result
 }
-async fn execute(mode: Mode, api: &Api, cancel: &CancellationToken) -> Result<()> {
+async fn execute(
+    mode: Mode,
+    api: &Api,
+    progress: &mut Progress,
+    cancel: &CancellationToken,
+) -> Result<()> {
     let material: PrepareResponse = api.post("", json!({}), cancel).await?;
     if !matches!(mode, Mode::Checkout) && material.completed_result.is_some() {
         return Ok(());
+    }
+    if !matches!(mode, Mode::Checkout) {
+        progress.complete(api).await;
     }
     let root = path("ARTIFACTORY_SOURCE_ROOT", "/workspace/source");
     let auth = path("ARTIFACTORY_SOURCE_AUTH_ROOT", "/run/source-auth");
@@ -165,9 +229,11 @@ async fn execute(mode: Mode, api: &Api, cancel: &CancellationToken) -> Result<()
             file.sync_all()?;
         }
         Mode::Refs => {
+            progress.start(api, SourceStage::ResolveRef).await;
             let refs = checkout
                 .list_refs(&material.repository_url, &material.credentials, cancel)
                 .await?;
+            progress.complete(api).await;
             let _: Value = api
                 .post("/commit", json!({"result":{"refs":refs}}), cancel)
                 .await?;
@@ -178,6 +244,7 @@ async fn execute(mode: Mode, api: &Api, cancel: &CancellationToken) -> Result<()
             let temporary = tempfile::Builder::new()
                 .prefix("resolve-")
                 .tempdir_in(parent)?;
+            progress.start(api, SourceStage::ResolveRef).await;
             let candidate = if let Some(oid) = material.pinned_ref_oid.as_deref() {
                 ensure!(valid_commit(oid), "invalid pinned ref OID");
                 oid.to_owned()
@@ -191,6 +258,8 @@ async fn execute(mode: Mode, api: &Api, cancel: &CancellationToken) -> Result<()
                     )
                     .await?
             };
+            progress.complete(api).await;
+            progress.start(api, SourceStage::PinRef).await;
             let pinned: Value = api
                 .post(
                     "/pin",
@@ -203,6 +272,8 @@ async fn execute(mode: Mode, api: &Api, cancel: &CancellationToken) -> Result<()
                 .context("pinned ref OID missing")?
                 .to_owned();
             ensure!(valid_commit(&oid), "invalid pinned ref OID");
+            progress.complete(api).await;
+            progress.start(api, SourceStage::Inspect).await;
             let mut pending = vec![(
                 String::new(),
                 material.repository_url.clone(),
@@ -279,6 +350,8 @@ async fn execute(mode: Mode, api: &Api, cancel: &CancellationToken) -> Result<()
                 }
                 repositories.push(repository);
             }
+            progress.complete(api).await;
+            progress.start(api, SourceStage::Manifest).await;
             let manifest = SourceManifest::new(material.source_id, repositories)?;
             let _: Value = api
                 .post("/commit", json!({"result":{"manifest":manifest}}), cancel)
