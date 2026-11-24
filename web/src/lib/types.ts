@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供 Release、计划目标、执行修订身份和规划实时摘要类型。
+ * [OUTPUT]: 提供 Release、计划目标、执行修订身份与规划审计类型。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -601,6 +601,7 @@ export interface SigningEvidence {
 
 export interface PlanningConversation {
  run_id:string; generation:number; pod_uid:string; status:string; model:string;
+ purpose?:string;
  source_digest:string|null; started_at:string; ended_at:string|null;
 }
 export interface ConversationMessage {sequence:number;kind:string;payload:Record<string,unknown>;created_at:string}

@@ -19,7 +19,7 @@ design-system.md: 定义中性色、顶栏工具、正文动作、关注星标�
 direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、启动等待和故障依赖隔离的验证边界。
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义 Emissary 升级与恢复流程。
-frontend-experience.md: 定义导航首读、表单草稿、个人偏好、日志生命周期与前端验证。
+frontend-experience.md: 定义导航首读、草稿、偏好、日志与 AI 审计阅读及验证。
 helm.md: 定义最低 Kubernetes 1.28 安装、基线内追加迁移与持久身份保留。
 image-builds.md: 定义独立镜像池准入、容器镜像生命周期、整合网关、池代理和交付边界。
 image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像、独立 Operator、网关迁移与空闲连接验收。

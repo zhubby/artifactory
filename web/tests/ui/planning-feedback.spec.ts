@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖规划实时摘要、消息审计夹具和真实构建页面。
- * [OUTPUT]: 验证实时统计、持久终态、可读消息和镜像确认文案。
+ * [OUTPUT]: 验证实时统计、持久终态、旧审计身份和镜像确认文案。
  * [POS]: 规划反馈的三视口回归；外部模型不参与测试。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -50,42 +50,30 @@ for(const status of ["canceled","needs_input","canceling"]) test(`${status} reta
   await expect(panel.locator(".status-running")).toHaveCount(0);
 });
 
-for(const locale of ["zh-CN","en"]) test(`${locale} conversation summaries name messages, tools, results and partial chunks accessibly`,async({page},info)=>{
+for(const locale of ["zh-CN","en"]) test(`${locale} legacy audit keeps unmatched results separate and preserves chunk loading`,async({page})=>{
   await fixtureAPI(page);
   await page.context().addCookies([{name:"artifactory-locale",value:locale,url:"http://127.0.0.1"}]);
   await page.route(`**/api/v1/builds/${build.id}/plans`,route=>route.fulfill({json:{plans:[],events:[],runs:[]}}));
   await page.route(`**/api/v1/builds/${build.id}/planning/conversations`,route=>route.fulfill({json:{conversations:[{run_id:run.id,generation:1,pod_uid:"pod-feedback",status:"succeeded",model:"custom-model",source_digest:null,started_at:build.created_at,ended_at:build.created_at}]}}));
   const entries=[
-    {sequence:1,kind:"system",payload:{text:"Inspect the pinned source.\nAdditional instructions"}},
-    {sequence:2,kind:"message",payload:{role:"user",content:"Build this release.\nOther details"}},
-    {sequence:3,kind:"message",payload:{role:"assistant",content:[{type:"text",text:"I found the package entry.\nI will inspect its scripts."}]}},
-    {sequence:4,kind:"message",payload:{role:"assistant",content:[{type:"toolCall",name:"read_file",arguments:{path:"package.json"}}]}},
-    {sequence:5,kind:"message",payload:{role:"toolResult",toolName:"read_file",isError:true,content:[{type:"text",text:"file not found\npackage.json"}]}},
-    {sequence:6,kind:"proposal_submitted",payload:{name:"submit_plan",arguments:{}}},
-    {sequence:7,kind:"proposal_result",payload:{name:"submit_plan",result:{accepted:true}}},
-    {sequence:8,kind:"message_chunk",payload:{message_id:"chunked",kind:"message",index:0,total:2,text:'{"role":"assistant","content":[{"type":"text","text":"Merged audit message"}'}},
+    {sequence:1,kind:"system",payload:{text:"Inspect the pinned source."}},
+    {sequence:2,kind:"message",payload:{role:"assistant",content:[{type:"toolCall",name:"read_file",arguments:{path:"package.json"}}]}},
+    {sequence:3,kind:"message",payload:{role:"toolResult",toolName:"read_file",isError:true,content:[{type:"text",text:"file not found"}]}},
+    {sequence:4,kind:"message_chunk",payload:{message_id:"chunked",kind:"message",index:0,total:2,text:'{"role":"assistant","content":"Merged'}},
   ].map(message=>({...message,created_at:build.created_at}));
   await page.route(`**/api/v1/builds/${build.id}/planning/conversations/${run.id}/1/messages?*`,route=>{
     const after=new URL(route.request().url()).searchParams.get("after");
-    return route.fulfill({json:after==="0"?{messages:entries,next_cursor:8}:{messages:[{sequence:9,kind:"message_chunk",payload:{message_id:"chunked",kind:"message",index:1,total:2,text:']}'},created_at:build.created_at}],next_cursor:null}});
+    return route.fulfill({json:after==="0"?{messages:entries,next_cursor:4}:{messages:[{sequence:5,kind:"message_chunk",payload:{message_id:"chunked",kind:"message",index:1,total:2,text:' audit message"}'},created_at:build.created_at}],next_cursor:null}});
   });
   const panel=await openPlan(page,"succeeded");
   await panel.getByText(locale==="en"?"AI conversation audit":"AI 对话审计",{exact:true}).click();
-  await panel.locator("summary").filter({hasText:"run-feed"}).click();
-  const names=locale==="en"?[
-    "1 · System · Inspect the pinned source.","2 · User · Build this release.","3 · Assistant · I found the package entry.",
-    "4 · Tool call · read_file","5 · Tool result · read_file · Failed · file not found","6 · Proposal · submit_plan","7 · Proposal result · submit_plan · Accepted","8 · Partial message",
-  ]:[
-    "1 · 系统指令 · Inspect the pinned source.","2 · 用户消息 · Build this release.","3 · 模型消息 · I found the package entry.",
-    "4 · 工具调用 · read_file","5 · 工具结果 · read_file · 失败 · file not found","6 · 规划提案 · submit_plan","7 · 提案结果 · submit_plan · 已接受","8 · 消息分片",
-  ];
-  for(const name of names) await expect(panel.getByLabel(name,{exact:true})).toBeVisible();
-  await panel.getByLabel(names[3],{exact:true}).click();
-  await expect(panel.getByText(/"path": "package.json"/)).toBeVisible();
-  await panel.getByRole("button",{name:locale==="en"?"Load more messages":"加载更多消息",exact:true}).click();
-  await expect(panel.getByLabel(locale==="en"?"8 · Assistant · Merged audit message":"8 · 模型消息 · Merged audit message",{exact:true})).toBeVisible();
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
-  await page.screenshot({path:info.outputPath("planning-messages.png"),fullPage:true});
+  const audit=panel.locator(".planning-audit");
+  await expect(audit.getByRole("button",{name:/package.json/})).toBeVisible();
+  await expect(audit.locator(".audit-action")).toHaveCount(4);
+  await audit.getByRole("button",{name:/package.json/}).click();
+  await expect(audit.getByText(locale==="en"?"No recorded result":"未记录结果",{exact:true})).toBeVisible();
+  await audit.getByRole("button",{name:locale==="en"?"Load more messages":"加载更多消息",exact:true}).click();
+  await expect(audit.getByRole("button",{name:/Merged audit message/})).toBeVisible();
 });
 
 test("image-only confirmation describes validated planning without requiring native devices",async({page})=>{

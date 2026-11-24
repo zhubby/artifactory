@@ -27,7 +27,9 @@ loading-motion.spec.ts: 采样骨架与进度条动画帧，验证系统减少�
 images.spec.ts: 验证已发布 Release 分发、候选只读、凭据清空，以及慢轮询与终态日志补读保留输出。
 monochrome-workspace.spec.ts: 验证快捷导航、应用分类、草稿保护与日志状态。
 model-compatibility.spec.ts: 验证任意模型名、兼容配置回显、协议切换与密钥留空保存。
-planning-feedback.spec.ts: 验证实时与已确认统计、终态优先、审计摘要和镜像确认说明。
+planning-feedback.spec.ts: 验证实时与已确认统计、终态优先、旧审计身份和镜像确认说明。
+planning-audit.spec.ts: 验证工具精确关联、任务输入、平台提示、分页及轮询阅读状态。
+planning-audit-data.spec.ts: 验证调用和提案身份、完整分片、原文保留与预算提示分类。
 motion.spec.ts: 验证默认动效、系统减少动态适配、历史开关忽略及偏好界面无动效控制。
 node-details.spec.ts: 验证节点详情布局、分区查询和管理操作。
 node-detail-design.spec.ts: 验证紧凑标题、首屏设备摘要、细节展开、有效零值、轮询状态、五标签截图和窄屏长文本。

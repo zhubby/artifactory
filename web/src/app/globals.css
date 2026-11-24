@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 Tailwind、聚合概览、业务详情、下拉、进度与通知样式。
+ * [INPUT]: 依赖 Tailwind、概览、业务详情、AI 审计、下拉与反馈样式。
  * [OUTPUT]: 提供全局字体、主题映射、下拉浮层、加载反馈和系统动效适配。
  * [POS]: 由根布局加载的控制台样式入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -10,6 +10,7 @@
 @import "../styles/node-detail.css";
 @import "../styles/build-detail.css";
 @import "../styles/build-process.css";
+@import "../styles/planning-audit.css";
 @import "../styles/dropdown.css";
 @import "../styles/workspace.css";
 @import "../styles/wizard.css";
