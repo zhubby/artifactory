@@ -38,6 +38,8 @@ init 通过 `/v1/prepare/commit` 提交唯一清单候选。Coordinator 同事�
 
 ## Kubernetes 规划
 
+PlanningRun 的七个规格字段保持不可变。CEL 逐字段比较身份。可空的清单 ID 与摘要先比较存在性，再比较值。Kubernetes 1.28 将 null 视为字段缺失；禁止对含空值的整个 spec 使用对象相等，否则元数据与 finalizer 更新也会被拒绝。
+
 1. 规划协调器根据 pool/project 容量准入运行，返回 `run_id`、`generation`、`source_required` 与可选源码身份。
 2. Planning Operator 先持久化执行意图，再直接创建 Pod，登记实际 Pod UID、Pod 名和 namespace。
 3. source-preparer init container 调用规划协调器 `/v1/prepare`，在同一 `emptyDir` 完成源码发现、清单绑定和本地就绪。认证材料仅位于 init 可见的内存卷。

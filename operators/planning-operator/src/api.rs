@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 kube CRD、不可变项目身份与序列化。
-//! [OUTPUT]: 提供规划运行、池级代理、源码任务与执行台账。
+//! [OUTPUT]: 提供规划运行、空值安全的不可变约束与执行台账。
 //! [POS]: Planning Operator 的资源契约。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_service_transport::proxy::ProxyConfig;
@@ -130,7 +130,17 @@ pub fn crds()
     for crd in &mut crds {
         let rules = match crd.spec.names.kind.as_str() {
             "PlanningRun" => {
-                serde_json::json!([{"rule":"self == oldSelf","message":"execution context is immutable"}])
+                // Kubernetes 1.28 的对象相等会误判含 nullable 字段的同一 spec。
+                // 显式比较存在性和值，保持 pending 与 fixed 身份不可变。
+                serde_json::json!([{"rule": concat!(
+                    "self.runId == oldSelf.runId && self.projectId == oldSelf.projectId && ",
+                    "self.generation == oldSelf.generation && self.pool == oldSelf.pool && ",
+                    "self.sourceRequired == oldSelf.sourceRequired && ",
+                    "has(self.sourceManifestId) == has(oldSelf.sourceManifestId) && ",
+                    "(!has(self.sourceManifestId) || self.sourceManifestId == oldSelf.sourceManifestId) && ",
+                    "has(self.sourceDigest) == has(oldSelf.sourceDigest) && ",
+                    "(!has(self.sourceDigest) || self.sourceDigest == oldSelf.sourceDigest)"
+                ), "message":"execution context is immutable"}])
             }
             "SourceTask" => serde_json::json!([
                 {"rule":"self.taskId == oldSelf.taskId && self.tenantId == oldSelf.tenantId && self.projectId == oldSelf.projectId && self.purpose == oldSelf.purpose && self.pool == oldSelf.pool && self.timeoutSeconds == oldSelf.timeoutSeconds","message":"source task context is immutable"},
