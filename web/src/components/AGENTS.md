@@ -61,6 +61,6 @@ notification-settings.tsx: 配置站内偏好、邮箱订阅及项目名称旁�
 notification-webhooks.tsx: 在管理员设置配置端点、一次密钥、测试与投递重试。
 
 terminal-workspace.tsx: 提供独立设备终端、显式创建结束、权限状态和粘贴确认。
-terminal-view.tsx: 按需加载 xterm，渲染字节、反馈消费并隔离终端键盘。
+terminal-view.tsx: 按需加载 xterm，清除屏幕及播报缓存，反馈字节消费并隔离终端键盘。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

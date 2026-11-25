@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖按需加载的 xterm、fit、主题变量和会话输入回调。
- * [OUTPUT]: 提供字节渲染、窗口调整、焦点进出和受控粘贴。
+ * [OUTPUT]: 提供字节渲染、完整清屏、窗口调整和受控粘贴。
  * [POS]: 只渲染终端，不创建会话或持有网络票据。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -42,7 +42,13 @@ export const TerminalView = forwardRef<TerminalViewHandle, {
     focus: () => terminal.current?.focus(),
     clear: () => {
       const target = terminal.current;
-      target?.write("", () => { target.reset(); target.clear(); });
+      target?.write("", () => {
+        // reset 不清除播报缓存；通过公开选项重建无障碍视图。
+        target.options.screenReaderMode = false;
+        target.reset();
+        target.clear();
+        target.options.screenReaderMode = true;
+      });
     },
     paste: text => terminal.current?.paste(text),
     selection: () => terminal.current?.getSelection() || "",

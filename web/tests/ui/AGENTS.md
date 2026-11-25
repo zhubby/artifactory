@@ -32,7 +32,7 @@ planning-audit.spec.ts: 验证工具精确关联、任务输入、平台提示�
 planning-audit-data.spec.ts: 验证调用和提案身份、完整分片、原文保留与预算提示分类。
 motion.spec.ts: 验证默认动效、系统减少动态适配、历史开关忽略及偏好界面无动效控制。
 node-details.spec.ts: 验证节点详情布局、分区查询和管理操作。
-terminal.spec.ts: 验证真实 xterm、终端字节、消费 ACK、重连、权限、粘贴与 320px 焦点。
+terminal.spec.ts: 验证真实 xterm、字节 ACK、重连、撤权屏幕及播报清除、粘贴与 320px 焦点。
 node-detail-design.spec.ts: 验证紧凑标题、首屏设备摘要、细节展开、有效零值、轮询状态、五标签截图和窄屏长文本。
 node-identification.spec.ts: 验证身份、重名短 ID、重命名权限、草稿、UTF8、Unicode 空白与接口快照。
 notifications.spec.ts: 验证浮层布局、顶栏访问、字段校验、弹窗焦点、计时暂停及交互期间的来源隔离与轮询恢复。

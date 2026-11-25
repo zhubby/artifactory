@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖真实 xterm、Playwright WebSocket 路由和租户 API 夹具。
- * [OUTPUT]: 验证设备终端创建、字节交互、窗口、退出与键盘边界。
+ * [OUTPUT]: 验证终端字节交互、撤权完整清屏与键盘边界。
  * [POS]: 终端完整前端链回归；后端 PTY 与设备验收另行执行。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -153,13 +153,15 @@ test("multiline paste requires confirmation and remote OSC52 cannot write clipbo
   expect(await page.evaluate(() => (window as Window & { clipboardWrites?: number }).clipboardWrites)).toBe(0);
 });
 
-test("revocation clears the screen and never reconnects or sends further input", async ({ page }) => {
+test("revocation clears the screen and accessibility announcements without further input", async ({ page }) => {
   const { events } = await setup(page);
   await open(page);
   await expect(page.getByTestId("terminal-canvas")).toContainText("terminal-ready");
+  await expect(page.locator(".xterm .live-region")).toContainText("terminal-ready");
   events.peers[0].send(JSON.stringify({ type: "status", state: "closed", reason: "permission revoked" }));
   await expect(page.getByTestId("terminal-state")).toHaveText("Session ended");
   await expect(page.getByTestId("terminal-canvas")).not.toContainText("terminal-ready");
+  await expect(page.locator(".xterm .live-region")).toBeEmpty();
   await page.getByRole("button", { name: "Focus terminal", exact: true }).click();
   await page.keyboard.type("ignored");
   expect(events.inputs).toHaveLength(0);
