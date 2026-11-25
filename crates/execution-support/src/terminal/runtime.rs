@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖原生 PTY、平台进程树和调用方有界通道。
-//! [OUTPUT]: 驱动注册、有界输入背压和窗口；排空或回收失败不发正常退出。
-//! [POS]: 终端运行循环；阻塞读写与控制分离，ConPTY 关闭和排空并行。
+//! [OUTPUT]: 驱动注册、有界输入与窗口；取消结束Unix读写，失败拒绝正常退出。
+//! [POS]: 终端运行循环；Unix非阻塞读写可取消，ConPTY关闭与排空并行。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 #[cfg(unix)]
 use super::unix as platform;
@@ -65,10 +65,14 @@ impl PtySession {
         let process_id = child
             .process_id()
             .ok_or_else(|| TerminalError::invalid("terminal process ID is unavailable"))?;
+        #[cfg(unix)]
+        let (reader, writer) = platform::io_handles(&*pair.master)?;
+        #[cfg(windows)]
         let reader = pair
             .master
             .try_clone_reader()
             .map_err(|error| TerminalError::caused("could not clone terminal reader", error))?;
+        #[cfg(windows)]
         let writer = pair
             .master
             .take_writer()
@@ -153,9 +157,13 @@ fn read_loop(
     mut reader: Box<dyn Read + Send>,
     tx: mpsc::Sender<ReadResult>,
     discard: CancellationToken,
+    stop: CancellationToken,
 ) {
     let mut buffer = vec![0; MAX_FRAME_BYTES];
     loop {
+        if cfg!(unix) && stop.is_cancelled() {
+            return;
+        }
         let mut result = match reader.read(&mut buffer) {
             Ok(0) => ReadResult::End,
             Ok(count) => ReadResult::Data(buffer[..count].to_vec()),
@@ -163,6 +171,11 @@ fn read_loop(
             #[cfg(unix)]
             Err(error) if error.raw_os_error() == Some(libc::EIO) => ReadResult::End,
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            #[cfg(unix)]
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(5));
+                continue;
+            }
             Err(error) => ReadResult::Failed(error),
         };
         let end = !matches!(result, ReadResult::Data(_));
@@ -211,15 +224,51 @@ pub async fn run(
     let discard = CancellationToken::new();
     let (read_tx, mut read_rx) = mpsc::channel(READ_QUEUE_FRAMES);
     let reader_discard = discard.clone();
-    let reader_task =
-        tokio::task::spawn_blocking(move || read_loop(reader, read_tx, reader_discard));
+    let io_stop = CancellationToken::new();
+    let _writer_stop_on_drop = io_stop.clone().drop_guard();
+    let reader_stop = CancellationToken::new();
+    let _reader_stop_on_drop = reader_stop.clone().drop_guard();
+    let reader_cancel = reader_stop.clone();
+    let reader_task = tokio::task::spawn_blocking(move || {
+        read_loop(reader, read_tx, reader_discard, reader_stop)
+    });
     let (write_tx, mut write_rx) = mpsc::channel::<Vec<u8>>(WRITE_QUEUE_FRAMES);
     let (writer_error, mut writer_errors) = mpsc::channel(1);
+    #[cfg(unix)]
+    let writer_stop = io_stop.clone();
     let writer_task = tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
         while let Some(data) = write_rx.blocking_recv() {
             if let Err(error) = writer.write_all(&data) {
                 let _ = writer_error.try_send(error);
                 break;
+            }
+        }
+        #[cfg(unix)]
+        while let Some(data) = write_rx.blocking_recv() {
+            let mut remaining = data.as_slice();
+            while !remaining.is_empty() && !writer_stop.is_cancelled() {
+                match writer.write(remaining) {
+                    Ok(0) => {
+                        let _ = writer_error.try_send(io::Error::new(
+                            io::ErrorKind::WriteZero,
+                            "terminal writer made no progress",
+                        ));
+                        return;
+                    }
+                    Ok(count) => remaining = &remaining[count..],
+                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5))
+                    }
+                    Err(error) => {
+                        let _ = writer_error.try_send(error);
+                        return;
+                    }
+                }
+            }
+            if writer_stop.is_cancelled() {
+                return;
             }
         }
     });
@@ -316,6 +365,7 @@ pub async fn run(
             pending_write = None;
             write_stalled_at = None;
             write_tx.take();
+            io_stop.cancel();
             finish_at = Some(tokio::time::Instant::now() + FINISH_TIMEOUT);
             let cleanup_tree = tree.clone();
             cleanup = Some(tokio::task::spawn_blocking(move || {
@@ -350,6 +400,8 @@ pub async fn run(
         }
     }
     discard.cancel();
+    io_stop.cancel();
+    reader_cancel.cancel();
     drop(read_rx);
     drop(write_tx);
     // Unix 在读线程排空后关闭 master；ConPTY 已在关闭阶段并行排空。

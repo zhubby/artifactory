@@ -12,7 +12,7 @@ COPY vendor ./vendor
 COPY crates ./crates
 COPY operators ./operators
 COPY proto ./proto
-ARG ARTIFACTORY_BUILD_VERSION=0.2.1
+ARG ARTIFACTORY_BUILD_VERSION=0.2.2
 ARG ARTIFACTORY_BUILD_COMMIT=development
 ENV ARTIFACTORY_BUILD_VERSION=${ARTIFACTORY_BUILD_VERSION} ARTIFACTORY_BUILD_COMMIT=${ARTIFACTORY_BUILD_COMMIT}
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/build/target cargo build --locked --release -p artifactory-emissary --bin artifactory-emissary && cp target/release/artifactory-emissary /usr/local/bin/

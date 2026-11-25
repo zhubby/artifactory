@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖真实 PTY、受控输入、取消信号和 Windows 回收子模块。
-//! [OUTPUT]: 验证字节交互、ConPTY 游标握手、退出排空和会话后代回收。
+//! [OUTPUT]: 验证满队列取消、真实SIGINT、ConPTY握手、退出排空与后代回收。
 //! [POS]: 可选 terminal 特性的真实进程回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 #![cfg(feature = "terminal")]
@@ -312,20 +312,25 @@ async fn terminal_control_c_interrupts_foreground_command() {
     ));
     input
         .send(TerminalInput::Input {
-            data: b"printf 'RUNNING\\n'; sleep 120\n".to_vec(),
+            data: b"printf '__CTRL_%s__\\n' 'READY'; sleep 120\n".to_vec(),
         })
         .await
         .unwrap();
     let mut bytes = Vec::new();
     tokio::time::timeout(Duration::from_secs(5), async {
-        while !String::from_utf8_lossy(&bytes).contains("\r\nRUNNING\r\n") {
+        while !String::from_utf8_lossy(&bytes).contains("__CTRL_READY__\r\n") {
             if let Some(TerminalEvent::Output { data }) = output.recv().await {
                 bytes.extend(data);
             }
         }
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|error| {
+        panic!(
+            "readiness timeout: {error}; output={:?}",
+            String::from_utf8_lossy(&bytes)
+        )
+    });
     tokio::time::sleep(Duration::from_millis(50)).await;
     input
         .send(TerminalInput::Input { data: vec![3] })
@@ -334,7 +339,7 @@ async fn terminal_control_c_interrupts_foreground_command() {
     tokio::time::sleep(Duration::from_millis(50)).await;
     input
         .send(TerminalInput::Input {
-            data: b"printf 'AFTER_INTERRUPT\\n'; exit 0\n".to_vec(),
+            data: b"printf '__CTRL_%s__\\n' 'INTERRUPTED'; exit 0\n".to_vec(),
         })
         .await
         .unwrap();
@@ -355,7 +360,7 @@ async fn terminal_control_c_interrupts_foreground_command() {
         result.expect("Ctrl+C did not interrupt foreground sleep"),
         Some(0)
     );
-    assert!(String::from_utf8_lossy(&bytes).contains("\r\nAFTER_INTERRUPT\r\n"));
+    assert!(String::from_utf8_lossy(&bytes).contains("__CTRL_INTERRUPTED__\r\n"));
 }
 
 #[tokio::test]

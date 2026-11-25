@@ -269,7 +269,7 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
 name = "artifactory-control-plane"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "aes-gcm 0.10.3",
  "anyhow",
@@ -332,7 +332,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-database"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -350,7 +350,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-emissary"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "artifactory-database",
@@ -401,7 +401,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-emissary-protocol"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -417,7 +417,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-execution-support"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "libc",
@@ -436,7 +436,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-gateway"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -456,7 +456,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-image-operator"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "artifactory-execution-support",
@@ -490,7 +490,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-image-protocol"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "hex",
@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-oci-registry-client"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "artifactory-image-protocol",
@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-planning-coordinator"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "artifactory-database",
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-planning-operator"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "artifactory-planning-protocol",
@@ -567,7 +567,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-planning-protocol"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -576,7 +576,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-service-transport"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "aes-gcm 0.10.3",
  "anyhow",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-source-checkout"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -621,7 +621,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-source-preparer"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "artifactory-source-checkout",
@@ -639,7 +639,7 @@ dependencies = [
 
 [[package]]
 name = "artifactory-telemetry-service"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "artifactory-database",

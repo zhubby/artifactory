@@ -1,16 +1,51 @@
-//! [INPUT]: 依赖 PTY 进程 SID、内核信号和只读进程清单。
-//! [OUTPUT]: 回收同一终端会话的前台与后台进程。
+//! [INPUT]: 依赖 PTY master 描述符、进程 SID、内核信号和进程清单。
+//! [OUTPUT]: 提供非阻塞 PTY 读写并回收同一会话的进程。
 //! [POS]: Unix 终端监督边界；PID 只来自受信 PTY 创建回执。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::TerminalError;
 use std::{
-    io,
+    io::{self, Read, Write},
+    os::fd::{AsRawFd, FromRawFd},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
+
+type IoHandles = (Box<dyn Read + Send>, Box<dyn Write + Send>);
+
+/// Unix PTY I/O 使用可取消的非阻塞副本，避免满输入永久占据阻塞线程。
+pub(super) fn io_handles(master: &dyn portable_pty::MasterPty) -> Result<IoHandles, TerminalError> {
+    let fd = master
+        .as_raw_fd()
+        .ok_or_else(|| TerminalError::invalid("PTY master descriptor is unavailable"))?;
+    // SAFETY: F_DUPFD_CLOEXEC 复制尚在本函数中受借用的描述符。
+    let duplicate = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
+    if duplicate < 0 {
+        return Err(TerminalError::caused(
+            "could not duplicate PTY master",
+            io::Error::last_os_error(),
+        ));
+    }
+    // SAFETY: duplicate 是刚取得且尚未转移的独占文件描述符。
+    let writer = unsafe { std::fs::File::from_raw_fd(duplicate) };
+    // SAFETY: writer持有有效描述符，F_GETFL仅读取其状态。
+    let flags = unsafe { libc::fcntl(writer.as_raw_fd(), libc::F_GETFL) };
+    // SAFETY: F_SETFL只增加非阻塞标志；reader共享同一打开文件状态。
+    if flags < 0
+        || unsafe { libc::fcntl(writer.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
+    {
+        return Err(TerminalError::caused(
+            "could not configure nonblocking PTY I/O",
+            io::Error::last_os_error(),
+        ));
+    }
+    let reader = writer
+        .try_clone()
+        .map_err(|error| TerminalError::caused("could not clone PTY reader", error))?;
+    Ok((Box::new(reader), Box::new(writer)))
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct ProcessTree {

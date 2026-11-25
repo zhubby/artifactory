@@ -10,9 +10,9 @@ image:
 replicas: 2
 builderPool:
   name: default
-  workerImage: ghcr.io/zhubby/artifactory-image-worker:0.2.1
-  buildkitImage: ghcr.io/zhubby/artifactory-buildkit:0.2.1
-  sourcePreparerImage: ghcr.io/zhubby/artifactory-source-preparer:0.2.1
+  workerImage: ghcr.io/zhubby/artifactory-image-worker:0.2.2
+  buildkitImage: ghcr.io/zhubby/artifactory-buildkit:0.2.2
+  sourcePreparerImage: ghcr.io/zhubby/artifactory-source-preparer:0.2.2
   controlUrl: ""
   maxActive: 8
   maxPerProject: 4

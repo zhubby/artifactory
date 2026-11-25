@@ -1,5 +1,5 @@
 <!--
-[INPUT]: 设备 PTY、登录 Session、终端票据与多副本认证流。
+[INPUT]: 设备 PTY 非阻塞读写、登录 Session 和多副本认证流。
 [OUTPUT]: 定义设备终端配置、交互、输入背压、权限与回收边界。
 [POS]: 设备终端使用入口；验收证据独立记录。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -86,6 +86,8 @@ Control 最多每 5 秒重新确认转发授权。数据库挂起、账户撤权
 | Gateway 终端流 | 每进程 128，独立于普通 HTTP |
 
 `ARTIFACTORY_GATEWAY_TERMINAL_CONNECTIONS` 配置网关终端配额；Helm 对应 `gateway.terminalConnections`。Unix 回收 PTY SID 内的前后台进程；Windows 使用 ConPTY 和 Job Object。父管道 EOF、设备流中断、取消、停机和租约失效都触发回收。正常退出先有界排空输出，消费确认后结束；撤权立即丢弃未发送数据。
+
+Unix 使用非阻塞 PTY 读写，按部分写入和队列背压推进。取消信号终止写入重试，关闭描述符不再写入 EOF；满输入队列不能保留阻塞线程。正常退出仍先排空输出。
 
 Windows 关闭 ConPTY 时并行排空输出，避免等待输出 EOF 与关闭句柄互锁。ConPTY 的光标位置问询由浏览器终端应答；原生测试同样完成此握手，再验证最终输出和退出码。
 
