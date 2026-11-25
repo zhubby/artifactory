@@ -7,6 +7,8 @@
 
 # 实施与验收记录
 
+2026-11-25 新增 [源码准备与规划复用验收](acceptance/2026-11-25-source-planning-reuse.md)：同 Pod 准备、固定清单、隔离原生与镜像混合链路、Kubernetes 1.28 CRD 和生产分阶段升级已验证。真实模型自主修订、浏览器、公开制品与恢复接单已通过。
+
 2026-11-18 新增 [Kubernetes 1.28 镜像构建验收](image-builds-kubernetes-128-acceptance-2026-11-18.md) 和 [临时源码执行验收](ephemeral-source-acceptance-2026-11-18.md)：现有 1.28.3 已完成正式切换，普通源码 init、双普通构建容器、内外仓、双副本网关及三台原生设备交付通过。旧源码专属卷和任务材料已清理。原生 arm64 与正式集群的显式仿真分别记录。
 
 2026-11-17 新增 [AI-Workspace macOS 托管证书签名验收](ai-workspace-signing-acceptance-2026-11-17.md)：第 8 次真实构建完成 Developer ID 签名，129 项 Mach-O、两项 S3 下载制品及临时材料清理通过。未公证，Gatekeeper 当前拒绝分发。

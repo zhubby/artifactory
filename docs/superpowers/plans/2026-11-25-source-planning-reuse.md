@@ -46,8 +46,14 @@
 - [x] 2. Source checkout/preparer：最终嵌套目录解析检出、tag收敛、LFS、阶段、轻量resolve、prepare RPC与测试。
 - [x] 3. Control：commit-only接纳、初始run/intent、pending材料、source事件回执/失败、业务迁移与测试。
 - [x] 4. Web/Gateway：真实过程显示、独立审计回归、排空开关及测试。
-- [ ] 5. 集成与审阅：Rust/Worker/Web/文档/边界检查，隔离K8s真实链，修复审阅发现。
-- [ ] 6. 交付：合并main提交；排空入口、备份两库、固定镜像升级、线上验证、恢复接单。
+- [x] 5. 集成与审阅：Rust/Worker/Web/文档/边界检查，隔离K8s真实链，修复审阅发现。
+- [x] 6. 交付：合并main提交；排空入口、备份两库、固定镜像升级、线上验证、恢复接单。
 
 ## 验收
 轻量resolve无fetch；单次规划只准备一次；子模块/tag/LFS一致；ready前acquire拒绝且calls=0；重放/回执丢失/取消/旧代拒绝；Pod丢失/超时/OOM/清理；双语主题三视口+320px和axe；K8s1.28真实规划和后续执行。
+
+## 完成记录
+
+实现、Kubernetes 1.28 隔离链路及生产真实模型构建均已验收。
+main 已交付，接单恢复和隔离资源回收通过读回。
+固定镜像、自动修订、浏览器与验收边界见[正式验收记录](../../acceptance/2026-11-25-source-planning-reuse.md)。

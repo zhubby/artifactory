@@ -48,6 +48,7 @@
 # 验收记录
 
 - [实施与验收总览](acceptance.md)
+- [源码准备与规划复用 · 2026-11-25](acceptance/2026-11-25-source-planning-reuse.md)
 - [设备终端本地验收 · 2026-11-25](acceptance/2026-11-25-device-terminals.md)
 - [真实模型全流程 · 2026-11-22](acceptance/2026-11-22-model-workflows.md)
 - [TaskNotes 真实多平台应用 · 2026-11-18](tasknotes-application-acceptance-2026-11-18.md)
