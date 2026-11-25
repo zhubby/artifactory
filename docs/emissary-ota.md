@@ -45,7 +45,10 @@ Emissary 的升级目标固定为当前部署的产品统一版本。
 
 在受保护的 GitHub `emissary-release` Environment 中设置 `EMISSARY_RELEASE_SIGNING_SEED`，值为独立 Ed25519 私钥的 32 字节 seed 的 base64。只允许发布 job 读取该 Secret。推送 `emissary-v*` Git 标签，或手动执行工作流并选择一个已存在的 Git 标签。工作流不覆盖已有 Release。
 
-控制平面 `${ARTIFACTORY_DATA_DIR}/emissary-releases.json` 由部署管理员配置，文件示例：
+部署管理员通过 `ARTIFACTORY_EMISSARY_RELEASE_SOURCE` 指定发行配置文件。
+未设置时读取 `${ARTIFACTORY_DATA_DIR}/emissary-releases.json`。
+Helm 的 `controlPlane.releaseSourceConfigMap` 将同一公开信任配置挂载到全部副本。
+文件示例：
 
 ```json
 {

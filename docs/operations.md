@@ -154,6 +154,10 @@ artifactory-emissary.exe service --action start --config C:\artifactory\emissary
 
 给服务账户配置 Visual Studio / SDK、PowerShell、Git 与签名证书的真实访问权限。Windows Job Object 使用挂起创建 → 分配 Job → 恢复，防止子进程在归属 Job 前逃逸；必须在 Windows 实机上验收取消、断线和服务停止。
 
+SCM 启动或运行失败时，具体错误链原子写入配置旁的 `emissary-error.log`，保留最后一次失败及 UTC 时间。服务账户必须能写入该私有目录；SCM 的退出码不能替代此日志。
+
+启动清理先回收旧 Worker，再删除任务目录。Windows 缓存中的 `Content.IE5` 等目录链接能拒绝列目录和同步访问。标准删除遇到访问拒绝后，Emissary 以不跟随链接的属性句柄识别目录链接，仅删除链接本身，再重试标准删除。递归期间锁定祖先目录，禁止目录被替换。此流程不修改 ACL、不进入链接目标；真实目录权限错误仍保留清理闭锁并拒绝任务准入。
+
 三类系统均支持 `service --action stop|restart|uninstall`。本轮未向用户宿主安装任何系统服务。
 
 Emissary 启动后若发生不可恢复的本地错误（例如配置从未注册），服务进程会记录错误并以非零状态退出，让系统服务管理器看到失败；网络中断仍由 Emissary 重连。系统是否自动重启失败服务取决于实际服务管理器及其恢复策略。

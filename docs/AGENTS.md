@@ -18,7 +18,7 @@ configuration.md: 定义任务执行计划的结构与限制。
 design-system.md: 定义中性色、顶栏工具、正文动作、关注星标与导航骨架。
 direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、启动等待和故障依赖隔离的验证边界。
 control-ha.md: 定义控制平面多副本和容量验证。
-emissary-ota.md: 定义按产品统一版本判断、管理员发起的升级与失败恢复。
+emissary-ota.md: 定义部署信任源、统一版本、管理员升级与失败恢复。
 frontend-experience.md: 定义导航首读、草稿、偏好、日志与 AI 审计阅读及验证。
 helm.md: 定义 Kubernetes 1.28 安装、接单排空、双库协议切换与持久身份保留。
 image-builds.md: 定义独立镜像池准入、容器镜像生命周期、整合网关、池代理和交付边界。

@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖任务清单、设备 mTLS 与共享临时检出引擎。
-//! [OUTPUT]: 领取短期凭据，隔离工具链缓存并验证固定源码。
+//! [INPUT]: 依赖任务清单、设备 mTLS、共享检出引擎与受管目录清理。
+//! [OUTPUT]: 隔离缓存并验证固定源码，回收会话后清理 Windows 缓存链接。
 //! [POS]: 原生 Worker 的源码边界，不保存 Git/LFS 缓存。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -196,7 +196,7 @@ pub fn cleanup_attempt(cfg: &Config, id: &str) -> Result<()> {
     let _guard = attempt_lock(cfg, id)?;
     let path = cfg.root.join("work").join(id);
     if path.exists()
-        && let Err(error) = fs::remove_dir_all(&path)
+        && let Err(error) = crate::cleanup::remove_dir_all(&path)
     {
         crate::config::private_write(
             &cfg.root.join("source-cleanup-blocked"),

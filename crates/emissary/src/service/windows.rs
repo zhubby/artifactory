@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖节点配置、运行时与 Windows SCM。
-//! [OUTPUT]: 注册服务入口并提供安装、启停和删除。
+//! [OUTPUT]: 注册服务入口、安装、启停、删除，并原子记录最后一次失败。
 //! [POS]: service 模块的 Windows 实现，服务运行复用节点运行时。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
@@ -26,7 +26,21 @@ pub fn dispatch(config: PathBuf) -> Result<()> {
     Ok(())
 }
 fn service_main(_: Vec<OsString>) {
-    if run_service().is_err() {
+    if let Err(error) = run_service() {
+        let message = format!(
+            "{} service failed: {error:#}\n",
+            chrono::Utc::now().to_rfc3339()
+        );
+        eprint!("{message}");
+        if let Some(parent) = CONFIG.get().and_then(|config| config.parent())
+            && let Err(log_error) = crate::config::atomic_bytes(
+                &parent.join("emissary-error.log"),
+                message.as_bytes(),
+                false,
+            )
+        {
+            eprintln!("write service error log: {log_error:#}");
+        }
         std::process::exit(1);
     }
 }

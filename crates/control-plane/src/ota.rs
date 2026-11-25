@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖产品统一版本、签名升级清单、节点命令与网关票据。
+//! [INPUT]: 依赖产品统一版本、部署发行配置、签名清单与网关票据。
 //! [OUTPUT]: 规范产品版本，验证签名发行并下发固定摘要升级包。
 //! [POS]: 设备升级协调边界；不向设备暴露私有 S3。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -9,6 +9,10 @@ use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 use uuid::Uuid;
 
 /// 历史标签前缀不属于产品版本；构建元数据不触发产品升级。
@@ -150,12 +154,20 @@ pub struct ReleaseSource {
 fn github_api() -> String {
     "https://api.github.com".into()
 }
+fn release_source_path(data_dir: &Path, configured: Option<OsString>) -> PathBuf {
+    configured
+        .map(PathBuf::from)
+        .unwrap_or_else(|| data_dir.join("emissary-releases.json"))
+}
 impl ReleaseSource {
     pub async fn load(state: &AppState) -> Result<Self> {
         let c: Self = serde_json::from_slice(
-            &tokio::fs::read(state.settings.data_dir.join("emissary-releases.json"))
-                .await
-                .context("Emissary release source is not configured")?,
+            &tokio::fs::read(release_source_path(
+                &state.settings.data_dir,
+                std::env::var_os("ARTIFACTORY_EMISSARY_RELEASE_SOURCE"),
+            ))
+            .await
+            .context("Emissary release source is not configured")?,
         )?;
         let parts: Vec<_> = c.repository.split('/').collect();
         ensure!(
@@ -370,6 +382,19 @@ mod tests {
     use super::*;
     use base64::{Engine, engine::general_purpose::STANDARD};
     use ed25519_dalek::{Signer, SigningKey};
+    #[test]
+    fn release_source_path_prefers_the_deployment_mount() {
+        let data = Path::new("/var/lib/artifactory");
+        let configured = Path::new("/etc/artifactory/emissary releases.json");
+        assert_eq!(
+            release_source_path(data, Some(configured.as_os_str().to_os_string())),
+            configured
+        );
+        assert_eq!(
+            release_source_path(data, None),
+            data.join("emissary-releases.json")
+        );
+    }
     #[test]
     fn product_versions_ignore_only_valid_metadata_and_legacy_prefixes() {
         for version in ["0.2.0", "v0.2.0", "emissary-v0.2.0", "0.2.0+terminal.abc"] {

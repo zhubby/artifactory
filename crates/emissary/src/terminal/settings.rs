@@ -118,7 +118,7 @@ pub(crate) async fn capabilities(settings: &TerminalSettings) -> Result<Terminal
     #[cfg(unix)]
     command.arg("-un");
     #[cfg(windows)]
-    let mut command = tokio::process::Command::new(
+    let command = tokio::process::Command::new(
         std::env::var_os("SystemRoot")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))

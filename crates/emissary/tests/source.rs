@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖原生任务目录隔离和遗留目录清理。
-//! [OUTPUT]: 验证任务缓存、JVM 路径、Windows .NET 系统路径和活动目录保护。
+//! [OUTPUT]: 验证任务缓存、系统路径、活动目录保护与 Windows 缓存链接清理。
 //! [POS]: 原生源码生命周期回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_emissary::{config::Config, source};
@@ -168,6 +168,110 @@ async fn startup_sweep_refuses_active_attempt_and_deletes_abandoned_source() {
     drop(lock);
     source::sweep(&cfg).await.unwrap();
     assert!(!work.exists());
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn startup_sweep_removes_denied_cache_junction_without_touching_target() {
+    use std::{fs, path::PathBuf, process::Command};
+
+    // 清理失败也先删除链接，避免测试夹具留下受限目录。
+    struct Junction(PathBuf);
+    impl Drop for Junction {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir(&self.0);
+        }
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        root: temp.path().join("data"),
+        ..Default::default()
+    };
+    let id = uuid::Uuid::new_v4().to_string();
+    let workspace = cfg.root.join("work").join(&id);
+    let cache = workspace.join(r"home\AppData\Local\Microsoft\Windows\INetCache");
+    fs::create_dir_all(&cache).unwrap();
+    let readonly = workspace.join("readonly.idx");
+    fs::write(&readonly, "git index").unwrap();
+    let mut permissions = fs::metadata(&readonly).unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&readonly, permissions).unwrap();
+    fs::write(outside.path().join("keep.txt"), "outside workspace").unwrap();
+    let junction = Junction(cache.join("Content.IE5"));
+    let output = Command::new("cmd.exe")
+        .args(["/d", "/c", "mklink", "/J"])
+        .arg(&junction.0)
+        .arg(outside.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let output = Command::new("icacls.exe")
+        .arg(&junction.0)
+        .args(["/deny", "*S-1-1-0:(S,RD)", "/L"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    fs::write(cfg.root.join("source-cleanup-blocked"), "previous failure").unwrap();
+
+    let result = source::sweep(&cfg).await;
+    assert!(result.is_ok(), "受限缓存链接阻止启动清理: {result:?}");
+    assert!(!workspace.exists());
+    assert!(!cfg.root.join("source-cleanup-blocked").exists());
+    assert_eq!(
+        fs::read_to_string(outside.path().join("keep.txt")).unwrap(),
+        "outside workspace",
+        "清理不得进入链接目标"
+    );
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn startup_sweep_keeps_real_access_denial_blocked_until_recovery() {
+    use std::{fs, path::PathBuf, process::Command};
+
+    struct DeniedDirectory(PathBuf);
+    impl Drop for DeniedDirectory {
+        fn drop(&mut self) {
+            let _ = Command::new("icacls.exe")
+                .arg(&self.0)
+                .args(["/remove:d", "*S-1-1-0"])
+                .output();
+        }
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let cfg = Config {
+        root: temp.path().join("data"),
+        ..Default::default()
+    };
+    let workspace = cfg.root.join("work").join(uuid::Uuid::new_v4().to_string());
+    let denied = DeniedDirectory(workspace.join("private-directory"));
+    fs::create_dir_all(&denied.0).unwrap();
+    fs::write(denied.0.join("source.txt"), "retained source").unwrap();
+    let output = Command::new("icacls.exe")
+        .arg(&denied.0)
+        .args(["/deny", "*S-1-1-0:(RD)"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let acl_before = Command::new("icacls.exe").arg(&denied.0).output().unwrap();
+    assert!(acl_before.status.success(), "{acl_before:?}");
+
+    assert!(source::sweep(&cfg).await.is_err());
+    assert!(cfg.root.join("source-cleanup-blocked").exists());
+    assert!(workspace.exists());
+    let acl_after = Command::new("icacls.exe").arg(&denied.0).output().unwrap();
+    assert!(acl_after.status.success(), "{acl_after:?}");
+    assert_eq!(
+        acl_before.stdout, acl_after.stdout,
+        "清理不得放宽真实目录的访问权限"
+    );
+    drop(denied);
+    source::sweep(&cfg).await.unwrap();
+    assert!(!workspace.exists());
+    assert!(!cfg.root.join("source-cleanup-blocked").exists());
 }
 
 #[cfg(unix)]

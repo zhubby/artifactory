@@ -7,6 +7,7 @@ AGENTS.md: 本目录职责、成员和依赖入口。
 2026-11-22-model-workflows.md: 真实模型；跟踪源码、规划、原生与镜像、失败恢复、权限及不可变交付验收。
 2026-11-25-source-planning-reuse.md: 源码复用；记录同Pod准备、固定清单、混合链、生产模型与接单恢复。
 2026-11-25-device-terminals.md: 设备终端；记录本地PTY、三副本、故障与平台边界，并链接部署证据。
+2026-11-25-windows-cleanup.md: Windows；记录受限目录联接清理、固定构建与节点在线恢复。
 2026-11-25-terminal-load.json: 负载摘要；保存10虚拟设备的窗口、延迟与资源采样。
 
 子目录
