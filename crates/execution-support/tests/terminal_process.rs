@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖真实 PTY、受控输入、取消信号和进程状态。
-//! [OUTPUT]: 验证终端交互、注册期限、排空失败和会话后代回收。
+//! [OUTPUT]: 验证终端突发输入、注册期限、排空失败和会话后代回收。
 //! [POS]: 可选 terminal 特性的真实进程回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 #![cfg(feature = "terminal")]
@@ -103,6 +103,114 @@ async fn collect(command: &[u8]) -> (Vec<u8>, Option<i32>, Option<String>) {
     task.await.unwrap().unwrap();
     let (code, signal) = result.expect("terminal interaction timed out");
     (bytes, code, signal)
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn terminal_character_burst_waits_for_pty_writer_capacity() {
+    let (input, rx) = mpsc::channel(512);
+    let (tx, mut output) = mpsc::channel(8);
+    let cancel = CancellationToken::new();
+    let _cancel_on_drop = cancel.clone().drop_guard();
+    let command = format!(
+        "printf '__PTY_%s__\\n' 'BURST'; #{}\nexit 7\n",
+        "x".repeat(256)
+    );
+    for byte in command.bytes() {
+        input
+            .try_send(TerminalInput::Input { data: vec![byte] })
+            .unwrap();
+    }
+    let task = tokio::spawn(run(config(), rx, tx, cancel.clone()));
+    let mut bytes = Vec::new();
+    let code = tokio::time::timeout(Duration::from_secs(10), async {
+        while let Some(event) = output.recv().await {
+            match event {
+                TerminalEvent::Output { data } => bytes.extend(data),
+                TerminalEvent::Exited { code, .. } => return code,
+                TerminalEvent::Ready { .. } => {}
+            }
+        }
+        None
+    })
+    .await
+    .expect("PTY burst timed out");
+    task.await.unwrap().unwrap();
+    assert_eq!(code, Some(7));
+    assert!(String::from_utf8_lossy(&bytes).contains("__PTY_BURST__"));
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn terminal_cancel_interrupts_a_full_pty_input_queue() {
+    let mut cfg = config();
+    cfg.args = vec![
+        "-c".into(),
+        "stty -echo -icanon; printf '__INPUT_BLOCKED__\\n'; sleep 60".into(),
+    ];
+    let (input, rx) = mpsc::channel(1);
+    let (tx, mut output) = mpsc::channel(8);
+    let cancel = CancellationToken::new();
+    let _cancel_on_drop = cancel.clone().drop_guard();
+    let task = tokio::spawn(run(cfg, rx, tx, cancel.clone()));
+    let Some(TerminalEvent::Ready { process_id }) = output.recv().await else {
+        panic!("PTY did not become ready");
+    };
+    let mut bytes = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !String::from_utf8_lossy(&bytes).contains("__INPUT_BLOCKED__") {
+            if let Some(TerminalEvent::Output { data }) = output.recv().await {
+                bytes.extend(data);
+            }
+        }
+    })
+    .await
+    .expect("blocking shell was not ready");
+    let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let sent = accepted.clone();
+    let producer = tokio::spawn(async move {
+        for _ in 0..128 {
+            if input
+                .send(TerminalInput::Input {
+                    data: vec![b'x'; 16 * 1024],
+                })
+                .await
+                .is_err()
+            {
+                break;
+            }
+            sent.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let before = accepted.load(std::sync::atomic::Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(40)).await;
+            let after = accepted.load(std::sync::atomic::Ordering::SeqCst);
+            if (17..128).contains(&after) && after == before {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("PTY input did not apply bounded backpressure");
+    cancel.cancel();
+    let _result = tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .expect("cancel stalled behind PTY input")
+        .unwrap();
+    producer.await.unwrap();
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(
+        sysinfo::ProcessesToUpdate::Some(&[sysinfo::Pid::from_u32(process_id)]),
+        true,
+    );
+    assert!(
+        system
+            .process(sysinfo::Pid::from_u32(process_id))
+            .is_none_or(|p| p.status() == sysinfo::ProcessStatus::Zombie),
+        "PTY survived cancellation with a full input queue"
+    );
 }
 
 #[tokio::test]

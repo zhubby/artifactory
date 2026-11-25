@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖原生 PTY、平台进程树和调用方有界通道。
-//! [OUTPUT]: 驱动注册确认、字节和窗口；排空或回收失败不发正常退出。
+//! [OUTPUT]: 驱动注册、有界输入背压和窗口；排空或回收失败不发正常退出。
 //! [POS]: 终端运行循环；阻塞 PTY 读写与异步控制分离。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 #[cfg(unix)]
@@ -19,8 +19,9 @@ use tokio_util::sync::CancellationToken;
 
 /// PTY 私有队列最多四帧；消费端停顿不会无限积累输出。
 const READ_QUEUE_FRAMES: usize = 4;
-/// 单次已接受输入最多十六帧，写阻塞不阻塞控制消息。
+/// 写线程最多十六帧，主循环额外保留一帧并继续监督取消和退出。
 const WRITE_QUEUE_FRAMES: usize = 16;
+const INPUT_STALL_TIMEOUT: Duration = Duration::from_secs(3);
 /// 退出后只等待有界排空，不让慢消费永久保留已结束终端。
 const FINISH_TIMEOUT: Duration = Duration::from_secs(3);
 const REGISTRATION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -223,6 +224,8 @@ pub async fn run(
         }
     });
     let mut write_tx = Some(write_tx);
+    let mut pending_write = None;
+    let mut write_stalled_at = None;
     let mut pending = Some(TerminalEvent::Ready { process_id });
     let mut status = None;
     let mut read_ended = false;
@@ -242,6 +245,9 @@ pub async fn run(
                 failure = Some(TerminalError::invalid("terminal event consumer closed")); closing = true; discard.cancel(); pending = None;
             }
             _ = tick.tick() => {
+                if !closing && write_stalled_at.is_some_and(|at| tokio::time::Instant::now() >= at) {
+                    failure = Some(TerminalError::invalid("terminal input writer stalled")); closing = true;
+                }
                 if !registered && !closing && tokio::time::Instant::now() >= register_by {
                     failure = Some(TerminalError::invalid("terminal parent registration timed out")); closing = true;
                 }
@@ -258,7 +264,7 @@ pub async fn run(
                     discard.cancel(); break;
                 }
             }
-            message = input.recv(), if !closing => {
+            message = input.recv(), if !closing && pending_write.is_none() => {
                 match message {
                     Some(TerminalInput::Registered) => {
                         if registered { failure = Some(TerminalError::invalid("duplicate terminal registration")); closing = true; }
@@ -267,8 +273,9 @@ pub async fn run(
                     Some(TerminalInput::Input { data }) => {
                         if !registered { failure = Some(TerminalError::invalid("terminal input before parent registration")); closing = true; }
                         else if data.len() > MAX_FRAME_BYTES { failure = Some(TerminalError::invalid("terminal input exceeds frame limit")); closing = true; }
-                        else if !data.is_empty() && let Some(tx) = &write_tx && tx.try_send(data).is_err() {
-                            failure = Some(TerminalError::invalid("terminal input queue is full or closed")); closing = true;
+                        else if !data.is_empty() {
+                            pending_write = Some(data);
+                            write_stalled_at = Some(tokio::time::Instant::now() + INPUT_STALL_TIMEOUT);
                         }
                     }
                     Some(TerminalInput::Resize { columns, rows }) => {
@@ -277,6 +284,15 @@ pub async fn run(
                         }
                     }
                     Some(TerminalInput::Close) | None => { closing = true; discard.cancel(); pending = None; }
+                }
+            }
+            permit = async { write_tx.as_ref().expect("open terminal writer").reserve().await }, if !closing && pending_write.is_some() => {
+                match permit {
+                    Ok(permit) => {
+                        permit.send(pending_write.take().expect("pending terminal input"));
+                        write_stalled_at = None;
+                    }
+                    Err(_) => { failure = Some(TerminalError::invalid("terminal input writer closed")); closing = true; }
                 }
             }
             permit = events.reserve(), if pending.is_some() && !events.is_closed() => {
@@ -295,6 +311,8 @@ pub async fn run(
             }
         }
         if closing && cleanup.is_none() && !cleanup_done {
+            pending_write = None;
+            write_stalled_at = None;
             write_tx.take();
             finish_at = Some(tokio::time::Instant::now() + FINISH_TIMEOUT);
             let cleanup_tree = tree.clone();

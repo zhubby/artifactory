@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖设备 mTLS、固定控制会话、独立 PTY Worker 和字节 credit。
-//! [OUTPUT]: 先登记 PTY 身份，再转发字节、续期与退出，并回收进程树。
+//! [INPUT]: 依赖设备 mTLS、固定控制会话、PTY Worker 和白名单 Shell 环境。
+//! [OUTPUT]: 登记 PTY 身份；以可取消背压转发输入，续期并回收进程树。
 //! [POS]: 每会话独立传输；终端输出不进入构建 spool 或控制队列。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -33,7 +33,7 @@ fn frame(open: &OpenTerminal, kind: &str) -> TerminalFrame {
 }
 
 fn environment() -> BTreeMap<String, String> {
-    [
+    let values: BTreeMap<String, String> = [
         "PATH",
         "HOME",
         "USERPROFILE",
@@ -49,7 +49,19 @@ fn environment() -> BTreeMap<String, String> {
     ]
     .into_iter()
     .filter_map(|key| std::env::var(key).ok().map(|value| (key.into(), value)))
-    .collect()
+    .collect();
+    #[cfg(target_os = "macos")]
+    let values = {
+        let mut values = values;
+        if !["LANG", "LC_ALL", "LC_CTYPE"]
+            .iter()
+            .any(|key| values.get(*key).is_some_and(|value| !value.is_empty()))
+        {
+            values.insert("LANG".into(), "en_US.UTF-8".into());
+        }
+        values
+    };
+    values
 }
 
 async fn send(
@@ -207,12 +219,15 @@ pub(super) async fn run_session(
         let mut consumed = 0u64;
         let mut input_sequence = 0u64;
         let mut ready = false;
+        let mut pending_input = None;
+        let mut input_stall_until = Instant::now();
         let session_result = async {
             loop {
                 tokio::select! {
                     _ = cancel.cancelled() => break Ok(TerminalExit { reason: "closed".into(), ..Default::default() }),
                     _ = tokio::time::sleep_until(lease) => break Ok(TerminalExit { reason: "lease_expired".into(), ..Default::default() }),
-                    next = stream.message() => {
+                    _ = tokio::time::sleep_until(input_stall_until), if pending_input.is_some() => anyhow::bail!("terminal input congested"),
+                    next = stream.message(), if pending_input.is_none() => {
                         let next = next?.context("terminal device stream interrupted")?;
                         validate_frame(&next)?;
                         ensure!(next.terminal_id == open.terminal_id.to_string(), "terminal stream identity changed");
@@ -223,13 +238,22 @@ pub(super) async fn run_session(
                                 if next.offset <= input_sequence { continue; }
                                 // 短断中未送达的输入不重放；仅拒绝重复或倒序。
                                 input_sequence = next.offset;
-                                input_tx.try_send(TerminalInput::Input { data: next.data }).context("terminal input congested")?;
+                                pending_input = Some(TerminalInput::Input { data: next.data });
+                                input_stall_until = Instant::now() + Duration::from_secs(3);
                             }
-                            "resize" => { input_tx.try_send(TerminalInput::Resize { columns: next.columns.try_into()?, rows: next.rows.try_into()? }).context("terminal resize congested")?; }
+                            "resize" => {
+                                pending_input = Some(TerminalInput::Resize { columns: next.columns.try_into()?, rows: next.rows.try_into()? });
+                                input_stall_until = Instant::now() + Duration::from_secs(3);
+                            }
                             "ack" => { ensure!(next.offset >= consumed && next.offset <= produced, "invalid terminal output acknowledgement"); consumed = next.offset; }
                             "close" => break Ok(TerminalExit { reason: "closed".into(), ..Default::default() }),
                             _ => anyhow::bail!("unexpected terminal device command"),
                         }
+                    }
+                    permit = input_tx.reserve(), if pending_input.is_some() => {
+                        ensure!(!cancel.is_cancelled(), "terminal canceled");
+                        if Instant::now() >= lease { break Ok(TerminalExit { reason: "lease_expired".into(), ..Default::default() }); }
+                        permit.context("terminal worker input closed")?.send(pending_input.take().context("terminal pending input missing")?);
                     }
                     event = events_rx.recv(), if produced.saturating_sub(consumed) <= (MAX_BUFFER_BYTES - 16 * 1024) as u64 => {
                         match event.context("terminal worker exited without status")?? {
@@ -293,7 +317,11 @@ pub(super) async fn run_session(
         // 最终状态不受用户取消令牌屏蔽；等待对端结束以排空请求队列。
         let _ = tokio::time::timeout(Duration::from_secs(2), tx.send(exited)).await;
         drop(tx);
-        let _ = tokio::time::timeout(Duration::from_secs(2), stream.message()).await;
+        let _ = tokio::time::timeout(Duration::from_secs(2), async {
+            while stream.message().await?.is_some() {}
+            Ok::<(), tonic::Status>(())
+        })
+        .await;
         Ok::<(), anyhow::Error>(())
     };
     operation.await

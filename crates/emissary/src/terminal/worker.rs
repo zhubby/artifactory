@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖父进程的有界私有管道、固定 PTY 配置和取消信号。
 //! [OUTPUT]: 执行隐藏 terminal-worker，输出字节事件和真实进程状态。
-//! [POS]: 终端与设备网络进程之间的进程隔离；父管道 EOF 触发回收。
+//! [POS]: 隔离设备网络与 PTY；管道有界背压，EOF 和拥塞截止触发回收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
 use artifactory_execution_support::terminal::{TerminalConfig, TerminalEvent, TerminalInput};
@@ -45,16 +45,28 @@ pub async fn stdin_worker(cancel: CancellationToken) -> Result<()> {
     let input = tokio::spawn(async move {
         loop {
             let record = tokio::select! {
-                _ = input_stop.cancelled() => break,
+                _ = input_stop.cancelled() => break Ok(()),
                 record = read_record::<TerminalInput>(&mut reader) => record,
             };
-            let Ok(Some(record)) = record else {
-                input_stop.cancel();
-                break;
+            let record = match record {
+                Ok(Some(record)) => record,
+                Ok(None) => {
+                    input_stop.cancel();
+                    break Ok(());
+                }
+                Err(error) => {
+                    input_stop.cancel();
+                    break Err(error);
+                }
             };
-            if input_tx.try_send(record).is_err() {
+            let sent = tokio::select! {
+                biased;
+                _ = input_stop.cancelled() => break Ok(()),
+                result = tokio::time::timeout(std::time::Duration::from_secs(3), input_tx.send(record)) => result,
+            };
+            if !matches!(sent, Ok(Ok(()))) {
                 input_stop.cancel();
-                break;
+                break Err(anyhow::anyhow!("terminal worker input stalled or closed"));
             }
         }
     });
@@ -62,9 +74,13 @@ pub async fn stdin_worker(cancel: CancellationToken) -> Result<()> {
     let mut writer = tokio::spawn(async move {
         let mut stdout = tokio::io::stdout();
         while let Some(event) = event_rx.recv().await {
+            if output_stop.is_cancelled() {
+                break;
+            }
             let mut bytes = serde_json::to_vec(&event)?;
             bytes.push(b'\n');
             tokio::select! {
+                biased;
                 _ = output_stop.cancelled() => break,
                 result = async { stdout.write_all(&bytes).await?; stdout.flush().await } => result?,
             }
@@ -74,8 +90,13 @@ pub async fn stdin_worker(cancel: CancellationToken) -> Result<()> {
     let result =
         artifactory_execution_support::terminal::run(config, input_rx, event_tx, cancel.clone())
             .await;
-    input.abort();
-    let _ = input.await;
+    let input_result = if input.is_finished() {
+        input.await?
+    } else {
+        input.abort();
+        let _ = input.await;
+        Ok(())
+    };
     if tokio::time::timeout(std::time::Duration::from_secs(2), &mut writer)
         .await
         .is_err()
@@ -83,14 +104,14 @@ pub async fn stdin_worker(cancel: CancellationToken) -> Result<()> {
         writer.abort();
         let _ = writer.await;
     }
-    if let Err(error) = result {
+    if let Err(error) = result.map_err(anyhow::Error::from).and(input_result) {
         let mut stdout = tokio::io::stdout();
         let mut bytes =
             serde_json::to_vec(&serde_json::json!({"type":"error","message":error.to_string()}))?;
         bytes.push(b'\n');
         let _ = stdout.write_all(&bytes).await;
         let _ = stdout.flush().await;
-        return Err(error.into());
+        return Err(error);
     }
     Ok(())
 }
