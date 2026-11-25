@@ -329,6 +329,12 @@ impl ControlStore {
         let credential: Option<Uuid> =
             serde_json::from_value(p["credential_id"].clone()).map_err(anyhow::Error::from)?;
         sql::execute(&mut tx,"INSERT INTO builds(id,project_id,release_id,release_version,requested_ref,parameters,selected_targets,requested_by,source_repository_url,source_credential_id,goal,target_requirements,planning_context,model_config_snapshot) SELECT $1,r.project_id,r.id,r.version,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12 FROM releases r WHERE r.id=$2",params![id,release,&input.reference,&input.parameters,&input.targets,actor,p["repository_url"].as_str().unwrap(),credential,&input.goal,&input.target_requirements,context,&model]).await?;
+        sql::execute(
+            &mut tx,
+            "UPDATE builds SET source_preparation_version=2 WHERE id=$1",
+            params![id],
+        )
+        .await?;
         sql::execute(&mut tx,"INSERT INTO source_tasks(id,tenant_id,project_id,build_id,purpose,repository_url,reference,credential_id,bindings,deadline_at) SELECT b.id,b.tenant_id,b.project_id,b.id,'resolve',b.source_repository_url,b.requested_ref,b.source_credential_id,coalesce(b.planning_context->'source_credentials','[]'),now()+interval '15 minutes' FROM builds b WHERE b.id=$1",params![id]).await?;
         tx.commit().await?;
         Ok(id)

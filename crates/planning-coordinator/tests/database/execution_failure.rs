@@ -96,12 +96,20 @@ async fn failure_reports_fence_every_execution_field_and_preserve_accepted_work(
             "{field} must be fenced"
         );
     }
+    local_ready(&s, &execution).await;
     let acquired = s
         .store
         .acquire_execution(execution.clone(), "https://planning.invalid")
         .await
         .unwrap();
     let lease: Lease = serde_json::from_value(acquired["lease"].clone()).unwrap();
+    sql::execute(
+        &mut s.pool.clone(),
+        "UPDATE planning_outbox SET delivered=true WHERE run_id=$1 AND kind='planning_started'",
+        params![execution.run_id],
+    )
+    .await
+    .unwrap();
     s.store
         .tool_call(
             lease.clone(),
@@ -212,12 +220,20 @@ async fn a_late_failure_cannot_end_a_new_generation_and_canceled_work_stays_canc
 async fn operator_failure_endpoint_requires_service_identity_and_invalidates_worker_grant() {
     let s = state().await;
     let execution = admitted(&s, Uuid::new_v4()).await;
+    local_ready(&s, &execution).await;
     let acquired = s
         .store
         .acquire_execution(execution.clone(), "https://planning.invalid")
         .await
         .unwrap();
     let lease: Lease = serde_json::from_value(acquired["lease"].clone()).unwrap();
+    sql::execute(
+        &mut s.pool.clone(),
+        "UPDATE planning_outbox SET delivered=true WHERE run_id=$1 AND kind='planning_started'",
+        params![execution.run_id],
+    )
+    .await
+    .unwrap();
     let app = server::router(s.clone(), "x".repeat(64));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!(
@@ -282,12 +298,20 @@ async fn operator_failure_endpoint_requires_service_identity_and_invalidates_wor
 async fn missing_pod_fences_authorization_once_and_retains_the_original_budget() {
     let s = state().await;
     let execution = admitted(&s, Uuid::new_v4()).await;
+    local_ready(&s, &execution).await;
     let acquired = s
         .store
         .acquire_execution(execution.clone(), "https://planning.invalid")
         .await
         .unwrap();
     let lease: Lease = serde_json::from_value(acquired["lease"].clone()).unwrap();
+    sql::execute(
+        &mut s.pool.clone(),
+        "UPDATE planning_outbox SET delivered=true WHERE run_id=$1 AND kind='planning_started'",
+        params![execution.run_id],
+    )
+    .await
+    .unwrap();
     let before = s.store.read_run(execution.run_id).await.unwrap();
     let lost = ExecutionLost {
         run_id: execution.run_id,
@@ -328,12 +352,20 @@ async fn missing_pod_fences_authorization_once_and_retains_the_original_budget()
 async fn interrupted_worker_retries_with_fenced_identity_and_original_budget() {
     let s = state().await;
     let execution = admitted(&s, Uuid::new_v4()).await;
+    local_ready(&s, &execution).await;
     let acquired = s
         .store
         .acquire_execution(execution.clone(), "https://planning.invalid")
         .await
         .unwrap();
     let lease: Lease = serde_json::from_value(acquired["lease"].clone()).unwrap();
+    sql::execute(
+        &mut s.pool.clone(),
+        "UPDATE planning_outbox SET delivered=true WHERE run_id=$1 AND kind='planning_started'",
+        params![execution.run_id],
+    )
+    .await
+    .unwrap();
     let current = s.store.read_run(execution.run_id).await.unwrap();
     let mut life: Lifecycle = serde_json::from_value(current["lifecycle"].clone()).unwrap();
     life.calls = 1;
@@ -373,12 +405,20 @@ async fn missing_pod_exhausted_generation_calls_or_deadline_finishes_without_rea
     for exhausted in ["generation", "calls", "deadline"] {
         let s = state().await;
         let mut execution = admitted(&s, Uuid::new_v4()).await;
+        local_ready(&s, &execution).await;
         let acquired = s
             .store
             .acquire_execution(execution.clone(), "https://planning.invalid")
             .await
             .unwrap();
         let lease: Lease = serde_json::from_value(acquired["lease"].clone()).unwrap();
+        sql::execute(
+            &mut s.pool.clone(),
+            "UPDATE planning_outbox SET delivered=true WHERE run_id=$1 AND kind='planning_started'",
+            params![execution.run_id],
+        )
+        .await
+        .unwrap();
         let current = s.store.read_run(execution.run_id).await.unwrap();
         let mut life: Lifecycle = serde_json::from_value(current["lifecycle"].clone()).unwrap();
         match exhausted {
@@ -452,12 +492,20 @@ async fn resource_loss_fences_identity_and_preserves_pending_proposals() {
             "fence {field}"
         );
     }
+    local_ready(&s, &execution).await;
     let acquired = s
         .store
         .acquire_execution(execution.clone(), "https://planning.invalid")
         .await
         .unwrap();
     let lease: Lease = serde_json::from_value(acquired["lease"].clone()).unwrap();
+    sql::execute(
+        &mut s.pool.clone(),
+        "UPDATE planning_outbox SET delivered=true WHERE run_id=$1 AND kind='planning_started'",
+        params![execution.run_id],
+    )
+    .await
+    .unwrap();
     s.store
         .tool_call(
             lease,
@@ -526,4 +574,24 @@ async fn resource_deleted_before_pod_registration_finishes_business_through_one_
     assert_eq!(result["status"], "failed");
     assert_eq!(s.store.deliveries().await.unwrap().len(), 1);
     task.abort();
+}
+
+async fn local_ready(s: &TestCoordinator, execution: &Execution) {
+    let state = s.store.read_run(execution.run_id).await.unwrap();
+    let source = &state["source_manifest"];
+    s.store
+        .preparation_ready(
+            execution,
+            serde_json::from_value(source["id"].clone()).unwrap(),
+            source["digest"].as_str().unwrap(),
+        )
+        .await
+        .unwrap();
+    sql::execute(
+        &mut s.pool.clone(),
+        "UPDATE planning_outbox SET delivered=true WHERE run_id=$1 AND kind='source_local_ready'",
+        params![execution.run_id],
+    )
+    .await
+    .unwrap();
 }

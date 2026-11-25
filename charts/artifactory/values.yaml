@@ -1,5 +1,5 @@
 # [INPUT]: 服务镜像、私有凭据引用、节点预算和入口地址。
-# [OUTPUT]: Control、通知出口、镜像默认池、统一 Pingora 和存储参数。
+# [OUTPUT]: Control、通知出口、镜像池、网关接单和存储参数。
 # [POS]: 只声明部署配置，持久 Secret 由初始化脚本生成。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 fullnameOverride: ""
@@ -138,6 +138,8 @@ planning:
 
 gateway:
   replicas: 2
+  # 暂停新构建、执行重试和澄清；读取、取消与内部回执继续。
+  buildAdmissionPaused: false
   # 公开 HTTP、设备控制与设备遥测共用一个 Service。
   service:
     type: ClusterIP

@@ -19,6 +19,8 @@ mod conversation_chunks;
 mod execution_failure;
 #[path = "database/source_payload.rs"]
 mod source_payload;
+#[path = "database/source_preparation.rs"]
+mod source_preparation;
 #[path = "database/worker_failure.rs"]
 mod worker_failure;
 struct TestCoordinator {
@@ -74,16 +76,28 @@ async fn state() -> TestCoordinator {
     TestCoordinator { coordinator, pool }
 }
 fn intent(run: Uuid) -> RunIntent {
+    let manifest = artifactory_source_checkout::SourceManifest::new(
+        Uuid::new_v4(),
+        vec![artifactory_source_checkout::SourceRepository {
+            path: String::new(),
+            upstream_url: "https://git.example/repo".into(),
+            commit_sha: "b".repeat(40),
+            tags: Default::default(),
+            lfs_objects: vec![],
+        }],
+    )
+    .unwrap();
     RunIntent {
+        source_resolution: None,
         tenant_id: Uuid::from_u128(1),
         run_id: run,
         build_id: Uuid::new_v4(),
         project_id: Uuid::new_v4(),
         version: 1,
-        source_manifest_id: Some(Uuid::new_v4()),
-        source_digest: Some("a".repeat(64)),
+        source_manifest_id: Some(manifest.id),
+        source_digest: Some(manifest.digest.clone()),
         pool: "default".into(),
-        context: json!({}),
+        context: json!({"source_manifest":manifest}),
         model: ModelConfiguration {
             id: Uuid::new_v4(),
             api: "openai-completions".into(),
@@ -153,11 +167,21 @@ async fn owner(s: &TestCoordinator, run: Uuid) -> Lease {
     )
     .await
     .unwrap();
+    let material = s.store.read_run(run).await.unwrap();
+    s.store
+        .preparation_ready(
+            &execution,
+            serde_json::from_value(material["source_manifest"]["id"].clone()).unwrap(),
+            material["source_manifest"]["digest"].as_str().unwrap(),
+        )
+        .await
+        .unwrap();
     let acquired = s
         .store
         .acquire_execution(execution, "https://planning.invalid")
         .await
         .unwrap();
+    sql::execute(&mut s.pool.clone(), "UPDATE planning_outbox SET delivered=true WHERE run_id=$1 AND kind IN ('source_local_ready','planning_started')", params![run]).await.unwrap();
     serde_json::from_value(acquired["lease"].clone()).unwrap()
 }
 #[tokio::test]
@@ -323,6 +347,15 @@ async fn conversations_preserve_generation_messages_without_replaying_them() {
     )
     .await
     .unwrap();
+    let material = s.store.read_run(run).await.unwrap();
+    s.store
+        .preparation_ready(
+            &execution,
+            serde_json::from_value(material["source_manifest"]["id"].clone()).unwrap(),
+            material["source_manifest"]["digest"].as_str().unwrap(),
+        )
+        .await
+        .unwrap();
     let acquired = s
         .store
         .acquire_execution(execution, "https://planning.invalid")

@@ -160,8 +160,15 @@ impl Database {
             }],
         )?;
         self.store
-            .commit_source_task(build, &execution, &json!({"manifest":manifest}))
+            .commit_source_task(build, &execution, &json!({"commit_sha":commit}))
             .await?;
+        let run: Uuid = sql::scalar(
+            &mut self.pool.clone(),
+            "SELECT id FROM planning_runs WHERE build_id=$1",
+            params![build],
+        )
+        .await?;
+        self.store.commit_preparation_event(Uuid::new_v4(),run,"release-fixture","source_ready",&json!({"manifest":manifest,"execution":{"run_id":run,"generation":1,"uid":"planning-pod","name":"planning-pod","namespace":"test"}})).await?;
         sql::execute(
             &mut self.pool.clone(),
             "UPDATE planning_runs SET state='succeeded',finished_at=now() WHERE build_id=$1",

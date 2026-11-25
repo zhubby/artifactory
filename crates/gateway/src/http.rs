@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖固定后端、交付票据、发布围栏与请求预算。
-//! [OUTPUT]: 隔离终端连接预算并流式代理 HTTP；约束下载与 Manifest。
+//! [INPUT]: 依赖固定后端、接单开关、交付票据和请求预算。
+//! [OUTPUT]: 暂停新规划请求，隔离终端预算并代理 HTTP。
 //! [POS]: 不缓存认证结果，不缓冲镜像层，不重放写请求。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::config::Config;
@@ -215,6 +215,20 @@ impl ProxyHttp for Gateway {
             session.respond_error(404).await?;
             return Ok(true);
         }
+        if self.config.build_admission_paused
+            && build_admission_request(session.req_header().method.as_str(), path)
+        {
+            let body = br#"{"error":"build admission is paused for maintenance"}"#;
+            let mut response = ResponseHeader::build(503, Some(4))?;
+            response.insert_header("Content-Type", "application/json")?;
+            response.insert_header("Content-Length", body.len().to_string())?;
+            response.insert_header("Cache-Control", "no-store")?;
+            response.insert_header("Retry-After", "60")?;
+            session
+                .write_error_response(response, body.as_slice().into())
+                .await?;
+            return Ok(true);
+        }
         if path == "/artifacts/object" {
             match self.object(session).await {
                 Ok((url, disposition)) => {
@@ -419,9 +433,152 @@ fn terminal_stream(path: &str) -> bool {
         .is_some_and(|id| !id.is_empty() && !id.contains('/'))
 }
 
+fn build_admission_request(method: &str, path: &str) -> bool {
+    if method != "POST" {
+        return false;
+    }
+    let parts: Vec<_> = path.split('/').collect();
+    matches!(
+        parts.as_slice(),
+        ["", "api", "v1", "releases", id, "builds"]
+            | ["", "api", "v1", "jobs", id, "retry"]
+            | ["", "api", "v1", "builds", id, "clarifications"]
+            if !id.is_empty()
+    )
+}
+
 #[cfg(test)]
 mod delivery_tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    fn gateway(paused: bool, internal: bool) -> Gateway {
+        let origin = url::Url::parse("https://upstream.invalid/").unwrap();
+        let config = Config {
+            profile: if internal { "internal" } else { "all" }.into(),
+            http_bind: "127.0.0.1:8080".into(),
+            tcp_bind: "127.0.0.1:8443".into(),
+            internal_bind: "127.0.0.1:8445".into(),
+            telemetry_bind: "127.0.0.1:8444".into(),
+            control: vec![origin.clone()],
+            registry: vec![origin.clone()],
+            web: vec![origin.clone()],
+            device: vec![],
+            telemetry: vec![],
+            object_origin: origin,
+            token: "unused-in-local-filter-test".into(),
+            max_http: 8,
+            max_terminal: 8,
+            max_tcp: 8,
+            max_internal: 8,
+            max_telemetry: 8,
+            build_admission_paused: paused,
+            tls_cert: None,
+            tls_key: None,
+            internal_tls_cert: None,
+            internal_tls_key: None,
+        };
+        Gateway {
+            config,
+            readiness: Readiness::new(0),
+            next: AtomicUsize::new(0),
+            http: reqwest::Client::new(),
+            requests: Arc::new(tokio::sync::Semaphore::new(8)),
+            terminals: Arc::new(tokio::sync::Semaphore::new(8)),
+            manifests: tokio::sync::Semaphore::new(8),
+            ca: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn paused_admission_returns_retryable_json_without_an_upstream() {
+        let (mut client, server) = tokio::io::duplex(4096);
+        client
+            .write_all(b"POST /api/v1/releases/id/builds HTTP/1.1\r\nHost: local\r\nContent-Length: 0\r\n\r\n")
+            .await
+            .unwrap();
+        let mut session = Session::new_h1(Box::new(server));
+        session.read_request().await.unwrap();
+        let mut ctx = Context::default();
+        assert!(
+            gateway(true, false)
+                .request_filter(&mut session, &mut ctx)
+                .await
+                .unwrap()
+        );
+        assert!(ctx.upstream.is_none());
+        drop(session);
+        let mut response = String::new();
+        client.read_to_string(&mut response).await.unwrap();
+        let normalized = response.to_ascii_lowercase();
+        assert!(normalized.starts_with("http/1.1 503"));
+        assert!(normalized.contains("retry-after: 60\r\n"));
+        assert!(normalized.contains("cache-control: no-store\r\n"));
+        assert!(normalized.contains("content-type: application/json\r\n"));
+        assert!(response.ends_with("{\"error\":\"build admission is paused for maintenance\"}"));
+    }
+
+    #[tokio::test]
+    async fn drain_preserves_reads_cancel_and_internal_receipts() {
+        for (paused, internal, method, path) in [
+            (false, false, "POST", "/api/v1/releases/id/builds"),
+            (true, false, "GET", "/api/v1/releases/id/builds"),
+            (true, false, "POST", "/api/v1/builds/id/cancel"),
+            (true, false, "POST", "/api/v1/projects/id/refs"),
+            (true, true, "POST", "/internal/planning/event"),
+        ] {
+            let (mut client, server) = tokio::io::duplex(4096);
+            client
+                .write_all(
+                    format!("{method} {path} HTTP/1.1\r\nHost: local\r\nContent-Length: 0\r\n\r\n")
+                        .as_bytes(),
+                )
+                .await
+                .unwrap();
+            let mut session = Session::new_h1(Box::new(server));
+            session.read_request().await.unwrap();
+            let mut ctx = Context::default();
+            assert!(
+                !gateway(paused, internal)
+                    .request_filter(&mut session, &mut ctx)
+                    .await
+                    .unwrap(),
+                "{method} {path}"
+            );
+            assert_eq!(ctx.upstream.unwrap().host_str(), Some("upstream.invalid"));
+        }
+    }
+
+    #[test]
+    fn admission_pause_matches_only_planning_creating_requests() {
+        for path in [
+            "/api/v1/releases/release-id/builds",
+            "/api/v1/jobs/job-id/retry",
+            "/api/v1/builds/build-id/clarifications",
+        ] {
+            assert!(build_admission_request("POST", path), "{path}");
+            for method in ["GET", "HEAD", "PUT", "PATCH", "DELETE", "OPTIONS"] {
+                assert!(!build_admission_request(method, path), "{method} {path}");
+            }
+        }
+        for path in [
+            "/api/v1/builds/build-id/cancel",
+            "/api/v1/builds/build-id/activity",
+            "/api/v1/builds",
+            "/api/v1/projects/project-id/releases",
+            "/api/v1/projects/project-id/refs",
+            "/api/v1/operations/operation-id/retry",
+            "/api/v1/emissary-updates/update-id/retry",
+            "/api/v1/projects/project-id/notification-webhooks/hook/deliveries/id/retry",
+            "/internal/planning/event",
+            "/internal/planning/v1/prepare/ready",
+            "/healthz",
+            "/api/v1/releases//builds",
+            "/api/v1/releases/release-id/builds/other",
+        ] {
+            assert!(!build_admission_request("POST", path), "{path}");
+        }
+    }
     #[test]
     fn content_disposition_accepts_only_bounded_safe_delivery_names() {
         assert_eq!(

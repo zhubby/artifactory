@@ -300,6 +300,7 @@ response! { BuildSummary {
     target_requirements: Value,
     planning_context: Value,
     source_manifest_id: Option<Uuid>,
+    source_preparation_version: i16,
     revision_count: i32,
     clarification: Option<Value>,
     current_plan_id: Option<Uuid>,
@@ -334,6 +335,7 @@ response! { BuildEnvelope {
     target_requirements: Value,
     planning_context: Value,
     source_manifest_id: Option<Uuid>,
+    source_preparation_version: i16,
     revision_count: i32,
     clarification: Option<Value>,
     current_plan_id: Option<Uuid>,
@@ -514,6 +516,8 @@ pub struct PlanningRuntime {
     pub generation: i64,
     pub calls: u32,
     pub usage: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preparation: Option<Value>,
 }
 
 response! { PlanningEvent {

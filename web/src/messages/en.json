@@ -415,7 +415,7 @@
     "createRelease": "Create internal release",
     "version": "Version name",
     "ref": "Git reference",
-    "refHint": "The platform pins the commit. Each task fetches its own source, submodules and LFS for read-only AI analysis.",
+    "refHint": "The platform pins the commit. The planning Pod prepares source, submodules and LFS once for read-only AI analysis. Later execution tasks check out the manifest independently.",
     "platforms": "Build targets",
     "platformsHint": "Select target platforms, or let AI choose from the goal and node capabilities.",
     "parameters": "Build parameters (JSON)",
@@ -745,7 +745,7 @@
   },
   "ai": {
     "settings": "AI planning",
-    "settingsDescription": "The platform stores model settings and encrypted keys. Each planning task checks out the pinned commit, inspects source locally and submits a build plan.",
+    "settingsDescription": "The platform stores model settings and encrypted keys. The planning Pod prepares the pinned commit; AI reuses that local worktree and submits a build plan.",
     "models": "Model profiles",
     "addModel": "Add model",
     "editModel": "Edit model",
@@ -1226,7 +1226,8 @@
       "succeeded": "Completed",
       "failed": "Failed",
       "canceled": "Canceled",
-      "needs_input": "Input required"
+      "needs_input": "Input required",
+      "unknown": "Not confirmed"
     },
     "summary": {
       "sourceFailed": "Source preparation failed",
@@ -1249,7 +1250,7 @@
       "canceling": "The platform is waiting for every execution task to confirm it has stopped.",
       "needsInput": "Answer the planning question to continue preparing the plan.",
       "failed": "Find the failed step below, then inspect its plan or execution logs.",
-      "preparingSource": "The platform is resolving the source reference, pinning the commit and inspecting repository content.",
+      "preparingSource": "The platform pins the commit, then the planning Pod prepares and verifies the final worktree, submodules and LFS before AI starts.",
       "replanning": "The platform is revising the plan using failure evidence. Previous execution history remains available.",
       "planning": "AI is inspecting source and build requirements to prepare an executable plan.",
       "waiting": "The plan is confirmed. The platform is matching targets to authorized devices or image builder pools.",
@@ -1303,11 +1304,40 @@
       "image_finished": "Image build ended",
       "artifact_registered": "File artifact registered",
       "image_registered": "Image candidate registered",
-      "build_finished": "Build ended"
+      "build_finished": "Build ended",
+      "source_fetch": "Fetch pinned source",
+      "source_submodules": "Prepare nested submodules",
+      "source_lfs": "Download and verify LFS objects",
+      "source_verify": "Verify source worktree",
+      "source_ready": "Confirm planning worktree readiness",
+      "source_resolved": "Source reference pinned",
+      "source_local_ready": "Planning Pod source ready",
+      "planning_started": "AI source analysis and planning started"
     },
     "eventStarted": "Started",
     "eventQueued": "Queued",
-    "failedAction": "Failed action"
+    "failedAction": "Failed action",
+    "generation": "Execution generation",
+    "preparation": {
+      "title": "Planning Pod source preparation",
+      "hint": "The planning Pod prepares source once. AI reads that same worktree. Each step reflects recorded activity.",
+      "generation": "Generation {count}",
+      "pinOnly": "The commit is pinned; worktree readiness is confirmed separately.",
+      "noRecord": "No record",
+      "readyAt": "Worktree ready",
+      "startedAt": "AI started",
+      "modelWaiting": "AI waits for this generation’s worktree. Source preparation does not consume model time.",
+      "unconfirmed": "The current Pod’s preparation state has not been confirmed.",
+      "steps": {
+        "fetch": "Fetch pinned commit",
+        "submodules": "Prepare nested submodules",
+        "lfs": "Download and verify LFS",
+        "verify": "Verify final worktree",
+        "manifest": "Persist immutable manifest",
+        "ready": "Confirm this generation is ready"
+      },
+      "modelQueued": "This generation’s source is ready. Waiting for AI to acquire the task."
+    }
   },
   "audit": {
     "tab": "AI audit",

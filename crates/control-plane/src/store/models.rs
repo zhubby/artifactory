@@ -191,6 +191,12 @@ pub(super) struct PlanningRun {
     pub model_config: toasty::Json<serde_json::Value>,
     #[default(Vec::<String>::new())]
     pub failed_targets: Vec<String>,
+    #[column(type = jsonb)]
+    #[default(toasty::Json(serde_json::json!({})))]
+    pub source_preparation: toasty::Json<serde_json::Value>,
+    #[column(type = jsonb)]
+    #[default(toasty::Json(serde_json::json!([])))]
+    pub source_preparation_events: toasty::Json<serde_json::Value>,
 }
 
 #[derive(Debug, toasty::Model)]

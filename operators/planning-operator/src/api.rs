@@ -111,6 +111,8 @@ fn source_timeout() -> u32 {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct PlanningRunSpec {
+    #[serde(default)]
+    pub source_required: bool,
     pub run_id: String,
     pub project_id: String,
     #[schemars(range(min = 1))]

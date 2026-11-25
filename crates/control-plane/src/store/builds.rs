@@ -1,7 +1,7 @@
 //! ```text
 //! [INPUT]: 依赖租户构建、镜像准入和执行结果索引。
-//! [OUTPUT]: 读取 Release 构建快照、正式交付名与执行结果。
-//! [POS]: 构建结果查询与失败任务重试边界；对象正文由接口层读取。
+//! [OUTPUT]: 读取构建快照、交付名与执行结果，按锁后时钟记录取消。
+//! [POS]: 构建查询、取消与重试边界；对象正文由接口层读取。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! ```
 use super::ControlStore;
@@ -114,11 +114,11 @@ impl ControlStore {
             params![id],
         )
         .await?;
-        sql::execute(&mut transaction, "UPDATE planning_runs SET state='canceled',finished_at=now() WHERE build_id=$1 AND state IN ('queued','leased')", params![id]).await?;
+        sql::execute(&mut transaction, "UPDATE planning_runs SET state='canceled',finished_at=clock_timestamp() WHERE build_id=$1 AND state IN ('queued','leased')", params![id]).await?;
         if ["resolving", "planning", "replanning", "needs_input"].contains(&status.as_str()) {
             sql::execute(
                 &mut transaction,
-                "UPDATE builds SET status='canceled',finished_at=now() WHERE id=$1",
+                "UPDATE builds SET status='canceled',finished_at=clock_timestamp() WHERE id=$1",
                 params![id],
             )
             .await?;

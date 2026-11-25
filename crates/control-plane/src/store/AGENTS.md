@@ -4,7 +4,7 @@
 mod.rs: 组合持久化接口、租户作用域和迁移。
 notifications/: 按当前授权读取账户收件箱，投影聚合版本并保护已读水位。
 auth.rs: 查询登录账户并维护认证状态。
-dto.rs: 定义公开业务响应、安全规划摘要、节点识别与验签证据投影。
+dto.rs: 定义源码准备协议版本、公开业务响应、安全规划摘要与验签证据投影。
 dashboard.rs: 校验统计参数，按当前租户和可见项目读取完整窗口概览。
 dashboard.sql: 以窄投影和统一读取时刻计算自然日、状态摘要与近期构建活动。
 dashboard_tests.rs: 验证全量构建、状态分母、归档活动、空范围与夏令时边界。
@@ -17,23 +17,25 @@ signing_execution.rs: 锁定当前授权并执行材料领取及最终证据登�
 tenancy.rs: 锁定租户权限并校验资源范围。
 lifecycle.rs: 围栏租户准入，排空终端租约并维护归档、删除与 Release 清单。
 lifecycle_cleanup.rs: 等待终端回收窗口，按删除清单清除业务状态与签名密文。
-builds.rs: 创建构建，读取原生及镜像 Release、制品与日志游标。
+builds.rs: 查询构建与制品，锁定构建后记录取消时刻并重试失败任务。
 executions.rs: 以兼容取消外键的写锁维护节点 session、事件与不可变制品登记。
 scheduling.rs: 分配任务、汇总构建并对两类执行失败发起有限修订。
 failures.rs: 统一最新失败诊断；镜像按构建源码和目标计划排除旧执行。
 releases.rs: 创建版本元数据、更新说明，复核原生设备授权并冻结镜像默认池和构建输入。
 release_publication.rs: 冻结交付清单、正式文件名和 OCI 摘要白名单。
-planning.rs: 读取固定规划上下文、计划和两类执行器的失败日志。
+planning.rs: 读取固定规划上下文与执行日志，按锁后时钟保存计划终态。
 planning_management.rs: 写入模型方案、澄清及对话查询上下文。
 placements.rs: 保存节点候选并校验分配条件。
 replication.rs: 协调副本归属和持久化唤醒。
-planning_bridge.rs: 投影冻结镜像池和两类失败诊断，按 generation 和终态围栏保存调用与用量。
-sources.rs: 以构建为归属固定源码 CR UID、pin 和清单，隔离取消与失败传播。
+planning_bridge.rs: 围栏 generation 与终态，保存调用、用量和诊断，以锁后时钟记录完成。
+sources.rs: 以构建为归属固定 CR UID 与根提交，接纳轻量解析并授权准备材料。
+source_preparation.rs: 原子绑定清单，单调保存 Pod 摘要，补齐乱序和迟到历史。
+source_preparation_tests.rs: 验证清单接纳、乱序重放、迟到历史与锁等待取消围栏。
 sources_tests.rs: 验证 CR UID、执行围栏、事务幂等和独立构建源码取消。
-source_progress_tests.rs: 验证阶段重放、执行围栏和安全诊断持久化。
+source_progress_tests.rs: 验证阶段重放、执行围栏、安全诊断和独立源码准备摘要。
 source_progress.rs: 在现有源码锁与执行围栏内幂等追加有界阶段记录。
 build_activity.rs: 按当前租户读取有界构建过程，不读取秘密数据。
-build_activity.sql: 合并真实源码、规划、执行和归档时间，标注历史缺失。
+build_activity.sql: 合并真实源码与规划动作；独立投影准备摘要，避免时间线截断丢失 ready 证据。
 releases_tests.rs: 验证版本元数据、设备授权准入、源码隔离与交付封存围栏。
 lookups.rs: 读取调度、构建和授权对象。
 node_metadata.rs: 记录启动元数据和能力摘要。

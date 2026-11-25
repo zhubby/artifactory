@@ -134,7 +134,10 @@ async fn source_preparation_storage_faults_return_retryable_503_before_and_after
             .unwrap();
         assert_eq!(response.status(), 200);
         let value: Value = response.json().await.unwrap();
-        assert_eq!(value["manifest"], "material-fixture");
+        assert_eq!(
+            value["manifest"],
+            s.store.read_run(run).await.unwrap()["source_manifest"]
+        );
         for stale in [
             Execution {
                 run_id: Uuid::new_v4(),
@@ -220,7 +223,7 @@ async fn large_source_manifest_survives_intent_acquire_and_material_http() {
     assert!(size > 2 * 1024 * 1024 && size <= 4 * 1024 * 1024);
     let mut input = intent(run);
     input.source_manifest_id = Some(source.id);
-    input.source_digest = Some(source.digest);
+    input.source_digest = Some(source.digest.clone());
     input.context = json!({"source_manifest":manifest});
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
@@ -245,7 +248,7 @@ async fn large_source_manifest_survives_intent_acquire_and_material_http() {
     };
     s.store.register_execution(execution.clone()).await.unwrap();
     s.store.prepare_execution(&execution).await.unwrap();
-    let material = json!({"manifest":manifest,"credentials":[]});
+    let material = json!({"manifest":manifest,"credentials":[],"frozen_tags":{}});
     let app = Router::new()
         .route(
             "/internal/planning/source-material",
@@ -264,6 +267,10 @@ async fn large_source_manifest_survives_intent_acquire_and_material_http() {
         Err(_) => panic!("valid preparation was rejected"),
     };
     assert_eq!(prepared, material);
+    s.store
+        .preparation_ready(&execution, source.id, &source.digest)
+        .await
+        .unwrap();
     let acquired = s.store.acquire_execution(execution, &url).await.unwrap();
     assert_eq!(acquired["task"]["context"]["source_manifest"], manifest);
     coordinator.abort();

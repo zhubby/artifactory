@@ -23,6 +23,7 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 use uuid::Uuid;
+mod preparation;
 type ApiResult<T> = artifactory_service_transport::error::Result<Json<T>>;
 #[derive(Clone)]
 pub struct Coordinator {
@@ -64,6 +65,11 @@ pub fn router(state: Coordinator, token: String) -> Router {
     let runner = Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/v1/prepare", post(prepare))
+        .route("/v1/prepare/pin", post(preparation::pin))
+        .route("/v1/prepare/commit", post(preparation::commit))
+        .route("/v1/prepare/ready", post(preparation::ready))
+        .route("/v1/prepare/progress", post(preparation::progress))
+        .route("/v1/prepare/fail", post(preparation::fail))
         .route("/v1/acquire", post(acquire))
         .route("/v1/heartbeat", post(heartbeat))
         .route("/v1/report", post(report))
@@ -119,21 +125,7 @@ pub async fn put_intent(state: &Coordinator, value: Value) -> Result<Value> {
         Some(serde_json::from_value::<RunIntent>(value.clone())?)
     };
     if let Some(intent) = &intent {
-        let placement = intent.context["purpose"] == "placement";
-        ensure!(
-            placement
-                || (intent.source_manifest_id.is_some()
-                    && intent
-                        .source_digest
-                        .as_deref()
-                        .is_some_and(|digest| digest.len() == 64
-                            && digest.bytes().all(|b| b.is_ascii_hexdigit()))),
-            "fixed source manifest required"
-        );
-        ensure!(
-            intent.source_manifest_id.is_some() == intent.source_digest.is_some(),
-            "incomplete source identity"
-        );
+        crate::store::preparation::validate_intent_source(intent)?;
         ensure!(
             (1..=100).contains(&intent.model.max_calls)
                 && (30..=3600).contains(&intent.model.timeout_seconds),
@@ -249,8 +241,17 @@ pub async fn prepare_material(
         return Err(ApiError::Forbidden);
     }
     preparation_ready(s, execution).await?;
-    let material = s.control.post("/internal/planning/source-material",&json!({"run_id":execution.run_id,"generation":execution.generation,"pod_uid":execution.uid,"namespace":execution.namespace,"service_account":account})).await.map_err(|_|ApiError::Unavailable)?;
+    let mut material:Value = s.control.post("/internal/planning/source-material",&json!({"run_id":execution.run_id,"generation":execution.generation,"pod_uid":execution.uid,"pod_name":execution.name,"namespace":execution.namespace,"service_account":account})).await.map_err(|_|ApiError::Unavailable)?;
     preparation_ready(s, execution).await?;
+    let run = s
+        .store
+        .read_run(execution.run_id)
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    material["frozen_tags"] = run["source_frozen_tags"].clone();
+    if run["source_manifest"].is_object() {
+        material["manifest"] = run["source_manifest"].clone();
+    }
     Ok(material)
 }
 async fn preparation_ready(

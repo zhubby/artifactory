@@ -29,6 +29,19 @@ pub(super) struct Run {
     pub report_sequence: i64,
     pub grant_hash: Option<String>,
     pub grant_ciphertext: Option<String>,
+    #[column(type = jsonb)]
+    pub source_manifest: Option<toasty::Json<serde_json::Value>>,
+    #[column(type = jsonb)]
+    #[default(toasty::Json(serde_json::json!({})))]
+    pub source_frozen_tags: toasty::Json<serde_json::Value>,
+    pub source_commit_event: Option<Uuid>,
+    #[default(false)]
+    pub source_bound: bool,
+    #[column(type = jsonb)]
+    pub source_ready_execution: Option<toasty::Json<serde_json::Value>>,
+    #[column(type = jsonb)]
+    #[default(toasty::Json(serde_json::json!({})))]
+    pub source_preparation: toasty::Json<serde_json::Value>,
 }
 
 #[derive(Debug, toasty::Model)]

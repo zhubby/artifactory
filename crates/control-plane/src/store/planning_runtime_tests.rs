@@ -71,15 +71,26 @@ impl Fixture {
         sql::execute(&mut pool.clone(), "INSERT INTO projects(id,tenant_id,name,repository_url) VALUES($1,$2,'runtime','https://example.com/repo.git')", params![project,tenant]).await?;
         sql::execute(&mut pool.clone(), "WITH fixture_release AS (INSERT INTO releases(id,project_id,version) VALUES(gen_random_uuid(),$2,'0.0.0-test.'||replace($1::text,'-','')) RETURNING id,version) INSERT INTO builds(id,project_id,requested_ref,status,source_repository_url,release_id,release_version) VALUES($1,$2,'main','planning','https://example.com/repo.git',(SELECT id FROM fixture_release),(SELECT version FROM fixture_release))", params![build,project]).await?;
         sql::execute(&mut pool.clone(), "INSERT INTO planning_runs(id,build_id,purpose,model_config) VALUES($1,$2,'initial','{}')", params![run,build]).await?;
+        let manifest = artifactory_source_checkout::SourceManifest::new(
+            source,
+            vec![artifactory_source_checkout::SourceRepository {
+                path: String::new(),
+                upstream_url: "https://example.com/repo.git".into(),
+                commit_sha: "a".repeat(40),
+                tags: Default::default(),
+                lfs_objects: vec![],
+            }],
+        )?;
         let intent = RunIntent {
+            source_resolution: None,
             tenant_id: tenant,
             run_id: run,
             build_id: build,
             project_id: project,
             version: 1,
             source_manifest_id: Some(source),
-            source_digest: Some("a".repeat(64)),
-            context: json!({}),
+            source_digest: Some(manifest.digest.clone()),
+            context: json!({"source_manifest":manifest}),
             pool: "default".into(),
             model: ModelConfiguration {
                 id: Uuid::new_v4(),
@@ -112,9 +123,23 @@ impl Fixture {
             namespace: "test".into(),
         };
         coordinator.register_execution(execution.clone()).await?;
+        coordinator
+            .preparation_ready(&execution, source, &manifest.digest)
+            .await?;
         let acquired = coordinator
             .acquire_execution(execution, "https://planning.invalid")
             .await?;
+        for event in coordinator.deliveries().await? {
+            coordinator
+                .acknowledge_delivery(
+                    event.id,
+                    run,
+                    &event.kind,
+                    &event.payload,
+                    &json!({"accepted":true}),
+                )
+                .await?;
+        }
         let lease: Lease = serde_json::from_value(acquired["lease"].clone())?;
         let request = json!({"model":"test","messages":[]});
         coordinator
@@ -195,8 +220,17 @@ async fn model_reservations_are_visible_before_any_proposal_without_replacing_co
     assert_eq!(visible["runs"][0]["state"], "queued");
     assert_eq!(visible["runs"][0]["calls"], 0);
     assert_eq!(visible["runs"][0]["usage"], json!({}));
+    let mut runtime = visible["runs"][0]["runtime"].clone();
+    let preparation = runtime
+        .as_object_mut()
+        .unwrap()
+        .remove("preparation")
+        .unwrap();
+    assert_eq!(preparation["generation"], 1);
+    assert_eq!(preparation["pod_uid"], "pod-runtime");
+    assert!(preparation["ready_at"].is_string());
     assert_eq!(
-        visible["runs"][0]["runtime"],
+        runtime,
         json!({"status":"running","generation":1,"calls":1,"usage":{"input":7,"output":3,"cacheRead":0,"totalTokens":10,"cost":0.25}})
     );
     let serialized = visible.to_string();

@@ -586,3 +586,81 @@ async fn lfs_is_fetched_and_checked_without_shared_storage() {
     assert_eq!(fs::read_dir(root.path().join("auth")).unwrap().count(), 0);
     server.abort();
 }
+
+#[tokio::test]
+async fn freezing_tags_fetches_only_missing_objects_and_removes_extra_refs() {
+    let root = tempfile::tempdir().unwrap();
+    let upstream = root.path().join("repo.git");
+    fs::create_dir(&upstream).unwrap();
+    git(&upstream, &["init", "-b", "main"]);
+    fs::write(upstream.join("source.txt"), "source").unwrap();
+    git(&upstream, &["add", "."]);
+    git(&upstream, &["commit", "-m", "source"]);
+    let commit = git(&upstream, &["rev-parse", "HEAD"]);
+    git(
+        &upstream,
+        &["tag", "-a", "frozen", "-m", "fixed annotation"],
+    );
+    let tag = git(&upstream, &["rev-parse", "refs/tags/frozen"]);
+    let requests = Arc::new(AtomicUsize::new(0));
+    let app = Router::new().fallback(any(backend)).with_state(Fixture {
+        root: root.path().into(),
+        requests: requests.clone(),
+        lfs_objects: Default::default(),
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let checkout = Checkout::new(Options {
+        auth_root: root.path().join("auth"),
+        ..Default::default()
+    });
+    let desc = SourceRepository {
+        path: String::new(),
+        upstream_url: format!("http://{address}/repo.git"),
+        commit_sha: commit.clone(),
+        tags: Default::default(),
+        lfs_objects: vec![],
+    };
+    let target = root.path().join("source");
+    let cancel = CancellationToken::new();
+    let mut repository = checkout
+        .discover_repository(
+            &desc,
+            &[],
+            None,
+            &target,
+            artifactory_source_checkout::TagSelection::Frozen,
+            &cancel,
+        )
+        .await
+        .unwrap()
+        .repository;
+    assert!(repository.tags.is_empty());
+    repository.tags.insert("frozen".into(), tag.clone());
+    git(&target, &["tag", "extra"]);
+    let before = requests.load(Ordering::SeqCst);
+    checkout
+        .freeze_local_tags(&repository, &[], None, &target, &cancel)
+        .await
+        .unwrap();
+    assert!(
+        requests.load(Ordering::SeqCst) > before,
+        "missing annotation must be fetched"
+    );
+    assert_eq!(git(&target, &["tag", "--list"]), "frozen");
+    assert_eq!(git(&target, &["rev-parse", "refs/tags/frozen"]), tag);
+    assert_eq!(git(&target, &["rev-parse", "HEAD"]), commit);
+    let before = requests.load(Ordering::SeqCst);
+    checkout
+        .freeze_local_tags(&repository, &[], None, &target, &cancel)
+        .await
+        .unwrap();
+    assert_eq!(
+        requests.load(Ordering::SeqCst),
+        before,
+        "existing tag objects need no fetch"
+    );
+    assert_eq!(fs::read_dir(root.path().join("auth")).unwrap().count(), 0);
+    server.abort();
+}

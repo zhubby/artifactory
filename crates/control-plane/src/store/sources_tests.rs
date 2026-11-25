@@ -9,6 +9,9 @@ use artifactory_source_checkout::{GitCredential, SourceManifest, SourceRepositor
 use serde_json::json;
 use uuid::Uuid;
 
+#[path = "source_preparation_tests.rs"]
+mod preparation;
+
 #[path = "source_progress_tests.rs"]
 mod progress;
 

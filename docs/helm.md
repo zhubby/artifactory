@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 主 Chart、独立 Operator Chart 与持久身份。
-[OUTPUT]: 定义最低 Kubernetes 1.28 的安装、端口整合与统一网关。
+[OUTPUT]: 定义 Kubernetes 1.28 安装、入口排空和统一网关。
 [POS]: Kubernetes 部署操作入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -183,6 +183,22 @@ kubectl --context YOUR_KIND_CONTEXT -n artifactory port-forward \
 浏览器访问 `http://127.0.0.1:31080`。Agent 注册使用 `127.0.0.1:31443`、本次 `pki/ca.pem`，并仅在这个开发环境添加 `--allow-http-uploads`。使用实际节点 IP 时，更新 `console.publicUrl`，并将该 IP 加入 `--grpc-host`。浏览器和制品票据使用同一个公开网关地址；不要随意切换 localhost / IP。
 
 ## 检查与升级
+
+### 源码准备协议切换
+
+源码准备复用在业务库和规划库追加 `2026112501`。该升级要求现有任务排空。先单独滚动支持接单开关的 Gateway 镜像，再打开 `gateway.buildAdmissionPaused=true`。确认所有 Gateway 副本使用新镜像且该值为 `true` 后，再检查活跃任务。不要在同一次滚动升级中同时打开开关和迁移 Control。
+
+开关映射到 `ARTIFACTORY_GATEWAY_BUILD_ADMISSION_PAUSED`，默认 `false`。暂停时，以下公开请求返回 `503`、`Retry-After: 60` 和不可缓存的 JSON 错误：
+
+- `POST /api/v1/releases/{id}/builds`
+- `POST /api/v1/jobs/{id}/retry`
+- `POST /api/v1/builds/{id}/clarifications`
+
+读取、取消、引用查询、已有任务的内部回执和健康检查继续工作。开关不取消已有任务，也不阻止设备升级与通知重试。新构建只能通过公开 Gateway 接入；不要向外暴露 Control 的私有 Service。
+
+排空后，确认没有活跃源码、规划、原生和镜像任务，并备份业务库、规划库、当前 Helm values 与固定镜像摘要。协调升级 Control、Telemetry、Planning Operator、Source Preparer、Planning Worker 和 Web。迁移完成后，用真实构建验证新协议、后续执行和临时卷回收。最后将 `gateway.buildAdmissionPaused=false`，等待全部 Gateway 副本完成滚动，再验证公开入口接单。
+
+迁移后的恢复必须同时考虑两库和运行协议。不要只回滚旧 Control 或旧 Source Preparer 镜像。需要恢复旧版本时，先停止接单并排空新任务，再使用已验证的两库备份与对应的组件版本恢复。
 
 ### 整合已有 Service
 

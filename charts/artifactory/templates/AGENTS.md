@@ -6,7 +6,7 @@ _helpers.tpl: 统一新实例的资源前缀、私有 SeaweedFS 地址与安全�
 config.yaml: 生成非敏感服务配置。
 control-plane.yaml: 部署无状态 Control，注入镜像默认池、通知出口及私有 Secret。
 terminal-relay.yaml: 保留同命名空间 HTTP/gRPC，限定同实例 Control 间终端私有流。
-gateway.yaml: 部署双副本统一网关，隔离端口、来源和终端长连接预算。
+gateway.yaml: 部署双副本统一网关，注入接单开关并隔离端口、来源和终端预算。
 image-dispatch.yaml: 授权 Control 只读查 BuilderPool、下发 CR、核验停机并调用 TokenReview。集群角色名区分前缀和命名空间。
 ingress.yaml: 单域名接入统一 Pingora HTTP 入口。
 persistence.yaml: 只创建数据库和对象存储的 PVC。

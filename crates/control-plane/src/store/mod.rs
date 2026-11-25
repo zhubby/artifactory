@@ -21,6 +21,7 @@ mod planning_management;
 mod projects;
 mod signing;
 mod signing_execution;
+mod source_preparation;
 mod source_progress;
 pub use signing_execution::SigningAccess;
 

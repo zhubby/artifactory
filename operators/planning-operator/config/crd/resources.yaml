@@ -277,6 +277,9 @@ spec:
               sourceManifestId:
                 nullable: true
                 type: string
+              sourceRequired:
+                default: false
+                type: boolean
             required:
             - generation
             - pool

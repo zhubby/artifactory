@@ -1,17 +1,36 @@
 -- [INPUT]: 依赖受权构建、源码阶段及既有规划、设备和归档历史。
--- [OUTPUT]: 投影有界过程事件与不含秘密的源码摘要。
+-- [OUTPUT]: 投影有界过程事件与独立于时间线截断的源码准备摘要。
 -- [POS]: 只读取业务事实；不重建已丢失的历史日志。
 -- [PROTOCOL]: Update this header on change, then check AGENTS.md
 WITH build AS MATERIALIZED (
-    SELECT id,status,created_at,finished_at,source_manifest_id FROM builds WHERE id=$1 AND tenant_id=$2
+    SELECT id,status,created_at,finished_at,source_manifest_id,source_preparation_version FROM builds WHERE id=$1 AND tenant_id=$2
 ), source AS MATERIALIZED (
     SELECT s.id,s.status,s.created_at,s.progress,s.source_execution,s.result,s.pinned_ref_oid,
-           coalesce(m.created_at,CASE WHEN s.status IN ('failed','canceled') THEN b.finished_at END) AS finished_at
+           CASE WHEN b.source_preparation_version=2 AND s.status='succeeded' THEN
+               (SELECT min(r.created_at) FROM planning_runs r WHERE r.build_id=b.id AND r.purpose='initial')
+               ELSE coalesce(m.created_at,CASE WHEN s.status IN ('failed','canceled') THEN b.finished_at END) END AS finished_at
     FROM source_tasks s JOIN build b ON s.build_id=b.id
     LEFT JOIN source_manifests m ON m.id=b.source_manifest_id
 ), runs AS MATERIALIZED (
-    SELECT r.id,r.state,r.purpose,r.calls,r.created_at,r.finished_at,r.model_config->>'model' AS model
+    SELECT r.id,r.state,r.purpose,r.calls,r.created_at,r.finished_at,r.model_config->>'model' AS model,
+           r.source_preparation,r.source_preparation_events
     FROM planning_runs r JOIN build b ON r.build_id=b.id
+), preparation AS MATERIALIZED (
+    SELECT r.id,jsonb_strip_nulls(jsonb_build_object(
+               'run_id',r.id,'generation',r.source_preparation->'generation',
+               'pod_uid',r.source_preparation->'pod_uid','pod_name',r.source_preparation->'pod_name',
+               'current_stage',r.source_preparation->'current_stage','current_state',coalesce(r.source_preparation->'current_state',r.source_preparation->'state'),
+               'ready_at',r.source_preparation->'ready_at','started_at',r.source_preparation->'started_at',
+               'updated_at',r.source_preparation->'updated_at',
+               'diagnostic',CASE WHEN r.source_preparation->'diagnostic' IS NOT NULL THEN jsonb_build_object(
+                   'stage',r.source_preparation#>'{diagnostic,stage}','code',r.source_preparation#>'{diagnostic,code}') END
+           )) AS summary,
+           (SELECT coalesce(jsonb_agg(jsonb_build_object(
+               'execution',jsonb_build_object('generation',e#>'{execution,generation}','uid',e#>'{execution,uid}','name',e#>'{execution,name}'),
+               'progress',jsonb_build_object('sequence',e#>'{progress,sequence}','stage',e#>'{progress,stage}','state',e#>'{progress,state}'),
+               'created_at',e->'created_at')),'[]'::jsonb)
+            FROM jsonb_array_elements(r.source_preparation_events) e WHERE e->'progress' IS NOT NULL) AS events
+    FROM runs r WHERE r.purpose<>'placement' ORDER BY r.created_at DESC,r.id DESC LIMIT 1
 ), jobs AS MATERIALIZED (
     SELECT j.id,j.target,j.created_at FROM jobs j JOIN build b ON j.build_id=b.id
 ), attempts AS MATERIALIZED (
@@ -31,10 +50,29 @@ WITH build AS MATERIALIZED (
            jsonb_build_object('actor',e->>'pod','attempt',e->'attempt','sequence',e->'sequence')
     FROM source s CROSS JOIN LATERAL jsonb_array_elements(s.progress) e
     UNION ALL
-    SELECT 'source/finished','source','source_finished',s.status,s.finished_at,
+    SELECT 'source/finished','source',CASE WHEN s.status='succeeded' AND (SELECT source_preparation_version FROM build)=2 THEN 'source_resolved' ELSE 'source_finished' END,s.status,s.finished_at,
            jsonb_build_object('actor','source','commit_sha',s.pinned_ref_oid,
                'code',s.result#>'{diagnostic,code}','source_stage',s.result#>'{diagnostic,stage}')
     FROM source s WHERE s.finished_at IS NOT NULL
+    UNION ALL
+    SELECT 'preparation/'||r.id||'/'||(e#>>'{execution,generation}')||'/'||(e#>>'{progress,sequence}'),
+           'source','source_'||(e#>>'{progress,stage}'),
+           CASE WHEN e#>>'{progress,state}'='completed' THEN 'succeeded' ELSE 'running' END,
+           (e->>'created_at')::timestamptz,
+           jsonb_build_object('actor',e#>>'{execution,name}','generation',e#>'{execution,generation}',
+               'sequence',e#>'{progress,sequence}','run_id',r.id)
+    FROM runs r CROSS JOIN LATERAL jsonb_array_elements(r.source_preparation_events) e
+    WHERE e->'progress' IS NOT NULL
+    UNION ALL
+    SELECT 'preparation/'||r.id||'/'||(e#>>'{execution,generation}')||'/ready','source','source_local_ready','succeeded',
+           (e->>'created_at')::timestamptz,
+           jsonb_build_object('actor',e#>>'{execution,name}','run_id',r.id,'generation',e#>'{execution,generation}')
+    FROM runs r CROSS JOIN LATERAL jsonb_array_elements(r.source_preparation_events) e WHERE e->>'kind'='source_local_ready'
+    UNION ALL
+    SELECT 'planning/'||r.id||'/'||(e#>>'{execution,generation}')||'/started','planning','planning_started','running',
+           (e->>'created_at')::timestamptz,
+           jsonb_build_object('actor','planner','run_id',r.id,'generation',e#>'{execution,generation}')
+    FROM runs r CROSS JOIN LATERAL jsonb_array_elements(r.source_preparation_events) e WHERE e->>'kind'='planning_started'
     UNION ALL
     SELECT 'planning/'||r.id||'/created','planning','planning_queued','queued',r.created_at,
            jsonb_build_object('actor','planner','purpose',r.purpose,'model',r.model,'run_id',r.id) FROM runs r
@@ -96,9 +134,12 @@ SELECT jsonb_build_object(
     'generated_at',clock_timestamp(),
     'source',(SELECT jsonb_build_object('status',s.status,'created_at',s.created_at,'finished_at',s.finished_at,
         'attempt',s.source_execution->'attempt','pod',s.source_execution->'name',
-        'history_available',jsonb_array_length(s.progress)>0,
-        'diagnostic',CASE WHEN s.result->'diagnostic' IS NOT NULL THEN jsonb_build_object(
-            'stage',s.result#>'{diagnostic,stage}','code',s.result#>'{diagnostic,code}') END) FROM source s),
+        'protocol_version',b.source_preparation_version,
+        'preparation',(SELECT p.summary||jsonb_build_object('run_id',p.id,'events',p.events) FROM preparation p),
+        'history_available',jsonb_array_length(s.progress)>0 OR EXISTS(SELECT 1 FROM preparation p WHERE p.summary->'generation' IS NOT NULL),
+        'diagnostic',coalesce((SELECT p.summary->'diagnostic' FROM preparation p),
+            CASE WHEN s.result->'diagnostic' IS NOT NULL THEN jsonb_build_object(
+            'stage',s.result#>'{diagnostic,stage}','code',s.result#>'{diagnostic,code}') END)) FROM source s),
     'events',coalesce((SELECT jsonb_agg(jsonb_build_object('id',id,'stage',stage,'action',action,'status',status,
         'created_at',at,'details',details) ORDER BY at,id) FROM displayed),'[]'::jsonb),
     'truncated',(SELECT count(*)>500 FROM limited)

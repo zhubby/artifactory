@@ -19,7 +19,7 @@ notifications/: 投影事务事件，隔离邮件与 Webhook 投递，扫描持�
 ota.rs: 校验节点升级包并协调升级状态。
 pki.rs: 创建服务和设备证书。
 planning.rs: 按冻结镜像默认池补全计划，复验本次构建的完整目标合同。
-planning_runtime.rs: 为最新活动规划运行投影安全摘要，隔离上游不可用。
+planning_runtime.rs: 为最新活动运行投影用量与当前 Pod 源码准备白名单，隔离旧代与上游不可用。
 recipe.rs: 校验应用分类、执行宿主和原生配方目标。
 planning_bridge.rs: 传递受权意图和材料；事务外查池，临时故障保留事件重试。材料出口复核 Coordinator 身份。
 scheduler.rs: 注入固定版本，分配任务并验证停止后的交付推广。

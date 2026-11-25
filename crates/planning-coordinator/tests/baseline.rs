@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖隔离 PostgreSQL、旧版本基线身份和当前初始化基线。
-//! [OUTPUT]: 验证新基线身份与误连旧数据库时的无损拒绝。
+//! [INPUT]: 依赖隔离 PostgreSQL、旧基线与当前追加迁移。
+//! [OUTPUT]: 验证迁移身份与误连旧数据库时的无损拒绝。
 //! [POS]: 全新部署边界回归；不实现旧数据库迁移。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_planning_coordinator::store::MIGRATIONS;
@@ -7,7 +7,7 @@ use artifactory_planning_coordinator::store::MIGRATIONS;
 #[test]
 fn new_baseline_has_a_distinct_identity() {
     let versions: Vec<_> = MIGRATIONS.migrations().iter().map(|m| m.id()).collect();
-    assert_eq!(versions, vec![2026111901]);
+    assert_eq!(versions, vec![2026111901, 2026112501]);
 }
 
 #[tokio::test]

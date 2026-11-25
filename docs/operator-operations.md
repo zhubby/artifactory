@@ -64,21 +64,21 @@ Operator 在创建 Pod 前校验 Control、规划协调器、`kubernetes.default
 
 ## 源码任务
 
-Control 创建 `SourceTask`，固定 `taskId`、`tenantId`、`projectId`、`purpose`、`pool` 与 `timeoutSeconds`。Control 在数据库中固定 CR UID，并单调绑定 attempt、Pod 名和 UID。旧 attempt 不能再次领取材料、固定引用或提交结果。`purpose=resolve` 解析固定 commit、子模块、tag 和 LFS 元数据，默认总期限 900 秒。`purpose=refs` 查询分支与 tag，由 Control 设置 30 秒总期限。任务取消只能从 false 改为 true。
+Control 创建 `SourceTask`，固定 `taskId`、`tenantId`、`projectId`、`purpose`、`pool` 与 `timeoutSeconds`。Control 在数据库中固定 CR UID，并单调绑定 attempt、Pod 名和 UID。旧 attempt 不能再次领取材料、固定引用或提交结果。`purpose=resolve` 只解析并固定根 commit，默认总期限 900 秒，不检出仓库。`purpose=refs` 查询分支与 tag，由 Control 设置 30 秒总期限。任务取消只能从 false 改为 true。
 
 Operator 在创建 Pod 前，持久化 attempt、唯一 Pod 名和总 deadline。Pod 名包含任务 ID、attempt 与 CR UID 摘要，直接归属 SourceTask，使用 `restartPolicy: Never`。`status.execution` 保存 Pod UID、节点和停止证据。Pod 使用 `artifactory-source-preparer` ServiceAccount，投影 audience 为 `artifactory-source-prepare` 的短期 token。源码准备进程向 `/internal/source/prepare` 领取材料。Control 使用 TokenReview 验证 token，再核对 Pod→SourceTask 的 owner UID、执行台账和业务任务状态。仓库凭据只进入任务进程与内存卷。
 
-解析首次得到的 ref OID 和每个仓库的 tag 集合通过 `/internal/source/prepare/pin` 固定。重试读取首次固定值。准备进程通过 `/internal/source/prepare/commit` 提交元数据。数据库保存固定清单与摘要，不保存 Git 对象、LFS 对象或工作树。
+解析首次得到的 ref OID 通过 `/internal/source/prepare/pin` 固定。重试读取首次固定值，通过 `/internal/source/prepare/commit` 提交根 commit。规划 Pod 负责生成源码清单。数据库不保存 Git 对象、LFS 对象或工作树。
 
 ## 规划任务
 
-`PlanningRun` 固定 `runId`、`projectId`、`generation`、`pool`、`sourceManifestId` 和 `sourceDigest`。Operator 同时限制池和项目的实际执行数；未知和清理中的旧执行仍计费。选机任务没有源码清单，因此不创建源码 init container。
+`PlanningRun` 固定 `runId`、`projectId`、`generation`、`pool`、`sourceRequired`、`sourceManifestId` 和 `sourceDigest`。Operator 同时限制池和项目的实际执行数；未知和清理中的旧执行仍计费。选机任务没有源码清单，因此不创建源码 init container。
 
-有源码的规划 Pod 先执行 `artifactory-source-preparer checkout`。init container 通过规划协调器 `/v1/prepare` 领取固定源码与凭据，每次从原 Git/LFS 上游重新拉取。`/workspace` 是有大小限额的 emptyDir。init 专属 token、SSH key 和 askpass 材料不挂载给主容器。
+`sourceRequired=true` 或已有清单的规划 Pod 先执行 `artifactory-source-preparer prepare`。初始运行可以尚无清单。init 通过 `/v1/prepare` 领取固定根 commit 与凭据，在最终源码目录检出子模块、冻结 tags 并验证 LFS。Coordinator 与 Control 完成清单绑定后，init 登记当前完整 Pod 身份的本地就绪。新 generation 从原 Git/LFS 上游重建同一固定清单，不共享源码。`/workspace` 是有大小限额的 emptyDir。init 专属 token、SSH key 和 askpass 材料不挂载给主容器。
 
 主容器只读挂载 `/workspace/source` 和 `/workspace/source-manifest.json`，工具在本地读取文件。模型调用、预算、租约和结果仍由规划协调器控制。AI 对话、日志、计划及明确产出的制品允许持久保存。
 
-源码 init 非零退出、Worker 终止或 Pod 失败时，Operator 向规划协调器 `/v1/execution-failed` 提交已登记的完整执行身份。规划协调器以 generation 和 Pod UID 拒绝旧回报。已领取租约的 Worker 以退出码 `75` 报告结果未知，规划协调器使用原预算和截止时间有限重试。其他故障通过持久 outbox 结束业务构建。Worker 已提交的提案和已有终态不被覆盖。源码准备期间任务显示 `Provisioning`，主 Worker acquire 后显示 `Running`。
+源码 init 非零退出、Worker 终止或 Pod 失败时，Operator 向规划协调器 `/v1/execution-failed` 提交已登记的完整执行身份。规划协调器以 generation 和 Pod UID 拒绝旧回报。已领取租约的 Worker 以退出码 `75` 报告结果未知，规划协调器使用原预算和截止时间有限重试。其他故障通过持久 outbox 结束业务构建。Worker 已提交的提案和已有终态不被覆盖。源码准备期间任务显示 `Provisioning`，主 Worker acquire 后显示 `Running`。模型 deadline 从首次 acquire 开始；准备期间调用次数保持零。每代 provisioning 最多 900 秒，最多三个 generation。
 
 ## 清理与故障
 

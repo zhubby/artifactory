@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定环境配置与受限源地址。
-//! [OUTPUT]: 提供统一监听、独立连接预算和固定后端。
+//! [OUTPUT]: 提供统一监听、接单暂停、连接预算和固定后端。
 //! [POS]: 统一模式隔离公开、内部、设备和遥测端口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
@@ -22,6 +22,7 @@ pub struct Config {
     pub max_tcp: usize,
     pub max_internal: usize,
     pub max_telemetry: usize,
+    pub build_admission_paused: bool,
     pub tls_cert: Option<String>,
     pub tls_key: Option<String>,
     pub internal_tls_cert: Option<String>,
@@ -110,6 +111,8 @@ impl Config {
             max_tcp: count("ARTIFACTORY_GATEWAY_DEVICE_CONNECTIONS", "4096")?,
             max_internal: count("ARTIFACTORY_GATEWAY_INTERNAL_CONNECTIONS", "1024")?,
             max_telemetry: count("ARTIFACTORY_GATEWAY_TELEMETRY_CONNECTIONS", "4096")?,
+            build_admission_paused: env("ARTIFACTORY_GATEWAY_BUILD_ADMISSION_PAUSED", "false")
+                .parse()?,
             tls_cert,
             tls_key,
             internal_tls_cert,

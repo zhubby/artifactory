@@ -9,12 +9,13 @@ fn pods_have_single_attempt_and_bound_identity_without_provider_secrets() {
     let mut run = PlanningRun::new(
         "run-a",
         PlanningRunSpec {
+            source_required: true,
             run_id: "00000000-0000-0000-0000-000000000001".into(),
             project_id: "00000000-0000-0000-0000-000000000002".into(),
             generation: 2,
             pool: "default".into(),
-            source_manifest_id: Some("manifest".into()),
-            source_digest: Some("a".repeat(64)),
+            source_manifest_id: None,
+            source_digest: None,
         },
     );
     run.metadata.uid = Some("cr-uid".into());
@@ -87,6 +88,10 @@ fn pods_have_single_attempt_and_bound_identity_without_provider_secrets() {
             .unwrap()
             .iter()
             .any(|mount| mount["name"] == "source-auth")
+    );
+    assert_eq!(
+        value["spec"]["initContainers"][0]["command"],
+        serde_json::json!(["artifactory-source-preparer", "prepare"])
     );
     assert!(!value.to_string().contains("api_key"));
     assert!(value.to_string().contains("artifactory-planning"));

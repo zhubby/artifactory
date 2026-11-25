@@ -22,12 +22,12 @@ pub fn planning_pod(
     owner.block_owner_deletion = Some(false);
     let name = &execution.name;
     let mut value = json!({"apiVersion":"v1","kind":"Pod","metadata":{"name":name,"namespace":run.namespace(),"ownerReferences":[owner],"finalizers":[pods::POD_FINALIZER],"labels":{"app.kubernetes.io/name":"artifactory-planning-worker","artifactory.dev/run":run.spec.run_id,"artifactory.dev/planning-pool":run.spec.pool,"artifactory.dev/project":run.spec.project_id,"artifactory.dev/generation":run.spec.generation.to_string(),"artifactory.dev/attempt":execution.attempt.to_string()}},"spec":{"serviceAccountName":"artifactory-planning-worker","automountServiceAccountToken":false,"restartPolicy":"Never","securityContext":{"runAsNonRoot":true,"runAsUser":10001,"runAsGroup":10001,"fsGroup":10001,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"planning-worker","image":pool.spec.image,"imagePullPolicy":pool.spec.image_pull_policy,"command":["node","dist/pod-main.js"],"securityContext":{"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]}},"env":[{"name":"ARTIFACTORY_RUN_ID","value":run.spec.run_id},{"name":"ARTIFACTORY_RUN_GENERATION","value":run.spec.generation.to_string()},{"name":"ARTIFACTORY_PLANNING_URL","value":pool.spec.coordinator_url},{"name":"POD_NAME","valueFrom":{"fieldRef":{"fieldPath":"metadata.name"}}},{"name":"POD_UID","valueFrom":{"fieldRef":{"fieldPath":"metadata.uid"}}},{"name":"POD_NAMESPACE","valueFrom":{"fieldRef":{"fieldPath":"metadata.namespace"}}},{"name":"ARTIFACTORY_POD_TOKEN","value":"/var/run/artifactory/token"}],"resources":{"requests":{"cpu":pool.spec.cpu,"memory":pool.spec.memory},"limits":{"cpu":"2","memory":"2Gi"}},"volumeMounts":[{"name":"identity","mountPath":"/var/run/artifactory","readOnly":true},{"name":"tmp","mountPath":"/tmp"}]}],"volumes":[{"name":"identity","projected":{"sources":[{"serviceAccountToken":{"audience":"artifactory-planning","expirationSeconds":600,"path":"token"}}]}},{"name":"tmp","emptyDir":{}}]}});
-    if run.spec.source_manifest_id.is_some() {
+    if run.spec.source_required || run.spec.source_manifest_id.is_some() {
         let pod = &mut value["spec"];
         let mut init = json!({
             "name":"source", "image":pool.spec.source_preparer_image,
             "imagePullPolicy":pool.spec.image_pull_policy,
-            "command":["artifactory-source-preparer", "checkout"],
+            "command":["artifactory-source-preparer", "prepare"],
             "env":[
                 {"name":"ARTIFACTORY_SOURCE_PREPARE_URL","value":format!("{}/v1/prepare",pool.spec.coordinator_url.trim_end_matches('/'))},
                 {"name":"ARTIFACTORY_SOURCE_IDENTITY","value":json!({"run_id":run.spec.run_id,"generation":run.spec.generation}).to_string()},

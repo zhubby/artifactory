@@ -1,9 +1,9 @@
 //! [INPUT]: 依赖规划运行时回执、源码清单和任务状态。
-//! [OUTPUT]: 读取冻结镜像默认池，持久化回执与统计，投影两类失败并保护终态。
+//! [OUTPUT]: 读取冻结镜像默认池，持久化回执与统计，按锁后时钟投影终态。
 //! [POS]: 业务状态与独立 Coordinator 之间的事务边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use artifactory_database::{params, sql};
 use serde_json::{Value, json};
 use toasty::stmt::Type;
@@ -15,7 +15,7 @@ pub(crate) struct PlanningReceipt {
 }
 pub(crate) struct PlanningRunSource {
     pub build_id: Uuid,
-    pub source_manifest_id: Uuid,
+    pub source_manifest_id: Option<Uuid>,
     pub planning_context: Value,
 }
 pub(crate) struct PlanningDelivery {
@@ -31,6 +31,7 @@ pub(crate) struct PlanningIntentContext {
     pub project_id: Uuid,
     pub source_manifest_id: Option<Uuid>,
     pub digest: Option<String>,
+    pub source_resolution: Option<artifactory_planning_protocol::SourceResolution>,
     pub model: Value,
     pub context: Value,
 }
@@ -160,7 +161,7 @@ impl ControlStore {
         let placement = row.decode::<String>("purpose")? == "placement";
         let active = !row.decode::<bool>("cancel_requested")?
             && ["queued", "leased"].contains(&row.decode::<String>("state")?.as_str())
-            && (["planning", "replanning"]
+            && (["planning", "replanning", "resolving"]
                 .contains(&row.decode::<String>("build_status")?.as_str())
                 || placement
                     && ["queued", "running"]
@@ -191,9 +192,56 @@ impl ControlStore {
         } else if !active {
             json!({"error":"build canceled or planning superseded"})
         } else if kind == "failed" {
+            if let Some(value) = payload.get("diagnostic") {
+                let diagnostic: artifactory_source_checkout::SourceDiagnostic =
+                    serde_json::from_value(value.clone())?;
+                let execution: artifactory_planning_protocol::Execution =
+                    serde_json::from_value(payload["execution"].clone())?;
+                anyhow::ensure!(
+                    execution.run_id == run && execution.generation > 0,
+                    "source diagnostic execution mismatch"
+                );
+                let mut summary: Value = sql::scalar(
+                    &mut tx,
+                    "SELECT source_preparation FROM planning_runs WHERE id=$1",
+                    params![run],
+                )
+                .await?;
+                let generation = summary["generation"].as_i64().unwrap_or(0);
+                anyhow::ensure!(execution.generation >= generation, "stale source diagnosis");
+                if execution.generation > generation {
+                    summary = json!({});
+                } else {
+                    anyhow::ensure!(
+                        summary["pod_uid"].is_null()
+                            || (summary["pod_uid"] == execution.uid
+                                && summary["pod_name"] == execution.name
+                                && (summary["namespace"].is_null()
+                                    || summary["namespace"] == execution.namespace)),
+                        "source diagnostic Pod changed"
+                    );
+                }
+                for (key, value) in [
+                    ("run_id", json!(run)),
+                    ("generation", json!(execution.generation)),
+                    ("pod_uid", json!(execution.uid)),
+                    ("pod_name", json!(execution.name)),
+                    ("namespace", json!(execution.namespace)),
+                    ("current_stage", json!(diagnostic.stage)),
+                    ("diagnostic", json!(diagnostic)),
+                ] {
+                    summary[key] = value;
+                }
+                sql::execute(
+                    &mut tx,
+                    "UPDATE planning_runs SET source_preparation=$2 WHERE id=$1",
+                    params![run, summary],
+                )
+                .await?;
+            }
             sql::execute(
                 &mut tx,
-                "UPDATE planning_runs SET state='failed',error=$2,finished_at=now() WHERE id=$1",
+                "UPDATE planning_runs SET state='failed',error=$2,finished_at=clock_timestamp() WHERE id=$1",
                 params![
                     run,
                     payload["error"].as_str().unwrap_or("Pi planning failed")
@@ -202,7 +250,7 @@ impl ControlStore {
             .await?;
             sql::execute(
                 &mut tx,
-                "UPDATE builds SET status='failed',error=$2,finished_at=now() WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM planning_runs WHERE id=$3 AND purpose='placement')",
+                "UPDATE builds SET status='failed',error=$2,finished_at=clock_timestamp() WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM planning_runs WHERE id=$3 AND purpose='placement')",
                 params![
                     build,
                     payload["error"].as_str().unwrap_or("Pi planning failed"),run
@@ -249,7 +297,7 @@ impl ControlStore {
                 .await?;
                 sql::execute(
                     &mut tx,
-                    "UPDATE planning_runs SET state='needs_input',finished_at=now() WHERE id=$1",
+                    "UPDATE planning_runs SET state='needs_input',finished_at=clock_timestamp() WHERE id=$1",
                     params![run],
                 )
                 .await?;
@@ -339,26 +387,38 @@ impl ControlStore {
     }
 
     pub(crate) async fn planning_intent_context(&self, run: Uuid) -> Result<PlanningIntentContext> {
-        let row=sql::record(&mut self.pool.clone(), "SELECT r.id,r.build_id,r.purpose,r.state,r.failed_targets,r.model_config,r.lease_hash,r.lease_expires_at,r.deadline_at,r.calls,r.usage,r.error,r.created_at,r.finished_at,r.tenant_id,b.project_id,b.source_manifest_id,b.goal,b.requested_ref,b.commit_sha,b.parameters,b.target_requirements,b.planning_context,b.revision_count,ss.digest,ss.manifest FROM planning_runs r JOIN builds b ON b.id=r.build_id JOIN source_manifests ss ON ss.id=b.source_manifest_id WHERE r.id=$1", params![run], &[("id", Type::Uuid),("build_id", Type::Uuid),("purpose", Type::String),("state", Type::String),("failed_targets", Type::List(Box::new(Type::String))),("model_config", Type::String),("lease_hash", Type::String),("lease_expires_at", Type::Timestamp),("deadline_at", Type::Timestamp),("calls", Type::I32),("usage", Type::String),("error", Type::String),("created_at", Type::Timestamp),("finished_at", Type::Timestamp),("tenant_id",Type::Uuid),("project_id", Type::Uuid),("source_manifest_id", Type::Uuid),("goal", Type::String),("requested_ref", Type::String),("commit_sha", Type::String),("parameters", Type::String),("target_requirements", Type::String),("planning_context", Type::String),("revision_count", Type::I32),("digest", Type::String),("manifest", Type::String)]).await?;
+        let row=sql::record(&mut self.pool.clone(), "SELECT r.id,r.build_id,r.purpose,r.state,r.failed_targets,r.model_config,r.lease_hash,r.lease_expires_at,r.deadline_at,r.calls,r.usage,r.error,r.created_at,r.finished_at,r.tenant_id,b.project_id,b.source_manifest_id,b.goal,b.requested_ref,b.commit_sha,b.parameters,b.target_requirements,b.planning_context,b.revision_count,ss.digest,ss.manifest FROM planning_runs r JOIN builds b ON b.id=r.build_id LEFT JOIN source_manifests ss ON ss.id=b.source_manifest_id WHERE r.id=$1", params![run], &[("id", Type::Uuid),("build_id", Type::Uuid),("purpose", Type::String),("state", Type::String),("failed_targets", Type::List(Box::new(Type::String))),("model_config", Type::String),("lease_hash", Type::String),("lease_expires_at", Type::Timestamp),("deadline_at", Type::Timestamp),("calls", Type::I32),("usage", Type::String),("error", Type::String),("created_at", Type::Timestamp),("finished_at", Type::Timestamp),("tenant_id",Type::Uuid),("project_id", Type::Uuid),("source_manifest_id", Type::Uuid),("goal", Type::String),("requested_ref", Type::String),("commit_sha", Type::String),("parameters", Type::String),("target_requirements", Type::String),("planning_context", Type::String),("revision_count", Type::I32),("digest", Type::String),("manifest", Type::String)]).await?;
         let build: Uuid = row.decode("build_id")?;
         let current:Option<Value>=sql::optional_scalar(&mut self.pool.clone(), "SELECT contents FROM plan_revisions WHERE id=(SELECT current_plan_id FROM builds WHERE id=$1)", params![build]).await?;
         let failed:Vec<Value>=sql::scalars(&mut self.pool.clone(), &format!("WITH failures AS ({}) SELECT jsonb_strip_nulls(jsonb_build_object('target',target,'error',error,'failure_kind',failure_kind,'attempt_id',attempt_id,'image_execution_id',image_execution_id)) FROM failures WHERE build_id=$1 ORDER BY target", super::failures::LATEST_FAILURES), params![build]).await?;
         let placement = row.decode::<String>("purpose")? == "placement";
-        let source_manifest_id: Uuid = row.decode("source_manifest_id")?;
-        let context = json!({"purpose":row.decode::<String>("purpose")?,"placement_task":self.placement_context(run).await?,"build_id":build,"goal":row.decode::<Option<String>>("goal")?,"ref":row.decode::<String>("requested_ref")?,"commit":row.decode::<Option<String>>("commit_sha")?,"parameters":row.decode::<Value>("parameters")?,"target_requirements":row.decode::<Value>("target_requirements")?,"project_context":row.decode::<Value>("planning_context")?,"source_manifest":if placement{None}else{Some(row.decode::<Value>("manifest")?)},"revision":row.decode::<i32>("revision_count")?,"current_plan":current,"failed_targets":failed,"nodes":self.planning_nodes(build).await?});
+        let source_manifest_id: Option<Uuid> = row.decode("source_manifest_id")?;
+        let context = json!({"purpose":row.decode::<String>("purpose")?,"placement_task":self.placement_context(run).await?,"build_id":build,"goal":row.decode::<Option<String>>("goal")?,"ref":row.decode::<String>("requested_ref")?,"commit":row.decode::<Option<String>>("commit_sha")?,"parameters":row.decode::<Value>("parameters")?,"target_requirements":row.decode::<Value>("target_requirements")?,"project_context":row.decode::<Value>("planning_context")?,"source_manifest":if placement{None}else{row.decode::<Option<Value>>("manifest")?},"revision":row.decode::<i32>("revision_count")?,"current_plan":current,"failed_targets":failed,"nodes":self.planning_nodes(build).await?});
         Ok(PlanningIntentContext {
             tenant_id: row.decode("tenant_id")?,
             build_id: build,
             project_id: row.decode("project_id")?,
-            source_manifest_id: if placement {
-                None
-            } else {
-                Some(source_manifest_id)
-            },
+            source_manifest_id: if placement { None } else { source_manifest_id },
             digest: if placement {
                 None
             } else {
-                Some(row.decode("digest")?)
+                row.decode("digest")?
+            },
+            source_resolution: if !placement && source_manifest_id.is_none() {
+                Some(artifactory_planning_protocol::SourceResolution {
+                    source_id: build,
+                    repository_url: sql::scalar(
+                        &mut self.pool.clone(),
+                        "SELECT source_repository_url FROM builds WHERE id=$1",
+                        params![build],
+                    )
+                    .await?,
+                    commit_sha: row
+                        .decode::<Option<String>>("commit_sha")?
+                        .context("commit not pinned")?,
+                })
+            } else {
+                None
             },
             model: row.decode("model_config")?,
             context,

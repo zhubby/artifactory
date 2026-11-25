@@ -1,12 +1,13 @@
 /**
  * [INPUT]: 依赖真实构建页、阶段夹具和受权过程接口。
- * [OUTPUT]: 验证源码失败、历史缺失、静默刷新与耗时容器边界。
+ * [OUTPUT]: 验证本代准备围栏、源码失败与响应式无障碍。
  * [POS]: 观察者过程视图的浏览器回归，不创建真实构建。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { build, fixtureAPI, project, release, tenantURL } from "./fixtures";
+import { buildStages, sourceSteps, type BuildActivity } from "../../src/lib/build-activity";
 
 const failure = { ...build, status: "failed", commit_sha: null, source_manifest_id: null, current_plan_id: null,
   jobs: [], artifacts: [], created_at:"2026-11-24T08:25:09Z", finished_at: "2026-11-24T08:27:10Z", error: "Git operation timed out" };
@@ -18,6 +19,53 @@ const activity = {
     { id: "source/finished", stage: "source", action: "source_finished", status: "failed", created_at: failure.finished_at, details: { actor: "source", code: "timeout" } }],
   planning: { plans: [], runs: [], events: [] },
 };
+
+const preparation = { run_id: "run-1", generation: 1, pod_uid: "pod-1", pod_name: "planning-1",
+  current_stage: "lfs", current_state: "started" as const, events: [
+    { execution: { generation: 1, uid: "pod-1", name: "planning-1" }, progress: { sequence: 1, stage: "fetch", state: "completed" as const }, created_at: "2026-11-25T12:00:00Z" },
+    { execution: { generation: 1, uid: "pod-1", name: "planning-1" }, progress: { sequence: 2, stage: "lfs", state: "started" as const }, created_at: "2026-11-25T12:00:01Z" },
+  ] };
+const pending = { ...build, source_preparation_version: 2, status: "planning", current_plan_id: null, jobs: [], artifacts: [], finished_at: null };
+const pendingActivity: BuildActivity = { ...activity, events: [], source: { ...activity.source, status: "succeeded", diagnostic: null, protocol_version: 2, preparation },
+  planning: { plans: [], events: [], runs: [{ id: "run-1", state: "leased", purpose: "initial", calls: 0, usage: {}, error: null,
+    runtime: { status: "provisioning", generation: 1, calls: 0, usage: {}, preparation } }] } };
+
+test("v2 stage evidence requires current Pod readiness and AI start records", () => {
+  expect(buildStages(pending, pendingActivity).slice(0, 2)).toEqual([{ key: "source", state: "running" }, { key: "planning", state: "not_started" }]);
+  const ready = structuredClone(pendingActivity);
+  ready.planning.runs[0].runtime!.preparation = { ...preparation, ready_at: "2026-11-25T12:01:00Z" };
+  expect(buildStages(pending, ready).slice(0, 2)).toEqual([{ key: "source", state: "succeeded" }, { key: "planning", state: "queued" }]);
+  ready.planning.runs[0].runtime!.preparation!.started_at = "2026-11-25T12:01:01Z";
+  expect(buildStages(pending, ready)[1].state).toBe("running");
+  ready.planning.runs[0].runtime!.generation = 2;
+  expect(buildStages(pending, ready).slice(0, 2)).toEqual([{ key: "source", state: "running" }, { key: "planning", state: "not_started" }]);
+  expect(sourceSteps(pending, ready).every(step => step.state === "not_started")).toBe(true);
+  delete ready.planning.runs[0].runtime;
+  ready.planning.runs[0].runtime_unavailable = true;
+  expect(buildStages(pending, ready)[0].state).toBe("running");
+  const terminal = structuredClone(pendingActivity);
+  terminal.planning.runs[0].state = "failed";
+  terminal.source!.preparation = { run_id: "run-1" };
+  expect(buildStages({ ...pending, status: "failed" }, terminal)[0].state).toBe("unknown");
+  terminal.source!.preparation.diagnostic = { stage: "fetch", code: "timeout" };
+  expect(buildStages({ ...pending, status: "failed" }, terminal)[0].state).toBe("failed");
+});
+
+test("v2 observer sees local preparation without treating a pinned commit as ready", async ({ page }) => {
+  await fixtureAPI(page);
+  await page.route(`**/api/v1/projects/by-slug/${project.slug}/builds/${build.number}`, route => route.fulfill({ json: pending }));
+  await page.route(`**/api/v1/builds/${build.id}/activity`, route => route.fulfill({ json: pendingActivity }));
+  await page.goto(tenantURL(`/projects/${project.slug}/releases/${release.id}/builds/${build.number}`));
+  const process = page.getByRole("region", { name: "构建过程", exact: true });
+  await expect(process.getByRole("heading", { name: "正在准备源码", exact: true })).toBeVisible();
+  const source = page.getByRole("region", { name: "规划 Pod 源码准备", exact: true });
+  await expect(source.getByText("planning-1", { exact: true })).toBeVisible();
+  await expect(source.locator("li").filter({ hasText: "下载固定提交" })).toContainText("已完成");
+  await expect(source.locator("li").filter({ hasText: "下载与校验 LFS" })).toContainText("进行中");
+  await expect(source.locator("li").filter({ hasText: "准备嵌套子模块" })).toContainText("暂无记录");
+  await expect(source.getByText("提交已固定，目录就绪须单独确认。", { exact: true })).toBeVisible();
+  await expect(process.getByRole("button", { name: /AI 规划/ })).toContainText("尚未开始");
+});
 
 test("source timeout identifies the failed action and explicitly leaves later stages unstarted", async ({ page }) => {
   await fixtureAPI(page);
@@ -78,8 +126,8 @@ for (const locale of ["zh-CN", "en"] as const) for (const theme of ["light", "da
     await fixtureAPI(page);
     await page.context().addCookies([{ name: "artifactory-locale", value: locale, url: String(info.project.use.baseURL) }]);
     await page.addInitScript(value => localStorage.setItem("artifactory-theme", value), theme);
-    await page.route(`**/api/v1/projects/by-slug/${project.slug}/builds/${build.number}`, route => route.fulfill({ json: failure }));
-    await page.route(`**/api/v1/builds/${build.id}/activity`, route => route.fulfill({ json: activity }));
+    await page.route(`**/api/v1/projects/by-slug/${project.slug}/builds/${build.number}`, route => route.fulfill({ json: pending }));
+    await page.route(`**/api/v1/builds/${build.id}/activity`, route => route.fulfill({ json: pendingActivity }));
     await page.goto(tenantURL(`/projects/${project.slug}/releases/${release.id}/builds/${build.number}`));
     await expect(page.locator(".build-process-summary h2")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
@@ -93,3 +141,13 @@ for (const locale of ["zh-CN", "en"] as const) for (const theme of ["light", "da
     await page.screenshot({ path: info.outputPath(`${locale}-${theme}-build-process.png`), fullPage: true });
   });
 }
+
+test("v2 preparation stays inside a 320px viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await fixtureAPI(page);
+  await page.route(`**/api/v1/projects/by-slug/${project.slug}/builds/${build.number}`, route => route.fulfill({ json: pending }));
+  await page.route(`**/api/v1/builds/${build.id}/activity`, route => route.fulfill({ json: pendingActivity }));
+  await page.goto(tenantURL(`/projects/${project.slug}/releases/${release.id}/builds/${build.number}`));
+  await expect(page.getByRole("region", { name: "规划 Pod 源码准备", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+});

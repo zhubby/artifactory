@@ -43,3 +43,8 @@ snapshot_name = "0006_snapshot.toml"
 id = 2026112403
 name = "0007_terminals.sql"
 snapshot_name = "0007_snapshot.toml"
+
+[[migrations]]
+id = 2026112501
+name = "0008_source_preparation.sql"
+snapshot_name = "0008_snapshot.toml"

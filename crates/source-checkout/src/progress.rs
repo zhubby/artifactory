@@ -13,6 +13,11 @@ pub enum SourceStage {
     PinRef,
     Inspect,
     Manifest,
+    Fetch,
+    Submodules,
+    Lfs,
+    Verify,
+    Ready,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

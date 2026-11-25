@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖序列化、规划身份与固定源码清单。
-//! [OUTPUT]: 提供规划意图、执行故障、租约与规划事件契约。
+//! [INPUT]: 依赖序列化、规划身份与源码提交身份。
+//! [OUTPUT]: 提供待准备或固定清单的规划意图与执行围栏。
 //! [POS]: 控制平面、规划协调器与 Operator 的纯数据边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,8 @@ pub fn default_timeout() -> u32 {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunIntent {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_resolution: Option<SourceResolution>,
     pub tenant_id: Uuid,
     pub run_id: Uuid,
     pub build_id: Uuid,
@@ -109,4 +111,13 @@ pub struct PlanningEvent {
     pub generation: i64,
     pub kind: String,
     pub payload: Value,
+}
+
+/// 首次规划的固定根提交；完整清单由规划 init 生成。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceResolution {
+    pub source_id: Uuid,
+    pub repository_url: String,
+    pub commit_sha: String,
 }

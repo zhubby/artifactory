@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖中性主题和过程组件的语义类名。
- * [OUTPUT]: 提供当前动作、窄屏有界耗时和响应式事件时间线。
+ * [OUTPUT]: 提供源码子步骤、窄屏有界耗时和响应式事件时间线。
  * [POS]: 构建过程专属样式；轮询不触发布局动画。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -31,6 +31,18 @@
 .stage-running .build-process-stage-number,.stage-needs_input .build-process-stage-number { border-color: var(--foreground); color: var(--foreground); }
 .stage-not_started strong { color: var(--muted-foreground); }
 .build-process-history-note { margin: 12px 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.8; }
+.build-process-preparation { min-width: 0; margin-bottom: 24px; padding: 18px; border: 1px solid var(--border); border-radius: 6px; }
+.build-process-preparation header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+.build-process-preparation h3 { font-size: 13px; font-weight: 600; }
+.build-process-preparation p,.build-process-preparation header > span { margin-top: 7px; color: var(--muted-foreground); font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
+.build-process-preparation code { color: var(--foreground); font-size: 10px; overflow-wrap: anywhere; }
+.build-process-preparation ol { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 24px; padding: 16px 0 8px; list-style: none; }
+.build-process-preparation li { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: 11px; }
+.build-process-preparation li > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.build-process-preparation li small { flex-shrink: 0; color: var(--muted-foreground); font-size: 10px; }
+.build-process-preparation .build-process-stage-number { width: 22px; height: 22px; }
+.build-process-pinned { display: flex; flex-wrap: wrap; gap: 3px 10px; }
+.build-process-pinned small { flex-basis: 100%; }
 .build-process-detail-links { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 4px 0 28px; }
 .build-process-detail-links > button { gap: 8px; padding-inline: 0; color: var(--muted-foreground); }
 .build-process-timeline { min-width: 0; margin-bottom: 24px; }
@@ -67,6 +79,8 @@
 .build-process-error p { padding-bottom: 12px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; }
 @media (max-width:1199px) { .build-process-stage { gap: 7px; padding-inline: 7px; } .build-process-stage > svg { display: none; } }
 @media (max-width:767px) {
+  .build-process-preparation { padding: 14px; }
+  .build-process-preparation ol { grid-template-columns: minmax(0,1fr); gap: 12px; }
   .build-process-summary { flex-wrap: wrap; gap: 12px; padding-bottom: 20px; }
   .build-process-summary-icon { width: 34px; height: 34px; }
   .build-process-summary h2 { font-size: 18px; }

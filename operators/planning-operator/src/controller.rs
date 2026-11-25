@@ -560,6 +560,7 @@ pub async fn dispatch(ctx: &Context) -> Result<()> {
             let resource = PlanningRun::new(
                 &name,
                 PlanningRunSpec {
+                    source_required: descriptor["source_required"].as_bool().unwrap_or(false),
                     run_id: run.into(),
                     project_id: descriptor["project_id"]
                         .as_str()

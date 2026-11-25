@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 Pod 身份、任务 URL 和共享检出引擎。
-//! [OUTPUT]: 提供临时解析、引用查询和 init 检出命令。
+//! [OUTPUT]: 提供轻量解析、引用查询、规划准备和固定检出命令。
 //! [POS]: 每次任务的进程入口，不启动网络服务。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod task;
@@ -11,6 +11,7 @@ enum Mode {
     Resolve,
     Refs,
     Checkout,
+    Prepare,
 }
 #[derive(Parser)]
 struct Cli {

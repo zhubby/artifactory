@@ -158,7 +158,14 @@ async fn oversized_audit_failure_rolls_back_all_chunks_and_proposal() {
     for table in ["planning_messages", "planning_proposals", "planning_outbox"] {
         let count: i64 = sql::scalar(
             &mut s.pool.clone(),
-            &format!("SELECT count(*) FROM {table} WHERE run_id=$1"),
+            &format!(
+                "SELECT count(*) FROM {table} WHERE run_id=$1{}",
+                if table == "planning_outbox" {
+                    " AND kind='proposal'"
+                } else {
+                    ""
+                }
+            ),
             params![run],
         )
         .await

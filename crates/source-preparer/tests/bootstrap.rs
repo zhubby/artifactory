@@ -200,3 +200,124 @@ async fn a_lost_commit_ack_retries_the_same_metadata() {
     assert_eq!(commits[0]["refs"]["branches"][0]["oid"], sha);
     server.abort();
 }
+
+#[tokio::test]
+async fn resolve_pins_only_metadata_without_checkout() {
+    let root = tempfile::tempdir().unwrap();
+    let saved = Arc::new(Mutex::new(Value::Null));
+    let seen = saved.clone();
+    let mut response = material();
+    response.reference = "a".repeat(40);
+    let app = Router::new()
+        .route(
+            "/prepare",
+            post(move || {
+                let response = response.clone();
+                async move { Json(response) }
+            }),
+        )
+        .route(
+            "/prepare/progress",
+            post(|| async { Json(json!({"ok":true})) }),
+        )
+        .route(
+            "/prepare/pin",
+            post(|Json(v): Json<Value>| async move { Json(json!({"oid":v["pin"]["oid"]})) }),
+        )
+        .route(
+            "/prepare/commit",
+            post(move |Json(v): Json<Value>| {
+                let seen = seen.clone();
+                async move {
+                    *seen.lock().unwrap() = v["result"].clone();
+                    Json(json!({"ok":true}))
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let output = command(root.path(), &format!("http://{addr}/prepare"), "resolve")
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(*saved.lock().unwrap(), json!({"commit_sha":"a".repeat(40)}));
+    assert!(!root.path().join("source").exists());
+    server.abort();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn preparation_failure_reports_fetch_and_does_not_mark_local_ready() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let bin = root.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let script = bin.join("git");
+    std::fs::write(&script,"#!/bin/sh\nprintf 'Authentication failed for https://user:super-secret@private.example\\n' >&2\nexit 128\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let outcome = Arc::new(Mutex::new(Value::Null));
+    let saved = outcome.clone();
+    let ready = Arc::new(AtomicUsize::new(0));
+    let ready_count = ready.clone();
+    let mut response = material();
+    response.pinned_ref_oid = Some("a".repeat(40));
+    let app = Router::new()
+        .route(
+            "/prepare",
+            post(move || {
+                let response = response.clone();
+                async move { Json(response) }
+            }),
+        )
+        .route(
+            "/prepare/progress",
+            post(|| async { Json(json!({"ok":true})) }),
+        )
+        .route(
+            "/prepare/fail",
+            post(move |Json(body): Json<Value>| {
+                let saved = saved.clone();
+                async move {
+                    *saved.lock().unwrap() = body["diagnostic"].clone();
+                    Json(json!({"ok":true}))
+                }
+            }),
+        )
+        .route(
+            "/prepare/ready",
+            post(move || {
+                let ready = ready_count.clone();
+                async move {
+                    ready.fetch_add(1, Ordering::SeqCst);
+                    Json(json!({"ok":true}))
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let mut process = command(root.path(), &format!("http://{address}/prepare"), "prepare");
+    let inherited = std::env::var_os("PATH").unwrap();
+    let paths = std::iter::once(bin).chain(std::env::split_paths(&inherited));
+    process.env("PATH", std::env::join_paths(paths).unwrap());
+    let output = process.output().await.unwrap();
+    assert!(!output.status.success());
+    assert_eq!(
+        *outcome.lock().unwrap(),
+        json!({"stage":"fetch","code":"authentication"})
+    );
+    assert_eq!(ready.load(Ordering::SeqCst), 0);
+    assert!(!root.path().join("metadata.json").exists());
+    assert_eq!(
+        std::fs::read_dir(root.path().join("auth")).unwrap().count(),
+        0
+    );
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("super-secret"));
+    server.abort();
+}

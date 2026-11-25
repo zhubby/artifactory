@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖受权过程事件、构建快照与共享状态。
- * [OUTPUT]: 展示当前动作、五阶段状态和可展开的真实事件记录。
+ * [OUTPUT]: 展示本代源码子步骤、五阶段状态和真实动作记录。
  * [POS]: 构建详情的默认观察页；保留筛选、展开和终态补读。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -12,7 +12,7 @@ import { useUI } from "@/components/providers";
 import { ErrorBox, Loading, Status } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { useRemote } from "@/lib/api";
-import { buildStages, type ActivityEvent, type BuildActivity, type ProcessStage } from "@/lib/build-activity";
+import { buildStages, sourcePreparation, sourceSteps, type ActivityEvent, type BuildActivity, type ProcessStage } from "@/lib/build-activity";
 import { isBuildTerminal } from "@/lib/build-state";
 import type { Build } from "@/lib/types";
 import { elapsed } from "@/lib/utils";
@@ -25,6 +25,7 @@ function EventRow({ event }: { event: ActivityEvent }) {
   const fields = [
     [t("process.actor"), actor], [t("process.target"), details.target],
     [t("process.attempt"), details.attempt], [t("process.model"), details.model],
+    [t("process.generation"), details.generation],
     [t("process.purpose"), details.purpose ? t(`process.purposes.${details.purpose}`) : null],
     [t("process.revision"), details.revision], [t("process.calls"), details.calls],
     [t("process.step"), details.step], [t("process.phase"), details.phase],
@@ -54,7 +55,7 @@ function EventRow({ event }: { event: ActivityEvent }) {
 }
 
 export function BuildProcess({ build, navigate }: { build: Build; navigate: (tab: string) => void }) {
-  const { t, number } = useUI();
+  const { t, number, date } = useUI();
   const terminal = isBuildTerminal(build.status);
   const remote = useRemote<BuildActivity>(`/builds/${build.id}/activity`, terminal ? false : 3000);
   const previous = useRef(terminal);
@@ -66,7 +67,9 @@ export function BuildProcess({ build, navigate }: { build: Build; navigate: (tab
   const [limit, setLimit] = useState(12);
   const activity = remote.data;
   const stages = buildStages(build, activity);
-  const sourceFailed = stages[0].state === "failed" && !build.commit_sha;
+  const sourceFailed = stages[0].state === "failed";
+  const preparation = sourcePreparation(build, activity);
+  const version = build.source_preparation_version ?? activity?.source?.protocol_version ?? 1;
   const run = activity?.planning.runs.at(-1);
   const calls = run?.runtime?.calls ?? run?.calls ?? 0;
   const failed = stages.find(stage => stage.state === "failed");
@@ -77,7 +80,7 @@ export function BuildProcess({ build, navigate }: { build: Build; navigate: (tab
     : current?.key === "source" ? "preparingSource" : current?.key === "planning" ? build.status === "replanning" ? "replanning" : "planning"
     : current?.key === "dispatch" ? "waiting" : current?.key === "artifacts" ? "archiving" : "executing";
   const events = [...(activity?.events || [])].reverse().filter(event => !filter || event.stage === filter);
-  const diagnostic = activity?.source?.diagnostic;
+  const diagnostic = preparation?.diagnostic ?? activity?.source?.diagnostic;
   const historyMissing = activity?.source && !activity.source.history_available && terminal && !build.commit_sha;
   const outputCount = (build.artifacts?.length || 0) + (build.image_executions?.filter(image => image.operation === "build" && image.status === "succeeded" && image.root_digest).length || 0);
   return <section className="build-process" role="region" aria-label={t("process.title")}>
@@ -107,6 +110,21 @@ export function BuildProcess({ build, navigate }: { build: Build; navigate: (tab
         <ChevronRight size={14} aria-hidden="true" />
       </button>)}
     </nav>
+    {version >= 2 && <section className="build-process-preparation" aria-label={t("process.preparation.title")}>
+      <header><div><h3>{t("process.preparation.title")}</h3><p>{t("process.preparation.hint")}</p></div>
+        {preparation?.generation && <span>{t("process.preparation.generation", { count: preparation.generation })}</span>}
+      </header>
+      {build.commit_sha && <p className="build-process-pinned"><span>{t("process.commit")}</span><code>{build.commit_sha}</code><small>{t("process.preparation.pinOnly")}</small></p>}
+      <ol>{sourceSteps(build, activity).map(step => <li key={step.key} className={`stage-${step.state}`}>
+        <span className="build-process-stage-number" aria-hidden="true">{step.state === "succeeded" ? <Check size={13} /> : step.state === "failed" ? <X size={13} /> : <Clock3 size={12} />}</span>
+        <span>{t(`process.preparation.steps.${step.key}`)}</span><small>{t(step.state === "not_started" ? "process.preparation.noRecord" : `process.states.${step.state}`)}</small>
+      </li>)}</ol>
+      {preparation?.pod_name && <p>{t("process.actor")}: <code>{preparation.pod_name}</code></p>}
+      {preparation?.ready_at && <p>{t("process.preparation.readyAt")}: <time dateTime={preparation.ready_at}>{date(preparation.ready_at)}</time></p>}
+      {preparation?.started_at ? <p>{t("process.preparation.startedAt")}: <time dateTime={preparation.started_at}>{date(preparation.started_at)}</time></p>
+        : !terminal && <p>{t(preparation?.ready_at ? "process.preparation.modelQueued" : "process.preparation.modelWaiting")}</p>}
+      {!preparation?.generation && <p>{t("process.preparation.unconfirmed")}</p>}
+    </section>}
     {historyMissing && <p className="build-process-history-note">{t("process.historyMissing")}</p>}
     <div className="build-process-detail-links">
       <Button variant="ghost" size="sm" onClick={() => navigate("plan")}>{t("process.viewPlan")}<ArrowRight size={13} /></Button>

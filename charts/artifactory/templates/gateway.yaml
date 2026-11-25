@@ -1,4 +1,4 @@
-# [INPUT]: 固定服务入口、终端连接预算、令牌和内部 TLS 身份。
+# [INPUT]: 固定服务入口、接单开关、连接预算和内部 TLS 身份。
 # [OUTPUT]: 双副本统一网关、内部 HTTPS 和 Web 后端 Service。
 # [POS]: 同一进程监听公开 HTTP、设备透传和内部 HTTPS。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -39,6 +39,7 @@ spec:
           env:
             - {name: ARTIFACTORY_GATEWAY_PROFILE, value: "unified"}
             - {name: ARTIFACTORY_GATEWAY_ALLOW_HTTP_UPSTREAMS, value: 'true'}
+            - {name: ARTIFACTORY_GATEWAY_BUILD_ADMISSION_PAUSED, value: {{ .Values.gateway.buildAdmissionPaused | toString | quote }}}
             - {name: ARTIFACTORY_GATEWAY_HTTP_BIND, value: '0.0.0.0:8080'}
             - {name: ARTIFACTORY_GATEWAY_TCP_BIND, value: '0.0.0.0:8443'}
             - {name: ARTIFACTORY_GATEWAY_TELEMETRY_BIND, value: '0.0.0.0:8444'}

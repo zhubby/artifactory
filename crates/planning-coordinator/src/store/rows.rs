@@ -24,6 +24,12 @@ pub(super) fn run_fields() -> Vec<(&'static str, Type)> {
         ("created_at", Type::Timestamp),
         ("dispatched_at", Type::Timestamp),
         ("updated_at", Type::Timestamp),
+        ("source_manifest", Type::String),
+        ("source_frozen_tags", Type::String),
+        ("source_commit_event", Type::Uuid),
+        ("source_bound", Type::Bool),
+        ("source_ready_execution", Type::String),
+        ("source_preparation", Type::String),
     ]
 }
 

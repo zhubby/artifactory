@@ -2,7 +2,7 @@
 > L2 | Parent: ../../AGENTS.md
 
 Chart.yaml: 声明应用与 Chart 版本，以及 Kubernetes 1.28 最低版本。
-values.yaml: 定义网关、镜像默认池、连接预算、通知出口与私有存储。
+values.yaml: 定义网关接单开关、镜像默认池、连接预算、通知出口与私有存储。
 values-ha.yaml: 定义控制平面多副本参数。
 values-kind.yaml: 定义本机 kind 参数。
 values-trial.yaml: 定义隔离试部署参数。

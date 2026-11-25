@@ -10,5 +10,6 @@
 0005_dashboard_indexes.sql: 追加构建项目创建和完成时间索引，支持概览窗口与近期活动。
 0006_source_progress.sql: 兼容追加有界源码阶段记录，不伪造历史进度。
 0007_terminals.sql: 追加设备终端会话、一次性附着票据和实例目录；不持久化终端字节。
+0008_source_preparation.sql: 标记新版源码协议，保存规划准备摘要和有界事件。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

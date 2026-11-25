@@ -98,7 +98,7 @@ impl PlanningStore {
             life.retry(now)?;
         }
         sql::execute(&mut tx,
-            "UPDATE planning_runs SET status=$2,lifecycle=$3,execution=NULL,grant_hash=NULL,grant_ciphertext=NULL,dispatched_at=NULL,updated_at=now() WHERE id=$1",
+            "UPDATE planning_runs SET status=$2,lifecycle=$3,execution=NULL,source_ready_execution=NULL,source_preparation='{}'::jsonb,grant_hash=NULL,grant_ciphertext=NULL,dispatched_at=NULL,updated_at=now() WHERE id=$1",
             params![lost.run_id,next_status,serde_json::to_value(&life)?]).await?;
         tx.commit().await?;
         Ok(json!({"status":next_status,"pending":false,"generation":life.generation}))

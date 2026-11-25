@@ -3,7 +3,7 @@
 
 api.ts: 发送独立账户、租户与 CSRF 请求，前台计数覆盖授权解析和响应，后台轮询静默，显式重试清除错误。
 build-state.ts: 定义日志事件类型与构建终态判断。
-build-activity.ts: 定义过程投影及基于源码、计划和执行证据的阶段状态。
+build-activity.ts: 依据协议版本和当前 Pod 的 ready、started 记录投影阶段，隔离旧代源码状态。
 planning-audit.ts: 合并完整分片，按调用与提案身份关联结果，隔离平台提示并保留原文。
 dashboard-types.ts: 定义完整窗口、成功率、周转中位数、自然日序列和近期构建活动契约。
 errors.ts: 转换本地化错误并判定轮询错误等价。
@@ -19,7 +19,7 @@ releases.ts: 校验严格 SemVer，按 SemVer 比较版本。
 build-targets.ts: 校验构建目标合同，组合独立源码与目标的交付候选摘要。
 routes.ts: 校验设备终端、项目目录、工作区和设置地址；邮箱返回只接受确认页和单个令牌。
 tenant.tsx: 提供租户作用域和请求头，以 Next 导航状态连接顶部进度并保留未保存保护。
-types.ts: 定义 Release、原生与镜像计划目标、执行修订身份、规划实时摘要、节点身份与会话审计。
+types.ts: 定义 Release、源码准备协议、本代规划摘要、执行修订身份、节点与会话审计。
 unsaved.tsx: 保护未保存编辑。
 utils.ts: 格式化日期、摘要和制品大小。
 workspace-navigation.ts: 租户概览和项目目录使用独立地址；统一项目业务导航、设置分组和权限可见性。

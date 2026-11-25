@@ -10,4 +10,6 @@
 2026-11-21-release-build-decoupling.md: 定义版本元数据、独立构建源码与目标、单次正式交付的解耦实施。
 2026-11-24-build-observability.md: 跟踪源码诊断、构建过程和 Kubernetes 验收。
 
+2026-11-25-source-planning-reuse.md: 定义同 Pod 源码准备、清单绑定、阶段展示与排空交付。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

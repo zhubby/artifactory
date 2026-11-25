@@ -103,7 +103,18 @@ async fn coordinator_outbox_statistics_reach_failed_input_accepted_and_rejected_
     let plan = json!({"summary":"compile app","evidence":[{"path":"Makefile","reason":"build definition"}],"recipe":{"version":1,"targets":{"app":{"os":"linux","arch":"amd64","application_platform":null,"steps":[{"name":"compile","run":"make"}],"artifacts":["dist/app"]}}}});
     for mode in ["failed", "needs_input", "accepted", "rejected"] {
         let (project, build, run, source) = db.planning_fixture().await?;
+        let manifest = artifactory_source_checkout::SourceManifest::new(
+            source,
+            vec![artifactory_source_checkout::SourceRepository {
+                path: String::new(),
+                upstream_url: "https://example.com/repo.git".into(),
+                commit_sha: "a".repeat(40),
+                tags: Default::default(),
+                lfs_objects: vec![],
+            }],
+        )?;
         let intent = RunIntent {
+            source_resolution: None,
             tenant_id: tenant,
             run_id: run,
             build_id: build,
@@ -111,8 +122,8 @@ async fn coordinator_outbox_statistics_reach_failed_input_accepted_and_rejected_
             project_id: project,
             pool: "default".into(),
             source_manifest_id: Some(source),
-            source_digest: Some("a".repeat(64)),
-            context: json!({}),
+            source_digest: Some(manifest.digest.clone()),
+            context: json!({"source_manifest":manifest}),
             model: ModelConfiguration {
                 id: Uuid::new_v4(),
                 api: "openai-completions".into(),
@@ -144,6 +155,9 @@ async fn coordinator_outbox_statistics_reach_failed_input_accepted_and_rejected_
             namespace: "test".into(),
         };
         coordinator.register_execution(execution.clone()).await?;
+        coordinator
+            .preparation_ready(&execution, source, &manifest.digest)
+            .await?;
         let acquired = coordinator
             .acquire_execution(execution, "https://planning.invalid")
             .await?;
@@ -177,7 +191,9 @@ async fn coordinator_outbox_statistics_reach_failed_input_accepted_and_rejected_
             .deliveries()
             .await?
             .into_iter()
-            .find(|event| event.run_id == run)
+            .find(|event| {
+                event.run_id == run && matches!(event.kind.as_str(), "failed" | "proposal")
+            })
             .unwrap();
         let submit = || {
             db.store.commit_planning_event(
@@ -485,5 +501,40 @@ async fn planning_execution_failure_finishes_the_build_once_and_preserves_cancel
             "duplicate failure creates exactly one business receipt"
         );
     }
+    db.close().await
+}
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn new_generation_source_failure_does_not_inherit_previous_workspace_readiness() -> Result<()>
+{
+    let db = Database::new().await?;
+    let (_, build, run, _) = db.planning_fixture().await?;
+    sql::execute(&mut db.pool.clone(),"UPDATE planning_runs SET source_preparation=$2 WHERE id=$1",params![run,json!({"generation":1,"pod_uid":"old","pod_name":"old","ready_at":"2026-11-25T00:00:00Z","started_at":"2026-11-25T00:00:01Z","sequence":8})]).await?;
+    let payload = json!({"generation":2,"error":"Source unavailable","execution":{"run_id":run,"generation":2,"uid":"new","name":"new","namespace":"test"},"diagnostic":{"stage":"authorization","code":"authentication"}});
+    db.store
+        .commit_planning_event(
+            PlanningEventCommit {
+                event: Uuid::new_v4(),
+                run,
+                build,
+                hash: "new-source-failure".into(),
+                kind: "failed",
+                payload: &payload,
+                validation: None,
+            },
+            |_| async { panic!("source failure cannot submit a plan") },
+        )
+        .await?;
+    let summary: Value = sql::scalar(
+        &mut db.pool.clone(),
+        "SELECT source_preparation FROM planning_runs WHERE id=$1",
+        params![run],
+    )
+    .await?;
+    assert_eq!(summary["generation"], 2);
+    assert!(summary["ready_at"].is_null());
+    assert!(summary["started_at"].is_null());
+    assert!(summary["sequence"].is_null());
     db.close().await
 }

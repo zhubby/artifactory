@@ -1,7 +1,7 @@
 # planning-operator/src/
 > L2 | Parent: ../AGENTS.md
 
-api.rs: 定义项目身份、池级具名代理与预留名称、UID 和停机证据台账。
+api.rs: 定义项目身份、独立源码准备标记、池代理与 UID 停机证据台账。
 controller.rs: 上报规划 Pod 故障，保留未知配额，终态清净后释放 CR 保护。
 pods.rs: 用最新 CR 版本围栏创建，用直接归属查询确认保护释放。
 resources.rs: 创建规划和源码普通 Pod，校验内部直连并注入池代理，只使用 1.28 稳定字段。

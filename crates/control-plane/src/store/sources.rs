@@ -191,6 +191,49 @@ impl ControlStore {
             return Ok(());
         }
         if task["purpose"] == "resolve" {
+            if let Some(commit) = result["commit_sha"].as_str() {
+                ensure!(
+                    artifactory_source_checkout::valid_commit(commit)
+                        && task["pinned_ref_oid"] == commit,
+                    "source commit not pinned"
+                );
+                let build_id: Uuid = task["build_id"]
+                    .as_str()
+                    .context("build missing")?
+                    .parse()?;
+                let build:Value=sql::scalar(&mut tx,"SELECT to_jsonb(b) FROM builds b WHERE id=$1 AND status='resolving' AND NOT cancel_requested",params![build_id]).await?;
+                ensure!(
+                    build["source_preparation_version"] == 2
+                        && build["model_config_snapshot"].is_object(),
+                    "invalid source resolution mode"
+                );
+                sql::execute(&mut tx,"UPDATE builds SET commit_sha=$2 WHERE id=$1 AND (commit_sha IS NULL OR commit_sha=$2)",params![build_id,commit]).await?;
+                super::models::PlanningRun::create()
+                    .id(Uuid::new_v4())
+                    .build_id(build_id)
+                    .purpose("initial")
+                    .model_config(toasty::Json(build["model_config_snapshot"].clone()))
+                    .exec(&mut tx)
+                    .await?;
+                sql::execute(
+                    &mut tx,
+                    "UPDATE source_tasks SET status='succeeded',result=$2 WHERE id=$1",
+                    params![id, result],
+                )
+                .await?;
+                tx.commit().await?;
+                return Ok(());
+            }
+            let version: i16 = sql::scalar(
+                &mut tx,
+                "SELECT source_preparation_version FROM builds WHERE id=$1",
+                params![id],
+            )
+            .await?;
+            ensure!(
+                version == 1,
+                "protocol 2 resolve accepts only a pinned commit"
+            );
             let manifest: SourceManifest = serde_json::from_value(result["manifest"].clone())?;
             manifest.validate()?;
             ensure!(
@@ -500,19 +543,26 @@ async fn build_source_material_with(
     master: &[u8; 32],
     build: Uuid,
 ) -> Result<PrepareResponse> {
-    let row:Value=sql::scalar(tx,"SELECT to_jsonb(b) FROM builds b JOIN projects p ON p.id=b.project_id JOIN tenants t ON t.id=b.tenant_id WHERE b.id=$1 AND NOT b.cancel_requested AND b.status IN ('planning','replanning','queued','running') AND p.status IN ('active','draining') AND t.status IN ('active','draining')",params![build]).await?;
-    let manifest_id = row["source_manifest_id"]
-        .as_str()
-        .context("source missing")?
-        .parse::<Uuid>()?;
-    let manifest: Value = sql::scalar(
-        tx,
-        "SELECT manifest FROM source_manifests WHERE id=$1",
-        params![manifest_id],
-    )
-    .await?;
-    let manifest: SourceManifest = serde_json::from_value(manifest)?;
-    manifest.validate()?;
+    let row:Value=sql::scalar(tx,"SELECT to_jsonb(b) FROM builds b JOIN projects p ON p.id=b.project_id JOIN tenants t ON t.id=b.tenant_id WHERE b.id=$1 AND NOT b.cancel_requested AND b.status IN ('resolving','planning','replanning','queued','running') AND p.status IN ('active','draining') AND t.status IN ('active','draining')",params![build]).await?;
+    let manifest = if let Some(id) = row["source_manifest_id"].as_str() {
+        let manifest: Value = sql::scalar(
+            tx,
+            "SELECT manifest FROM source_manifests WHERE id=$1",
+            params![Uuid::parse_str(id)?],
+        )
+        .await?;
+        let manifest: SourceManifest = serde_json::from_value(manifest)?;
+        manifest.validate()?;
+        Some(manifest)
+    } else {
+        ensure!(
+            row["status"] == "resolving"
+                && row["source_preparation_version"] == 2
+                && row["commit_sha"].is_string(),
+            "source missing"
+        );
+        None
+    };
     let repository = row["source_repository_url"]
         .as_str()
         .context("repository missing")?;
@@ -521,10 +571,12 @@ async fn build_source_material_with(
     let bindings: Vec<_> = bindings
         .into_iter()
         .filter(|binding| {
-            manifest
-                .repositories
-                .iter()
-                .any(|repo| repo.upstream_url == binding.repository_url)
+            manifest.as_ref().is_none_or(|manifest| {
+                manifest
+                    .repositories
+                    .iter()
+                    .any(|repo| repo.upstream_url == binding.repository_url)
+            })
         })
         .collect();
     let credentials = source_credentials_with(
@@ -543,12 +595,12 @@ async fn build_source_material_with(
     )
     .await?;
     Ok(PrepareResponse {
-        source_id: manifest.id,
+        source_id: manifest.as_ref().map(|m| m.id).unwrap_or(build),
         repository_url: repository.into(),
         reference: row["requested_ref"].as_str().unwrap_or("HEAD").into(),
-        pinned_ref_oid: None,
+        pinned_ref_oid: row["commit_sha"].as_str().map(str::to_owned),
         frozen_tags: Default::default(),
-        manifest: Some(manifest),
+        manifest,
         completed_result: None,
         credentials,
     })

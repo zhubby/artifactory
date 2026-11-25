@@ -5,6 +5,7 @@
 mod conversations;
 mod execution_failures;
 mod model_requests;
+pub(crate) mod preparation;
 mod rows;
 mod worker_reports;
 use rows::{locked, run_fields};
@@ -274,6 +275,24 @@ impl PlanningStore {
                 .status(if cancel { "canceled" } else { "queued" })
                 .exec(&mut tx)
                 .await?;
+            if let Some(i) = &intent
+                && let Some(value) = i.context.get("source_manifest").filter(|v| v.is_object())
+            {
+                let manifest: artifactory_source_checkout::SourceManifest =
+                    serde_json::from_value(value.clone())?;
+                manifest.validate()?;
+                ensure!(
+                    Some(manifest.id) == i.source_manifest_id
+                        && Some(&manifest.digest) == i.source_digest.as_ref(),
+                    "intent source mismatch"
+                );
+                sql::execute(
+                    &mut tx,
+                    "UPDATE planning_runs SET source_manifest=$2,source_bound=true WHERE id=$1",
+                    params![run, value],
+                )
+                .await?;
+            }
         }
         tx.commit().await?;
         Ok(json!({"ok":true}))
@@ -325,6 +344,9 @@ impl PlanningStore {
             || life
                 .deadline_ms
                 .is_some_and(|deadline| deadline <= Utc::now().timestamp_millis())
+            || row
+                .decode::<Option<chrono::DateTime<Utc>>>("dispatched_at")?
+                .is_some_and(|at| at + chrono::Duration::seconds(900) <= Utc::now())
         {
             return Ok(PreparationState::Denied);
         }
@@ -363,19 +385,6 @@ impl PlanningStore {
         )
     }
 
-    pub async fn read_run(&self, run: Uuid) -> Result<Value> {
-        let row = sql::record(
-            &mut self.pool.clone(),
-            "SELECT * FROM planning_runs WHERE id=$1",
-            params![run],
-            &run_fields(),
-        )
-        .await?;
-        Ok(
-            json!({"run_id":run,"status":row.decode::<String>("status")?,"lifecycle":row.decode::<Value>("lifecycle")?,"usage":row.decode::<Value>("usage")?,"execution":row.decode::<Option<Value>>("execution")?}),
-        )
-    }
-
     pub async fn acquire_execution(&self, execution: Execution, public_url: &str) -> Result<Value> {
         let mut tx_db = self.pool.clone();
         let mut tx = tx_db.transaction().await?;
@@ -393,12 +402,38 @@ impl PlanningStore {
         );
         let mut life: Lifecycle = serde_json::from_value(row.decode("lifecycle")?)?;
         let intent = config(self, &row)?;
+        let source = preparation::acquire_source(&row, &intent, &execution)?;
+        let first_acquire = life.owner.is_none();
+        if first_acquire {
+            ensure!(
+                row.decode::<Option<chrono::DateTime<Utc>>>("dispatched_at")?
+                    .is_none_or(|at| at + chrono::Duration::seconds(900) > Utc::now()),
+                "source provisioning deadline reached"
+            );
+        }
         life.acquire(
             execution.generation,
             &execution.uid,
             Utc::now().timestamp_millis(),
             i64::from(intent.model.timeout_seconds) * 1000,
         )?;
+        if first_acquire {
+            let mut preparation: Value = row.decode("source_preparation")?;
+            preparation["started_at"] = json!(Utc::now());
+            sql::execute(
+                &mut tx,
+                "UPDATE planning_runs SET source_preparation=$2 WHERE id=$1",
+                params![execution.run_id, preparation],
+            )
+            .await?;
+            enqueue(
+                &mut tx,
+                execution.run_id,
+                "planning_started",
+                json!({"execution":execution,"started_at":Utc::now()}),
+            )
+            .await?;
+        }
         let token = if let Some(ciphertext) = row.decode::<Option<String>>("grant_ciphertext")? {
             String::from_utf8(crypto::open(&self.key, &ciphertext)?)?
         } else {
@@ -407,6 +442,10 @@ impl PlanningStore {
         sql::execute(&mut tx, "UPDATE planning_runs SET status='running',lifecycle=$2,grant_hash=$3,grant_ciphertext=$4 WHERE id=$1", params![execution.run_id, serde_json::to_value(&life)?, crypto::hash(&token), crypto::seal(&self.key,token.as_bytes())?]).await?;
         let tenant = intent.tenant_id;
         let mut context = intent.context;
+        if let Some(source) = source {
+            context["commit"] = source["repositories"][0]["commit_sha"].clone();
+            context["source_manifest"] = source;
+        }
         context["tenant_id"] = json!(tenant);
         context["usage"] = row.decode::<Value>("usage")?;
         conversations::open(
@@ -556,7 +595,7 @@ impl PlanningStore {
         for row in active {
             let intent = config(self, &row)?;
             let lifecycle: Lifecycle = serde_json::from_value(row.decode("lifecycle")?)?;
-            rows.push(json!({"run_id":intent.run_id,"project_id":intent.project_id,"generation":lifecycle.generation,"pool":intent.pool,"source_manifest_id":intent.source_manifest_id,"source_digest":intent.source_digest}));
+            rows.push(json!({"run_id":intent.run_id,"project_id":intent.project_id,"generation":lifecycle.generation,"pool":intent.pool,"source_required":intent.context["purpose"]!="placement","source_manifest_id":row.decode::<Option<Uuid>>("source_manifest_id")?,"source_digest":row.decode::<Option<String>>("source_digest")?}));
         }
         tx.commit().await?;
         let queued: i64 = sql::scalar(
@@ -608,7 +647,7 @@ impl PlanningStore {
                 conversations::finish(&mut tx, id, life.generation, "interrupted").await?;
                 life.retry(now)?;
                 save(&mut tx, id, &life).await?;
-                sql::execute(&mut tx, "UPDATE planning_runs SET status='queued',execution=NULL,grant_hash=NULL,grant_ciphertext=NULL WHERE id=$1", params![id]).await?;
+                sql::execute(&mut tx, "UPDATE planning_runs SET status='queued',execution=NULL,source_ready_execution=NULL,source_preparation='{}'::jsonb,grant_hash=NULL,grant_ciphertext=NULL WHERE id=$1", params![id]).await?;
             }
             tx.commit().await?;
         }
@@ -662,6 +701,9 @@ impl PlanningStore {
         .await?;
         if already {
             return Ok(());
+        }
+        if kind == "source_ready" {
+            preparation::acknowledge_source(&mut tx, &run_row, result).await?;
         }
         if kind == "proposal" {
             let mut life: Lifecycle = serde_json::from_value(run_row.decode("lifecycle")?)?;

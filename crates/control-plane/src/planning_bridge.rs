@@ -50,7 +50,7 @@ async fn planning_source_material(s: &AppState, v: Value) -> Result<Value> {
         "wrong planning service account"
     );
     validate_source_execution(&v).await?;
-    let build = s.store.planning_tool_build(run).await?;
+    let build = s.store.preparation_build(run).await?;
     let material = s
         .store
         .build_source_material(&s.settings.master_key, build)
@@ -67,6 +67,7 @@ async fn validate_source_execution(v: &Value) -> Result<()> {
             && current["lifecycle"]["generation"] == v["generation"]
             && current["execution"]["uid"] == v["pod_uid"]
             && current["execution"]["namespace"] == v["namespace"]
+            && current["execution"]["name"] == v["pod_name"]
             && current["lifecycle"]["canceled"] != true
             && current["lifecycle"]["pending"] != true,
         "planning execution changed"
@@ -101,6 +102,15 @@ pub async fn accept_event(s: &AppState, v: Value) -> Result<Value> {
     }
     let kind = v["kind"].as_str().context("missing event kind")?;
     let payload = &v["payload"];
+    if matches!(
+        kind,
+        "source_ready" | "source_progress" | "source_local_ready" | "planning_started"
+    ) {
+        return s
+            .store
+            .commit_preparation_event(event, run, &hash, kind, payload)
+            .await;
+    }
     let run_source = s.store.planning_run_source(run).await?;
     let mut validation = None;
     if kind == "proposal" {
@@ -114,7 +124,11 @@ pub async fn accept_event(s: &AppState, v: Value) -> Result<Value> {
         if payload["kind"] == "submit_plan" {
             let digest = s
                 .store
-                .source_manifest_digest(run_source.source_manifest_id)
+                .source_manifest_digest(
+                    run_source
+                        .source_manifest_id
+                        .context("source manifest missing")?,
+                )
                 .await?;
             ensure!(payload["source_digest"] == digest, "source digest changed");
             let plan = payload["payload"]
@@ -206,6 +220,7 @@ async fn make_intent(s: &AppState, run: Uuid) -> Result<RunIntent> {
     model.as_object_mut().unwrap().remove("key_ciphertext");
     let context = input.context;
     Ok(RunIntent {
+        source_resolution: input.source_resolution,
         tenant_id: input.tenant_id,
         run_id: run,
         build_id: build,

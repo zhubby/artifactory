@@ -6,7 +6,7 @@ ai-settings.tsx: 使用共享下拉配置任意模型、调用预算与独立接
 auth-shell.tsx: 渲染认证页面布局。
 brand-mark.tsx: 渲染 Artifactory 品牌标记。
 build-detail.tsx: 组合过程、执行、计划、独立 AI 审计与制品；首次展示过程，轮询保留用户标签。
-build-process.tsx: 展示真实阶段、当前动作、失败分类和有界事件，保留展开状态。
+build-process.tsx: 展示当前 Pod 的源码子步骤、真实阶段和失败分类；保留事件展开状态。
 build-log-history.tsx: 首读显示日志骨架，按 attempt 和步骤分页，追加旧日志时保留输出与阅读锚点。
 build-planning.tsx: 组合当前计划、稳定历史选择与澄清草稿，保留实时统计回退。
 build-plan-target.tsx: 结构化呈现原生顺序步骤与 OCI 参数，按计划身份对齐执行并标明沿用成功来源。

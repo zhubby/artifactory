@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离 PostgreSQL、旧版本基线身份和当前初始化基线。
-//! [OUTPUT]: 验证基线、概览索引追加迁移与误连未知历史时的无损拒绝。
+//! [OUTPUT]: 验证基线、追加迁移与误连未知历史时的无损拒绝。
 //! [POS]: 业务数据库安装与兼容升级边界回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_control_plane::store::MIGRATIONS;
@@ -11,7 +11,7 @@ fn new_baseline_has_a_distinct_identity() {
         versions,
         vec![
             2026112101, 2026112201, 2026112301, 2026112302, 2026112303, 2026112401, 2026112402,
-            2026112403
+            2026112403, 2026112501
         ]
     );
 }

@@ -1,10 +1,9 @@
 //! [INPUT]: 依赖固定清单、上游 Git/LFS 和临时认证目录。
-//! [OUTPUT]: 精确检出源码，以独立索引验证内容和子模块。
-//! [POS]: 每次任务独立拉取，不创建共享对象缓存。
+//! [OUTPUT]: 在最终目录发现仓库、冻结标签、下载 LFS 并验证清单。
+//! [POS]: 规划 init 分阶段复用同一目录；执行器按固定清单检出。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
-use crate::git::Git;
 use crate::{
-    LfsObject, Options, SourceCredential, SourceManifest, SourceRepository, managed_path,
+    LfsObject, Options, SourceCredential, SourceManifest, SourceRepository, git::Git, managed_path,
     private_dir, resolve_submodule, same_origin, valid_commit,
 };
 use anyhow::{Context, Result, ensure};
@@ -12,7 +11,6 @@ use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, fs, path::Path};
 use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Submodule {
     pub path: String,
@@ -32,6 +30,10 @@ pub struct Checkout {
 pub enum TagSelection {
     Upstream,
     Frozen,
+}
+struct FetchOptions {
+    tags: TagSelection,
+    lfs: bool,
 }
 impl Checkout {
     pub fn new(options: Options) -> Self {
@@ -76,7 +78,10 @@ impl Checkout {
                 credentials,
                 inherited,
                 &target,
-                TagSelection::Frozen,
+                FetchOptions {
+                    tags: TagSelection::Frozen,
+                    lfs: true,
+                },
                 cancel,
             )
             .await?;
@@ -121,7 +126,10 @@ impl Checkout {
             credentials,
             inherited,
             target,
-            selection,
+            FetchOptions {
+                tags: selection,
+                lfs: true,
+            },
             cancel,
         )
         .await?;
@@ -135,15 +143,148 @@ impl Checkout {
         git.close()?;
         result
     }
+    /// 检出到最终目录；LFS 留待全部仓库已发现后下载。
+    pub async fn discover_repository(
+        &self,
+        repository: &SourceRepository,
+        credentials: &[SourceCredential],
+        inherited_url: Option<&str>,
+        target: &Path,
+        selection: TagSelection,
+        cancel: &CancellationToken,
+    ) -> Result<InspectedRepository> {
+        let inherited = inherited_url
+            .and_then(|url| credentials.iter().find(|c| c.upstream_url == url))
+            .map(|c| (c.upstream_url.as_str(), &c.credential));
+        self.fetch(
+            repository,
+            credentials,
+            inherited,
+            target,
+            FetchOptions {
+                tags: selection,
+                lfs: false,
+            },
+            cancel,
+        )
+        .await?;
+        let git = Git::new(
+            &self.options,
+            &repository.upstream_url,
+            credentials,
+            inherited,
+        )?;
+        let result = inspect(&git, target, repository, cancel).await;
+        git.close()?;
+        result
+    }
+    /// 清单只保留祖先 tag，本地引用必须与冻结结果完全一致。
+    pub async fn freeze_local_tags(
+        &self,
+        repo: &SourceRepository,
+        credentials: &[SourceCredential],
+        inherited_url: Option<&str>,
+        target: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        SourceManifest::new(
+            uuid::Uuid::new_v4(),
+            vec![SourceRepository {
+                path: String::new(),
+                ..repo.clone()
+            }],
+        )?;
+        let inherited = inherited_url
+            .and_then(|url| credentials.iter().find(|c| c.upstream_url == url))
+            .map(|c| (c.upstream_url.as_str(), &c.credential));
+        let git = Git::new(&self.options, &repo.upstream_url, credentials, inherited)?;
+        for (name, _) in tags(&git, target, cancel).await? {
+            if !repo.tags.contains_key(&name) {
+                git.run(
+                    target,
+                    &["update-ref", "-d", &format!("refs/tags/{name}")],
+                    cancel,
+                )
+                .await?;
+            }
+        }
+        for (name, oid) in &repo.tags {
+            ensure!(valid_commit(oid), "invalid frozen tag object");
+            if !git
+                .output(target, &["cat-file", "-e", oid], cancel)
+                .await?
+                .0
+                .success()
+            {
+                git.run(
+                    target,
+                    &[
+                        "fetch",
+                        "--no-tags",
+                        "--no-recurse-submodules",
+                        "--",
+                        "origin",
+                        oid,
+                    ],
+                    cancel,
+                )
+                .await?;
+            }
+            ensure!(
+                git.output(
+                    target,
+                    &[
+                        "merge-base",
+                        "--is-ancestor",
+                        &format!("{oid}^{{commit}}"),
+                        &repo.commit_sha
+                    ],
+                    cancel
+                )
+                .await?
+                .0
+                .success(),
+                "frozen tag is not a source ancestor"
+            );
+            git.run(
+                target,
+                &["update-ref", &format!("refs/tags/{name}"), oid],
+                cancel,
+            )
+            .await?;
+        }
+        git.close()?;
+        Ok(())
+    }
+    pub async fn prepare_repository_lfs(
+        &self,
+        repo: &SourceRepository,
+        credentials: &[SourceCredential],
+        inherited_url: Option<&str>,
+        target: &Path,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let inherited = inherited_url
+            .and_then(|url| credentials.iter().find(|c| c.upstream_url == url))
+            .map(|c| (c.upstream_url.as_str(), &c.credential));
+        let git = Git::new(&self.options, &repo.upstream_url, credentials, inherited)?;
+        let result = download_lfs(&git, target, &repo.commit_sha, &repo.lfs_objects, cancel).await;
+        git.close()?;
+        result
+    }
     async fn fetch(
         &self,
         repo: &SourceRepository,
         credentials: &[SourceCredential],
         inherited: Option<(&str, &crate::GitCredential)>,
         target: &Path,
-        tags: TagSelection,
+        options: FetchOptions,
         cancel: &CancellationToken,
     ) -> Result<()> {
+        let FetchOptions {
+            tags,
+            lfs: prepare_lfs,
+        } = options;
         ensure!(valid_commit(&repo.commit_sha), "invalid pinned object");
         ensure!(
             !target.exists() || (target.is_dir() && fs::read_dir(target)?.next().is_none()),
@@ -164,11 +305,16 @@ impl Checkout {
             cancel,
         )
         .await?;
+        // 同次 fetch 带回根提交与 tag；不创建第二棵临时工作树。
         git.run(
             target,
             &[
                 "fetch",
-                "--no-tags",
+                if matches!(tags, TagSelection::Upstream) {
+                    "--tags"
+                } else {
+                    "--no-tags"
+                },
                 "--no-recurse-submodules",
                 "--force",
                 "--",
@@ -178,37 +324,29 @@ impl Checkout {
             cancel,
         )
         .await?;
-        if matches!(tags, TagSelection::Upstream) {
-            git.run(
-                target,
-                &[
-                    "fetch",
-                    "--tags",
-                    "--no-recurse-submodules",
-                    "--force",
-                    "--",
-                    "origin",
-                    &repo.commit_sha,
-                ],
-                cancel,
-            )
-            .await?;
-        } else {
+        if matches!(tags, TagSelection::Frozen) {
             for (name, oid) in &repo.tags {
                 ensure!(valid_commit(oid), "invalid frozen tag object");
-                git.run(
-                    target,
-                    &[
-                        "fetch",
-                        "--no-tags",
-                        "--no-recurse-submodules",
-                        "--",
-                        "origin",
-                        oid,
-                    ],
-                    cancel,
-                )
-                .await?;
+                if !git
+                    .output(target, &["cat-file", "-e", oid], cancel)
+                    .await?
+                    .0
+                    .success()
+                {
+                    git.run(
+                        target,
+                        &[
+                            "fetch",
+                            "--no-tags",
+                            "--no-recurse-submodules",
+                            "--",
+                            "origin",
+                            oid,
+                        ],
+                        cancel,
+                    )
+                    .await?;
+                }
                 git.run(
                     target,
                     &["update-ref", &format!("refs/tags/{name}"), oid],
@@ -235,24 +373,8 @@ impl Checkout {
             .await?;
         validate_lfs_config(&git, target, cancel).await?;
         let lfs = lfs_objects(&git, target, &commit, cancel).await?;
-        if !lfs.is_empty() {
-            for (key, value) in [
-                ("filter.lfs.clean", "git-lfs clean -- %f"),
-                ("filter.lfs.smudge", "git-lfs smudge -- %f"),
-                ("filter.lfs.process", "git-lfs filter-process"),
-                ("filter.lfs.required", "true"),
-            ] {
-                git.run(target, &["config", "--local", key, value], cancel)
-                    .await?;
-            }
-            git.run(target, &["lfs", "fetch", "origin", &commit], cancel)
-                .await?;
-            git.run(target, &["lfs", "checkout"], cancel).await?;
-            for object in &lfs {
-                verify_file(&managed_path(target, &object.path)?, object).await?;
-            }
-            git.run(target, &["lfs", "fsck", "--objects", &commit], cancel)
-                .await?;
+        if prepare_lfs {
+            download_lfs(&git, target, &commit, &lfs, cancel).await?;
         }
         git.close()?;
         Ok(())
@@ -277,7 +399,10 @@ impl Checkout {
             credentials,
             None,
             target,
-            TagSelection::Frozen,
+            FetchOptions {
+                tags: TagSelection::Frozen,
+                lfs: true,
+            },
             cancel,
         )
         .await?;
@@ -349,9 +474,8 @@ pub async fn verify(
     workspace: &Path,
     cancel: &CancellationToken,
 ) -> Result<()> {
-    Checkout::default()
-        .verify(manifest, workspace, cancel)
-        .await
+    let checkout = Checkout::default();
+    checkout.verify(manifest, workspace, cancel).await
 }
 async fn tags(
     git: &Git,
@@ -644,5 +768,33 @@ async fn verify_file(path: &Path, object: &LfsObject) -> Result<()> {
         hex::encode(hash.finalize()) == object.oid,
         "source_modified: LFS file digest changed"
     );
+    Ok(())
+}
+async fn download_lfs(
+    git: &Git,
+    target: &Path,
+    commit: &str,
+    lfs: &[LfsObject],
+    cancel: &CancellationToken,
+) -> Result<()> {
+    if !lfs.is_empty() {
+        for (key, value) in [
+            ("filter.lfs.clean", "git-lfs clean -- %f"),
+            ("filter.lfs.smudge", "git-lfs smudge -- %f"),
+            ("filter.lfs.process", "git-lfs filter-process"),
+            ("filter.lfs.required", "true"),
+        ] {
+            git.run(target, &["config", "--local", key, value], cancel)
+                .await?;
+        }
+        git.run(target, &["lfs", "fetch", "origin", commit], cancel)
+            .await?;
+        git.run(target, &["lfs", "checkout"], cancel).await?;
+        for object in lfs {
+            verify_file(&managed_path(target, &object.path)?, object).await?;
+        }
+        git.run(target, &["lfs", "fsck", "--objects", commit], cancel)
+            .await?;
+    }
     Ok(())
 }

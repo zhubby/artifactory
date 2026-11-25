@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供 Release、计划目标、执行修订身份与规划审计类型。
+ * [OUTPUT]: 提供 Release、源码准备、执行身份与规划审计类型。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -197,6 +197,7 @@ export interface Build {
   project_slug: string;
   goal?: string | null;
   source_manifest_id?: string | null;
+  source_preparation_version?: number;
   current_plan_id?: string | null;
   revision_count?: number;
   clarification?: { question: string } | null;
@@ -545,6 +546,23 @@ export interface PlanRevision {
     };
   };
 }
+export interface SourcePreparation {
+  run_id: string;
+  generation?: number;
+  pod_uid?: string;
+  pod_name?: string;
+  current_stage?: string;
+  current_state?: "started" | "completed";
+  ready_at?: string;
+  started_at?: string;
+  updated_at?: string;
+  diagnostic?: { stage: string; code: string };
+  events?: {
+    execution: { generation: number; uid: string; name: string };
+    progress: { sequence: number; stage: string; state: "started" | "completed" };
+    created_at: string;
+  }[];
+}
 export interface PlanningHistory {
   plans: PlanRevision[];
   runs: {
@@ -559,6 +577,7 @@ export interface PlanningHistory {
       generation: number;
       calls: number;
       usage: { totalTokens?: number; cost?: number };
+      preparation?: SourcePreparation;
     };
     runtime_unavailable?: boolean;
   }[];

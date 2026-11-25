@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定源码元数据、执行计划和业务数据库。
-//! [OUTPUT]: 保存计划并查询授权节点、原生日志和镜像日志。
+//! [OUTPUT]: 按锁后时钟保存计划终态，查询授权节点与执行日志。
 //! [POS]: Coordinator 提案的事务持久化边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
@@ -97,7 +97,7 @@ pub(super) async fn persist_plan(
     sql::execute(tx, "UPDATE builds SET current_plan_id=$2,config_snapshot=$3,status='queued',error=NULL,finished_at=NULL WHERE id=$1", params![build, plan_id, serde_json::to_value(&plan.recipe)?]).await?;
     sql::execute(
         tx,
-        "UPDATE planning_runs SET state='succeeded',finished_at=now() WHERE id=$1",
+        "UPDATE planning_runs SET state='succeeded',finished_at=clock_timestamp() WHERE id=$1",
         params![row.decode::<Uuid>("id")?],
     )
     .await?;

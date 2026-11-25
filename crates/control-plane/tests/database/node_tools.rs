@@ -187,16 +187,28 @@ async fn official_mcp_sdk_queries_over_real_planning_and_rejects_stale_leases() 
         model_http: reqwest::Client::new(),
         public_url: origin.clone(),
     };
+    let manifest = artifactory_source_checkout::SourceManifest::new(
+        Uuid::new_v4(),
+        vec![artifactory_source_checkout::SourceRepository {
+            path: String::new(),
+            upstream_url: "https://example.com/repo.git".into(),
+            commit_sha: "a".repeat(40),
+            tags: Default::default(),
+            lfs_objects: vec![],
+        }],
+    )
+    .unwrap();
     let intent = RunIntent {
+        source_resolution: None,
         tenant_id: Uuid::from_u128(1),
         run_id: run,
         build_id: build,
         project_id: project,
         version: 1,
-        source_manifest_id: Some(Uuid::new_v4()),
-        source_digest: Some("a".repeat(64)),
+        source_manifest_id: Some(manifest.id),
+        source_digest: Some(manifest.digest.clone()),
         pool: "default".into(),
-        context: json!({}),
+        context: json!({"source_manifest":manifest}),
         model: ModelConfiguration {
             id: Uuid::new_v4(),
             api: "openai-completions".into(),
@@ -228,6 +240,11 @@ async fn official_mcp_sdk_queries_over_real_planning_and_rejects_stale_leases() 
     )
     .await
     .unwrap();
+    coordinator
+        .store
+        .preparation_ready(&execution, manifest.id, &manifest.digest)
+        .await
+        .unwrap();
     let acquired = coordinator
         .store
         .acquire_execution(execution, &origin)
