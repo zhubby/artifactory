@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖受权过程事件、构建快照、共享状态和规划审计入口。
+ * [INPUT]: 依赖受权过程事件、构建快照与共享状态。
  * [OUTPUT]: 展示当前动作、五阶段状态和可展开的真实事件记录。
  * [POS]: 构建详情的默认观察页；保留筛选、展开和终态补读。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -10,7 +10,6 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronRight, Clock3, TriangleAlert, X } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { ErrorBox, Loading, Status } from "@/components/common";
-import { PlanningConversations } from "@/components/planning-conversations";
 import { Button } from "@/components/ui/button";
 import { useRemote } from "@/lib/api";
 import { buildStages, type ActivityEvent, type BuildActivity, type ProcessStage } from "@/lib/build-activity";
@@ -126,7 +125,6 @@ export function BuildProcess({ build, navigate }: { build: Build; navigate: (tab
         {activity.truncated && <p className="build-process-history-note">{t("process.truncated")}</p>}
       </>}
     </section>
-    {!!activity?.planning.runs.length && <PlanningConversations buildId={build.id} terminal={terminal} />}
     {build.error && <details className="build-process-error"><summary>{t("process.errorDetails")}</summary><p>{build.error}</p></details>}
   </section>;
 }

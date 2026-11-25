@@ -1310,6 +1310,7 @@
     "failedAction": "Failed action"
   },
   "audit": {
+    "tab": "AI audit",
     "hint": "Read model messages, tool actions and platform results by planning round.",
     "sessionCount": "{count} sessions",
     "recordCount": "{count} raw records loaded",

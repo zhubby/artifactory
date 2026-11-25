@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖当前计划身份、历史、实时摘要和澄清接口。
  * [OUTPUT]: 展示结构化方案、修订切换、统计与澄清草稿。
- * [POS]: 计划工作台保留阅读状态；审计按需读取，终态静默补读。
+ * [POS]: 构建详情的计划工作台；保留方案选择与澄清草稿。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -11,7 +11,6 @@ import { ChevronRight } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { ErrorBox, Field, Loading, Status, TargetPlatformLabel } from "@/components/common";
 import { BuildPlanTarget, PlanCode } from "@/components/build-plan-target";
-import { PlanningConversations } from "@/components/planning-conversations";
 import { SubmitForm } from "@/components/forms";
 import { Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -173,7 +172,6 @@ export function BuildPlanning({ build, user, refresh }: { build: Build; user: Us
           <summary><ChevronRight size={16} aria-hidden="true" />{t("buildDetail.sourceDetails")}</summary>
           <div className="space-y-3"><p className="text-xs leading-5 text-muted-foreground">{t("ai.zeroIntrusion")}</p>{build.source_manifest_id && <p className="break-all font-mono text-xs text-muted-foreground">{t("ai.sourceManifest")} {build.source_manifest_id}</p>}</div>
         </details>
-        <PlanningConversations buildId={build.id} terminal={terminal} />
       </div>
     </div>
   </section>;

@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖规划实时摘要、消息审计夹具和真实构建页面。
+ * [INPUT]: 依赖规划实时摘要、独立审计标签夹具和真实构建页面。
  * [OUTPUT]: 验证实时统计、持久终态、旧审计身份和镜像确认文案。
  * [POS]: 规划反馈的三视口回归；外部模型不参与测试。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -65,9 +65,9 @@ for(const locale of ["zh-CN","en"]) test(`${locale} legacy audit keeps unmatched
     const after=new URL(route.request().url()).searchParams.get("after");
     return route.fulfill({json:after==="0"?{messages:entries,next_cursor:4}:{messages:[{sequence:5,kind:"message_chunk",payload:{message_id:"chunked",kind:"message",index:1,total:2,text:' audit message"}'},created_at:build.created_at}],next_cursor:null}});
   });
-  const panel=await openPlan(page,"succeeded");
-  await panel.getByText(locale==="en"?"AI conversation audit":"AI 对话审计",{exact:true}).click();
-  const audit=panel.locator(".planning-audit");
+  await openPlan(page,"succeeded");
+  await page.getByRole("tab",{name:locale==="en"?"AI audit":"AI 审计",exact:true}).click();
+  const audit=page.locator(".planning-audit");
   await expect(audit.getByRole("button",{name:/package.json/})).toBeVisible();
   await expect(audit.locator(".audit-action")).toHaveCount(4);
   await audit.getByRole("button",{name:/package.json/}).click();

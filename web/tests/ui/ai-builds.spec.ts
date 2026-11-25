@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证方案目标切换、澄清及审计终态补读。
+ * [OUTPUT]: 验证方案目标切换、澄清及独立审计标签的终态补读。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -223,7 +223,7 @@ test("planning conversations load on demand and paginate completed messages",asy
  await page.goto(tenantURL("/projects/desktop-client/builds/128"));
  await page.getByRole("tab",{name:"Plan",exact:true}).click();
  expect(summaries).toBe(0);expect(reads).toBe(0);
- await page.getByText("AI conversation audit",{exact:true}).click();
+ await page.getByRole("tab",{name:"AI audit",exact:true}).click();
  await expect.poll(()=>summaries).toBeGreaterThan(0);
  await expect.poll(()=>reads).toBe(1);
  await page.getByRole("button",{name:"Load more messages",exact:true}).click();
@@ -245,36 +245,55 @@ test("planning conversation reads final messages after its status changes",async
  let status="running";let reads=0;
  await page.route("**/api/v1/builds/build-main/planning/conversations",route=>route.fulfill({json:{conversations:[{run_id:"run-final",generation:1,pod_uid:"pod-1",status,model:"test-model",started_at:build.created_at}]}}));
  await page.route("**/api/v1/builds/build-main/planning/conversations/run-final/1/messages?*",route=>{reads++;const after=new URL(route.request().url()).searchParams.get("after");return route.fulfill({json:{messages:after==="0"?[{sequence:1,kind:"message",payload:{role:"user",content:"Initial request"},created_at:build.created_at}]:status==="succeeded"?[{sequence:2,kind:"proposal_result",payload:{accepted:true,finalAudit:"final durable receipt"},created_at:build.created_at}]:[],next_cursor:null}});});
- await page.goto(tenantURL("/projects/desktop-client/builds/128"));await page.getByRole("tab",{name:"Plan",exact:true}).click();
- await page.getByText("AI conversation audit",{exact:true}).click();
+ await page.goto(tenantURL("/projects/desktop-client/builds/128"));
+ await page.getByRole("tab",{name:"AI audit",exact:true}).click();
  await expect.poll(()=>reads).toBe(1);status="succeeded";
  await expect(page.getByRole("button",{name:/Planning proposal.*Accepted by platform/})).toBeVisible({timeout:8000});
  await page.getByRole("button",{name:/Planning proposal.*Accepted by platform/}).click();await expect(page.getByText("final durable receipt",{exact:true})).toBeVisible();
  await page.screenshot({path:info.outputPath("planning-conversation-final.png"),fullPage:true});
 });
 
-test("collapsed planning conversation reads completion once when reopened",async({page},info)=>{
+for (const completeBuild of [false,true]) test(`inactive audit tab reads ${completeBuild ? "build" : "session"} completion once when selected again`,async({page},info)=>{
  await fixtureAPI(page);
  await page.context().addCookies([{name:"artifactory-locale",value:"en",url:"http://127.0.0.1:3100"}]);
  const item={...build,goal:"Build source",status:"planning",source_manifest_id:"manifest-fixed"};
  await page.route("**/api/v1/projects/by-slug/desktop-client/builds/128",route=>route.fulfill({json:item}));
  await page.route("**/api/v1/builds/build-main/events",route=>route.fulfill({contentType:"text/event-stream",body:`retry: 600000\nevent: snapshot\ndata: ${JSON.stringify(item)}\n\n`}));
+ if (completeBuild) await page.addInitScript(snapshot=>{
+  const original=window.fetch.bind(window);
+  window.fetch=async(...args)=>{
+   if(typeof args[0]==="string" && args[0].endsWith("/builds/build-main/events")) {
+    const encoder=new TextEncoder();
+    return new Response(new ReadableStream({start(controller){
+     const send=(kind:string,data:unknown)=>controller.enqueue(encoder.encode(`event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`));
+     send("snapshot",snapshot);
+     window.addEventListener("message",event=>{
+      if(event.source!==window || event.data?.type!=="audit-build-complete") return;
+      send("complete",event.data.data);controller.close();
+     });
+    }}),{headers:{"Content-Type":"text/event-stream"}});
+   }
+   return original(...args);
+  };
+ },item);
  await page.route("**/api/v1/builds/build-main/plans",route=>route.fulfill({json:{plans:[],runs:[],events:[]}}));
  let status="running";const reads:string[]=[];
  await page.route("**/api/v1/builds/build-main/planning/conversations",route=>route.fulfill({json:{conversations:[{run_id:"run-collapsed",generation:1,pod_uid:"pod-1",status,model:"test-model",started_at:build.created_at}]}}));
  await page.route("**/api/v1/builds/build-main/planning/conversations/run-collapsed/1/messages?*",route=>{
   const after=new URL(route.request().url()).searchParams.get("after")!;reads.push(after);
-  // 待翻页状态停止消息轮询；终态消息只能来自重开补读。
+  // 待翻页状态停止消息轮询；终态消息只能来自切回标签的补读。
   return route.fulfill({json:after==="0"?{messages:[{sequence:1,kind:"message",payload:{role:"user",content:"Initial request"},created_at:build.created_at}],next_cursor:1}:{messages:[{sequence:2,kind:"proposal_result",payload:{accepted:true,finalAudit:"collapsed final durable receipt"},created_at:build.created_at}],next_cursor:null}});
  });
  await page.goto(tenantURL("/projects/desktop-client/builds/128"));
- await page.getByRole("tab",{name:"Plan",exact:true}).click();
- await page.getByText("AI conversation audit",{exact:true}).click();
- const shell=page.locator(".build-plan .planning-audit-shell > summary");
+ await page.getByRole("tab",{name:"AI audit",exact:true}).click();
  await expect.poll(()=>reads).toEqual(["0"]);
- await shell.click();status="succeeded";
+ await page.getByRole("tab",{name:"Plan",exact:true}).click();status="succeeded";
+ if(completeBuild) {
+  await page.evaluate(data=>window.postMessage({type:"audit-build-complete",data},location.origin),{...item,status:"succeeded",publish_status:"not_requested"});
+  await expect(page.locator(".build-detail-heading .status-succeeded")).toBeVisible();
+ }
  await page.waitForTimeout(3500);expect(reads).toEqual(["0"]);
- await shell.click();
+ await page.getByRole("tab",{name:"AI audit",exact:true}).click();
  const proposal=page.getByRole("button",{name:/Planning proposal.*Accepted by platform/});
  await expect(proposal).toBeVisible({timeout:8000});
  await proposal.click();

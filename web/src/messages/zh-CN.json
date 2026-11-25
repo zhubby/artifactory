@@ -1310,6 +1310,7 @@
     "failedAction": "失败动作"
   },
   "audit": {
+    "tab": "AI 审计",
     "hint": "按规划轮次查看模型说明、工具动作与平台结果。",
     "sessionCount": "{count} 次会话",
     "recordCount": "已加载 {count} 条原始记录",

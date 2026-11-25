@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖真实构建页面与包含乱序结果、提案和分片的审计响应。
- * [OUTPUT]: 验证可读结果、精确调用关联、轮次切换和阅读状态。
+ * [OUTPUT]: 验证独立审计标签、精确调用关联与切换后的阅读状态。
  * [POS]: AI 审计阅读回归；不调用模型或创建真实构建。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -38,11 +38,35 @@ async function openAudit(page: Page, locale = "zh-CN", theme = "light", live = f
   });
   await page.route(`**/api/v1/projects/by-slug/${project.slug}/builds/${build.number}`, route => route.fulfill({ json: { ...build, status: live ? "planning" : "succeeded", jobs: [], goal: "Build native application" } }));
   await page.goto(tenantURL(`/projects/${project.slug}/releases/${release.id}/builds/${build.number}`));
-  await page.getByRole("tab", { name: locale === "en" ? "Plan" : "计划", exact: true }).click();
-  const panel = page.locator(".build-plan");
-  await panel.getByText(locale === "en" ? "AI conversation audit" : "AI 对话审计", { exact: true }).click();
-  return panel.locator(".planning-audit");
+  await page.getByRole("tab", { name: locale === "en" ? "AI audit" : "AI 审计", exact: true }).click();
+  return page.locator(".planning-audit");
 }
+
+test("audit follows Plan as a unique lazy tab even without a build goal or conversation", async ({ page }) => {
+  await fixtureAPI(page);
+  await page.route(`**/api/v1/projects/by-slug/${project.slug}/builds/${build.number}`, route => route.fulfill({ json: { ...build, status: "failed", goal: null, jobs: [] } }));
+  let reads = 0;
+  await page.route(`**/api/v1/builds/${build.id}/planning/conversations`, route => {
+    reads++;
+    return route.fulfill({ json: { conversations: [] } });
+  });
+  await page.goto(tenantURL(`/projects/${project.slug}/releases/${release.id}/builds/${build.number}`));
+  const tabs = page.getByRole("tablist", { name: "构建详情", exact: true });
+  await expect(tabs.getByRole("tab")).toHaveText(["过程", "执行", "计划", "AI 审计", "制品"]);
+  for (const name of ["过程", "执行", "计划", "制品"]) {
+    await tabs.getByRole("tab", { name, exact: true }).click();
+    await expect(page.locator(".planning-audit")).toBeHidden();
+    expect(reads).toBe(0);
+  }
+  await tabs.getByRole("tab", { name: "计划", exact: true }).click();
+  await page.keyboard.press("ArrowRight");
+  await expect(tabs.getByRole("tab", { name: "AI 审计", exact: true })).toBeFocused();
+  await expect(page.locator(".planning-audit")).toHaveCount(1);
+  await expect(page.locator(".planning-audit")).toContainText("尚无规划对话。");
+  await expect(page.locator(".build-plan .planning-audit, .build-process .planning-audit")).toHaveCount(0);
+  await expect(page.locator(".planning-audit-shell > summary")).toHaveCount(0);
+  expect(reads).toBe(1);
+});
 
 test("pairs same-name tools by identity and renders nested file text without executing markup", async ({ page }) => {
   const audit = await openAudit(page);
@@ -79,8 +103,9 @@ test("background audit polling preserves the selected raw record and reading pos
   await audit.getByRole("button", { name: "加载更多消息", exact: true }).click();
   await audit.getByRole("tab", { name: "原始记录", exact: true }).click();
   const raw = audit.locator(".audit-raw:visible");
-  await raw.evaluate(element => { element.scrollTop = 70; });
-  const before = await raw.evaluate(element => element.scrollTop);
+  const body = audit.locator(".audit-detail-body:visible");
+  await body.evaluate(element => { element.scrollTop = 70; });
+  const before = await body.evaluate(element => element.scrollTop);
   expect(before).toBeGreaterThan(0);
   let polls = 0;
   await page.route(`**/api/v1/builds/${build.id}/planning/conversations/audit-initial/1/messages?*`, route => {
@@ -91,7 +116,7 @@ test("background audit polling preserves the selected raw record and reading pos
   await expect(audit.getByRole("button", { name: /New audit evidence arrived/ })).toBeAttached();
   expect(polls).toBeGreaterThan(0);
   await expect(audit.getByRole("tab", { name: "原始记录", exact: true })).toHaveAttribute("aria-selected", "true");
-  expect(await raw.evaluate(element => element.scrollTop)).toBe(before);
+  expect(await body.evaluate(element => element.scrollTop)).toBe(before);
   await expect(raw).toContainText('"toolCallId": "read-a"');
 });
 
@@ -118,21 +143,24 @@ test("completes chunked messages across pages without changing the selected tool
   await expect(audit.getByRole("region", { name: "动作详情", exact: true }).getByRole("heading", { name: "Build demo", exact: true })).toBeVisible();
 });
 
-test("collapsing audit retains the selected raw record and local reading position", async ({ page }) => {
+test("switching build tabs pauses audit polling and retains the selected raw record and reading position", async ({ page }) => {
   await page.clock.install();
-  const audit = await openAudit(page);
+  const audit = await openAudit(page, "zh-CN", "light", true);
   await audit.getByRole("button", { name: /读取文件.*README.md/ }).click();
   await audit.getByRole("button", { name: "加载更多消息", exact: true }).click();
   await audit.getByRole("tab", { name: "原始记录", exact: true }).click();
-  const body = audit.locator(".audit-detail-body:visible .audit-raw");
+  const body = audit.locator(".audit-detail-body:visible");
   await body.evaluate(element => { element.scrollTop = 70; });
   const before = await body.evaluate(element => element.scrollTop);
   expect(before).toBeGreaterThan(0);
-  // 折叠外层不会销毁会话、选中动作和详情 DOM。
-  const summary = page.locator(".build-plan .planning-audit-shell > summary");
-  await summary.click();
-  await page.clock.fastForward(4000);
-  await summary.click();
+  let requests = 0;
+  page.on("request", request => { if (request.url().includes("/planning/conversations")) requests++; });
+  await page.getByRole("tab", { name: "计划", exact: true }).click();
+  await expect(audit).toBeHidden();
+  await page.clock.fastForward(6100);
+  expect(requests).toBe(0);
+  await page.getByRole("tab", { name: "AI 审计", exact: true }).click();
+  await expect.poll(() => requests).toBeGreaterThan(0);
   await expect(audit.getByRole("tab", { name: "原始记录", exact: true })).toHaveAttribute("aria-selected", "true");
   expect(await body.evaluate(element => element.scrollTop)).toBe(before);
   await expect(body).toContainText('"toolCallId": "read-a"');

@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖 Release 归属、构建快照、规划工作台与日志事件。
- * [OUTPUT]: 提供过程总览、目标合同和保留内容的详情标签。
+ * [INPUT]: 依赖 Release 归属、构建快照、规划工作台、审计与日志事件。
+ * [OUTPUT]: 提供过程、执行、计划、独立审计与制品标签。
  * [POS]: Release 内的构建详情；首次展示过程，轮询保留用户选择。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { ImageBuilds } from "@/components/image-builds";
 import { BuildPlanning } from "@/components/build-planning";
+import { PlanningConversations } from "@/components/planning-conversations";
 import { BuildProcess } from "@/components/build-process";
 import { BuildLogHistory } from "@/components/build-log-history";
 import { isBuildTerminal, type BuildLog } from "@/lib/build-state";
@@ -256,7 +257,10 @@ export function BuildDetail({
       </div>}
       <Tabs value={tab} onChange={setTab} label={t("redesign.buildTabs")} items={[
         { value: "process", label: t("process.tab") },
-        { value: "execution", label: t("redesign.execution") }, { value: "plan", label: t("redesign.plan") }, { value: "artifacts", label: t("redesign.output") },
+        { value: "execution", label: t("redesign.execution") },
+        { value: "plan", label: t("redesign.plan") },
+        { value: "audit", label: t("audit.tab") },
+        { value: "artifacts", label: t("redesign.output") },
       ]}>{activeTab => <>
         <div hidden={activeTab !== "process"}><BuildProcess key={id} build={build} navigate={setTab} /></div>
         <div hidden={activeTab !== "execution"}>
@@ -463,6 +467,9 @@ export function BuildDetail({
               : t("builds.noConfig"))}
         </pre>
       </details>
+        </div>
+        <div hidden={activeTab !== "audit"}>
+          <PlanningConversations buildId={id} terminal={isBuildTerminal(build.status)} active={activeTab === "audit"} />
         </div>
       <section className="panel build-detail-output" hidden={activeTab !== "artifacts"}>
         <SectionTitle

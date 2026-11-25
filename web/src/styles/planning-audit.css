@@ -1,11 +1,10 @@
 /**
  * [INPUT]: 依赖中性色主题、共享标签和审计语义类名。
  * [OUTPUT]: 提供轮次导航、动作与详情双栏及手机阅读布局。
- * [POS]: AI 审计专属样式；局部滚动不移动外层构建导航。
+ * [POS]: 独立 AI 审计标签样式；局部滚动不移动外层构建导航。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
-.planning-audit-shell { min-width: 0; border-top: 1px solid var(--border); }
-.planning-audit-shell > summary { min-height: 48px; padding-block: 14px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.planning-audit-shell { min-width: 0; }
 .planning-audit { min-width: 0; padding-bottom: 12px; }
 .audit-intro { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; color: var(--muted-foreground); font-size: 11px; line-height: 1.8; margin-bottom: 16px; }
 .audit-intro p { flex: 1; min-width: 180px; }

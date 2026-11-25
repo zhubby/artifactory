@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖受权会话、增量审计消息与身份关联阅读投影。
- * [OUTPUT]: 展示规划轮次、动作和可读详情，保留分页、选择与阅读位置。
- * [POS]: 构建计划与过程共用的只读审计入口；不介入自主规划。
+ * [INPUT]: 依赖标签激活状态、受权会话、增量消息与身份关联投影。
+ * [OUTPUT]: 按需展示规划轮次、动作和详情；切离暂停轮询并保留阅读位置。
+ * [POS]: 构建详情唯一的只读审计标签；不介入自主规划。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -18,23 +18,28 @@ import type { PlanningConversation, ConversationMessage, ConversationPage } from
 
 const identity = (session: PlanningConversation) => `${session.run_id}/${session.generation}`;
 
-export function PlanningConversations({ buildId, terminal }: { buildId: string; terminal: boolean }) {
-  return <AuditConversations key={buildId} buildId={buildId} terminal={terminal} />;
+export function PlanningConversations({ buildId, terminal, active }: { buildId: string; terminal: boolean; active: boolean }) {
+  return <AuditConversations key={buildId} buildId={buildId} terminal={terminal} active={active} />;
 }
 
-function AuditConversations({ buildId, terminal }: { buildId: string; terminal: boolean }) {
+function AuditConversations({ buildId, terminal, active }: { buildId: string; terminal: boolean; active: boolean }) {
   const { t, date } = useUI();
-  const [open, setOpen] = useState(false);
-  const [activated, setActivated] = useState(false);
+  const [activated, setActivated] = useState(active);
   const [choice, setChoice] = useState<string>();
-  const sessions = useRemote<{ conversations: PlanningConversation[] }>(activated ? `/builds/${buildId}/planning/conversations` : null, open && !terminal ? 3000 : false);
-  const wasTerminal = useRef(terminal);
+  const sessions = useRemote<{ conversations: PlanningConversation[] }>(active || activated ? `/builds/${buildId}/planning/conversations` : null, active && !terminal ? 3000 : false);
+  const previous = useRef({ active, terminal });
   const finalRead = useRef(false);
   useEffect(() => {
-    if (terminal && !wasTerminal.current) finalRead.current = true;
-    if (finalRead.current && open) { finalRead.current = false; void sessions.reload({ progress: "background" }); }
-    wasTerminal.current = terminal;
-  }, [terminal, open, sessions.reload]);
+    if (active) setActivated(true);
+  }, [active]);
+  useEffect(() => {
+    if (activated && terminal && !previous.current.terminal) finalRead.current = true;
+    if (active && activated && (finalRead.current || !previous.current.active)) {
+      finalRead.current = false;
+      void sessions.reload({ progress: "background" });
+    }
+    previous.current = { active, terminal };
+  }, [terminal, active, activated, sessions.reload]);
   const list = sessions.data?.conversations || [];
   const fallback = list.findLast(session => session.status === "running") || list[0];
   const selected = choice && list.some(session => identity(session) === choice) ? choice : fallback ? identity(fallback) : undefined;
@@ -46,12 +51,11 @@ function AuditConversations({ buildId, terminal }: { buildId: string; terminal: 
       : ["initial", "clarification", "placement"].includes(purpose || "") ? t(`audit.rounds.${purpose}`) : t("audit.roundUnknown", { count: index + 1 });
     return session.generation > 1 ? `${title} · ${t("ai.generation", { generation: session.generation })}` : title;
   };
-  return <details className="planning-audit-shell" onToggle={event => { const value = event.currentTarget.open; setOpen(value); if (value) setActivated(true); }}>
-    <summary>{t("ai.conversations")}</summary>
-    <div className="planning-audit" hidden={!open}>
+  return <section className="planning-audit-shell" aria-label={t("audit.tab")}>
+    <div className="planning-audit">
       <ErrorBox message={sessions.error} />
       {sessions.error && <Button variant="secondary" size="sm" onClick={() => void sessions.reload()}>{t("common.retry")}</Button>}
-      {!sessions.data && !sessions.error && open && <Loading variant="detail" />}
+      {!sessions.data && !sessions.error && active && <Loading variant="detail" />}
       {sessions.data && <>
         <div className="audit-intro"><p>{t("audit.hint")}</p><span>{t("audit.sessionCount", { count: list.length })}</span></div>
         {!list.length && <p className="audit-empty">{t("ai.noConversations")}</p>}
@@ -61,11 +65,11 @@ function AuditConversations({ buildId, terminal }: { buildId: string; terminal: 
           </button>)}
         </nav>}
         {list.map((session, index) => <div key={`${buildId}/${identity(session)}`} hidden={selected !== identity(session)}>
-          <Conversation buildId={buildId} session={session} enabled={open && selected === identity(session)} title={label(session, index)} />
+          <Conversation buildId={buildId} session={session} enabled={active && selected === identity(session)} title={label(session, index)} />
         </div>)}
       </>}
     </div>
-  </details>;
+  </section>;
 }
 
 function EntryIcon({ entry }: { entry: AuditEntry }) {

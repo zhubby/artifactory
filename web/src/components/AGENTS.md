@@ -5,12 +5,12 @@ account.tsx: 保持单实例账户菜单、设置草稿和焦点，退出后发�
 ai-settings.tsx: 使用共享下拉配置任意模型、调用预算与独立接口兼容字段。
 auth-shell.tsx: 渲染认证页面布局。
 brand-mark.tsx: 渲染 Artifactory 品牌标记。
-build-detail.tsx: 组合过程、计划、执行与制品；首次展示过程，轮询保留用户标签。
+build-detail.tsx: 组合过程、执行、计划、独立 AI 审计与制品；首次展示过程，轮询保留用户标签。
 build-process.tsx: 展示真实阶段、当前动作、失败分类和有界事件，保留展开状态。
 build-log-history.tsx: 首读显示日志骨架，按 attempt 和步骤分页，追加旧日志时保留输出与阅读锚点。
-build-planning.tsx: 组合当前计划、稳定历史选择与澄清草稿，保留实时统计回退和按需审计。
+build-planning.tsx: 组合当前计划、稳定历史选择与澄清草稿，保留实时统计回退。
 build-plan-target.tsx: 结构化呈现原生顺序步骤与 OCI 参数，按计划身份对齐执行并标明沿用成功来源。
-planning-conversations.tsx: 按规划轮次读取审计，展示关联动作和详情，保留选择、分页与静默补读。
+planning-conversations.tsx: 独立标签按需读取审计，切离暂停轮询，保留轮次、动作、分页与阅读位置。
 planning-audit-content.tsx: 安全渲染任务输入、审计正文、源码、日志与搜索结果，提供参数和原文详情。
 build-table.tsx: 展示构建的 Release 归属、独立源码与目标和执行状态。
 build-wizard.tsx: 组合四步弹窗、授权设备默认目标、答案草稿和最终确认提交。
