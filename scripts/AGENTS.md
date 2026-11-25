@@ -21,8 +21,8 @@ test_data_access.py: 验证数据库访问规则。
 test_deploy.py: 验证固定初始账号、单机部署清单与已有凭据保留。
 test_local_gateway.py: 验证本机网关环境的凭据隔离与固定来源。
 test_init_helm.py: 验证初始账号、镜像池权限与 Registry、终端私有入口的相加策略边界。
-test_version.py: 验证统一版本、两类发布标签与官方镜像，保留第三方依赖。
-version.py: 同步统一版本，核对平台与原生发布标签及官方镜像。
+test_version.py: 验证UTF-8版本读写、两类发布标签与官方镜像。
+version.py: 以UTF-8同步统一版本，核对发布标签及官方镜像。
 wait_local_services.py: 等待本机依赖服务就绪。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

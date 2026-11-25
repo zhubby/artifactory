@@ -1,4 +1,4 @@
-# [INPUT]: 工作区版本、发布清单与官方镜像版本标签。
+# [INPUT]: UTF-8 工作区版本、发布清单与官方镜像标签。
 # [OUTPUT]: 检查或同步统一版本，校验平台与原生发布标签。
 # [POS]: 发布流程的统一版本边界；不重写第三方镜像。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -30,7 +30,7 @@ def validate_version(version):
 
 def inspect_project(root):
     workspace_path = root / "Cargo.toml"
-    workspace = tomllib.loads(workspace_path.read_text())["workspace"]
+    workspace = tomllib.loads(workspace_path.read_text(encoding="utf-8"))["workspace"]
     entries = [(workspace_path, "workspace.package.version", workspace["package"]["version"])]
     package_names = set()
     for pattern in workspace["members"]:
@@ -39,13 +39,13 @@ def inspect_project(root):
             raise ValueError(f"Cargo.toml: workspace member {pattern!r} does not exist")
         for member in members:
             path = member / "Cargo.toml"
-            package = tomllib.loads(path.read_text())["package"]
+            package = tomllib.loads(path.read_text(encoding="utf-8"))["package"]
             inheritance = package.get("version")
             if not isinstance(inheritance, dict) or inheritance.get("workspace") is not True:
                 raise ValueError(f"{path.relative_to(root)}: require version.workspace = true")
             package_names.add(package["name"])
     lock_path = root / "Cargo.lock"
-    lock = tomllib.loads(lock_path.read_text())
+    lock = tomllib.loads(lock_path.read_text(encoding="utf-8"))
     locked_names = set()
     for package in lock["package"]:
         if package["name"] in package_names and "source" not in package:
@@ -55,27 +55,27 @@ def inspect_project(root):
         raise ValueError(f"Cargo.lock: missing workspace packages {sorted(package_names - locked_names)}")
     package_paths = [root / "web/package.json", *sorted((root / "packages").glob("*/package.json"))]
     for path in package_paths:
-        package = json.loads(path.read_text())
+        package = json.loads(path.read_text(encoding="utf-8"))
         entries.append((path, "version", package["version"]))
         path = path.with_name("package-lock.json")
-        package_lock = json.loads(path.read_text())
+        package_lock = json.loads(path.read_text(encoding="utf-8"))
         entries.extend([(path, "version", package_lock["version"]),
                         (path, 'packages[""].version', package_lock["packages"][""]["version"])])
     chart_paths = sorted((root / "charts").glob("*/Chart.yaml"))
     if not chart_paths:
         raise ValueError("charts/: no first-party Helm charts found")
     for path in chart_paths:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         for field in ["version", "appVersion"]:
             match = re.search(rf"(?m)^{field}:\s*([^\n]+)$", text)
             if not match:
                 raise ValueError(f"{path.relative_to(root)}: missing {field}")
             entries.append((path, field, match.group(1).split(" #", 1)[0].strip().strip("\"'")))
     for path in sorted((root / "charts").glob("*/values.yaml")):
-        for match in FIRST_PARTY_IMAGE.finditer(path.read_text()):
+        for match in FIRST_PARTY_IMAGE.finditer(path.read_text(encoding="utf-8")):
             entries.append((path, match["image"].removesuffix(":"), match["version"]))
     path = root / "crates/emissary/Dockerfile"
-    match = re.search(r"(?m)^ARG ARTIFACTORY_BUILD_VERSION=([^\n]+)$", path.read_text())
+    match = re.search(r"(?m)^ARG ARTIFACTORY_BUILD_VERSION=([^\n]+)$", path.read_text(encoding="utf-8"))
     if not match:
         raise ValueError("crates/emissary/Dockerfile: missing ARTIFACTORY_BUILD_VERSION")
     entries.append((path, "ARTIFACTORY_BUILD_VERSION", match.group(1)))
@@ -98,7 +98,7 @@ def update_workspace(text, version):
 def synchronize(root, version, entries, package_names):
     updates = {}
     for path in dict.fromkeys(entry[0] for entry in entries):
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         if path.name == "Cargo.toml":
             updated = update_workspace(text, version)
         elif path.name == "Cargo.lock":
@@ -131,8 +131,8 @@ def synchronize(root, version, entries, package_names):
         updates[path] = updated
     updates[root / "VERSION"] = version + "\n"
     for path, content in updates.items():
-        if path.read_text() != content:
-            path.write_text(content)
+        if path.read_text(encoding="utf-8") != content:
+            path.write_text(content, encoding="utf-8")
 
 
 def main():
@@ -147,7 +147,7 @@ def main():
     arguments = parser.parse_args()
     root = arguments.root.resolve()
     try:
-        canonical = validate_version((root / "VERSION").read_text().strip())
+        canonical = validate_version((root / "VERSION").read_text(encoding="utf-8").strip())
         version = validate_version(arguments.target_version) if arguments.target_version else canonical
         if arguments.tag is not None and arguments.tag != f"v{version}":
             raise ValueError(f"release tag must be v{version}, got {arguments.tag!r}")

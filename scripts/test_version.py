@@ -1,5 +1,5 @@
 # [INPUT]: 依赖版本检查器、Cargo 清单和 Chart。
-# [OUTPUT]: 验证统一版本、平台标签与原生发布标签。
+# [OUTPUT]: 验证统一版本、发布标签与跨平台 UTF-8 读写。
 # [POS]: 发布版本规则的回归。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 import json
@@ -8,6 +8,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
+
+from scripts import version
 
 
 SCRIPT = Path(__file__).with_name("version.py")
@@ -52,7 +55,7 @@ class ProjectVersionTests(unittest.TestCase):
     def write(self, relative, content):
         path = self.root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        path.write_text(content, encoding="utf-8")
 
     def write_json(self, relative, value):
         self.write(relative, json.dumps(value, indent=2) + "\n")
@@ -65,6 +68,29 @@ class ProjectVersionTests(unittest.TestCase):
         result = self.run_version("--check")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("0.1.0", result.stdout)
+
+    def test_version_files_use_utf8_under_a_non_utf8_system_default(self):
+        chart = self.root / "charts/artifactory/Chart.yaml"
+        original = "# 依赖统一版本 🧪\n" + chart.read_text(encoding="utf-8")
+        chart.write_text(original, encoding="utf-8")
+        read_text = Path.read_text
+        write_text = Path.write_text
+
+        def system_read(path, *arguments, **options):
+            options.setdefault("encoding", "cp1252")
+            return read_text(path, *arguments, **options)
+
+        def system_write(path, content, *arguments, **options):
+            options.setdefault("encoding", "cp1252")
+            return write_text(path, content, *arguments, **options)
+
+        with mock.patch.object(Path, "read_text", system_read), \
+                mock.patch.object(Path, "write_text", system_write):
+            entries, packages = version.inspect_project(self.root)
+            version.synchronize(self.root, "0.2.0", entries, packages)
+            entries, _ = version.inspect_project(self.root)
+        self.assertTrue(all(value == "0.2.0" for _, _, value in entries))
+        self.assertTrue(chart.read_bytes().startswith("# 依赖统一版本 🧪\n".encode("utf-8")))
 
     def test_check_reports_node_package_drift(self):
         self.write_json("web/package.json", {"name": "artifactory-console", "version": "0.9.0"})
