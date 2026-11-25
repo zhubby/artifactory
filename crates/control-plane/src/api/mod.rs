@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户 HTTP 处理器、统一鉴权和请求限制。
-//! [OUTPUT]: 组合构建概览、业务、设备终端、账户通知和规划路由。
+//! [OUTPUT]: 组合构建概览、设备安装、终端、账户通知和规划路由。
 //! [POS]: 控制平面 HTTP 接口入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub(crate) mod ai_management;
@@ -11,6 +11,7 @@ mod emissary_updates;
 mod images;
 mod lifecycle;
 mod management;
+mod node_installation;
 mod notification_channels;
 mod notification_health;
 mod notifications;
@@ -187,6 +188,23 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/v1/enrollment-tokens",
             post(management::enrollment_token),
+        )
+        .route(
+            "/api/v1/system/node-installation",
+            get(node_installation::settings).patch(node_installation::update_settings),
+        )
+        .route(
+            "/api/v1/node-installation/options",
+            get(node_installation::options),
+        )
+        .route("/api/v1/node-installation", post(node_installation::create))
+        .route(
+            "/api/v1/node-installation/installer.sh",
+            get(node_installation::shell_installer),
+        )
+        .route(
+            "/api/v1/node-installation/installer.ps1",
+            get(node_installation::powershell_installer),
         )
         .route("/api/v1/nodes", get(management::nodes))
         .route("/api/v1/nodes/{id}", patch(management::update_node))

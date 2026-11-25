@@ -21,6 +21,8 @@ console.tsx: 按租户与项目隔离工作区，组合顶栏、设备终端路�
 dashboard.tsx: 读取完整窗口指标和近期活动，范围切换使用共享下拉，后台刷新保留内容。
 dashboard-charts.tsx: 按需加载 Recharts，呈现当前构建结果和成功构建周转时长，保留空样本断点。
 emissary-ota.tsx: 等待节点池和发布选项后开放表单，历史首读可重试，轮询保留池策略草稿。
+node-installation-settings.tsx: 按系统管理员权限配置全局设备公开地址，首读可重试。
+node-enrollment-dialog.tsx: 在同弹窗展示固定平台安装命令、单用凭证和过期状态，关闭清除秘密。
 forms.tsx: 提供项目、节点、凭据表单，复用下拉并统一提交通知。
 lifecycle.tsx: 分别等待影响与当前操作，使用 HTTP 幂等键提交归档、恢复与删除。
 node-card.tsx: 直接消费列表快照，展示名称、主机名、短 ID、硬件与资源状态。
@@ -33,7 +35,7 @@ node-network-addresses.tsx: 在设备摘要后按接口对齐 IPv4/IPv6、采样
 node-rename.tsx: 提供具名图标入口，只提交名称，按 Unicode White_Space 裁剪后校验 UTF8 与控制字符，保护草稿和焦点。
 node-detail-parts.tsx: 提供分区、折叠区、对齐字段、时间与重试，零值可见且轮询保留展开状态。
 node-metadata.tsx: 按需读取元数据，直接展示普通值，复杂值与快照信息折叠，保留刷新快照。
-nodes-workspace.tsx: 复用 q 查询身份字段，刷新节点列表并关闭不再匹配的详情。
+nodes-workspace.tsx: 复用 q 查询身份字段，组合统一安装弹窗，关闭不再匹配的详情。
 notifications.tsx: 顶部居中显示通知，避开手机顶栏与抽屉导航，桥接校验和弹窗焦点。
 preferences-controls.tsx: 为登录页和个人设置提供自定义语言、主题下拉。
 providers.tsx: 组合账户、语言、主题、顶部进度和全局通知，动效适配系统偏好。

@@ -10,6 +10,7 @@ build_logs.rs: 提供日志静态分页与终态排空后结束的 SSE。
 emissary_updates.rs: 提供 Emissary 升级包与升级请求接口。
 lifecycle.rs: 提供工作区生命周期任务接口。
 management.rs: 提供设备改名、识别摘要、凭据与设备池接口。
+node_installation.rs: 配置系统设备地址，筛选可信版本，生成有界安装材料与无凭证脚本。
 projects.rs: 提供项目配置、授权原生平台与源码引用查询接口。
 signing.rs: 提供租户凭据、签名方案和项目默认设置。
 telemetry.rs: 提供设备与构建时序查询接口。

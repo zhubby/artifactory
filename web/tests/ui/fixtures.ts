@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright 路由拦截与控制台业务类型。
- * [OUTPUT]: 提供构建目标、授权设备平台、概览聚合和租户 HTTP 夹具。
+ * [OUTPUT]: 提供构建目标、节点安装、授权设备平台和租户 HTTP 夹具。
  * [POS]: UI 测试的默认服务响应；专项测试覆盖对应响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -506,6 +506,8 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
         metadata: {},
       },
       "/emissary-releases": [],
+      "/system/node-installation": { device_endpoint: "", can_edit: role === "admin" },
+      "/node-installation/options": { device_endpoint: "", releases: [] },
       "/emissary-updates": [],
       "/overview": {
         projects: 1,

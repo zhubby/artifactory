@@ -19,7 +19,7 @@ errors.spec.ts: 验证错误状态和本地化。
 dropdown-controls.spec.ts: 验证明暗主题与普通表单弹层齐宽对齐、焦点、必填空值、迟到默认值、字段事件、重置及长列表边界。
 select-helpers.ts: 通过可见触发器和选项执行共享下拉选择。
 filter-layout.spec.ts: 验证筛选同行、尺寸断点、长名称与滚动焦点边界。
-fixtures.ts: 提供 Release 说明、独立构建目标、授权设备平台、完整窗口概览聚合与租户 HTTP 夹具。
+fixtures.ts: 提供 Release、构建目标、节点安装、设备平台、概览与租户 HTTP 夹具。
 interaction-visual.spec.ts: 验证切换器键盘访问、顶栏通知焦点、320px长名称与短视口侧栏。
 lifecycle-controls.spec.ts: 验证 HTTP 操作入口、幂等键、隐藏操作历史、范围恢复与终态停止轮询。
 loading-progress.spec.ts: 验证前台并发结束、失败释放、租户解析取消、轮询静默与未保存导航保护。
@@ -37,6 +37,8 @@ node-detail-design.spec.ts: 验证紧凑标题、首屏设备摘要、细节展�
 node-identification.spec.ts: 验证身份、重名短 ID、重命名权限、草稿、UTF8、Unicode 空白与接口快照。
 notifications.spec.ts: 验证浮层布局、顶栏访问、字段校验、弹窗焦点、计时暂停及交互期间的来源隔离与轮询恢复。
 node-pagination.spec.ts: 验证节点分页和筛选。
+node-installation.spec.ts: 验证统一安装命令、过期、关闭秘密清理和系统地址权限。
+node-installation-commands.spec.ts: 隔离执行 Shell 与 PowerShell，验证传参、摘要、进程策略与 CA 保留。
 peripheral-visual.spec.ts: 验证认证页、邀请页、独立项目目录空态和错误页的视觉边界。
 preferences.spec.ts: 验证用户视觉和语言偏好。
 readable-routes.spec.ts: 验证项目目录、概览构建深链接、slug 导航和作用域切换。

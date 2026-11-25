@@ -2,6 +2,7 @@
 > L2 | Parent: ../AGENTS.md
 
 api/: 提供按租户和项目鉴权的 HTTP 接口。
+installation/: 提供校验固定版本与专用服务账户的首次安装脚本。
 auth.rs: 校验会话、令牌和权限；隔离首次管理员密码与常规密码策略。
 build.rs: 校验严格 SemVer，从文件名推断后缀并生成安全交付名称。
 coordination.rs: 协调副本内连接归属与持久化唤醒。

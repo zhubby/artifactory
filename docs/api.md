@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 当前 HTTP 路由、模型能力和租户项目授权。
-[OUTPUT]: 定义公开接口、协议兼容参数和目标准入边界，并关联设备终端契约。
+[OUTPUT]: 定义公开接口、首次安装、协议兼容与目标准入边界。
 [POS]: 控制台与外部集成共用的 HTTP 契约入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -40,6 +40,10 @@
 | `DELETE /tokens/{id}` | 吊销当前用户的 Token |
 | `GET, POST /pools` | 创建 `{name}` |
 | `POST /enrollment-tokens` | `{pool_id}`，返回一次性令牌 |
+| `GET, PATCH /system/node-installation` | `{device_endpoint,can_edit}`；PATCH 只接受 `{device_endpoint}`，仅全局系统管理员会话可写 |
+| `GET /node-installation/options` | 租户管理员会话；公开设备地址和当前租户已导入版本的平台选项 |
+| `POST /node-installation` | 租户管理员会话；`{pool_id,release_id,os,arch}`，返回一次性安装材料，禁止缓存 |
+| `GET /node-installation/installer.sh`、`GET /node-installation/installer.ps1` | 无凭证的固定安装脚本；安装材料包含脚本 SHA-256 |
 | `GET /nodes` | 实际能力、诊断、identity 摘要、slots、online、active_jobs；不携带全量 metadata |
 | `GET /nodes/{id}/metadata` | viewer 会话；完整启动 metadata、startup_id、内容摘要与服务端接收时间 |
 | `GET /nodes/{id}/telemetry` | viewer 会话；最新主机采样、fresh 与版本化清单 |
@@ -84,6 +88,14 @@
 | `GET /releases/{id}/manifest`、`GET /releases/{id}/checksums` | published 版本的命名交付清单与 SHA256SUMS |
 
 创建租户和项目返回 `{id,slug}`，构建返回 `{id,number,project_slug}`；其他资源创建通常返回 `{id}`；Token 类创建还返回明文值；修改操作通常返回 `{ok:true}`。所有查询使用真实数据库，不返回演示对象。
+
+首次安装响应包含 `token`、`expires_at`、`device_endpoint`、`ca_pem`、`ca_sha256`、`version`、`os`、`arch`、`download_url`、`sha256`、`size`、`public_keys`、`installer_url` 和 `installer_sha256`。
+版本与节点池必须属于当前租户。
+控制平面准备完整安装材料后，才签发至多十五分钟的单次凭证。
+凭证截止不晚于下载票据，数据库锁等待不延长有效时间。
+设备公开地址保存在全局系统配置；修改它不修改实际网络入口或 TLS 证书。
+`can_edit` 由账户的真实系统角色计算，不沿用租户角色。
+安装流程与身份保护见 [安装并加入节点](node-installation.md)。
 
 ## 构建过程
 

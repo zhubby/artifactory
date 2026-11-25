@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 OTA API、统一通知、表单、Select 和设备详情字段。
+ * [INPUT]: 依赖 OTA API、系统安装配置、统一通知、表单、Select 和设备详情字段。
  * [OUTPUT]: 提供对齐版本字段的 NodeOTA 与 EmissarySettings。
  * [POS]: 设置首读展示骨架；节点池等待发布选项，轮询保留策略草稿。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -7,6 +7,7 @@
 "use client";
 
 import { useState } from "react";
+import { NodeInstallationSettings } from "@/components/node-installation-settings";
 import { useUI } from "@/components/providers";
 import { ErrorBox, Field, SectionTitle, Loading } from "@/components/common";
 import { SubmitForm } from "@/components/forms";
@@ -82,6 +83,7 @@ export function EmissarySettings({ user }: { user: User }) {
   const admin = user.role === "admin";
   async function reload() { await Promise.all([releases.reload(), pools.reload(), updates.reload()]); }
   return <div className="space-y-6" data-testid="emissary-settings">
+    <NodeInstallationSettings />
     <ErrorBox message={releases.error || pools.error || updates.error} />
     {((!releases.data && releases.error) || (!pools.data && pools.error) || (!updates.data && updates.error)) && <Button variant="secondary" onClick={() => void reload()}>{t("common.retry")}</Button>}
     <section className="panel"><SectionTitle title={t("ota.releases")} detail={t("ota.importHint")} />

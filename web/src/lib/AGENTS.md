@@ -11,6 +11,7 @@ events.ts: 订阅构建事件，维护游标并在 complete 后停止重连。
 idempotency.ts: 使用 HTTP 可用的随机源生成 UUID v4，请求重试复用表单键。
 notify.ts: 隔离提示来源，统一四类操作通知，单次恢复跨整页跳转的成功文案。
 node-identity.ts: 兼容新身份与旧诊断主机名，生成去重硬件摘要；不发送额外请求。
+node-installation.ts: 定义安装材料，转义 Shell 与 PowerShell 命令，验证脚本摘要并清理环境凭证。
 preferences.ts: 定义语言、主题类型与存储键，动画没有持久化开关。
 progress.ts: 保存前台并发计数，向请求和导航提供幂等结束函数及订阅入口。
 repository-refs.ts: 查询项目引用，取消过期请求并隔离迟到响应。

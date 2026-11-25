@@ -12,4 +12,6 @@
 
 2026-11-24-001-feat-interactive-terminals-plan.md: 记录已实施设备终端、Uplink/Tunshell边界及分层验收进度。
 
+2026-11-25-node-installation.md: 固定系统地址、首次安装材料、跨平台脚本和统一加入弹窗。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

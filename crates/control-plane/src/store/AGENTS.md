@@ -11,6 +11,7 @@ dashboard_tests.rs: 验证全量构建、状态分母、归档活动、空范围
 errors.rs: 转换数据库约束为业务错误。
 models.rs: 定义 Toasty 私有 CRUD 投影。
 management.rs: 事务改名并审计，投影可见识别摘要与节点搜索。
+node_installation.rs: 保存系统设备地址，按真实账户角色授权，原子签发安装凭证和审计。
 projects.rs: 写入项目配置和源码授权。
 signing.rs: 写入凭据版本、默认方案并投影方案当前可用性。
 signing_execution.rs: 锁定当前授权并执行材料领取及最终证据登记。

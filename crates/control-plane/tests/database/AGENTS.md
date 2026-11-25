@@ -7,6 +7,7 @@ build_activity.rs: 验证构建过程的权限、源码历史与秘密字段隔�
 release_contract.rs: 验证版本元数据、平台授权查询和原生构建设备准入。
 planning_basics.rs: 验证模型兼容配置持久化、密钥脱敏、注册和规划状态边界。
 account_settings.rs: 验证个人设置和项目资源权限。
+node_installation.rs: 验证全局设备地址、安装材料、签名与跨租户拒绝。
 build_logs.rs: 验证历史日志分页、过滤、授权和终态流结束。
 device_load.rs: 验证三个控制平面的设备群连接、续租和调度预算。
 node_metadata.rs: 验证启动、心跳和重连保留名称及节点查询范围。

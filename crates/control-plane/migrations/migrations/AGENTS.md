@@ -11,5 +11,6 @@
 0006_source_progress.sql: 兼容追加有界源码阶段记录，不伪造历史进度。
 0007_terminals.sql: 追加设备终端会话、一次性附着票据和实例目录；不持久化终端字节。
 0008_source_preparation.sql: 标记新版源码协议，保存规划准备摘要和有界事件。
+0009_node_installation.sql: 保存系统管理员配置的设备公开连接地址。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

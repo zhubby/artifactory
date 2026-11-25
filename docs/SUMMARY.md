@@ -15,6 +15,7 @@
 - [租户与项目工作台、个人设置及生命周期](workspaces.md)
 - [通知中心与外部渠道](notifications.md)
 - [节点元数据、MCP 与 AI 选机](node-placement.md)
+- [安装并加入节点](node-installation.md)
 - [设备终端](terminals.md)
 - [应用签名与凭据下发](signing.md)
 - [执行配方与历史配置](configuration.md)
@@ -79,6 +80,7 @@
 # 设计与计划归档
 
 - [设备交互终端实施计划 · 2026-11-24](plans/2026-11-24-001-feat-interactive-terminals-plan.md)
+- [节点安装与加入实施计划 · 2026-11-25](plans/2026-11-25-node-installation.md)
 
 - [设备命名与辨识度改进 · 2026-11-20](plans/2026-11-20-node-identification.md)
 - [Kubernetes 1.28 一次性镜像构建方案 · 2026-11-18](plans/2026-11-18-001-refactor-kubernetes-128-build-plan.md)
@@ -99,6 +101,7 @@
 - [Release 元数据与独立构建实施计划 · 2026-11-21](superpowers/plans/2026-11-21-release-build-decoupling.md)
 - [构建过程与源码诊断设计 · 2026-11-24](superpowers/specs/2026-11-24-build-observability.md)
 - [构建过程实施计划 · 2026-11-24](superpowers/plans/2026-11-24-build-observability.md)
+- [源码准备与规划复用实施计划 · 2026-11-25](superpowers/plans/2026-11-25-source-planning-reuse.md)
 
 # 品牌与变更记录
 

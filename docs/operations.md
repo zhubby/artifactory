@@ -101,6 +101,11 @@ npm run docs:serve
 
 ## Emissary 安装与注册
 
+控制台提供完整的[安装并加入节点](node-installation.md)流程。
+系统管理员先在 Emissary 设置保存设备公开连接地址。
+再导入当前租户的签名版本，从节点页生成平台安装命令。
+以下命令保留给手工安装和故障恢复。
+
 运行 `sh scripts/cross-build-emissary.sh`，默认构建本机 Rust 目标，输出位于 `.local/emissary-bin`。其他目标由 `EMISSARY_TARGETS` 显式指定，需预装对应 linker / SDK；正式发布由五种原生 runner 分别编译。设备程序不依赖 Go。
 
 注册时钉住管理员通过可信渠道分发的 `ca.pem`；不要从未知网络下载后直接信任。通过 `ARTIFACTORY_ENROLLMENT_TOKEN` 传短期令牌，注册后立即清除环境变量。配置文件和 `node.key` 只能由专用服务账户读取。

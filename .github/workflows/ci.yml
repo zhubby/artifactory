@@ -78,6 +78,10 @@ jobs:
       - run: sh scripts/local-services.sh
       - run: python3 scripts/check_data_access.py --dependencies
       - run: python3 scripts/check_module_boundaries.py
+      - name: First-install Unix isolation and shell syntax
+        run: |
+          sh -n crates/control-plane/src/installation/installer.sh
+          python3 crates/control-plane/src/installation/tests.py
       - run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
       - run: python3 -m unittest discover -s tests/operator/acceptance -p 'test_*.py' -v
       - run: python3 -m unittest discover -s tests/operator/pods -p 'test_*.py' -v
@@ -297,6 +301,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: First-install PowerShell syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $parseTokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/crates/control-plane/src/installation/installer.ps1", [ref]$parseTokens, [ref]$parseErrors) > $null
+          if ($parseErrors.Count) { $parseErrors | Format-List; exit 1 }
       - name: Rust native runtime and process tree contracts
         shell: bash
         run: |
