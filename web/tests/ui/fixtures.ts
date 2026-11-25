@@ -506,8 +506,9 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
         metadata: {},
       },
       "/emissary-releases": [],
+      "/emissary-version": { product_version: "0.2.0", release_id: null, release_version: null, release_status: "missing" },
       "/system/node-installation": { device_endpoint: "", can_edit: role === "admin" },
-      "/node-installation/options": { device_endpoint: "", releases: [] },
+      "/node-installation/options": { product_version: "0.2.0", device_endpoint: "", releases: [] },
       "/emissary-updates": [],
       "/overview": {
         projects: 1,

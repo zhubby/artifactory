@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户 HTTP 夹具、真实下拉与受控安装材料。
- * [OUTPUT]: 验证加入弹窗命令、过期、秘密清理和系统地址权限。
+ * [OUTPUT]: 验证产品统一版本安装、过期、秘密清理和系统地址权限。
  * [POS]: 首次节点安装流程的浏览器行为回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -14,7 +14,7 @@ async function installationAPI(page: Page, endpoint = "agents.example.com:31443"
   await fixtureAPI(page);
   await page.context().addCookies([{ name: "artifactory-locale", value: "en", url: "http://127.0.0.1:3100" }]);
   await page.route("**/api/v1/node-installation/options", route => route.fulfill({ json: {
-    device_endpoint: endpoint, releases: [{ id: "release-install", version: "emissary-v0.2.0", platforms }],
+    product_version: "0.2.0", device_endpoint: endpoint, releases: [{ id: "release-install", version: "emissary-v0.2.0", platforms }],
   } }));
   await page.route("**/api/v1/system/node-installation", route => route.fulfill({ json: { device_endpoint: endpoint, can_edit: true } }));
 }
@@ -37,6 +37,9 @@ test("installation stays in one dialog with commands, locked selection and clear
   await page.goto(tenantURL("/nodes"));
   await page.getByRole("button", { name: "Register new node", exact: true }).click();
   const dialog = page.getByRole("dialog");
+  await expect(dialog.getByTestId("installation-product-version")).toHaveText("0.2.0");
+  await expect(dialog.getByRole("combobox", { name: "Artifactory version" })).toHaveCount(0);
+  await expect(dialog).toContainText("The installation uses the Artifactory version.");
   await expect(dialog.getByRole("heading", { name: "Install and join node" })).toBeVisible();
   await chooseOption(dialog.getByRole("combobox", { name: "Target system" }), "windows");
   await chooseOption(dialog.getByRole("combobox", { name: "Architecture" }), "arm64");
@@ -115,14 +118,14 @@ test("missing release and a failed options read offer recovery without generatio
   let failed = true;
   await page.route("**/api/v1/node-installation/options", route => failed
     ? route.fulfill({ status: 503, json: { error: "Options unavailable" } })
-    : route.fulfill({ json: { device_endpoint: "agents.example.com:8443", releases: [] } }));
+    : route.fulfill({ json: { product_version: "0.2.0", device_endpoint: "agents.example.com:8443", releases: [] } }));
   await page.goto(tenantURL("/nodes"));
   await page.getByRole("button", { name: "Register new node", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("Options unavailable");
   failed = false;
   await dialog.getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(dialog).toContainText("Import a signed Emissary release in node settings first.");
+  await expect(dialog).toContainText("Import the signed Emissary release matching the Artifactory version in node settings first.");
   await expect(dialog.getByRole("button", { name: "Generate installation command" })).toBeDisabled();
 });
 

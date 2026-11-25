@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离数据库、真实账户角色与签名发行夹具。
-//! [OUTPUT]: 验证全局地址授权、首次安装材料和租户边界。
+//! [OUTPUT]: 验证全局地址、统一版本安装材料和租户边界。
 //! [POS]: 设备安装 HTTP 接口的集成验收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
@@ -141,6 +141,14 @@ async fn node_installation_settings_use_global_account_role_and_survive_tenant_s
 }
 
 async fn signed_release(db: &mut Database, tenant: Uuid) -> (tempfile::TempDir, Uuid) {
+    signed_release_version(db, tenant, artifactory_control_plane::VERSION).await
+}
+
+async fn signed_release_version(
+    db: &mut Database,
+    tenant: Uuid,
+    version: &str,
+) -> (tempfile::TempDir, Uuid) {
     let directory = tempfile::tempdir().unwrap();
     let signing = SigningKey::from_bytes(&[21; 32]);
     let public_key = STANDARD.encode(signing.verifying_key().as_bytes());
@@ -163,11 +171,11 @@ async fn signed_release(db: &mut Database, tenant: Uuid) -> (tempfile::TempDir, 
     settings.pki_dir = directory.path().into();
     settings.data_dir = directory.path().into();
     let assets = [("linux","amd64"),("linux","arm64"),("darwin","amd64"),("darwin","arm64"),("windows","amd64"),("windows","arm64")].map(|(os,arch)|json!({"os":os,"arch":arch,"name":format!("artifactory-emissary-{os}-{arch}{}",if os=="windows" {".exe"} else {""}),"size":10,"sha256":"b".repeat(64)}));
-    let manifest = json!({"version":"emissary-v1.2.3","commit":"a".repeat(40),"protocol_min":1,"protocol_max":1,"assets":assets}).to_string();
+    let manifest = json!({"version":version,"commit":"a".repeat(40),"protocol_min":1,"protocol_max":1,"assets":assets}).to_string();
     let hash = hex::encode(Sha256::digest(manifest.as_bytes()));
     let signature = STANDARD.encode(signing.sign(manifest.as_bytes()).to_bytes());
     let id = Uuid::new_v4();
-    sql::execute(&mut db.pool.clone(), "INSERT INTO emissary_releases(id,tenant_id,version,manifest,signature,manifest_hash) VALUES($1,$2,'emissary-v1.2.3',$3,$4,$5)", params![id,tenant,manifest,signature,hash]).await.unwrap();
+    sql::execute(&mut db.pool.clone(), "INSERT INTO emissary_releases(id,tenant_id,version,manifest,signature,manifest_hash) VALUES($1,$2,$3,$4,$5,$6)", params![id,tenant,version,manifest,signature,hash]).await.unwrap();
     (directory, id)
 }
 
@@ -276,7 +284,7 @@ async fn node_installation_prepares_fixed_material_before_issuing_single_use_cre
         .unwrap();
     let material: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(material["device_endpoint"], "agents.example.com:31443");
-    assert_eq!(material["version"], "emissary-v1.2.3");
+    assert_eq!(material["version"], artifactory_control_plane::VERSION);
     assert_eq!(material["sha256"], "b".repeat(64));
     assert_eq!(material["size"], 10);
     assert_eq!(
@@ -322,6 +330,10 @@ async fn node_installation_prepares_fixed_material_before_issuing_single_use_cre
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{options}");
+    assert_eq!(
+        options["product_version"],
+        artifactory_control_plane::VERSION
+    );
     assert_eq!(options["releases"][0]["id"], release.to_string());
     assert_eq!(
         options["releases"][0]["platforms"]
@@ -494,6 +506,10 @@ async fn node_installation_filters_untrusted_history_and_malformed_rotation_keys
     .await;
     assert_eq!(status, StatusCode::OK, "{options}");
     assert_eq!(options["releases"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        options["product_version"],
+        artifactory_control_plane::VERSION
+    );
     assert_eq!(options["releases"][0]["id"], release.to_string());
     request(
         &db,
@@ -584,5 +600,148 @@ async fn node_installation_lock_wait_does_not_extend_download_deadline() {
         expiry.timestamp() <= ticket["expires"].as_i64().unwrap(),
         "credential cannot outlive its download ticket"
     );
+    db.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn node_installation_rejects_other_versions_and_ambiguous_aliases_without_token() {
+    let mut db = Database::new().await;
+    let (_, admin) = account(&db, "version-admin", "admin").await;
+    let tenant_id = tenant(&db, &admin, "Version").await;
+    let pool_id = pool(&db, tenant_id).await;
+    let (_old_directory, old) = signed_release_version(&mut db, tenant_id, "emissary-v0.0.1").await;
+    request(
+        &db,
+        &admin,
+        Some(tenant_id),
+        "PATCH",
+        "/system/node-installation",
+        json!({"device_endpoint":"agents.example.com:443"}),
+    )
+    .await;
+    let (status, options) = request(
+        &db,
+        &admin,
+        Some(tenant_id),
+        "GET",
+        "/node-installation/options",
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{options}");
+    assert_eq!(
+        options["product_version"],
+        artifactory_control_plane::VERSION
+    );
+    assert!(options["releases"].as_array().unwrap().is_empty());
+    let input =
+        |release| json!({"pool_id":pool_id,"release_id":release,"os":"linux","arch":"amd64"});
+    let (status, error) = request(
+        &db,
+        &admin,
+        Some(tenant_id),
+        "POST",
+        "/node-installation",
+        input(old),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{error}");
+    let (_directory, current) = signed_release(&mut db, tenant_id).await;
+    let (_alias_directory, alias) = signed_release_version(
+        &mut db,
+        tenant_id,
+        &format!("emissary-v{}", artifactory_control_plane::VERSION),
+    )
+    .await;
+    let (status, options) = request(
+        &db,
+        &admin,
+        Some(tenant_id),
+        "GET",
+        "/node-installation/options",
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{options}");
+    assert!(
+        options["releases"].as_array().unwrap().is_empty(),
+        "ambiguous release aliases cannot be selected"
+    );
+    for release in [current, alias] {
+        let (status, error) = request(
+            &db,
+            &admin,
+            Some(tenant_id),
+            "POST",
+            "/node-installation",
+            input(release),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{error}");
+    }
+    let count: i64 = sql::scalar(
+        &mut db.pool.clone(),
+        "SELECT count(*) FROM enrollment_tokens",
+        params![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        count, 0,
+        "version rejection must precede enrollment credential issuance"
+    );
+    db.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn node_installation_accepts_canonical_manifest_with_legacy_release_tag() {
+    let mut db = Database::new().await;
+    let (_, admin) = account(&db, "canonical-admin", "admin").await;
+    let tenant_id = tenant(&db, &admin, "Canonical").await;
+    let pool_id = pool(&db, tenant_id).await;
+    let (_directory, release) = signed_release(&mut db, tenant_id).await;
+    sql::execute(
+        &mut db.pool.clone(),
+        "UPDATE emissary_releases SET version=$1 WHERE id=$2",
+        params![
+            format!("emissary-v{}", artifactory_control_plane::VERSION),
+            release
+        ],
+    )
+    .await
+    .unwrap();
+    request(
+        &db,
+        &admin,
+        Some(tenant_id),
+        "PATCH",
+        "/system/node-installation",
+        json!({"device_endpoint":"agents.example.com:443"}),
+    )
+    .await;
+    let (status, options) = request(
+        &db,
+        &admin,
+        Some(tenant_id),
+        "GET",
+        "/node-installation/options",
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{options}");
+    assert_eq!(options["releases"][0]["id"], release.to_string());
+    let (status, material) = request(
+        &db,
+        &admin,
+        Some(tenant_id),
+        "POST",
+        "/node-installation",
+        json!({"pool_id":pool_id,"release_id":release,"os":"linux","arch":"amd64"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{material}");
+    assert_eq!(material["version"], artifactory_control_plane::VERSION);
     db.close().await;
 }

@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖租户安装材料 API、共享弹窗、Select、命令生成器和通知。
- * [OUTPUT]: 提供同弹窗安装命令、一次性凭证和过期状态。
+ * [INPUT]: 依赖产品统一版本安装材料、共享弹窗、Select 与命令生成器。
+ * [OUTPUT]: 提供固定版本安装命令、一次性凭证和过期状态。
  * [POS]: 节点首次加入入口；关闭即销毁材料和待完成请求。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -54,7 +54,7 @@ export function NodeEnrollmentDialog({ close }: { close: () => void }) {
 function EnrollmentForm({ options, pools, close }: { options: NodeInstallationOptions; pools: Pool[]; close: () => void }) {
   const { t } = useUI();
   const [pool, setPool] = useState(pools.find(pool => pool.is_default)?.id || pools[0]?.id || "");
-  const [release, setRelease] = useState(options.releases[0]?.id || "");
+  const release = options.releases.length === 1 ? options.releases[0].id : "";
   const [os, setOS] = useState<InstallationOS>("linux");
   const [arch, setArch] = useState<InstallationArch>("amd64");
   const [material, setMaterial] = useState<NodeInstallationMaterial>();
@@ -96,9 +96,7 @@ function EnrollmentForm({ options, pools, close }: { options: NodeInstallationOp
       <Field label={t("nodes.joinPool")}><Select aria-label={t("nodes.joinPool")} className="input" value={pool} disabled={locked} onChange={event => setPool(event.target.value)}>
         {pools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}
       </Select></Field>
-      <Field label={t("installation.version")}><Select aria-label={t("installation.version")} className="input" value={release} disabled={locked} onChange={event => setRelease(event.target.value)}>
-        {options.releases.map(release => <option key={release.id} value={release.id}>{release.version}</option>)}
-      </Select></Field>
+      <div className="grid gap-2 text-sm"><span className="font-medium">{t("installation.version")}</span><p className="rounded-md border border-border px-3 py-2.5 font-mono" data-testid="installation-product-version">{options.product_version}</p></div>
       <Field label={t("installation.os")}><Select aria-label={t("installation.os")} className="input" value={os} disabled={locked} onChange={event => setOS(event.target.value as InstallationOS)}>
         <option value="linux">Linux</option><option value="darwin">macOS</option><option value="windows">Windows</option>
       </Select></Field>
@@ -106,6 +104,7 @@ function EnrollmentForm({ options, pools, close }: { options: NodeInstallationOp
         <option value="amd64">AMD64 / x86-64</option><option value="arm64">ARM64</option>
       </Select></Field>
     </div>
+    <p className="mt-3 text-xs leading-5 text-muted-foreground">{t("installation.followsProduct")}</p>
     </InstallationTarget>
     {!options.device_endpoint && <p className="text-sm leading-6 text-muted-foreground">{t("installation.missingEndpoint")}</p>}
     {!options.releases.length && <p className="text-sm leading-6 text-muted-foreground">{t("installation.missingRelease")}</p>}

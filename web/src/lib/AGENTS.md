@@ -11,16 +11,17 @@ events.ts: 订阅构建事件，维护游标并在 complete 后停止重连。
 idempotency.ts: 使用 HTTP 可用的随机源生成 UUID v4，请求重试复用表单键。
 notify.ts: 隔离提示来源，统一四类操作通知，单次恢复跨整页跳转的成功文案。
 node-identity.ts: 兼容新身份与旧诊断主机名，生成去重硬件摘要；不发送额外请求。
-node-installation.ts: 定义安装材料，转义 Shell 与 PowerShell 命令，验证脚本摘要并清理环境凭证。
+node-installation.ts: 定义产品统一版本安装材料，转义命令并清理环境凭证。
 preferences.ts: 定义语言、主题类型与存储键，动画没有持久化开关。
 progress.ts: 保存前台并发计数，向请求和导航提供幂等结束函数及订阅入口。
 repository-refs.ts: 查询项目引用，取消过期请求并隔离迟到响应。
 build-platforms.ts: 查询项目授权原生平台，优先在线默认并隔离项目迟到响应。
 releases.ts: 校验严格 SemVer，按 SemVer 比较版本。
+emissary-version.ts: 规范化设备历史标签与构建元数据，比较产品统一版本。
 build-targets.ts: 校验构建目标合同，组合独立源码与目标的交付候选摘要。
 routes.ts: 校验设备终端、项目目录、工作区和设置地址；邮箱返回只接受确认页和单个令牌。
 tenant.tsx: 提供租户作用域和请求头，以 Next 导航状态连接顶部进度并保留未保存保护。
-types.ts: 定义 Release、源码准备协议、本代规划摘要、执行修订身份、节点与会话审计。
+types.ts: 定义 Release、产品统一版本、源码准备协议、本代规划摘要、执行修订身份、节点与会话审计。
 unsaved.tsx: 保护未保存编辑。
 utils.ts: 格式化日期、摘要和制品大小。
 workspace-navigation.ts: 租户概览和项目目录使用独立地址；统一项目业务导航、设置分组和权限可见性。

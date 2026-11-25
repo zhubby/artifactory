@@ -1,5 +1,5 @@
 # [INPUT]: 依赖版本检查器、Cargo 清单和 Chart。
-# [OUTPUT]: 验证独立 Operator 与服务版本一致。
+# [OUTPUT]: 验证统一版本、平台标签与原生发布标签。
 # [POS]: 发布版本规则的回归。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 import json
@@ -140,6 +140,27 @@ class ProjectVersionTests(unittest.TestCase):
         result = self.run_version("--check", "--tag", "v0.2.0")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("v0.1.0", result.stderr)
+
+    def test_emissary_tag_matches_the_same_canonical_version(self):
+        result = self.run_version("--check", "--emissary-tag", "emissary-v0.1.0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Version 0.1.0", result.stdout)
+
+    def test_emissary_tag_rejects_other_versions_and_tag_shapes_without_writes(self):
+        before = {path: path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
+        for tag in ["emissary-v0.2.0", "v0.1.0", "0.1.0", "emissary-v0.01.0",
+                    "emissary-v0.1.0+build", "emissary-v0.1.0-rc.1"]:
+            with self.subTest(tag=tag):
+                result = self.run_version("--check", "--emissary-tag", tag)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("emissary-v0.1.0", result.stderr)
+        self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+    def test_emissary_tag_still_checks_workspace_version_drift(self):
+        self.write_json("web/package.json", {"name": "artifactory-console", "version": "0.9.0"})
+        result = self.run_version("--check", "--emissary-tag", "emissary-v0.1.0")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("web/package.json", result.stderr)
 
     def test_invalid_target_is_rejected_without_writes(self):
         before = {path: path.read_bytes() for path in self.root.rglob("*") if path.is_file()}

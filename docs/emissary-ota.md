@@ -1,12 +1,23 @@
 <!--
-[INPUT]: 节点 mTLS、签名版本清单和固定启动器。
-[OUTPUT]: 定义升级信任、排空、确认和失败恢复，并关联设备终端契约。
+[INPUT]: Artifactory 统一版本、节点 mTLS、签名清单和固定启动器。
+[OUTPUT]: 定义同版本升级、信任、排空、确认和失败恢复。
 [POS]: 原生节点升级的发布与运维契约。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
 # Emissary OTA 自动升级
 
-控制平面管理目标版本，节点通过已有 mTLS 出站连接接收升级命令，使用私有 S3 的短期签名地址下载。普通升级不需要 SSH 或管理员密码。已有节点默认不升级；先安装固定启动器，再由管理员指定节点或节点池目标。
+全部一方组件共用根 `VERSION` 定义的 Artifactory 统一版本。
+Emissary 的升级目标固定为当前部署的产品统一版本。
+节点通过已有 mTLS 出站连接接收升级命令，使用私有 S3 的短期签名地址下载。
+普通升级不需要 SSH 或管理员密码。
+已有节点先安装固定启动器，再自动跟随产品统一版本。
+
+节点当前版本与产品统一版本相同时，不重复升级。
+历史 `v`、`emissary-v` 前缀和合法构建元数据不改变产品版本。
+例如 `0.2.0+terminal.abc` 与 `0.2.0` 属于同一产品版本。
+版本不一致时，只选择当前租户中对应版本的签名发行。
+缺少该发行或出现多个标签歧义时，不创建更新、不排空节点。
+版本目录的导入时间不参与目标选择。
 
 ## 发布与信任配置
 
@@ -58,7 +69,13 @@ artifactory-emissary service --action start --config /path/to/emissary.json
 
 ## 运行与恢复
 
-控制平面使用节点事务锁协调升级与任务分配，`ota_draining` 独立于管理员 `draining`。每个节点最多一个未完成升级；节点版本覆盖优先于池目标。每池默认同时一个升级，失败或回滚会暂停后续升级。节点离线时目标保留，重连后继续。
+控制平面使用节点事务锁协调升级与任务分配，`ota_draining` 独立于管理员 `draining`。
+每个节点最多一个未完成升级。
+节点与池的历史版本覆盖不再改变目标。
+每池默认同时一个升级，失败或回滚会暂停后续升级。
+节点离线时不创建更新，重连后按产品统一版本继续。
+控制平面滚动升级期间，已开始的更新继续使用原冻结清单。
+新更新使用接收请求的服务实例所运行的产品统一版本。
 
 阶段为：等待接收 → 下载校验 → 排空 → 启动确认 → 成功。下载在启动器后台进行，不阻塞 Emissary 心跳。排空要求任务终态得到控制平面确认、Worker 退出、所有日志得到确认；Worker 的产物登记先于任务终态。旧运行程序先通过已认证心跳报告即将激活，取得控制平面确认后才允许启动器切换，因此候选程序无法连接时也保留可见的激活阶段。不会为了升级取消构建。
 
@@ -68,7 +85,13 @@ artifactory-emissary service --action start --config /path/to/emissary.json
 
 原生服务停止或重启时，启动器关闭私有控制管道通知运行程序退出，运行程序等待 Worker 清理构建进程树和工作目录，并保留当前 mTLS 连接最多 5 秒等待任务终态和日志确认；启动器等待 8 秒后仍未退出才强制结束。Linux systemd 使用 `KillMode=mixed`，先通知主服务，超时再清理整个服务控制组。macOS 安装器设置 launchd `ExitTimeOut=15`，避免系统默认的较短期限提前结束启动器、留下不响应退出的候选。运行程序仅响应进程停止信号，网络连接断开产生的 `SIGPIPE` 不会触发退出。此退出路径独立于升级排空流程。
 
-取消排队升级立即恢复调度；已送达节点的取消要等待启动器确认。已经进入激活的操作继续完成或回滚，界面显示最终结果。取消不会修改原来的管理员排空状态。失败、回滚和取消的同一目标不会自动循环重试；管理员可以显式重试。回退历史版本通过选择已导入版本执行同一安全流程。
+取消排队升级立即恢复调度；已送达节点的取消要等待启动器确认。
+已经进入激活的操作继续完成或回滚，界面显示最终结果。
+取消不会修改原来的管理员排空状态。
+失败、回滚和取消的同一目标不会自动循环重试。
+管理员只能重试仍匹配当前产品统一版本的失败更新。
+节点已是当前版本时，拒绝重复重试。
+候选失败时，启动器仍自动恢复上一运行版本。
 
 `spool/` 中存在未确认日志时保持排空，不能通过删除日志绕过。可检查节点磁盘、证书期限、连接状态与产物存储后恢复传输。固定启动器自身、SDK 和系统工具链不属于第一版 OTA；启动器更换需要管理员安装。证书也不会自动续签。
 
@@ -79,14 +102,19 @@ artifactory-emissary service --action start --config /path/to/emissary.json
 | 方法与路径 | 请求 / 行为 |
 | --- | --- |
 | `GET /emissary-releases` | 已导入版本目录 |
+| `GET /emissary-version` | `product_version`、唯一同版本发行及 ready / missing / ambiguous 状态 |
 | `POST /emissary-releases` | `{"tag":"emissary-v0.2.0"}` |
-| `PATCH /nodes/{id}/emissary-update` | `{"release_id":"uuid"}`；null 清除节点覆盖 |
-| `PATCH /pools/{id}/emissary-update` | `{"release_id":"uuid或null","concurrency":1,"paused":false}`（release_id 为 UUID 或 JSON null） |
+| `PATCH /nodes/{id}/emissary-update` | `{"release_id":null}` 跟随产品统一版本；兼容 UUID 只接受唯一同版本发行 |
+| `PATCH /pools/{id}/emissary-update` | `{"release_id":null,"concurrency":1,"paused":false}`；保留并发与暂停，版本跟随产品统一版本 |
 | `GET /emissary-updates` | 最近 500 条执行记录 |
 | `POST /emissary-updates/{id}/retry` | 重试终态失败 / 回滚 / 取消记录，生成新执行 ID 并恢复池策略 |
 | `POST /emissary-updates/{id}/cancel` | 取消尚未进入激活的执行 |
 
-节点页显示版本、启动器、目标、进度、失败原因和回滚结果。设置页的 Emissary 自动升级标签提供导入、池并发 / 暂停策略与历史操作。未初始化 OTA 的 Emissary 显示“需要安装 OTA 支持”。
+节点页显示节点当前版本、Artifactory 统一版本、启动器和升级状态。
+设置页提供签名发行导入、池并发 / 暂停策略与历史操作。
+界面区分同版本、等待发行、版本歧义和缺少 OTA 支持。
+目标不再提供任意历史版本下拉。
+未初始化 OTA 的 Emissary 显示“需要安装 OTA 支持”。
 
 ## 验证边界
 

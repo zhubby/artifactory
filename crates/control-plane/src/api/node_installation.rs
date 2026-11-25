@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖真实账户授权、签名发行、设备 CA 和网关票据。
-//! [OUTPUT]: 提供系统设备地址、安装选项、短期材料与固定安装脚本。
+//! [INPUT]: 依赖产品统一版本、账户授权、签名发行、设备 CA 和网关票据。
+//! [OUTPUT]: 提供系统设备地址、同版本安装选项、短期材料与固定脚本。
 //! [POS]: 首次安装的 HTTP 边界；材料就绪后才签发单用凭证。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -136,7 +136,9 @@ fn verified_manifest(
             )
         })?;
     if digest(release.manifest.as_bytes()) != release.manifest_hash
-        || manifest.version != release.version
+        || manifest.version.contains('+')
+        || ota::product_version(&manifest.version) != ota::product_version(&release.version)
+        || !ota::matches_product_version(&manifest.version)
     {
         return Err(ApiError::Conflict(
             "Emissary release identity does not match its signed manifest".into(),
@@ -147,30 +149,27 @@ fn verified_manifest(
 
 pub async fn options(TenantState(state): TenantState, auth: Auth) -> Result<impl IntoResponse> {
     auth.session_role("admin")?;
-    let releases = state.store.emissary_releases().await?;
+    let releases = state.store.current_emissary_release().await?.into_iter();
     let mut available = Vec::new();
-    if !releases.is_empty() {
+    for release in releases {
         let source = ReleaseSource::load(&state).await.map_err(|_| {
             ApiError::Conflict("Emissary release verification keys are not configured".into())
         })?;
         let keys = installation_keys(&source.public_keys)?;
-        for release in releases {
-            let Ok(manifest) = verified_manifest(&release, &keys) else {
-                continue;
-            };
-            let platforms: Vec<_> = manifest
-                .assets
-                .iter()
-                .map(|a| format!("{}/{}", a.os, a.arch))
-                .collect();
-            available
-                .push(json!({"id":release.id,"version":release.version,"platforms":platforms}));
-        }
+        let Ok(manifest) = verified_manifest(&release, &keys) else {
+            continue;
+        };
+        let platforms: Vec<_> = manifest
+            .assets
+            .iter()
+            .map(|a| format!("{}/{}", a.os, a.arch))
+            .collect();
+        available.push(json!({"id":release.id,"version":release.version,"platforms":platforms}));
     }
     Ok((
         [(header::CACHE_CONTROL, "no-store")],
         Json(
-            json!({"device_endpoint":state.store.device_public_endpoint().await?,"releases":available}),
+            json!({"product_version":crate::VERSION,"device_endpoint":state.store.device_public_endpoint().await?,"releases":available}),
         ),
     ))
 }
@@ -213,6 +212,13 @@ pub async fn create(
     }
     state.store.installation_pool(input.pool_id).await?;
     let release = state.store.installation_release(input.release_id).await?;
+    let candidate = state.store.current_emissary_release().await?;
+    if candidate.is_none_or(|candidate| candidate.id != release.id) {
+        return Err(ApiError::Conflict(
+            "installation requires the unique signed release matching the Artifactory version"
+                .into(),
+        ));
+    }
     let source = ReleaseSource::load(&state).await.map_err(|_| {
         ApiError::Conflict("Emissary release verification keys are not configured".into())
     })?;

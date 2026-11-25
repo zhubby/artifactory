@@ -27,7 +27,7 @@ release_publication.rs: 冻结交付清单、正式文件名和 OCI 摘要白名
 planning.rs: 读取固定规划上下文与执行日志，按锁后时钟保存计划终态。
 planning_management.rs: 写入模型方案、澄清及对话查询上下文。
 placements.rs: 保存节点候选并校验分配条件。
-replication.rs: 协调副本归属和持久化唤醒。
+replication.rs: 协调副本归属、产品版本升级候选和持久化唤醒。
 planning_bridge.rs: 围栏 generation 与终态，保存调用、用量和诊断，以锁后时钟记录完成。
 sources.rs: 以构建为归属固定 CR UID 与根提交，接纳轻量解析并授权准备材料。
 source_preparation.rs: 原子绑定清单，单调保存 Pod 摘要，补齐乱序和迟到历史。
@@ -42,8 +42,8 @@ lookups.rs: 读取调度、构建和授权对象。
 node_metadata.rs: 记录启动元数据和能力摘要。
 terminals.rs: 原子登记设备终端、Session 票据和实例租约，审计真实账户与字节计数。
 node_queries.rs: 聚合项目授权原生平台，查询构建冻结范围内的设备。
-ota.rs: 记录节点升级命令和健康回执。
-ota_management.rs: 写入节点发布及升级目标。
+ota.rs: 按产品统一版本创建升级，保留活跃清单和健康回执。
+ota_management.rs: 选择唯一同版本发行，约束目标、重试、并发和取消。
 performance.rs: 验证存储查询预算和响应规模。
 execution_fences.rs: 以真实事件、心跳与取消事务验证节点锁等待及权限租约拒绝。
 

@@ -13,6 +13,7 @@ const reads = [
   { name: "tenant invitations", path: "/settings/members", api: "/tenant/invitations", heading: "邀请链接", result: [] },
   { name: "OTA pools", path: "/settings/emissary", api: "/pools", heading: "节点池升级策略", result: [] },
   { name: "OTA history", path: "/settings/emissary", api: "/emissary-updates", heading: "升级执行记录", result: [] },
+  { name: "OTA product version", path: "/settings/emissary", api: "/emissary-version", heading: "Artifactory 统一版本", result: { product_version: "0.2.0", release_id: null, release_version: null, release_status: "missing" } },
   { name: "lifecycle impact", path: `/projects/${project.slug}/settings/lifecycle`, api: `/projects/${project.id}/lifecycle`, heading: "空间生命周期", result: { projects: 1, builds: 12, artifacts: 4, devices: 0 } },
   { name: "lifecycle operations", path: `/projects/${project.slug}/settings/lifecycle`, api: "/operations", heading: "空间生命周期", result: [] },
 ];
@@ -82,13 +83,13 @@ test("project resource form waits for credentials even when pools are already av
   } finally { release(); }
 });
 
-test("OTA pool forms wait for the release choices before offering a target", async ({ page }) => {
+test("OTA pool forms wait for the product version and offer no arbitrary target", async ({ page }) => {
   await fixtureAPI(page);
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
-  await page.route("**/api/v1/emissary-releases", async route => {
+  await page.route("**/api/v1/emissary-version", async route => {
     await pending;
-    return route.fulfill({ json: [{ id: "release-ota", version: "v0.2.0" }] });
+    return route.fulfill({ json: { product_version: "0.2.0", release_id: "release-ota", release_version: "v0.2.0", release_status: "ready" } });
   });
   try {
     await page.goto(tenantURL("/settings/emissary"));
@@ -97,9 +98,9 @@ test("OTA pool forms wait for the release choices before offering a target", asy
     await expect(pools.locator("form")).toHaveCount(0);
     release();
     await expect(pools.locator("form")).toBeVisible();
-    await pools.getByRole("combobox").click();
-    await expect(page.getByRole("option", { name: "v0.2.0", exact: true })).toBeVisible();
-    await page.keyboard.press("Escape");
+    await expect(pools).toContainText("Artifactory 统一版本");
+    await expect(pools).toContainText("0.2.0");
+    await expect(pools.getByRole("combobox")).toHaveCount(0);
   } finally { release(); }
 });
 

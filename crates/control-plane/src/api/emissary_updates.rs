@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖租户会话、产品统一版本与升级事务。
+//! [OUTPUT]: 提供固定版本状态、签名目录、并发策略和升级操作。
+//! [POS]: 升级 HTTP 边界；目标由 Artifactory 产品统一版本确定。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::auth::TenantState;
 pub use crate::store::Target;
 use crate::store::dto;
@@ -10,6 +14,18 @@ use axum::{Json, extract::Path};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
+
+pub async fn version(TenantState(state): TenantState, auth: Auth) -> Result<Json<Value>> {
+    auth.session_role("viewer")?;
+    let releases = state.store.current_emissary_releases().await?;
+    let release = (releases.len() == 1).then(|| &releases[0]);
+    Ok(Json(json!({
+        "product_version":crate::VERSION,
+        "release_id":release.map(|r|r.id),
+        "release_version":release.map(|r|&r.version),
+        "release_status":match releases.len() { 0=>"missing",1=>"ready",_=>"ambiguous" },
+    })))
+}
 
 pub async fn releases(
     TenantState(state): TenantState,

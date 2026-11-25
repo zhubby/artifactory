@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖节点授权、终端路由、OTA API 与节点展示。
+ * [INPUT]: 依赖节点授权、Artifactory 统一版本、终端路由与 OTA API。
  * [OUTPUT]: 提供终端入口、升级、配置、诊断和吊销。
  * [POS]: 设备详情的运维分区；保留授权校验、轮询与嵌套弹窗流程。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -24,7 +24,7 @@ import { Modal } from "@/components/ui/dialog";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
 import { notify } from "@/lib/notify";
-import type { EmissaryRelease, EmissaryUpdate, Node, Pool, User } from "@/lib/types";
+import type { EmissaryVersion, EmissaryUpdate, Node, Pool, User } from "@/lib/types";
 import { bytes } from "@/lib/utils";
 import { Link } from "@/lib/tenant";
 
@@ -45,10 +45,10 @@ export function NodeOperations({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Error>();
   const content = useRef<HTMLDivElement>(null);
-  const releases = useRemote<EmissaryRelease[]>("/emissary-releases", 30000);
+  const version = useRemote<EmissaryVersion>("/emissary-version", 30000);
   const updates = useRemote<EmissaryUpdate[]>("/emissary-updates", 3000);
   async function refresh() {
-    await Promise.all([reload(), releases.reload(), updates.reload()]);
+    await Promise.all([reload(), version.reload(), updates.reload()]);
   }
   async function revoke() {
     setBusy(true);
@@ -91,17 +91,17 @@ export function NodeOperations({
         ) : <Button variant="secondary" disabled><Terminal size={15} />{t("terminal.open")}</Button>}
       </NodeSection>}
       <NodeSection title={t("ota.title")}>
-        <NodeDataError error={releases.error || updates.error} retry={refresh} />
+        <NodeDataError error={version.error || updates.error} retry={refresh} />
         <NodeOTA
           node={node}
           user={user}
-          releases={releases.data || []}
+          version={version.data}
           updates={updates.data || []}
           reload={refresh}
           actionsReady={
-            !!releases.data &&
+            !!version.data &&
             !!updates.data &&
-            !releases.error &&
+            !version.error &&
             !updates.error
           }
         />

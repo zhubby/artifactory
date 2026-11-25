@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖业务、通知、源码、遥测与设备协议模块。
-//! [OUTPUT]: 导出控制平面服务与持久化接口。
+//! [OUTPUT]: 导出控制平面服务、统一版本与持久化接口。
 //! [POS]: 各服务二进制和集成测试的公共模块边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub mod api;
@@ -32,6 +32,8 @@ pub mod protocol {
 pub mod planning_bridge;
 
 pub mod store;
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 mod build;
 mod node_query;

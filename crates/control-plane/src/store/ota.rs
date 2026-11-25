@@ -1,4 +1,7 @@
-//! OTA release import and serialized update coordination.
+//! [INPUT]: 依赖产品统一版本、租户发行目录和节点事务锁。
+//! [OUTPUT]: 按产品统一版本创建升级，记录固定清单的健康回执。
+//! [POS]: 自动升级持久化边界；活跃更新保留原签名身份。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use anyhow::{Context, Result, ensure};
 use artifactory_database::{params, sql};
@@ -83,7 +86,7 @@ impl ControlStore {
             tx.rollback().await?;
             return Ok(None);
         }
-        let Some(n)=sql::optional_record(&mut tx, "SELECT n.os,n.arch,n.capabilities,n.emissary_current_version,coalesce(n.emissary_target_release,p.emissary_target_release) AS desired,p.emissary_update_concurrency,p.emissary_updates_paused FROM nodes n JOIN node_pools p ON p.id=n.pool_id WHERE n.id=$1 AND n.pool_id=$2 AND n.active_session=$3 AND NOT n.revoked AND n.certificate_expires_at>clock_timestamp() AND n.last_seen>now()-interval '30 seconds' FOR UPDATE OF n SKIP LOCKED", params![node, pool, session], &[("os", Type::String),("arch", Type::String),("capabilities", Type::String),("emissary_current_version", Type::String),("desired", Type::Uuid),("emissary_update_concurrency", Type::I32),("emissary_updates_paused", Type::Bool)]).await? else{tx.rollback().await?;return Ok(None)};
+        let Some(n)=sql::optional_record(&mut tx, "SELECT n.tenant_id,n.os,n.arch,n.capabilities,n.emissary_current_version,p.emissary_update_concurrency,p.emissary_updates_paused FROM nodes n JOIN node_pools p ON p.id=n.pool_id WHERE n.id=$1 AND n.pool_id=$2 AND n.active_session=$3 AND NOT n.revoked AND n.certificate_expires_at>clock_timestamp() AND n.last_seen>now()-interval '30 seconds' FOR UPDATE OF n SKIP LOCKED", params![node, pool, session], &[("tenant_id", Type::Uuid),("os", Type::String),("arch", Type::String),("capabilities", Type::String),("emissary_current_version", Type::String),("emissary_update_concurrency", Type::I32),("emissary_updates_paused", Type::Bool)]).await? else{tx.rollback().await?;return Ok(None)};
         let mut update = sql::optional_record(
             &mut tx,
             "SELECT id,generation,node_id,pool_id,release_id,previous_version,status,cancel_requested,error,retry_of,created_at,updated_at,finished_at,last_command_at FROM emissary_updates WHERE node_id=$1 AND finished_at IS NULL",
@@ -112,10 +115,13 @@ impl ControlStore {
                 tx.rollback().await?;
                 return Ok(None);
             }
-            let Some(target) = n.decode::<Option<Uuid>>("desired")? else {
+            if n.decode::<Option<String>>("emissary_current_version")?
+                .as_deref()
+                .is_some_and(crate::ota::matches_product_version)
+            {
                 tx.rollback().await?;
                 return Ok(None);
-            };
+            }
             if n.decode::<bool>("emissary_updates_paused")?
                 || !n
                     .decode::<Value>("capabilities")?
@@ -125,19 +131,20 @@ impl ControlStore {
                 tx.rollback().await?;
                 return Ok(None);
             }
-            let version: String = sql::scalar(
+            let targets: Vec<Uuid> = sql::scalars(
                 &mut tx,
-                "SELECT version FROM emissary_releases WHERE id=$1",
-                params![target],
+                "SELECT id FROM emissary_releases WHERE tenant_id=$1 AND version=ANY($2)",
+                params![
+                    n.decode::<Uuid>("tenant_id")?,
+                    crate::ota::current_release_versions()
+                ],
             )
             .await?;
-            if n.decode::<Option<String>>("emissary_current_version")?
-                .as_deref()
-                == Some(&version)
-            {
+            if targets.len() != 1 {
                 tx.rollback().await?;
                 return Ok(None);
             }
+            let target = targets[0];
             let blocked:bool=sql::scalar(&mut tx, "SELECT EXISTS(SELECT 1 FROM emissary_updates WHERE node_id=$1 AND release_id=$2 AND status IN ('failed','rolled_back','canceled'))", params![node, target]).await?;
             if blocked {
                 tx.rollback().await?;
@@ -292,11 +299,12 @@ impl ControlStore {
         if let Some(id) = status["update_id"]
         .as_str()
         .and_then(|s| Uuid::parse_str(s).ok())
-        && let Some(u)=sql::optional_record(&mut tx, "SELECT u.id,u.generation,u.node_id,u.pool_id,u.release_id,u.previous_version,u.status,u.cancel_requested,u.error,u.retry_of,u.created_at,u.updated_at,u.finished_at,u.last_command_at,r.version FROM emissary_updates u JOIN emissary_releases r ON r.id=u.release_id WHERE u.id=$1 AND u.node_id=$2 AND u.finished_at IS NULL", params![id, node], &[("id", Type::Uuid),("generation", Type::I64),("node_id", Type::Uuid),("pool_id", Type::Uuid),("release_id", Type::Uuid),("previous_version", Type::String),("status", Type::String),("cancel_requested", Type::Bool),("error", Type::String),("retry_of", Type::Uuid),("created_at", Type::Timestamp),("updated_at", Type::Timestamp),("finished_at", Type::Timestamp),("last_command_at", Type::Timestamp),("version", Type::String)]).await? {
+        && let Some(u)=sql::optional_record(&mut tx, "SELECT u.id,u.generation,u.node_id,u.pool_id,u.release_id,u.previous_version,u.status,u.cancel_requested,u.error,u.retry_of,u.created_at,u.updated_at,u.finished_at,u.last_command_at,r.manifest FROM emissary_updates u JOIN emissary_releases r ON r.id=u.release_id WHERE u.id=$1 AND u.node_id=$2 AND u.finished_at IS NULL", params![id, node], &[("id", Type::Uuid),("generation", Type::I64),("node_id", Type::Uuid),("pool_id", Type::Uuid),("release_id", Type::Uuid),("previous_version", Type::String),("status", Type::String),("cancel_requested", Type::Bool),("error", Type::String),("retry_of", Type::Uuid),("created_at", Type::Timestamp),("updated_at", Type::Timestamp),("finished_at", Type::Timestamp),("last_command_at", Type::Timestamp),("manifest", Type::String)]).await? {
             let phase=status["phase"].as_str().unwrap_or("");
             let terminal=["succeeded","failed","rolled_back","canceled"].contains(&phase);
             if phase=="activating"||phase=="succeeded" {
-                health=runtime==u.decode::<String>("version")?
+                let frozen:Value=serde_json::from_str(&u.decode::<String>("manifest")?)?;
+                health=Some(runtime)==frozen["version"].as_str()
                     || (phase=="activating"&&status["activation_pending"]==true&&Some(runtime)==u.decode::<Option<String>>("previous_version")?.as_deref());
             }
             if ["downloading","draining","activating","succeeded","failed","rolled_back","canceled"].contains(&phase)&&health {

@@ -1,3 +1,7 @@
+# [INPUT]: 不可变原生发布标签与根 VERSION。
+# [OUTPUT]: 六平台统一版本程序与签名资产清单。
+# [POS]: 标签定位源码，产品版本与控制平面保持一致。
+# [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: Emissary Release
 on:
   push:
@@ -36,7 +40,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+      - name: Verify the canonical version and native release tag
+        id: source
+        env:
+          EMISSARY_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -eu
+          python3 scripts/version.py --check --emissary-tag "$EMISSARY_TAG"
+          echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
       - name: Install Rust and Protobuf
         run: |
           rustup toolchain install 1.95.0 --profile minimal --component rustfmt,clippy
@@ -53,11 +65,23 @@ jobs:
         run: cargo test --locked -p artifactory-emissary --test native_service -- --ignored --nocapture
       - name: Build versioned native executable
         env:
-          ARTIFACTORY_BUILD_VERSION: ${{ inputs.tag || github.ref_name }}
+          ARTIFACTORY_BUILD_VERSION: ${{ steps.source.outputs.version }}
         run: |
           ARTIFACTORY_BUILD_COMMIT=$(git rev-parse HEAD)
           export ARTIFACTORY_BUILD_COMMIT
           sh scripts/cross-build-emissary.sh
+      - name: Verify the native executable product version
+        env:
+          EMISSARY_PLATFORM: ${{ matrix.platform }}
+          EMISSARY_VERSION: ${{ steps.source.outputs.version }}
+        run: |
+          set -eu
+          platform_name=${EMISSARY_PLATFORM/\//-}
+          extension=''
+          if [ "$RUNNER_OS" = Windows ]; then extension='.exe'; fi
+          expected="artifactory-emissary $EMISSARY_VERSION $EMISSARY_PLATFORM protocol=1 commit=$(git rev-parse HEAD)"
+          actual=$(".local/emissary-bin/artifactory-emissary-$platform_name$extension" version | tr -d '\r')
+          test "$actual" = "$expected"
       - uses: actions/upload-artifact@v4
         with:
           name: emissary-${{ strategy.job-index }}
@@ -72,7 +96,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+      - name: Verify the canonical version and native release tag
+        id: source
+        env:
+          EMISSARY_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -eu
+          python3 scripts/version.py --check --emissary-tag "$EMISSARY_TAG"
+          python3 -m unittest scripts.test_version -v
+          echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
       - run: rustup toolchain install 1.95.0 --profile minimal && rustup default 1.95.0
       - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - uses: actions/download-artifact@v4
@@ -83,10 +116,11 @@ jobs:
       - name: Sign manifest and publish immutable assets
         env:
           EMISSARY_TAG: ${{ inputs.tag || github.ref_name }}
+          EMISSARY_VERSION: ${{ steps.source.outputs.version }}
           ARTIFACTORY_EMISSARY_RELEASE_SIGNING_SEED: ${{ secrets.EMISSARY_RELEASE_SIGNING_SEED }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           revision=$(git rev-parse HEAD)
-          cargo run --locked --bin emissary-release -- --directory .local/emissary-bin --version "$EMISSARY_TAG" --commit "$revision"
+          cargo run --locked --bin emissary-release -- --directory .local/emissary-bin --version "$EMISSARY_VERSION" --commit "$revision"
           gh release create "$EMISSARY_TAG" --verify-tag --title "Emissary $EMISSARY_TAG" --generate-notes .local/emissary-bin/artifactory-emissary-* .local/emissary-bin/emissary-manifest.json .local/emissary-bin/emissary-manifest.sig

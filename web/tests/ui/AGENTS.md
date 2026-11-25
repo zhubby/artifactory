@@ -14,7 +14,7 @@ build-device-targets.spec.ts: 验证项目授权平台禁选、在线默认、�
 build-wizard.spec.ts: 验证严格 SemVer、Release 说明、独立源码与目标、轮询稳定的单构建交付、候选失效重选、失败重试和权限。
 console-visual.spec.ts: 验证多语言概览、独立项目目录、侧栏设置与个人设置布局。
 dashboard.spec.ts: 验证完整聚合统计、双层图表、范围与时区、迟到响应隔离、后台刷新、项目目录及双语主题无障碍截图。
-emissary-ota.spec.ts: 验证节点升级配置。
+emissary-ota.spec.ts: 验证统一版本、签名发行状态、同版本重试围栏与权限。
 errors.spec.ts: 验证错误状态和本地化。
 dropdown-controls.spec.ts: 验证明暗主题与普通表单弹层齐宽对齐、焦点、必填空值、迟到默认值、字段事件、重置及长列表边界。
 select-helpers.ts: 通过可见触发器和选项执行共享下拉选择。
@@ -37,7 +37,7 @@ node-detail-design.spec.ts: 验证紧凑标题、首屏设备摘要、细节展�
 node-identification.spec.ts: 验证身份、重名短 ID、重命名权限、草稿、UTF8、Unicode 空白与接口快照。
 notifications.spec.ts: 验证浮层布局、顶栏访问、字段校验、弹窗焦点、计时暂停及交互期间的来源隔离与轮询恢复。
 node-pagination.spec.ts: 验证节点分页和筛选。
-node-installation.spec.ts: 验证统一安装命令、过期、关闭秘密清理和系统地址权限。
+node-installation.spec.ts: 验证固定同版本安装、过期、关闭秘密清理和系统地址权限。
 node-installation-commands.spec.ts: 隔离执行 Shell 与 PowerShell，验证传参、摘要、进程策略与 CA 保留。
 peripheral-visual.spec.ts: 验证认证页、邀请页、独立项目目录空态和错误页的视觉边界。
 preferences.spec.ts: 验证用户视觉和语言偏好。

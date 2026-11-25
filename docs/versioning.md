@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 统一 VERSION、发布流水线与镜像和 Chart 清单。
-[OUTPUT]: 定义版本检查、交付身份和发布验收边界。
+[OUTPUT]: 定义统一产品版本、来源标签与发布验收边界。
 [POS]: 版本治理入口；不替代实际部署记录。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -16,6 +16,7 @@
 - Web、`packages/` 下的一方 Node.js 包、对应 lockfile 顶层与根包版本。
 - `charts/` 下各 Chart 的 `version`、`appVersion`。
 - Release 镜像的 `0.2.0` / `v0.2.0` 标签和 OCI 版本、源码提交标识。
+- 原生 Emissary 程序与签名 manifest 的 `version`。
 
 第三方依赖版本、数据库迁移编号、HTTP / Protobuf API 版本不随应用版本一起替换。Operator Chart 保持其独立的 Kubernetes 最低版本约束。
 
@@ -25,6 +26,7 @@
 python3 scripts/version.py --set 0.3.0
 python3 scripts/version.py --check
 python3 scripts/version.py --check --tag v0.3.0
+python3 scripts/version.py --check --emissary-tag emissary-v0.3.0
 python3 -m unittest scripts.test_version -v
 cargo metadata --locked --no-deps --format-version 1 > /dev/null
 ```
@@ -41,6 +43,16 @@ cargo metadata --locked --no-deps --format-version 1 > /dev/null
 6. 源码 CI、镜像发布、真实集群部署、设备运行分别记录结果。任何一层失败都不能冒称下一层通过。
 
 原生 Emissary 二进制仍使用 `emissary-release` 的六平台构建与签名流程。该流程需要独立的签名 secret 和发布环境；普通 `v<version>` 镜像发布不代表已提供签名 OTA manifest，也不代表 Apple / Windows 正式发行签名。
+
+Emissary、控制平面及其他一方组件使用同一个 Artifactory 统一版本。
+例如当前产品统一版本为 `0.2.0`，各组件都报告 `0.2.0`。
+节点当前版本与产品统一版本的比较决定是否需要升级。
+原生发布标签 `emissary-v0.2.0` 只定位不可变源码。
+它不进入程序版本或签名 manifest 的 `version`。
+六平台构建和发布签名前均检查标签与根 `VERSION` 一致。
+各原生 runner 运行候选程序，复核版本、平台和源码提交。
+签名清单生成器拒绝不同于工作区包版本的 `--version`。
+升级目标与缺失签名资产的行为见 [Emissary OTA](emissary-ota.md)。
 
 发布容器显式注入已验证的版本与源码提交；Emissary Dockerfile 的默认版本也由版本脚本同步。若已发布标签的镜像流水线需要修复，可在 `main` 上通过 `release-images` 的 `workflow_dispatch` 指定原始标签；已有 Helm 资产时选择 `images_only=true`。该恢复路径仍检出并校验原标签，不移动标签、不覆盖 Helm 资产，镜像的 SHA 标签来自实际检出的源码，而不是工作流分支。
 

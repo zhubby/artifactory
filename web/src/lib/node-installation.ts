@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖服务端固定安装材料与浏览器 UTF-8 编码。
+ * [INPUT]: 依赖产品统一版本安装材料与浏览器 UTF-8 编码。
  * [OUTPUT]: 提供安装类型、Shell 和 PowerShell 安装及注册命令。
  * [POS]: 弹窗的纯命令渲染边界；不请求或持久化凭证。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -7,6 +7,7 @@
 export type InstallationOS = "linux" | "darwin" | "windows";
 export type InstallationArch = "amd64" | "arm64";
 export interface NodeInstallationOptions {
+  product_version: string;
   device_endpoint: string;
   releases: { id: string; version: string; platforms: string[] }[];
 }

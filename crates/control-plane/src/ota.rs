@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖签名升级清单、节点命令与网关制品票据。
-//! [OUTPUT]: 验证升级版本并下发固定摘要升级包。
+//! [INPUT]: 依赖产品统一版本、签名升级清单、节点命令与网关票据。
+//! [OUTPUT]: 规范产品版本，验证签名发行并下发固定摘要升级包。
 //! [POS]: 设备升级协调边界；不向设备暴露私有 S3。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{protocol::Command, state::AppState};
@@ -10,6 +10,45 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+
+/// 历史标签前缀不属于产品版本；构建元数据不触发产品升级。
+pub fn product_version(version: &str) -> Option<&str> {
+    let version = version
+        .strip_prefix("emissary-v")
+        .or_else(|| version.strip_prefix('v'))
+        .unwrap_or(version);
+    if version.len() > 100 || !version.is_ascii() {
+        return None;
+    }
+    let (product, metadata) = version
+        .split_once('+')
+        .map_or((version, None), |(p, m)| (p, Some(m)));
+    if metadata.is_some_and(|m| {
+        m.split('.').any(|part| {
+            part.is_empty() || !part.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
+        })
+    }) || crate::build::validate_release_version(product).is_err()
+    {
+        return None;
+    }
+    Some(product)
+}
+
+pub fn matches_product_version(version: &str) -> bool {
+    product_version(version) == Some(crate::VERSION)
+}
+
+pub fn release_matches_product_version(version: &str) -> bool {
+    !version.contains('+') && matches_product_version(version)
+}
+
+pub(crate) fn current_release_versions() -> Vec<String> {
+    vec![
+        crate::VERSION.to_owned(),
+        format!("v{}", crate::VERSION),
+        format!("emissary-v{}", crate::VERSION),
+    ]
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -169,7 +208,10 @@ pub async fn import_tag(state: &AppState, tag: &str) -> Result<Uuid> {
     result.map_err(|_| anyhow::anyhow!("release import timed out"))?
 }
 async fn import_tag_task(state: &AppState, tag: &str, task: Uuid) -> Result<Uuid> {
-    ensure!(safe_tag(tag), "invalid release tag");
+    ensure!(
+        safe_tag(tag) && !tag.contains('+') && product_version(tag).is_some(),
+        "release tag must contain a product version"
+    );
     let source = ReleaseSource::load(state).await?;
     let origin = url::Url::parse(&source.api_base)?;
     let origin_host = origin.host_str().unwrap().to_string();
@@ -263,7 +305,8 @@ async fn import_tag_task(state: &AppState, tag: &str, task: Uuid) -> Result<Uuid
     )?;
     let manifest = verify(&raw, &signature, &source.public_keys)?;
     ensure!(
-        manifest.version == tag,
+        !manifest.version.contains('+')
+            && product_version(&manifest.version) == product_version(tag),
         "manifest does not match release tag"
     );
     let hash = hex::encode(Sha256::digest(&raw));
@@ -327,6 +370,38 @@ mod tests {
     use super::*;
     use base64::{Engine, engine::general_purpose::STANDARD};
     use ed25519_dalek::{Signer, SigningKey};
+    #[test]
+    fn product_versions_ignore_only_valid_metadata_and_legacy_prefixes() {
+        for version in ["0.2.0", "v0.2.0", "emissary-v0.2.0", "0.2.0+terminal.abc"] {
+            assert_eq!(product_version(version), Some("0.2.0"), "{version}");
+        }
+        assert_eq!(product_version("1.2.3-rc.1+0123"), Some("1.2.3-rc.1"));
+        for invalid in [
+            "0.2",
+            "0.02.0",
+            "0.2.0+",
+            "0.2.0+a..b",
+            "0.2.0-01",
+            "vv0.2.0",
+            "v-next",
+            " 0.2.0",
+        ] {
+            assert_eq!(product_version(invalid), None, "{invalid}");
+        }
+        assert!(matches_product_version(crate::VERSION));
+        assert!(matches_product_version(&format!(
+            "emissary-v{}+terminal.abc",
+            crate::VERSION
+        )));
+        assert!(!release_matches_product_version(&format!(
+            "{}+terminal.abc",
+            crate::VERSION
+        )));
+        assert!(!matches_product_version(&format!(
+            "{}-rc.1",
+            crate::VERSION
+        )));
+    }
     #[test]
     fn signed_release_requires_all_platforms_and_protocol_one() {
         let key = SigningKey::from_bytes(&[7; 32]);

@@ -1,5 +1,5 @@
 # [INPUT]: 工作区版本、发布清单与官方镜像版本标签。
-# [OUTPUT]: 检查或同步 Rust、Node、Chart 与工作镜像版本。
+# [OUTPUT]: 检查或同步统一版本，校验平台与原生发布标签。
 # [POS]: 发布流程的统一版本边界；不重写第三方镜像。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 import argparse
@@ -141,7 +141,9 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--set", dest="target_version", metavar="VERSION")
-    parser.add_argument("--tag", help="Require an exact v<version> release tag")
+    tags = parser.add_mutually_exclusive_group()
+    tags.add_argument("--tag", help="Require an exact v<version> release tag")
+    tags.add_argument("--emissary-tag", help="Require an exact emissary-v<version> native release tag")
     arguments = parser.parse_args()
     root = arguments.root.resolve()
     try:
@@ -149,6 +151,8 @@ def main():
         version = validate_version(arguments.target_version) if arguments.target_version else canonical
         if arguments.tag is not None and arguments.tag != f"v{version}":
             raise ValueError(f"release tag must be v{version}, got {arguments.tag!r}")
+        if arguments.emissary_tag is not None and arguments.emissary_tag != f"emissary-v{version}":
+            raise ValueError(f"Emissary release tag must be emissary-v{version}, got {arguments.emissary_tag!r}")
         entries, package_names = inspect_project(root)
         if arguments.target_version:
             synchronize(root, version, entries, package_names)

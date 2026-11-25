@@ -1,3 +1,7 @@
+//! [INPUT]: 依赖包版本、固定源码提交、六平台资产与发布签名密钥。
+//! [OUTPUT]: 生成统一产品版本的签名清单及资产摘要。
+//! [POS]: 原生发布入口；Git 标签不作为运行版本。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
 use artifactory_emissary::ota::{self, Asset, Manifest};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -13,12 +17,21 @@ struct Args {
     #[arg(long)]
     commit: String,
 }
+fn validate_metadata(version: &str, commit: &str) -> Result<()> {
+    ensure!(
+        version == env!("CARGO_PKG_VERSION"),
+        "release version must match the unified workspace version {}",
+        env!("CARGO_PKG_VERSION")
+    );
+    ensure!(
+        commit.len() == 40 && commit.bytes().all(|c| c.is_ascii_hexdigit()),
+        "release commit must be a full Git object ID"
+    );
+    Ok(())
+}
 fn main() -> Result<()> {
     let args = Args::parse();
-    ensure!(
-        ota::safe_version(&args.version) && args.commit.len() == 40,
-        "invalid release metadata"
-    );
+    validate_metadata(&args.version, &args.commit)?;
     let secret = std::env::var("ARTIFACTORY_EMISSARY_RELEASE_SIGNING_SEED")
         .context("release signing seed environment variable required")?;
     let bytes = STANDARD.decode(secret)?;
@@ -58,4 +71,31 @@ fn main() -> Result<()> {
     )?;
     println!("signed Emissary manifest for six platforms");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn release_uses_the_workspace_product_version() {
+        let version = env!("CARGO_PKG_VERSION");
+        let commit = "a".repeat(40);
+        assert!(validate_metadata(version, &commit).is_ok());
+        for invalid in [
+            format!("v{version}"),
+            format!("emissary-v{version}"),
+            format!("{version}+build"),
+            format!("{version}.0"),
+        ] {
+            assert!(validate_metadata(&invalid, &commit).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn release_rejects_incomplete_or_non_hex_source_identity() {
+        for invalid in ["a".repeat(39), "a".repeat(41), "z".repeat(40)] {
+            assert!(validate_metadata(env!("CARGO_PKG_VERSION"), &invalid).is_err());
+        }
+    }
 }

@@ -20,9 +20,9 @@ command-palette.tsx: 复用当前范围导航，保留项目切换和焦点，�
 console.tsx: 按租户与项目隔离工作区，组合顶栏、设备终端路由、权限骨架与项目星标。
 dashboard.tsx: 读取完整窗口指标和近期活动，范围切换使用共享下拉，后台刷新保留内容。
 dashboard-charts.tsx: 按需加载 Recharts，呈现当前构建结果和成功构建周转时长，保留空样本断点。
-emissary-ota.tsx: 等待节点池和发布选项后开放表单，历史首读可重试，轮询保留池策略草稿。
+emissary-ota.tsx: 固定产品统一版本并禁止同版本重试，保留并发、暂停与草稿。
 node-installation-settings.tsx: 按系统管理员权限配置全局设备公开地址，首读可重试。
-node-enrollment-dialog.tsx: 在同弹窗展示固定平台安装命令、单用凭证和过期状态，关闭清除秘密。
+node-enrollment-dialog.tsx: 固定产品统一版本，展示平台安装命令、单用凭证与过期状态。
 forms.tsx: 提供项目、节点、凭据表单，复用下拉并统一提交通知。
 lifecycle.tsx: 分别等待影响与当前操作，使用 HTTP 幂等键提交归档、恢复与删除。
 node-card.tsx: 直接消费列表快照，展示名称、主机名、短 ID、硬件与资源状态。
@@ -30,7 +30,7 @@ node-detail-dialog.tsx: 组合固定身份标题、五个详情标签和遥测�
 node-overview.tsx: 先展示四项设备摘要，再展示接口与标签，按需展开完整硬件和连接信息。
 node-resources.tsx: 按指标、成对内存负载字段、设备表展示遥测，手机逐行显示，采样诊断默认折叠。
 node-tools.tsx: 以单列工具行展示版本和可用状态，路径按需展开，签名配置独立分组。
-node-operations.tsx: 提供设备终端入口、升级、节点配置、运行诊断与授权吊销。
+node-operations.tsx: 按需读取产品统一版本，提供终端、节点配置、诊断与授权吊销。
 node-network-addresses.tsx: 在设备摘要后按接口对齐 IPv4/IPv6、采样时间和截断状态。
 node-rename.tsx: 提供具名图标入口，只提交名称，按 Unicode White_Space 裁剪后校验 UTF8 与控制字符，保护草稿和焦点。
 node-detail-parts.tsx: 提供分区、折叠区、对齐字段、时间与重试，零值可见且轮询保留展开状态。

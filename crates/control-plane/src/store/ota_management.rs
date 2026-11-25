@@ -1,4 +1,7 @@
-//! Atomic Emissary update policy, retry and cancellation operations.
+//! [INPUT]: 依赖产品统一版本、租户发行目录和节点池锁。
+//! [OUTPUT]: 读取唯一同版本发行，维护并发、暂停、重试和取消。
+//! [POS]: 升级管理事务边界；历史目标不能覆盖产品统一版本。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use super::dto;
 use crate::error::{ApiError, Result};
@@ -16,7 +19,33 @@ pub struct Target {
     pub(crate) paused: Option<bool>,
 }
 impl ControlStore {
+    pub(crate) async fn current_emissary_releases(&self) -> Result<Vec<dto::EmissaryRelease>> {
+        Ok(self
+            .emissary_releases()
+            .await?
+            .into_iter()
+            .filter(|release| crate::ota::release_matches_product_version(&release.version))
+            .collect())
+    }
+
+    pub(crate) async fn current_emissary_release(&self) -> Result<Option<dto::EmissaryRelease>> {
+        let mut releases = self.current_emissary_releases().await?;
+        Ok((releases.len() == 1).then(|| releases.remove(0)))
+    }
+
+    async fn validate_product_target(&self, id: Option<Uuid>) -> Result<()> {
+        if let Some(id) = id
+            && self.current_emissary_release().await?.map(|r| r.id) != Some(id)
+        {
+            return Err(ApiError::Conflict(
+                "target must be the unique signed release for the Artifactory version".into(),
+            ));
+        }
+        Ok(())
+    }
+
     pub async fn set_node_target(&self, id: Uuid, input: &Target, actor: Uuid) -> Result<()> {
+        self.validate_product_target(input.release_id).await?;
         let mut tx_db = self.pool.clone();
         let mut tx = tx_db.transaction().await?;
         let revoked: bool = sql::scalar(
@@ -56,6 +85,7 @@ impl ControlStore {
     }
 
     pub async fn set_pool_target(&self, id: Uuid, input: &Target, actor: Uuid) -> Result<()> {
+        self.validate_product_target(input.release_id).await?;
         let mut tx_db = self.pool.clone();
         let mut tx = tx_db.transaction().await?;
         let changed=sql::execute(&mut tx, "UPDATE node_pools SET emissary_target_release=$2,emissary_update_concurrency=coalesce($3,emissary_update_concurrency),emissary_updates_paused=coalesce($4,emissary_updates_paused) WHERE id=$1", params![id, input.release_id, input.concurrency, input.paused]).await?;
@@ -97,6 +127,8 @@ impl ControlStore {
             ));
         }
         let node: Uuid = u.decode("node_id")?;
+        self.validate_product_target(Some(u.decode("release_id")?))
+            .await?;
         let pool: Uuid = sql::scalar(
             &mut self.pool.clone(),
             "SELECT pool_id FROM nodes WHERE id=$1",
@@ -129,6 +161,14 @@ impl ControlStore {
         }
         if n.decode::<bool>("revoked")? {
             return Err(ApiError::Conflict("node is revoked".into()));
+        }
+        if n.decode::<Option<String>>("emissary_current_version")?
+            .as_deref()
+            .is_some_and(crate::ota::matches_product_version)
+        {
+            return Err(ApiError::Conflict(
+                "node already matches the Artifactory version".into(),
+            ));
         }
         let count: i64 = sql::scalar(
             &mut tx,

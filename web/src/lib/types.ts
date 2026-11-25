@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供 Release、源码准备、执行身份与规划审计类型。
+ * [OUTPUT]: 提供 Release、产品统一版本、源码准备、执行身份与规划审计类型。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -461,8 +461,15 @@ export interface EmissaryRelease {
   version: string;
   created_at: string;
 }
+export interface EmissaryVersion {
+  product_version: string;
+  release_id: string | null;
+  release_version: string | null;
+  release_status: "ready" | "missing" | "ambiguous";
+}
 export interface EmissaryUpdate {
   id: string;
+  release_id: string;
   node_id: string;
   node_name: string;
   version: string;

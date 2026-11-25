@@ -707,15 +707,11 @@
     "target": "目标版本",
     "launcher": "启动器版本",
     "phase": "升级阶段",
-    "disabled": "未指定版本",
     "bootstrap": "需要安装 OTA 支持",
     "drainHint": "升级排空中：等待构建、产物和日志确认完成。",
     "activatingHint": "正在验证新版本；成功或回滚后恢复接收任务。",
     "poolPaused": "节点池后续升级已暂停，请检查失败原因后重试。",
     "restored": "已恢复至 {version}",
-    "setTarget": "指定版本 / 回退版本",
-    "targetHint": "节点单独指定的版本优先于节点池。可选择已导入的历史版本回退；始终等待在途构建结束。",
-    "inherit": "沿用节点池设置",
     "retry": "重试",
     "cancel": "取消待执行升级",
     "cancelRequested": "正在取消",
@@ -725,13 +721,13 @@
     "tag": "GitHub Release 标签",
     "noReleases": "尚未导入版本",
     "pools": "节点池升级策略",
-    "poolHint": "默认每池同时升级 1 个节点；失败或回滚会暂停后续升级。",
+    "poolHint": "目标固定为 Artifactory 统一版本。默认每池同时升级 1 个节点；失败或回滚会暂停后续升级。",
     "concurrency": "同时升级节点数",
     "pause": "暂停后续升级",
     "history": "升级执行记录",
     "reason": "失败原因 / 回滚结果",
     "stages": {
-      "idle": "等待目标版本",
+      "idle": "等待自动升级",
       "queued": "等待执行",
       "offered": "等待节点接收",
       "downloading": "下载并校验",
@@ -741,7 +737,19 @@
       "failed": "升级失败，原版本保留",
       "rolled_back": "已回滚",
       "canceled": "已取消"
-    }
+    },
+    "activeVersion": "本次升级版本",
+    "aligned": "已是当前版本",
+    "awaitingUpdate": "等待升级",
+    "waitingRelease": "等待对应安装包",
+    "paused": "后续升级已暂停",
+    "releaseStatus": {
+      "ready": "Artifactory {version} 的签名发行已就绪。",
+      "missing": "尚未导入 Artifactory {version} 对应的签名发行；节点保持当前版本。",
+      "ambiguous": "Artifactory {version} 存在多个对应发行，请先排除发行冲突。"
+    },
+    "productVersion": "Artifactory 统一版本",
+    "followsProduct": "Emissary 自动跟随 Artifactory 统一版本；同版本不重复升级，始终等待在途构建结束。"
   },
   "ai": {
     "settings": "AI 规划",
@@ -1488,7 +1496,7 @@
   "installation": {
     "title": "安装并加入节点",
     "description": "选择目标机器，生成安装 Emissary 并加入节点池的命令。",
-    "version": "Emissary 版本",
+    "version": "Artifactory 统一版本",
     "os": "目标系统",
     "arch": "架构",
     "generate": "生成安装命令",
@@ -1497,7 +1505,7 @@
     "target": "安装目标",
     "copyCommand": "复制安装命令",
     "missingEndpoint": "请先在系统设置中配置设备公开连接地址。",
-    "missingRelease": "请先在节点设置中导入已签名的 Emissary 版本。",
+    "missingRelease": "请先在节点设置中导入 Artifactory 同版本的签名 Emissary 发行。",
     "missingPool": "请先创建节点池，再加入设备。",
     "unsupported": "此版本不包含所选系统与架构的程序。",
     "openSettings": "打开节点设置",
@@ -1522,6 +1530,7 @@
     "settingsDescription": "全系统共用设备公开连接地址，修改后用于新生成的安装命令。",
     "endpointHint": "填写主机与真实设备 TLS 端口，例如 agents.example.com:31443 或 [2001:db8::1]:8443。留空将停用新安装命令。",
     "notConfigured": "尚未配置",
-    "systemAdminOnly": "仅系统管理员可以修改此地址。"
+    "systemAdminOnly": "仅系统管理员可以修改此地址。",
+    "followsProduct": "安装版本与 Artifactory 统一版本一致，无需单独选择。"
   }
 }

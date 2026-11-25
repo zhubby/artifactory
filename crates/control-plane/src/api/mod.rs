@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户 HTTP 处理器、统一鉴权和请求限制。
-//! [OUTPUT]: 组合构建概览、设备安装、终端、账户通知和规划路由。
+//! [OUTPUT]: 组合构建概览、统一版本、设备安装、终端、账户通知和规划路由。
 //! [POS]: 控制平面 HTTP 接口入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub(crate) mod ai_management;
@@ -228,6 +228,7 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/emissary-releases",
             get(emissary_updates::releases).post(emissary_updates::import),
         )
+        .route("/api/v1/emissary-version", get(emissary_updates::version))
         .route(
             "/api/v1/nodes/{id}/emissary-update",
             patch(emissary_updates::node_target),
@@ -329,9 +330,7 @@ fn signing_routes() -> Router<AppState> {
 pub(crate) fn health_routes() -> Router<AppState> {
     Router::new().route("/readyz", get(readiness)).route(
         "/healthz",
-        get(|| async {
-            axum::Json(serde_json::json!({"status":"ok","version":env!("CARGO_PKG_VERSION")}))
-        }),
+        get(|| async { axum::Json(serde_json::json!({"status":"ok","version":crate::VERSION})) }),
     )
 }
 

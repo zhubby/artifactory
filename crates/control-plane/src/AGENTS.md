@@ -12,12 +12,12 @@ error.rs: 将业务失败转换为 HTTP 错误。
 execution_plan.rs: 要求显式应用分类，校验并密封 AI 执行计划。
 grpc.rs: 共用名称与完整心跳预算校验，认证节点会话并接收构建事件。
 grpc_tests.rs: 验证完整 hello 的组合预算、重连与超额拒绝。
-lib.rs: 导出控制平面模块与协议。
+lib.rs: 导出控制平面模块、统一版本与协议。
 lifecycle.rs: 按游标执行工作区清理并清扫镜像日志前缀。
 main.rs: 首次创建默认管理员，启动 HTTP、gRPC、规划运行时、通知和后台协调。
 node_query.rs: 按项目授权查询节点能力和资源。
 notifications/: 投影事务事件，隔离邮件与 Webhook 投递，扫描持久异常。
-ota.rs: 校验节点升级包并协调升级状态。
+ota.rs: 规范统一产品版本，验证签名发行并派发固定升级包。
 pki.rs: 创建服务和设备证书。
 planning.rs: 按冻结镜像默认池补全计划，复验本次构建的完整目标合同。
 planning_runtime.rs: 为最新活动运行投影用量与当前 Pod 源码准备白名单，隔离旧代与上游不可用。

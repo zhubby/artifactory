@@ -213,7 +213,7 @@ test("detail requests are lazy and stop when their tabs or dialog close", async 
   expect(queries).toEqual(stopped);
 });
 
-test("arrow keys switch tabs and nested OTA and revoke dialogs restore focus", async ({
+test("arrow keys switch tabs and the revoke dialog restores focus", async ({
   page,
 }) => {
   await fixtureAPI(page);
@@ -230,20 +230,8 @@ test("arrow keys switch tabs and nested OTA and revoke dialogs restore focus", a
   await expect(
     page.getByRole("tab", { name: "Operations", exact: true }),
   ).toBeFocused();
-  const target = page.getByRole("button", {
-    name: "Set / roll back version",
-    exact: true,
-  });
-  await target.click();
   await expect(page.getByRole("dialog")).toContainText("In-flight builds");
-  const layers = await page
-    .locator('[data-app-modal][data-state="open"]')
-    .evaluateAll((elements) =>
-      elements.map((element) => Number(getComputedStyle(element).zIndex)),
-    );
-  expect(layers[1]).toBeGreaterThan(layers[0]);
-  await page.keyboard.press("Escape");
-  await expect(target).toBeFocused();
+  await expect(page.getByRole("button", { name: "Set / roll back version", exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("tab", { name: "Operations", exact: true }),
   ).toBeVisible();
@@ -252,6 +240,8 @@ test("arrow keys switch tabs and nested OTA and revoke dialogs restore focus", a
   await expect(
     page.getByRole("button", { name: "Confirm revocation", exact: true }),
   ).toBeVisible();
+  const layers = await page.locator('[data-app-modal][data-state="open"]').evaluateAll(elements => elements.map(element => Number(getComputedStyle(element).zIndex)));
+  expect(layers[1]).toBeGreaterThan(layers[0]);
   await page.keyboard.press("Escape");
   await expect(revoke).toBeFocused();
   await revoke.click();
@@ -443,13 +433,15 @@ test("OTA retry stays inside node details and uses the existing action", async (
   await fixtureAPI(page);
   await english(page);
   let retried = false;
+  await page.route("**/api/v1/emissary-version", route => route.fulfill({ json: { product_version: "0.2.0", release_id: "release-current", release_version: "0.2.0", release_status: "ready" } }));
   await page.route("**/api/v1/emissary-updates", (route) =>
     route.fulfill({
       json: [
         {
           id: "failed-update",
+          release_id: "release-current",
           node_id: nodes[0].id,
-          version: "v-new",
+          version: "0.2.0",
           previous_version: "v-old",
           status: retried ? "queued" : "failed",
           error: retried ? null : "Download failed",

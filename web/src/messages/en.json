@@ -707,15 +707,11 @@
     "target": "Target version",
     "launcher": "Launcher version",
     "phase": "Update phase",
-    "disabled": "No target",
     "bootstrap": "OTA bootstrap required",
     "drainHint": "Draining for update: waiting for builds, artifacts and log acknowledgments.",
     "activatingHint": "Verifying the new version. Tasks resume after confirmation or rollback.",
     "poolPaused": "Further pool updates are paused. Inspect the failure, then retry.",
     "restored": "Restored {version}",
-    "setTarget": "Set / roll back version",
-    "targetHint": "A node override takes priority over its pool. Choose an imported historical version to roll back. In-flight builds always finish first.",
-    "inherit": "Inherit pool target",
     "retry": "Retry",
     "cancel": "Cancel pending update",
     "cancelRequested": "Cancel requested",
@@ -725,13 +721,13 @@
     "tag": "GitHub Release tag",
     "noReleases": "No imported releases",
     "pools": "Pool update policies",
-    "poolHint": "One update at a time by default. Failure or rollback pauses further updates.",
+    "poolHint": "The target is the Artifactory version. One update at a time by default. Failure or rollback pauses further updates.",
     "concurrency": "Concurrent updates",
     "pause": "Pause further updates",
     "history": "Update history",
     "reason": "Failure / rollback result",
     "stages": {
-      "idle": "Awaiting target",
+      "idle": "Awaiting automatic update",
       "queued": "Queued",
       "offered": "Awaiting Emissary",
       "downloading": "Downloading and verifying",
@@ -741,7 +737,19 @@
       "failed": "Failed; original retained",
       "rolled_back": "Rolled back",
       "canceled": "Canceled"
-    }
+    },
+    "activeVersion": "Active update version",
+    "aligned": "Up to date",
+    "awaitingUpdate": "Awaiting update",
+    "waitingRelease": "Awaiting matching installation package",
+    "paused": "Further updates paused",
+    "releaseStatus": {
+      "ready": "The signed release for Artifactory {version} is ready.",
+      "missing": "No signed release for Artifactory {version} is imported. Nodes keep their current version.",
+      "ambiguous": "Multiple releases match Artifactory {version}. Resolve the release conflict first."
+    },
+    "productVersion": "Artifactory version",
+    "followsProduct": "Emissary follows the Artifactory version automatically. Matching versions need no update. In-flight builds always finish first."
   },
   "ai": {
     "settings": "AI planning",
@@ -1488,7 +1496,7 @@
   "installation": {
     "title": "Install and join node",
     "description": "Choose the target machine, then generate one command to install Emissary and join this pool.",
-    "version": "Emissary version",
+    "version": "Artifactory version",
     "os": "Target system",
     "arch": "Architecture",
     "generate": "Generate installation command",
@@ -1497,7 +1505,7 @@
     "target": "Installation target",
     "copyCommand": "Copy installation command",
     "missingEndpoint": "Configure the public device address in system settings first.",
-    "missingRelease": "Import a signed Emissary release in node settings first.",
+    "missingRelease": "Import the signed Emissary release matching the Artifactory version in node settings first.",
     "missingPool": "Create a node pool before joining a device.",
     "unsupported": "This release does not include the selected system and architecture.",
     "openSettings": "Open node settings",
@@ -1522,6 +1530,7 @@
     "settingsDescription": "One public device address for this installation. Changes apply to newly generated commands.",
     "endpointHint": "Use the host and actual device TLS port, for example agents.example.com:31443 or [2001:db8::1]:8443. Leave empty to disable new installation commands.",
     "notConfigured": "Not configured",
-    "systemAdminOnly": "Only a system administrator can change this address."
+    "systemAdminOnly": "Only a system administrator can change this address.",
+    "followsProduct": "The installation uses the Artifactory version. No separate version selection is needed."
   }
 }

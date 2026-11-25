@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离 PostgreSQL、授权设备和业务服务。
-//! [OUTPUT]: 提供数据库夹具、查池并发行锁验证和跨模块测试入口。
+//! [OUTPUT]: 提供数据库夹具、查池行锁、统一升级版本与跨模块测试入口。
 //! [POS]: 真实数据库测试总入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_control_plane::{
@@ -34,6 +34,8 @@ mod notification_channels;
 mod notification_events;
 #[path = "database/notifications.rs"]
 mod notifications;
+#[path = "database/ota_versions.rs"]
+mod ota_versions;
 #[path = "database/planning_basics.rs"]
 mod planning_basics;
 #[path = "database/planning_bridge.rs"]
@@ -456,7 +458,7 @@ async fn ota_uses_node_lock_and_pool_limit_and_never_changes_admin_drain() {
     let first = database.node().await;
     let second = database.node().await;
     let release = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES('00000000-0000-0000-0000-000000000001',$1,'v-next',$2,'test','hash')", params![release, serde_json::json!({"assets":[{"os":"linux","arch":"amd64","name":"artifactory-emissary-linux-amd64"}]}).to_string()]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES('00000000-0000-0000-0000-000000000001',$1,$3,$2,'test','hash')", params![release, serde_json::json!({"assets":[{"os":"linux","arch":"amd64","name":"artifactory-emissary-linux-amd64"}]}).to_string(), artifactory_control_plane::VERSION]).await.unwrap();
     sql::execute(&mut database.pool.clone(), "UPDATE nodes SET capabilities=capabilities || '[\"emissary-ota-v1\"]'::jsonb,emissary_current_version='v-old',emissary_launcher_version='v-old',draining=true", params![]).await.unwrap();
     sql::execute(
         &mut database.pool.clone(),
@@ -590,7 +592,7 @@ async fn ota_failed_activation_pauses_pool_and_fences_stale_sessions() {
     let database = Database::with_tenant().await;
     let node = database.node().await;
     let release = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES('00000000-0000-0000-0000-000000000001',$1,'v-next',$2,'test','hash')", params![release, serde_json::json!({"assets":[{"os":"linux","arch":"amd64","name":"artifactory-emissary-linux-amd64"}]}).to_string()]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES('00000000-0000-0000-0000-000000000001',$1,$3,$2,'test','hash')", params![release, serde_json::json!({"assets":[{"os":"linux","arch":"amd64","name":"artifactory-emissary-linux-amd64"}]}).to_string(), artifactory_control_plane::VERSION]).await.unwrap();
     sql::execute(&mut database.pool.clone(), "UPDATE nodes SET capabilities=capabilities || '[\"emissary-ota-v1\"]'::jsonb,emissary_current_version='v-old',emissary_target_release=$1,draining=true WHERE id=$2", params![release, node]).await.unwrap();
     scheduler::tick(&database.state).await.unwrap();
     let id: Uuid = sql::scalar(
@@ -669,7 +671,7 @@ async fn ota_retry_after_pool_move_respects_new_pool_capacity() {
     let release = Uuid::new_v4();
     let prior = Uuid::new_v4();
     let new_pool = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES('00000000-0000-0000-0000-000000000001',$1,'v-next','{}','test','hash')", params![release]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES('00000000-0000-0000-0000-000000000001',$1,$2,'{}','test','hash')", params![release, artifactory_control_plane::VERSION]).await.unwrap();
     sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_updates(id,node_id,pool_id,release_id,status,finished_at) VALUES($1,$2,'00000000-0000-0000-0000-000000000001',$3,'failed',now())", params![prior, node, release]).await.unwrap();
     sql::execute(
         &mut database.pool.clone(),
