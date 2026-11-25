@@ -23,5 +23,6 @@
 
 2026-11-24-ai-audit-reading-kubernetes.md: 记录审计轮次、可读动作、Web 镜像与线上阅读状态验收。
 2026-11-25-device-terminals-kubernetes.md: 记录设备终端固定镜像、私有转发、撤权修复、历史清理与真实验收。
+2026-11-25-node-installation-terminals.md: 记录统一安装弹窗、设备地址、终端补修及三节点验收边界。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md
