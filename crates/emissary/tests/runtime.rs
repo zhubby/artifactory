@@ -1,6 +1,6 @@
 //! [INPUT]: 本机执行程序、mTLS 平台夹具和 OTA 签名组件。
 //! [OUTPUT]: 验证 TLS 约束、运行时停机、OTA 升级和回滚。
-//! [POS]: 使用真实子进程；源码和首连失败暴露退出原因。
+//! [POS]: 使用真实子进程；准备失败与停机超时暴露原因和状态。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod support;
 #[cfg(unix)]
@@ -694,8 +694,15 @@ async fn worker_kills_process_tree_on_parent_death_and_lease_expiry() {
         }
         tokio::time::timeout(Duration::from_secs(10), child.wait())
             .await
-            .unwrap()
-            .unwrap();
+            .unwrap_or_else(|error| {
+                let status = child.try_wait();
+                panic!(
+                    "worker shutdown timed out: cause={cause}, phase=wait_for_exit, current_status={status:?}, error={error}"
+                );
+            })
+            .unwrap_or_else(|error| {
+                panic!("worker shutdown wait failed: cause={cause}, phase=wait_for_exit, error={error}");
+            });
         let events = drain.await.unwrap();
         assert!(
             events

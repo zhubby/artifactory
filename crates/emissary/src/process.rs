@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖共享进程原语、独立 Worker 与未回收 PTY 进程身份。
+//! [INPUT]: 依赖共享进程原语、独立Worker及Darwin真实出生时间。
 //! [OUTPUT]: 导出进程入口，按出生时间登记 Worker 和 PTY 会话并回收。
 //! [POS]: 节点进程身份边界；源码删除与终端清扫共享出生时间围栏。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -47,10 +47,10 @@ impl Session {
         {
             return Ok(session);
         }
-        // Darwin 的 Zombie 不再提供 getsid/PROC_PIDTBSDINFO。ps 的内核查询
-        // 仍返回真实出生时间，禁止将 sysinfo 的缺省零值写入身份记录。
+        // Darwin 的退出过渡态和 Zombie 不提供完整 SID；未 wait Child
+        // 保留 PID，ps 的内核查询仍返回真实出生时间。
         #[cfg(target_os = "macos")]
-        if let Some(start_time) = macos_zombie_start(pid).await? {
+        if let Some(start_time) = macos_process_start(pid).await? {
             return Ok(Self { pid, start_time });
         }
         anyhow::bail!("terminal process identity unavailable before registration")
@@ -65,9 +65,9 @@ impl Session {
                 let start_time = process.start_time();
                 #[cfg(target_os = "macos")]
                 let start_time = if start_time == 0 {
-                    macos_zombie_start(self.pid)
+                    macos_process_start(self.pid)
                         .await?
-                        .context("cannot verify terminal zombie identity")?
+                        .context("cannot verify terminal process identity")?
                 } else {
                     start_time
                 };
@@ -102,7 +102,7 @@ impl Session {
 }
 
 #[cfg(target_os = "macos")]
-async fn macos_zombie_start(pid: u32) -> Result<Option<u64>> {
+async fn macos_process_start(pid: u32) -> Result<Option<u64>> {
     let mut command = Command::new("/bin/ps");
     command
         .args(["-p", &pid.to_string(), "-o", "stat=", "-o", "lstart="])
@@ -113,13 +113,36 @@ async fn macos_zombie_start(pid: u32) -> Result<Option<u64>> {
     if !status.success() {
         return Ok(None);
     }
-    let text = std::str::from_utf8(&bytes)?.trim();
-    let (status, started) = text
+    Ok(Some(macos_start_time(&bytes)?))
+}
+
+#[cfg(target_os = "macos")]
+fn macos_start_time(bytes: &[u8]) -> Result<u64> {
+    let text = std::str::from_utf8(bytes)?.trim();
+    let (_status, started) = text
         .split_once(char::is_whitespace)
         .context("invalid terminal process identity")?;
-    if !status.starts_with('Z') {
-        return Ok(None);
-    }
     let started = chrono::NaiveDateTime::parse_from_str(started.trim(), "%a %b %e %T %Y")?;
-    Ok(Some(started.and_utc().timestamp().try_into()?))
+    let start_time = started.and_utc().timestamp().try_into()?;
+    ensure!(
+        start_time != 0,
+        "terminal process birth time is unavailable"
+    );
+    Ok(start_time)
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::macos_start_time;
+
+    #[test]
+    fn darwin_exit_transition_preserves_real_birth_time() {
+        // 真实探针的退出过渡态为 ?Es；PID 由未回收 Child 保留。
+        let transition = macos_start_time(b"?Es  Wed Nov 25 09:44:05 2026    \n").unwrap();
+        let zombie = macos_start_time(b"Zs  Wed Nov 25 09:44:05 2026    \n").unwrap();
+        assert_eq!(transition, 1_795_599_845);
+        assert_eq!(transition, zombie);
+        assert!(macos_start_time(b"Z Thu Jan 1 00:00:00 1970\n").is_err());
+        assert!(macos_start_time(b"?Es\n").is_err());
+    }
 }

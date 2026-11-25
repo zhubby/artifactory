@@ -1,6 +1,6 @@
 # [INPUT]: 不可变原生标签、根 VERSION 与 UTF-8 Python 环境。
 # [OUTPUT]: 六平台统一版本程序与签名资产清单。
-# [POS]: 标签定位源码，产品版本与控制平面保持一致。
+# [POS]: 标签定位源码，六平台程序使用全项目统一版本。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: Emissary Release
 on:

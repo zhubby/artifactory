@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖固定清单、租约、私有配置和共享日志事件管道。
-//! [OUTPUT]: 临时检出源码，执行步骤、上传制品并检查目录清理。
+//! [OUTPUT]: 执行步骤并上传制品；失败时有界关闭日志，再检查目录清理。
 //! [POS]: 每任务子进程；凭据在用户步骤前删除。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -352,8 +352,12 @@ async fn execute_inner(
             Duration::from_secs(step.timeout_seconds.into()),
         )
         .await;
-        out.await??;
-        err.await??;
+        let out_result =
+            artifactory_execution_support::process::finish_reader(out, result.is_err()).await;
+        let err_result =
+            artifactory_execution_support::process::finish_reader(err, result.is_err()).await;
+        out_result??;
+        err_result??;
         let exit = result.as_ref().ok().and_then(|s| s.code()).unwrap_or(-1);
         emit.send(Event {
             kind: "step_finished".into(),

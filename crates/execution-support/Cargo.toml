@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-terminal = ["dep:portable-pty", "dep:thiserror", "dep:libc", "dep:sysinfo", "dep:windows-sys"]
+terminal = ["dep:portable-pty", "dep:thiserror", "dep:windows-sys"]
 
 [dependencies]
 anyhow = "1"
@@ -18,8 +18,8 @@ portable-pty = { version = "0.9", optional = true }
 thiserror = { version = "2", optional = true }
 
 [target.'cfg(unix)'.dependencies]
-libc = { version = "0.2", optional = true }
-sysinfo = { version = "0.38", optional = true, default-features = false, features = ["system"] }
+libc = "0.2"
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", optional = true, features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }

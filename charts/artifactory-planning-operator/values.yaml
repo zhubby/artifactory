@@ -34,10 +34,10 @@ planningPool:
   name: default
   maxActive: 8
   maxPerProject: 4
-  image: ghcr.io/zhubby/artifactory-planning-worker:0.2.2
+  image: ghcr.io/zhubby/artifactory-planning-worker:0.2.3
   cpu: 250m
   memory: 512Mi
-  sourcePreparerImage: ghcr.io/zhubby/artifactory-source-preparer:0.2.2
+  sourcePreparerImage: ghcr.io/zhubby/artifactory-source-preparer:0.2.3
   ephemeralStorage: 10Gi
   # Optional HTTP(S) origins. Set noProxy explicitly for internal services and API IP.
   # proxy:

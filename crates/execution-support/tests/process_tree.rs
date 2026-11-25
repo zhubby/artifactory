@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖真实工具进程、工作目录和取消信号。
-//! [OUTPUT]: 验证输入 EOF、取消和超时后的后代回收。
+//! [OUTPUT]: 验证输入EOF、取消/超时后代回收与失败日志读取截止。
 //! [POS]: 共享进程原语的跨平台回归；PID 标记原子发布。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_execution_support::process;
@@ -95,8 +95,13 @@ async fn terminates_descendants(canceled: bool) {
         command.args(["-NoProfile","-Command","$p=Start-Process pwsh -ArgumentList '-NoProfile','-Command','Start-Sleep 120' -PassThru; [IO.File]::WriteAllText($env:MARKER+'.tmp',$p.Id.ToString()); [IO.File]::Move($env:MARKER+'.tmp',$env:MARKER); Wait-Process -Id $p.Id"]);
         command
     };
-    command.env("MARKER", &marker);
+    command
+        .env("MARKER", &marker)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     let mut child = process::spawn(command).unwrap();
+    let stdout = child.stdout().take().unwrap();
+    let stderr = child.stderr().take().unwrap();
     tokio::time::timeout(Duration::from_secs(10), async {
         while !marker.exists() {
             tokio::time::sleep(Duration::from_millis(30)).await;
@@ -118,6 +123,19 @@ async fn terminates_descendants(canceled: bool) {
             .await
             .is_err()
     );
+    use tokio::io::AsyncReadExt;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        let mut stdout = stdout;
+        let mut stderr = stderr;
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        let (out_result, err_result) =
+            tokio::join!(stdout.read_to_end(&mut out), stderr.read_to_end(&mut err));
+        out_result.unwrap();
+        err_result.unwrap();
+    })
+    .await
+    .expect("canceled descendants must close inherited output pipes");
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let mut system = sysinfo::System::new();
@@ -136,4 +154,50 @@ async fn terminates_descendants(canceled: bool) {
     })
     .await
     .unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn cancellation_during_fork_closes_inherited_output() {
+    for _ in 0..12 {
+        terminates_descendants(true).await;
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn failed_reader_aborts_when_process_keeps_pipe_open() {
+    use tokio::io::AsyncReadExt;
+    struct ReaderGuard(std::sync::Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for ReaderGuard {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    let mut child = Command::new("sleep")
+        .arg("120")
+        .stdout(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let dropped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let guard = ReaderGuard(dropped.clone());
+    let reader = tokio::spawn(async move {
+        let _guard = guard;
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).await
+    });
+    let result = tokio::time::timeout(Duration::from_secs(4), process::finish_reader(reader, true))
+        .await
+        .expect("failed output reader must have a deadline");
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("output remained open")
+    );
+    assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+    assert!(child.try_wait().unwrap().is_none());
+    child.kill().await.unwrap();
 }

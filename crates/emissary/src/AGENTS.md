@@ -7,10 +7,10 @@ config.rs: 校验节点配置，复用私有文件原语并原子保存记录。
 cleanup.rs: 标准删除受管目录；Windows 受限缓存链接只删除链接，保留目标和 ACL。
 client.rs: 校验入口地址 SAN，建立平台 mTLS 通道与节点注册。
 runner.rs: 会话、固定主机名与接口缓存心跳、租约和独立进程调度。
-worker.rs: 复用共享事件管道执行隔离任务，上传制品并验证 Worker 栈预算。
+worker.rs: 执行隔离步骤；取消时回收后代并有界关闭日志，再上传制品或清理目录。
 signing/: 临时领取材料、清理闭锁并原生校验最终副本。
 source.rs: 领取源码材料，隔离缓存，回收会话后通过 cleanup 清理任务目录。
-process.rs: 按出生时间登记 Worker 与 PTY；保留 Darwin 僵尸身份并回收后代。
+process.rs: 按出生时间登记Worker与PTY；接受Darwin退出过渡态并回收后代。
 artifacts.rs: 在工作目录内收集、读取与校验制品。
 doctor.rs: 八路并发探测原生工具，按名称固定首连能力快照，并保留每工具超时。
 ota.rs: 校验签名更新、激活并回滚节点二进制。
