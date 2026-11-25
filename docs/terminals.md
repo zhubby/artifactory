@@ -48,6 +48,8 @@ Unix 默认 profile 为 `/bin/sh -i`。Windows 默认使用系统 Windows PowerS
 
 macOS 服务环境没有设置 `LANG`、`LC_ALL` 和 `LC_CTYPE` 时，终端使用 `LANG=en_US.UTF-8`，保证交互式 Shell 接收中文输入。设备显式设置任一语言变量时保留原值。
 
+Windows 终端继承服务账户的 `PATHEXT`。变量缺省或为空时使用标准扩展名集合，包含 `.COM`、`.EXE`、`.BAT` 和 `.CMD`，保证 `whoami` 等省略扩展名的命令能够查找。显式扩展名列表保持原值。
+
 终端不是项目沙箱。同账户能够访问的配置、私钥和其他构建目录也能从终端读取。设备服务仍使用已有非 root、非 LocalSystem 安装约束。
 
 ## 权限与票据

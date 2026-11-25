@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖设备 mTLS、固定控制会话、PTY Worker 和白名单 Shell 环境。
-//! [OUTPUT]: 登记 PTY 身份；以可取消背压转发输入，续期并回收进程树。
+//! [OUTPUT]: 提供平台 Shell 环境，登记 PTY，以有界背压转发输入并回收。
 //! [POS]: 每会话独立传输；终端输出不进入构建 spool 或控制队列。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -33,8 +33,13 @@ fn frame(open: &OpenTerminal, kind: &str) -> TerminalFrame {
 }
 
 fn environment() -> BTreeMap<String, String> {
+    environment_from(|key| std::env::var(key).ok())
+}
+
+fn environment_from(read: impl Fn(&str) -> Option<String>) -> BTreeMap<String, String> {
     let values: BTreeMap<String, String> = [
         "PATH",
+        "PATHEXT",
         "HOME",
         "USERPROFILE",
         "SystemRoot",
@@ -48,7 +53,7 @@ fn environment() -> BTreeMap<String, String> {
         "LC_CTYPE",
     ]
     .into_iter()
-    .filter_map(|key| std::env::var(key).ok().map(|value| (key.into(), value)))
+    .filter_map(|key| read(key).map(|value| (key.into(), value)))
     .collect();
     #[cfg(target_os = "macos")]
     let values = {
@@ -58,6 +63,17 @@ fn environment() -> BTreeMap<String, String> {
             .any(|key| values.get(*key).is_some_and(|value| !value.is_empty()))
         {
             values.insert("LANG".into(), "en_US.UTF-8".into());
+        }
+        values
+    };
+    #[cfg(windows)]
+    let values = {
+        let mut values = values;
+        if values.get("PATHEXT").is_none_or(|value| value.is_empty()) {
+            values.insert(
+                "PATHEXT".into(),
+                ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC".into(),
+            );
         }
         values
     };
@@ -342,4 +358,41 @@ pub(crate) async fn sweep(cfg: &Config) -> Result<()> {
         std::fs::remove_file(entry.path())?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_inherits_explicit_windows_command_extensions() {
+        let environment = environment_from(|key| match key {
+            "PATHEXT" => Some(".COM;.EXE;.BAT;.CMD;.PS1".into()),
+            "DEVICE_SECRET" => Some("private".into()),
+            _ => None,
+        });
+        assert_eq!(
+            environment.get("PATHEXT").map(String::as_str),
+            Some(".COM;.EXE;.BAT;.CMD;.PS1")
+        );
+        assert!(!environment.contains_key("DEVICE_SECRET"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_terminal_defaults_missing_or_empty_command_extensions() {
+        for value in [None, Some(String::new())] {
+            let environment = environment_from(|key| {
+                if key == "PATHEXT" {
+                    value.clone()
+                } else {
+                    None
+                }
+            });
+            assert_eq!(
+                environment.get("PATHEXT").map(String::as_str),
+                Some(".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC")
+            );
+        }
+    }
 }
