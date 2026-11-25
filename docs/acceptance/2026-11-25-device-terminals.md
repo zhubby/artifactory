@@ -1,7 +1,7 @@
 <!--
 [INPUT]: 本地源码测试、真实 macOS PTY、多副本 TLS 和浏览器证据。
 [OUTPUT]: 区分设备终端源码验证、环境验证和未验收目标。
-[POS]: 本次设备终端的交付证据；不声明生产部署。
+[POS]: 设备终端本地阶段证据；后续部署见独立记录。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
 # 设备终端本地验收 · 2026-11-25
@@ -65,7 +65,7 @@
 
 Windows原语的MSVC交叉检查与真实ConPTY运行是两层证据。完整Emissary的Windows交叉构建遇到本机Windows SDK缺少`assert.h`，未通过；不能由PTY库交叉检查代替。尚未在Windows x64专用服务账户、Session0和嵌套Job环境验证ConPTY、全屏程序、原生IME与强退回收。
 
-原生Linux systemd服务账户、macOS专用launchd服务账户、真实远程设备、Kubernetes1.28与当前支持版本的部署验收单列。现有环境中的历史成功记录不构成本功能验收。
+原生Linux systemd服务账户、macOS专用launchd服务账户及既有物理远程设备仍待验收。后续授权的Kubernetes1.28.3部署、真实前台设备终端和清理结果见[上线记录](../releases/2026-11-25-device-terminals-kubernetes.md)。其他Kubernetes版本仍待环境验收。
 
 10会话负载使用模拟设备字节端，独立记录在途窗口、延迟和资源；不会当作真实PTY吞吐、真实构建并行或生产容量结论。大输出仍与设备构建共享CPU、网络和磁盘。真实构建续租/构建取消与终端大输出并行、真实设备出口带宽仍待环境验收；Control健康心跳与终端关闭帧不能替代这些证据。
 

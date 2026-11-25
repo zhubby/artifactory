@@ -120,6 +120,7 @@
 - [通知中心 Kubernetes 上线记录 · 2026-11-23](releases/2026-11-23-notification-center-kubernetes.md)
 - [构建过程与源码诊断 Kubernetes 上线记录 · 2026-11-24](releases/2026-11-24-build-observability-kubernetes.md)
 - [AI 审计阅读 Kubernetes 上线记录 · 2026-11-24](releases/2026-11-24-ai-audit-reading-kubernetes.md)
+- [设备终端 Kubernetes 上线记录 · 2026-11-25](releases/2026-11-25-device-terminals-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)
 
