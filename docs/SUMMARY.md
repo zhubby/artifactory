@@ -127,6 +127,7 @@
 - [AI 审计阅读 Kubernetes 上线记录 · 2026-11-24](releases/2026-11-24-ai-audit-reading-kubernetes.md)
 - [设备终端 Kubernetes 上线记录 · 2026-11-25](releases/2026-11-25-device-terminals-kubernetes.md)
 - [节点安装与三节点终端 · 2026-11-25](releases/2026-11-25-node-installation-terminals.md)
+- [统一 0.2.3 与三节点手动 OTA · 2026-11-25](releases/2026-11-25-manual-ota-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)
 
