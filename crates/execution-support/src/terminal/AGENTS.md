@@ -2,7 +2,7 @@
 > L2 | Parent: ../AGENTS.md
 
 mod.rs: 定义受信 Shell、父注册确认、有界输入和真实进程事件。
-runtime.rs: 保留注册前身份；有界输入等待继续监督取消，排空或回收失败拒绝正常退出。
+runtime.rs: 保留注册前身份；有界输入继续监督取消，ConPTY 关闭与排空并行，失败拒绝正常退出。
 unix.rs: 校验未回收 PTY Child，按 SID 回收前台与后台进程。
 windows.rs: 将 ConPTY 子进程纳入关闭即终止的 Job Object。
 

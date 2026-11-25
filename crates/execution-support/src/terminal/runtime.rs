@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖原生 PTY、平台进程树和调用方有界通道。
 //! [OUTPUT]: 驱动注册、有界输入背压和窗口；排空或回收失败不发正常退出。
-//! [POS]: 终端运行循环；阻塞 PTY 读写与异步控制分离。
+//! [POS]: 终端运行循环；阻塞读写与控制分离，ConPTY 关闭和排空并行。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 #[cfg(unix)]
 use super::unix as platform;
@@ -224,6 +224,8 @@ pub async fn run(
         }
     });
     let mut write_tx = Some(write_tx);
+    let mut master = Some(master);
+    let mut master_close = None;
     let mut pending_write = None;
     let mut write_stalled_at = None;
     let mut pending = Some(TerminalEvent::Ready { process_id });
@@ -279,7 +281,7 @@ pub async fn run(
                         }
                     }
                     Some(TerminalInput::Resize { columns, rows }) => {
-                        if let Err(error) = validate_size(columns, rows).and_then(|()| master.resize(size(columns, rows)).map_err(|error| TerminalError::caused("could not resize terminal", error))) {
+                        if let Err(error) = validate_size(columns, rows).and_then(|()| master.as_ref().expect("open terminal master").resize(size(columns, rows)).map_err(|error| TerminalError::caused("could not resize terminal", error))) {
                             failure = Some(error); closing = true;
                         }
                     }
@@ -319,6 +321,11 @@ pub async fn run(
             cleanup = Some(tokio::task::spawn_blocking(move || {
                 cleanup_tree.terminate()
             }));
+            // ConPTY 只有关闭 HPCON 才结束输出管道；关闭必须与读线程排空并行。
+            #[cfg(windows)]
+            if let Some(master) = master.take() {
+                master_close = Some(tokio::task::spawn_blocking(move || drop(master)));
+            }
         }
         if cleanup
             .as_ref()
@@ -345,7 +352,7 @@ pub async fn run(
     discard.cancel();
     drop(read_rx);
     drop(write_tx);
-    // 子进程先退出，读线程继续排空；最后关闭 master，避免 ConPTY 互等。
+    // Unix 在读线程排空后关闭 master；ConPTY 已在关闭阶段并行排空。
     if let Some(task) = cleanup {
         let result = match tokio::time::timeout(FINISH_TIMEOUT, task).await {
             Ok(Ok(result)) => result,
@@ -356,7 +363,9 @@ pub async fn run(
             failure.get_or_insert(error);
         }
     }
-    let master_close = tokio::task::spawn_blocking(move || drop(master));
+    let master_close = master_close
+        .take()
+        .unwrap_or_else(|| tokio::task::spawn_blocking(move || drop(master.take())));
     for (task, operation) in [
         (master_close, "terminal master close task did not finish"),
         (reader_task, "terminal reader task did not finish"),

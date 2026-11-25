@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖真实 PTY、受控输入、取消信号和进程状态。
-//! [OUTPUT]: 验证终端突发输入、注册期限、排空失败和会话后代回收。
+//! [INPUT]: 依赖真实 PTY、受控输入、取消信号和 Windows 回收子模块。
+//! [OUTPUT]: 验证字节交互、ConPTY 游标握手、退出排空和会话后代回收。
 //! [POS]: 可选 terminal 特性的真实进程回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 #![cfg(feature = "terminal")]
@@ -30,7 +30,7 @@ fn config() -> TerminalConfig {
 fn config() -> TerminalConfig {
     let system_root = std::env::var("SystemRoot").expect("Windows SystemRoot is required");
     TerminalConfig {
-        shell: PathBuf::from(&system_root).join("System32/cmd.exe"),
+        shell: PathBuf::from(&system_root).join("System32").join("cmd.exe"),
         args: vec!["/Q".into(), "/D".into()],
         cwd: std::env::temp_dir(),
         columns: 91,
@@ -55,14 +55,36 @@ async fn terminal_windows_conpty_retains_exit_code() {
     ));
     input
         .send(TerminalInput::Input {
-            data: b"exit 7\r\n".to_vec(),
+            data: b"echo __CONPTY_FINAL__ & exit 7\r\n".to_vec(),
         })
         .await
         .unwrap();
     let code = tokio::time::timeout(Duration::from_secs(10), async {
+        let mut bytes = Vec::<u8>::new();
+        let mut cursor_scan = 0;
         while let Some(event) = output.recv().await {
+            if let TerminalEvent::Output { data } = &event {
+                bytes.extend(data);
+                while let Some(relative) = bytes[cursor_scan..]
+                    .windows(4)
+                    .position(|v| v == b"\x1b[6n")
+                {
+                    cursor_scan += relative + 4;
+                    input
+                        .send(TerminalInput::Input {
+                            data: b"\x1b[1;1R".to_vec(),
+                        })
+                        .await
+                        .unwrap();
+                }
+            }
             if let TerminalEvent::Exited { code, signal } = event {
                 assert_eq!(signal, None);
+                assert!(
+                    String::from_utf8_lossy(&bytes).contains("\r\n__CONPTY_FINAL__"),
+                    "ConPTY output: {:?}",
+                    String::from_utf8_lossy(&bytes)
+                );
                 return code;
             }
         }
@@ -726,3 +748,7 @@ fn terminal_debug_output_does_not_expose_input_or_environment_values() {
         .contains(secret)
     );
 }
+
+#[cfg(windows)]
+#[path = "terminal_process/windows.rs"]
+mod windows;

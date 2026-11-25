@@ -87,6 +87,8 @@ Control 最多每 5 秒重新确认转发授权。数据库挂起、账户撤权
 
 `ARTIFACTORY_GATEWAY_TERMINAL_CONNECTIONS` 配置网关终端配额；Helm 对应 `gateway.terminalConnections`。Unix 回收 PTY SID 内的前后台进程；Windows 使用 ConPTY 和 Job Object。父管道 EOF、设备流中断、取消、停机和租约失效都触发回收。正常退出先有界排空输出，消费确认后结束；撤权立即丢弃未发送数据。
 
+Windows 关闭 ConPTY 时并行排空输出，避免等待输出 EOF 与关闭句柄互锁。ConPTY 的光标位置问询由浏览器终端应答；原生测试同样完成此握手，再验证最终输出和退出码。
+
 OTA 实际处于 downloading、draining 或 activating 时停止终端准入并关闭现有会话。取消、下载失败或回退后允许新建，已经关闭的会话不复活。终端不占构建 slot，但仍与构建共用设备 CPU、磁盘和出口带宽。
 
 租户归档或删除先停止终端。曾附着的会话保留关闭记录，并等待 50 秒授权与设备租约安全窗口，再删除租户资源。项目删除不关闭租户设备终端。
