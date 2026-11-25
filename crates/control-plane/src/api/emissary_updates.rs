@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户会话、产品统一版本与升级事务。
-//! [OUTPUT]: 提供固定版本状态、签名目录、并发策略和升级操作。
+//! [OUTPUT]: 提供固定版本状态、手动升级、签名目录和并发策略。
 //! [POS]: 升级 HTTP 边界；目标由 Artifactory 产品统一版本确定。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::auth::TenantState;
@@ -58,6 +58,28 @@ pub async fn import(
         )
         .await?;
     Ok(Json(json!({"id":id})))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateConfirmation {
+    product_version: String,
+    release_id: Uuid,
+}
+
+pub async fn request_update(
+    TenantState(state): TenantState,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+    Json(input): Json<UpdateConfirmation>,
+) -> Result<Json<Value>> {
+    auth.session_role("admin")?;
+    let update = state
+        .store
+        .request_emissary_update(id, auth.user_id, &input.product_version, input.release_id)
+        .await?;
+    state.coordination.commands.notify_one();
+    Ok(Json(json!({"id":update})))
 }
 
 pub async fn node_target(

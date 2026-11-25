@@ -230,7 +230,7 @@ test("arrow keys switch tabs and the revoke dialog restores focus", async ({
   await expect(
     page.getByRole("tab", { name: "Operations", exact: true }),
   ).toBeFocused();
-  await expect(page.getByRole("dialog")).toContainText("In-flight builds");
+  await expect(page.getByRole("dialog")).toContainText("an administrator confirms each update");
   await expect(page.getByRole("button", { name: "Set / roll back version", exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("tab", { name: "Operations", exact: true }),

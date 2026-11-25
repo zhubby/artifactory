@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离 PostgreSQL、真实调度入口和租户 HTTP 会话。
-//! [OUTPUT]: 验证产品版本固定目标、版本兼容和历史重试围栏。
+//! [OUTPUT]: 验证手动授权产品版本目标、版本兼容和历史重试围栏。
 //! [POS]: OTA 产品版本合同的数据库与接口回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
@@ -25,7 +25,7 @@ async fn counters(db: &Database) -> (i64, i64) {
     sql::tuple(&mut db.pool.clone(), "SELECT (SELECT count(*) FROM emissary_updates),(SELECT count(*) FROM nodes WHERE ota_draining)", params![]).await.unwrap()
 }
 
-async fn admin(db: &Database) -> String {
+pub(super) async fn admin(db: &Database) -> String {
     let id = Uuid::new_v4();
     let token = Uuid::new_v4().to_string();
     sql::execute(&mut db.pool.clone(), "INSERT INTO users(id,username,password_hash,role) VALUES($1,'version-admin','unused','admin')", params![id]).await.unwrap();
@@ -39,7 +39,7 @@ async fn admin(db: &Database) -> String {
     format!("artifactory_session={token}")
 }
 
-async fn request(
+pub(super) async fn request(
     db: &Database,
     cookie: &str,
     method: &str,
@@ -70,7 +70,7 @@ async fn request(
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
-async fn ota_versions_follow_product_version_without_target_and_ignore_old_pins() {
+async fn ota_versions_require_manual_request_and_ignore_old_pins() {
     let db = Database::with_tenant().await;
     let old = release(&db, "0.1.0").await;
     let target = release(&db, artifactory_control_plane::VERSION).await;
@@ -80,9 +80,20 @@ async fn ota_versions_follow_product_version_without_target_and_ignore_old_pins(
     scheduler::tick(&db.state).await.unwrap();
     assert_eq!(
         counters(&db).await,
-        (1, 1),
-        "full scheduler must discover unpinned nodes"
+        (0, 0),
+        "full scheduler must not authorize an update"
     );
+    let cookie = admin(&db).await;
+    let (status, _) = request(
+        &db,
+        &cookie,
+        "POST",
+        &format!("/nodes/{node}/emissary-update"),
+        json!({"product_version":artifactory_control_plane::VERSION,"release_id":target}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    scheduler::tick(&db.state).await.unwrap();
     let phase: String = sql::scalar(
         &mut db.pool.clone(),
         "SELECT status FROM emissary_updates WHERE node_id=$1",
@@ -135,6 +146,15 @@ async fn ota_versions_follow_product_version_without_target_and_ignore_old_pins(
     )
     .await
     .unwrap();
+    let (status, _) = request(
+        &db,
+        &cookie,
+        "POST",
+        &format!("/nodes/{other}/emissary-update"),
+        json!({"product_version":artifactory_control_plane::VERSION,"release_id":target}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
     assert!(
         artifactory_control_plane::ota::next(&db.state, other, other_session)
             .await
@@ -197,7 +217,7 @@ async fn ota_versions_same_product_metadata_and_missing_or_ambiguous_assets_do_n
     )
     .await
     .unwrap();
-    release(&db, &format!("v{}", artifactory_control_plane::VERSION)).await;
+    let alias = release(&db, &format!("v{}", artifactory_control_plane::VERSION)).await;
     assert!(
         artifactory_control_plane::ota::next(&db.state, node, session)
             .await
@@ -212,12 +232,25 @@ async fn ota_versions_same_product_metadata_and_missing_or_ambiguous_assets_do_n
     )
     .await
     .unwrap();
+    let cookie = admin(&db).await;
+    assert_eq!(
+        request(
+            &db,
+            &cookie,
+            "POST",
+            &format!("/nodes/{node}/emissary-update"),
+            json!({"product_version":artifactory_control_plane::VERSION,"release_id":alias})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
     assert!(
         artifactory_control_plane::ota::next(&db.state, node, session)
             .await
             .unwrap()
             .is_some(),
-        "one legacy same-version release is supported"
+        "one legacy same-version release is supported after manual request"
     );
     db.close().await;
 }
@@ -376,4 +409,81 @@ async fn ota_versions_http_status_targets_and_stale_retry_use_one_product_releas
         StatusCode::CONFLICT
     );
     db.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn ota_uses_node_lock_and_pool_limit_and_never_changes_admin_drain() {
+    let database = Database::with_tenant().await;
+    let (_, _, _job) = database.fixture().await;
+    let first = database.node().await;
+    let second = database.node().await;
+    let release = Uuid::new_v4();
+    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES('00000000-0000-0000-0000-000000000001',$1,$3,$2,'test','hash')", params![release, serde_json::json!({"assets":[{"os":"linux","arch":"amd64","name":"artifactory-emissary-linux-amd64"}]}).to_string(), artifactory_control_plane::VERSION]).await.unwrap();
+    sql::execute(&mut database.pool.clone(), "UPDATE nodes SET capabilities=capabilities || '[\"emissary-ota-v1\"]'::jsonb,emissary_current_version='v-old',emissary_launcher_version='v-old',draining=true", params![]).await.unwrap();
+    sql::execute(
+        &mut database.pool.clone(),
+        "UPDATE node_pools SET emissary_target_release=$1",
+        params![release],
+    )
+    .await
+    .unwrap();
+    let cookie = admin(&database).await;
+    let first_path = format!("/nodes/{first}/emissary-update");
+    let second_path = format!("/nodes/{second}/emissary-update");
+    let (a, b) = tokio::join!(
+        request(
+            &database,
+            &cookie,
+            "POST",
+            &first_path,
+            serde_json::json!({"product_version":artifactory_control_plane::VERSION,"release_id":release})
+        ),
+        request(
+            &database,
+            &cookie,
+            "POST",
+            &second_path,
+            serde_json::json!({"product_version":artifactory_control_plane::VERSION,"release_id":release})
+        )
+    );
+    assert!([a.0, b.0].contains(&StatusCode::OK));
+    assert!([a.0, b.0].contains(&StatusCode::CONFLICT));
+    scheduler::tick(&database.state).await.unwrap();
+    let count: i64 = sql::scalar(
+        &mut database.pool.clone(),
+        "SELECT count(*) FROM emissary_updates WHERE status='offered'",
+        params![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        count, 1,
+        "pool concurrency must be one across racing manual requests"
+    );
+    let updates: Vec<Uuid> = sql::scalars(
+        &mut database.pool.clone(),
+        "SELECT node_id FROM emissary_updates",
+        params![],
+    )
+    .await
+    .unwrap();
+    assert!(updates[0] == first || updates[0] == second);
+    let attempts: i64 = sql::scalar(
+        &mut database.pool.clone(),
+        "SELECT count(*) FROM attempts",
+        params![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(attempts, 0);
+    let drained: i64 = sql::scalar(
+        &mut database.pool.clone(),
+        "SELECT count(*) FROM nodes WHERE draining",
+        params![],
+    )
+    .await
+    .unwrap();
+    assert_eq!(drained, 2, "OTA must preserve administrator drain");
+    database.close().await;
 }

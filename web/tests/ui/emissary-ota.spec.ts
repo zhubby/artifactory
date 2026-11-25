@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖节点、Artifactory 统一版本 API 与升级夹具。
- * [OUTPUT]: 验证统一版本、同版本重试围栏与历史操作边界。
+ * [OUTPUT]: 验证固定产品版本、手动升级提示和历史操作边界。
  * [POS]: 运维设置和节点升级的浏览器回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -64,7 +64,7 @@ for (const status of ["ready", "missing", "ambiguous"] as const) {
     await page.route("**/api/v1/emissary-version", route => route.fulfill({ json: { ...version, release_status: status, release_id: status === "ready" ? "current" : null } }));
     await page.route("**/api/v1/nodes?*", route => route.fulfill({ json: [{ ...nodes[0], capabilities: ["emissary-ota-v1"], emissary_current_version: "0.1.0" }] }));
     const panel = await operations(page);
-    await expect(panel).toContainText(status === "ready" ? "等待升级" : "等待对应安装包");
+    await expect(panel).toContainText(status === "ready" ? "有可用升级，等待管理员操作" : "等待对应安装包");
     await expect(panel).toContainText(status === "ready" ? "签名发行已就绪" : status === "missing" ? "尚未导入 Artifactory 0.2.0" : "存在多个对应发行");
   });
 }
@@ -75,7 +75,7 @@ for (const current of ["0.2.00", "0.2.0+", "0.2.0-rc.1", "0.3.0"]) {
     await page.route("**/api/v1/emissary-version", route => route.fulfill({ json: version }));
     await page.route("**/api/v1/nodes?*", route => route.fulfill({ json: [{ ...nodes[0], capabilities: ["emissary-ota-v1"], emissary_current_version: current }] }));
     const panel = await operations(page);
-    await expect(panel).toContainText("等待升级");
+    await expect(panel).toContainText("有可用升级，等待管理员操作");
     await expect(panel).not.toContainText("已是当前版本");
   });
 }
@@ -90,7 +90,7 @@ test("pool policy saves only concurrency and pause while following the Artifacto
   await page.goto(tenantURL("/settings/emissary"));
   const policy = page.locator("section.panel").filter({ has: page.getByRole("heading", { name: "节点池升级策略", exact: true }) });
   await policy.getByRole("spinbutton", { name: "同时升级节点数" }).fill("3");
-  await policy.getByRole("checkbox", { name: "暂停后续升级" }).check();
+  await policy.getByRole("checkbox", { name: "暂停新的升级操作" }).check();
   await policy.getByRole("button", { name: "保存", exact: true }).click();
   expect(writes).toEqual([{ release_id: null, concurrency: 3, paused: true }]);
 });

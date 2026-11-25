@@ -1,6 +1,6 @@
-//! [INPUT]: 依赖产品统一版本、租户发行目录和节点事务锁。
-//! [OUTPUT]: 按产品统一版本创建升级，记录固定清单的健康回执。
-//! [POS]: 自动升级持久化边界；活跃更新保留原签名身份。
+//! [INPUT]: 依赖已授权升级、冻结发行清单及租户和节点事务锁。
+//! [OUTPUT]: 串行导入发行，派发手动升级并记录固定清单健康回执。
+//! [POS]: 升级传输持久化边界；不自行创建更新。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use anyhow::{Context, Result, ensure};
@@ -47,12 +47,22 @@ impl ControlStore {
         signature: &str,
         hash: &str,
     ) -> Result<Uuid> {
+        let tenant = self.tenant()?;
         let id = Uuid::new_v4();
-        sql::execute(&mut self.pool.clone(),"INSERT INTO emissary_releases(id,tenant_id,version,manifest,signature,manifest_hash) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(tenant_id,version) DO NOTHING",params![id,self.tenant()?,tag,raw,signature,hash]).await?;
+        let mut db = self.pool.clone();
+        let mut tx = db.transaction().await?;
+        // 与手动接受同序列化点；网络校验和对象下载已在事务前完成。
+        sql::execute(
+            &mut tx,
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,105))",
+            params![tenant.to_string()],
+        )
+        .await?;
+        sql::execute(&mut tx,"INSERT INTO emissary_releases(id,tenant_id,version,manifest,signature,manifest_hash) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(tenant_id,version) DO NOTHING",params![id,tenant,tag,raw,signature,hash]).await?;
         let row = sql::record(
-            &mut self.pool.clone(),
+            &mut tx,
             "SELECT id,manifest_hash FROM emissary_releases WHERE version=$1 AND tenant_id=$2",
-            params![tag, self.tenant()?],
+            params![tag, tenant],
             &[("id", Type::Uuid), ("manifest_hash", Type::String)],
         )
         .await?;
@@ -60,7 +70,9 @@ impl ControlStore {
             row.decode::<String>("manifest_hash")? == hash,
             "release version is immutable"
         );
-        Ok(row.decode("id")?)
+        let id = row.decode("id")?;
+        tx.commit().await?;
+        Ok(id)
     }
 
     pub(crate) async fn next_emissary_update(
@@ -86,8 +98,8 @@ impl ControlStore {
             tx.rollback().await?;
             return Ok(None);
         }
-        let Some(n)=sql::optional_record(&mut tx, "SELECT n.tenant_id,n.os,n.arch,n.capabilities,n.emissary_current_version,p.emissary_update_concurrency,p.emissary_updates_paused FROM nodes n JOIN node_pools p ON p.id=n.pool_id WHERE n.id=$1 AND n.pool_id=$2 AND n.active_session=$3 AND NOT n.revoked AND n.certificate_expires_at>clock_timestamp() AND n.last_seen>now()-interval '30 seconds' FOR UPDATE OF n SKIP LOCKED", params![node, pool, session], &[("tenant_id", Type::Uuid),("os", Type::String),("arch", Type::String),("capabilities", Type::String),("emissary_current_version", Type::String),("emissary_update_concurrency", Type::I32),("emissary_updates_paused", Type::Bool)]).await? else{tx.rollback().await?;return Ok(None)};
-        let mut update = sql::optional_record(
+        let Some(n)=sql::optional_record(&mut tx, "SELECT os,arch FROM nodes WHERE id=$1 AND pool_id=$2 AND active_session=$3 AND NOT revoked AND certificate_expires_at>clock_timestamp() AND last_seen>clock_timestamp()-interval '30 seconds' FOR UPDATE SKIP LOCKED", params![node, pool, session], &[("os", Type::String),("arch", Type::String)]).await? else{tx.rollback().await?;return Ok(None)};
+        let update = sql::optional_record(
             &mut tx,
             "SELECT id,generation,node_id,pool_id,release_id,previous_version,status,cancel_requested,error,retry_of,created_at,updated_at,finished_at,last_command_at FROM emissary_updates WHERE node_id=$1 AND finished_at IS NULL",
             params![node],
@@ -109,96 +121,10 @@ impl ControlStore {
             ],
         )
         .await?;
-        if update.is_none() {
-            let active:bool=sql::scalar(&mut tx,"SELECT status='active' FROM tenants WHERE id=(SELECT tenant_id FROM nodes WHERE id=$1) FOR SHARE",params![node]).await?;
-            if !active {
-                tx.rollback().await?;
-                return Ok(None);
-            }
-            if n.decode::<Option<String>>("emissary_current_version")?
-                .as_deref()
-                .is_some_and(crate::ota::matches_product_version)
-            {
-                tx.rollback().await?;
-                return Ok(None);
-            }
-            if n.decode::<bool>("emissary_updates_paused")?
-                || !n
-                    .decode::<Value>("capabilities")?
-                    .as_array()
-                    .is_some_and(|a| a.contains(&json!("emissary-ota-v1")))
-            {
-                tx.rollback().await?;
-                return Ok(None);
-            }
-            let targets: Vec<Uuid> = sql::scalars(
-                &mut tx,
-                "SELECT id FROM emissary_releases WHERE tenant_id=$1 AND version=ANY($2)",
-                params![
-                    n.decode::<Uuid>("tenant_id")?,
-                    crate::ota::current_release_versions()
-                ],
-            )
-            .await?;
-            if targets.len() != 1 {
-                tx.rollback().await?;
-                return Ok(None);
-            }
-            let target = targets[0];
-            let blocked:bool=sql::scalar(&mut tx, "SELECT EXISTS(SELECT 1 FROM emissary_updates WHERE node_id=$1 AND release_id=$2 AND status IN ('failed','rolled_back','canceled'))", params![node, target]).await?;
-            if blocked {
-                tx.rollback().await?;
-                return Ok(None);
-            }
-            let count: i64 = sql::scalar(
-                &mut tx,
-                "SELECT count(*) FROM emissary_updates WHERE pool_id=$1 AND finished_at IS NULL",
-                params![pool],
-            )
-            .await?;
-            if count >= i64::from(n.decode::<i32>("emissary_update_concurrency")?) {
-                tx.rollback().await?;
-                return Ok(None);
-            }
-            let id = Uuid::new_v4();
-            super::models::EmissaryUpdate::create()
-                .id(id)
-                .node_id(node)
-                .pool_id(pool)
-                .release_id(target)
-                .previous_version(n.decode::<Option<String>>("emissary_current_version")?)
-                .exec(&mut tx)
-                .await?;
-            sql::execute(
-                &mut tx,
-                "UPDATE nodes SET ota_draining=true WHERE id=$1",
-                params![node],
-            )
-            .await?;
-            update = sql::optional_record(
-                &mut tx,
-                "SELECT id,generation,node_id,pool_id,release_id,previous_version,status,cancel_requested,error,retry_of,created_at,updated_at,finished_at,last_command_at FROM emissary_updates WHERE id=$1",
-                params![id],
-                &[
-                    ("id", Type::Uuid),
-                    ("generation", Type::I64),
-                    ("node_id", Type::Uuid),
-                    ("pool_id", Type::Uuid),
-                    ("release_id", Type::Uuid),
-                    ("previous_version", Type::String),
-                    ("status", Type::String),
-                    ("cancel_requested", Type::Bool),
-                    ("error", Type::String),
-                    ("retry_of", Type::Uuid),
-                    ("created_at", Type::Timestamp),
-                    ("updated_at", Type::Timestamp),
-                    ("finished_at", Type::Timestamp),
-                    ("last_command_at", Type::Timestamp),
-                ],
-            )
-            .await?;
-        }
-        let u = update.unwrap();
+        let Some(u) = update else {
+            tx.rollback().await?;
+            return Ok(None);
+        };
         if u.decode::<Option<chrono::DateTime<chrono::Utc>>>("last_command_at")?
             .is_some_and(|t| chrono::Utc::now() - t < chrono::Duration::seconds(10))
         {

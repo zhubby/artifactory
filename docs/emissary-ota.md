@@ -1,16 +1,18 @@
 <!--
 [INPUT]: Artifactory 统一版本、节点 mTLS、签名清单和固定启动器。
-[OUTPUT]: 定义同版本升级、信任、排空、确认和失败恢复。
+[OUTPUT]: 定义管理员发起的同版本升级、信任、排空和失败恢复。
 [POS]: 原生节点升级的发布与运维契约。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
-# Emissary OTA 自动升级
+# Emissary OTA 升级
 
 全部一方组件共用根 `VERSION` 定义的 Artifactory 统一版本。
 Emissary 的升级目标固定为当前部署的产品统一版本。
 节点通过已有 mTLS 出站连接接收升级命令，使用私有 S3 的短期签名地址下载。
 普通升级不需要 SSH 或管理员密码。
-已有节点先安装固定启动器，再自动跟随产品统一版本。
+升级由租户管理员在控制台发起。
+版本不一致只显示可用升级，不自动创建更新或排空节点。
+发行导入、节点上线和池恢复均不代表升级授权。
 
 节点当前版本与产品统一版本相同时，不重复升级。
 历史 `v`、`emissary-v` 前缀和合法构建元数据不改变产品版本。
@@ -18,6 +20,24 @@ Emissary 的升级目标固定为当前部署的产品统一版本。
 版本不一致时，只选择当前租户中对应版本的签名发行。
 缺少该发行或出现多个标签歧义时，不创建更新、不排空节点。
 版本目录的导入时间不参与目标选择。
+
+## 从控制台发起升级
+
+在节点详情的运维分区查看节点当前版本和 Artifactory 统一版本。
+确认对应签名发行已就绪、节点在线且 OTA 启动器已启用。
+管理员点击「升级至目标版本」，确认后创建一次持久化更新。
+控制平面冻结目标发行，并通过现有 mTLS 连接下发命令。
+节点完成验签、等待在途构建结束、激活和健康确认。
+候选版本失败时，启动器恢复原版本并上报结果。
+
+同一节点重复提交当前目标时，返回原未完成更新。
+目标固定为产品统一版本，浏览器不能指定其他版本。
+确认请求携带当时的产品版本和发行 ID，作为目标前置条件。
+服务端目标已变化时拒绝请求，要求重新确认。
+节点离线、已吊销、证书过期或缺少 OTA 支持时拒绝发起。
+节点池暂停或并发额度已满时，先恢复策略或等待其他更新完成。
+新安装命令自动初始化启动器，但不授权后续升级。
+已有旧节点缺少远程初始化协议，须先完成一次启动器准备。
 
 ## 发布与信任配置
 
@@ -73,7 +93,8 @@ artifactory-emissary service --action start --config /path/to/emissary.json
 每个节点最多一个未完成升级。
 节点与池的历史版本覆盖不再改变目标。
 每池默认同时一个升级，失败或回滚会暂停后续升级。
-节点离线时不创建更新，重连后按产品统一版本继续。
+节点离线时拒绝创建更新；重连后仍需管理员发起。
+已接受的更新断线后，按原执行记录恢复命令发送。
 控制平面滚动升级期间，已开始的更新继续使用原冻结清单。
 新更新使用接收请求的服务实例所运行的产品统一版本。
 
@@ -104,15 +125,17 @@ artifactory-emissary service --action start --config /path/to/emissary.json
 | `GET /emissary-releases` | 已导入版本目录 |
 | `GET /emissary-version` | `product_version`、唯一同版本发行及 ready / missing / ambiguous 状态 |
 | `POST /emissary-releases` | `{"tag":"emissary-v0.2.0"}` |
-| `PATCH /nodes/{id}/emissary-update` | `{"release_id":null}` 跟随产品统一版本；兼容 UUID 只接受唯一同版本发行 |
-| `PATCH /pools/{id}/emissary-update` | `{"release_id":null,"concurrency":1,"paused":false}`；保留并发与暂停，版本跟随产品统一版本 |
+| `POST /nodes/{id}/emissary-update` | `{"product_version":"0.2.0","release_id":"当前发行 UUID"}` 校验确认目标后发起升级；返回 `{"id":"更新 UUID"}`，重复请求返回原执行 ID |
+| `PATCH /nodes/{id}/emissary-update` | 兼容历史目标配置，不创建更新；UUID 只接受唯一同版本发行 |
+| `PATCH /pools/{id}/emissary-update` | `{"release_id":null,"concurrency":1,"paused":false}`；修改并发与暂停，不发起升级 |
 | `GET /emissary-updates` | 最近 500 条执行记录 |
-| `POST /emissary-updates/{id}/retry` | 重试终态失败 / 回滚 / 取消记录，生成新执行 ID 并恢复池策略 |
+| `POST /emissary-updates/{id}/retry` | 管理员重试终态失败 / 回滚 / 取消记录，复验节点与池准入，生成新执行 ID |
 | `POST /emissary-updates/{id}/cancel` | 取消尚未进入激活的执行 |
 
 节点页显示节点当前版本、Artifactory 统一版本、启动器和升级状态。
 设置页提供签名发行导入、池并发 / 暂停策略与历史操作。
 界面区分同版本、等待发行、版本歧义和缺少 OTA 支持。
+有可用升级时等待管理员操作，不执行自动升级。
 目标不再提供任意历史版本下拉。
 未初始化 OTA 的 Emissary 显示“需要安装 OTA 支持”。
 

@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离 PostgreSQL、授权设备和业务服务。
-//! [OUTPUT]: 提供数据库夹具、查池行锁、统一升级版本与跨模块测试入口。
+//! [OUTPUT]: 提供数据库夹具、查池行锁、手动升级与跨模块测试入口。
 //! [POS]: 真实数据库测试总入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_control_plane::{
@@ -34,6 +34,8 @@ mod notification_channels;
 mod notification_events;
 #[path = "database/notifications.rs"]
 mod notifications;
+#[path = "database/ota_manual.rs"]
+mod ota_manual;
 #[path = "database/ota_versions.rs"]
 mod ota_versions;
 #[path = "database/planning_basics.rs"]
@@ -452,67 +454,6 @@ async fn node_revocation_audit_records_effective_irreversible_state() {
 
 #[tokio::test]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
-async fn ota_uses_node_lock_and_pool_limit_and_never_changes_admin_drain() {
-    let database = Database::with_tenant().await;
-    let (_, _, _job) = database.fixture().await;
-    let first = database.node().await;
-    let second = database.node().await;
-    let release = Uuid::new_v4();
-    sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES('00000000-0000-0000-0000-000000000001',$1,$3,$2,'test','hash')", params![release, serde_json::json!({"assets":[{"os":"linux","arch":"amd64","name":"artifactory-emissary-linux-amd64"}]}).to_string(), artifactory_control_plane::VERSION]).await.unwrap();
-    sql::execute(&mut database.pool.clone(), "UPDATE nodes SET capabilities=capabilities || '[\"emissary-ota-v1\"]'::jsonb,emissary_current_version='v-old',emissary_launcher_version='v-old',draining=true", params![]).await.unwrap();
-    sql::execute(
-        &mut database.pool.clone(),
-        "UPDATE node_pools SET emissary_target_release=$1",
-        params![release],
-    )
-    .await
-    .unwrap();
-    let (a, b) = tokio::join!(
-        scheduler::tick(&database.state),
-        scheduler::tick(&database.state)
-    );
-    a.unwrap();
-    b.unwrap();
-    let count: i64 = sql::scalar(
-        &mut database.pool.clone(),
-        "SELECT count(*) FROM emissary_updates WHERE status='offered'",
-        params![],
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        count, 1,
-        "pool concurrency must be one across racing schedulers"
-    );
-    let updates: Vec<Uuid> = sql::scalars(
-        &mut database.pool.clone(),
-        "SELECT node_id FROM emissary_updates",
-        params![],
-    )
-    .await
-    .unwrap();
-    assert!(updates[0] == first || updates[0] == second);
-    let attempts: i64 = sql::scalar(
-        &mut database.pool.clone(),
-        "SELECT count(*) FROM attempts",
-        params![],
-    )
-    .await
-    .unwrap();
-    assert_eq!(attempts, 0);
-    let drained: i64 = sql::scalar(
-        &mut database.pool.clone(),
-        "SELECT count(*) FROM nodes WHERE draining",
-        params![],
-    )
-    .await
-    .unwrap();
-    assert_eq!(drained, 2, "OTA must preserve administrator drain");
-    database.close().await;
-}
-
-#[tokio::test]
-#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn ota_management_rejects_operator_and_project_tokens() {
     let database = Database::with_tenant().await;
     let (project, _, _) = database.fixture().await;
@@ -532,6 +473,11 @@ async fn ota_management_rejects_operator_and_project_tokens() {
             "POST",
             "/api/v1/emissary-releases".to_string(),
             r#"{"tag":"v-next"}"#.to_string(),
+        ),
+        (
+            "POST",
+            format!("/api/v1/nodes/{}/emissary-update", Uuid::new_v4()),
+            "{}".into(),
         ),
         (
             "PATCH",
@@ -594,6 +540,19 @@ async fn ota_failed_activation_pauses_pool_and_fences_stale_sessions() {
     let release = Uuid::new_v4();
     sql::execute(&mut database.pool.clone(), "INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES('00000000-0000-0000-0000-000000000001',$1,$3,$2,'test','hash')", params![release, serde_json::json!({"assets":[{"os":"linux","arch":"amd64","name":"artifactory-emissary-linux-amd64"}]}).to_string(), artifactory_control_plane::VERSION]).await.unwrap();
     sql::execute(&mut database.pool.clone(), "UPDATE nodes SET capabilities=capabilities || '[\"emissary-ota-v1\"]'::jsonb,emissary_current_version='v-old',emissary_target_release=$1,draining=true WHERE id=$2", params![release, node]).await.unwrap();
+    let cookie = ota_versions::admin(&database).await;
+    assert_eq!(
+        ota_versions::request(
+            &database,
+            &cookie,
+            "POST",
+            &format!("/nodes/{node}/emissary-update"),
+            serde_json::json!({"product_version":artifactory_control_plane::VERSION,"release_id":release})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
     scheduler::tick(&database.state).await.unwrap();
     let id: Uuid = sql::scalar(
         &mut database.pool.clone(),
@@ -668,6 +627,7 @@ async fn ota_retry_after_pool_move_respects_new_pool_capacity() {
     let database = Database::with_tenant().await;
     let node = database.node().await;
     let other = database.node().await;
+    sql::execute(&mut database.pool.clone(), "UPDATE nodes SET capabilities=capabilities || '[\"emissary-ota-v1\"]'::jsonb,emissary_current_version='0.1.0' WHERE id=$1", params![node]).await.unwrap();
     let release = Uuid::new_v4();
     let prior = Uuid::new_v4();
     let new_pool = Uuid::new_v4();

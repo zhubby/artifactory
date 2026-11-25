@@ -89,6 +89,8 @@ pub(crate) use executions::{
 
 mod lookups;
 mod ota;
+#[cfg(test)]
+mod ota_import_tests;
 
 mod planning;
 pub(crate) use planning::SubmissionContext;

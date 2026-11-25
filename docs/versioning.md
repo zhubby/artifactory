@@ -47,6 +47,7 @@ cargo metadata --locked --no-deps --format-version 1 > /dev/null
 Emissary、控制平面及其他一方组件使用同一个 Artifactory 统一版本。
 例如当前产品统一版本为 `0.2.0`，各组件都报告 `0.2.0`。
 节点当前版本与产品统一版本的比较决定是否需要升级。
+版本不一致时只提示，管理员在控制台发起后才执行 OTA。
 原生发布标签 `emissary-v0.2.0` 只定位不可变源码。
 它不进入程序版本或签名 manifest 的 `version`。
 六平台构建和发布签名前均检查标签与根 `VERSION` 一致。

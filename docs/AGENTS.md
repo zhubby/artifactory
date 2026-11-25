@@ -18,7 +18,7 @@ configuration.md: 定义任务执行计划的结构与限制。
 design-system.md: 定义中性色、顶栏工具、正文动作、关注星标与导航骨架。
 direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、启动等待和故障依赖隔离的验证边界。
 control-ha.md: 定义控制平面多副本和容量验证。
-emissary-ota.md: 定义按产品统一版本判断的 Emissary 升级与失败恢复。
+emissary-ota.md: 定义按产品统一版本判断、管理员发起的升级与失败恢复。
 frontend-experience.md: 定义导航首读、草稿、偏好、日志与 AI 审计阅读及验证。
 helm.md: 定义 Kubernetes 1.28 安装、接单排空、双库协议切换与持久身份保留。
 image-builds.md: 定义独立镜像池准入、容器镜像生命周期、整合网关、池代理和交付边界。
@@ -32,7 +32,7 @@ node-installation.md: 定义全局设备地址、同版本安装弹窗、签名�
 notifications.md: 定义顶栏收件箱、项目星标、事务事件、渠道订阅和通知运维。
 operations.md: 定义初始账号、部署、兼容追加迁移、备份和故障恢复。
 operator-operations.md: 定义临时源码、池级出口代理、内部直连和任务收尾。
-protocol.md: 定义 Emissary 会话、完整心跳预算和状态迁移。
+protocol.md: 定义 Emissary 会话、心跳预算、管理员 OTA 与状态迁移。
 registration-acceptance-2026-11-11.md: 记录用户注册的本地验收。
 planning-protocol.md: 定义源码提交固定、空值安全 CR 身份、规划接口与预算围栏。
 ephemeral-source-acceptance-2026-11-18.md: 记录临时源码验证、存储回收与正式切换。

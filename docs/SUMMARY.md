@@ -33,7 +33,7 @@
 - [控制平面多副本与设备容量](control-ha.md)
 - [Kubernetes Planning Operator 运维](operator-operations.md)
 - [集群镜像构建、内建仓库与网关](image-builds.md)
-- [Emissary OTA 自动升级](emissary-ota.md)
+- [Emissary OTA 升级](emissary-ota.md)
 - [Emissary 时序观测](telemetry.md)
 
 # 接口与架构

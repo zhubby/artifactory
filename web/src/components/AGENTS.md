@@ -20,7 +20,7 @@ command-palette.tsx: 复用当前范围导航，保留项目切换和焦点，�
 console.tsx: 按租户与项目隔离工作区，组合顶栏、设备终端路由、权限骨架与项目星标。
 dashboard.tsx: 读取完整窗口指标和近期活动，范围切换使用共享下拉，后台刷新保留内容。
 dashboard-charts.tsx: 按需加载 Recharts，呈现当前构建结果和成功构建周转时长，保留空样本断点。
-emissary-ota.tsx: 固定产品统一版本并禁止同版本重试，保留并发、暂停与草稿。
+emissary-ota.tsx: 确认后发起固定产品版本升级，保留失败重试、取消、并发和暂停。
 node-installation-settings.tsx: 按系统管理员权限配置全局设备公开地址，首读可重试。
 node-enrollment-dialog.tsx: 固定产品统一版本，展示平台安装命令、单用凭证与过期状态。
 forms.tsx: 提供项目、节点、凭据表单，复用下拉并统一提交通知。

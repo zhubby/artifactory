@@ -1,5 +1,5 @@
-//! [INPUT]: 依赖控制副本所有权、统一升级版本、任务状态与持久化唤醒。
-//! [OUTPUT]: 提供跨副本任务调度、同版本升级候选和设备命令领取。
+//! [INPUT]: 依赖控制副本所有权、已授权升级、任务状态与持久化唤醒。
+//! [OUTPUT]: 提供跨副本任务调度、已接受升级候选和设备命令领取。
 //! [POS]: 镜像任务使用独立执行身份，排除设备队列。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
@@ -125,10 +125,7 @@ impl ControlStore {
         owner: Uuid,
         batch: i64,
     ) -> Result<Vec<(Uuid, Uuid)>> {
-        let version = crate::VERSION.replace('.', "\\.");
-        let same_product =
-            format!(r"^(emissary-v|v)?{version}(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$");
-        Ok(sql::tuples(&mut self.pool.clone(), "SELECT n.id,n.active_session FROM nodes n JOIN node_pools p ON p.id=n.pool_id WHERE n.connection_owner=$1 AND NOT n.revoked AND n.certificate_expires_at>clock_timestamp() AND n.last_seen>now()-interval '30 seconds' AND (EXISTS(SELECT 1 FROM emissary_updates u WHERE u.node_id=n.id AND u.finished_at IS NULL AND (u.last_command_at IS NULL OR u.last_command_at<now()-interval '10 seconds')) OR (NOT p.emissary_updates_paused AND n.capabilities @> '[\"emissary-ota-v1\"]'::jsonb AND (n.emissary_current_version IS NULL OR n.emissary_current_version !~ $4 OR octet_length(regexp_replace(n.emissary_current_version,'^(emissary-v|v)',''))>100) AND (SELECT count(*) FROM emissary_releases r WHERE r.tenant_id=n.tenant_id AND r.version=ANY($3))=1)) ORDER BY n.last_seen DESC LIMIT $2", params![owner,batch,crate::ota::current_release_versions(),same_product]).await?)
+        Ok(sql::tuples(&mut self.pool.clone(), "SELECT n.id,n.active_session FROM nodes n WHERE n.connection_owner=$1 AND NOT n.revoked AND n.certificate_expires_at>clock_timestamp() AND n.last_seen>clock_timestamp()-interval '30 seconds' AND EXISTS(SELECT 1 FROM emissary_updates u WHERE u.node_id=n.id AND u.finished_at IS NULL AND (u.last_command_at IS NULL OR u.last_command_at<clock_timestamp()-interval '10 seconds')) ORDER BY n.last_seen DESC LIMIT $2", params![owner,batch]).await?)
     }
     pub(crate) async fn schedule_one(
         &self,

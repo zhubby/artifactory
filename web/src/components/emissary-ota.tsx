@@ -1,12 +1,12 @@
 /**
  * [INPUT]: 依赖产品统一版本、OTA API、系统安装配置与设备详情。
- * [OUTPUT]: 提供产品版本对齐状态、并发策略与升级历史。
- * [POS]: 首读展示骨架并保留策略草稿；同版本节点不重试升级。
+ * [OUTPUT]: 提供固定产品版本的手动升级、并发策略与执行历史。
+ * [POS]: 节点确认后发起升级；首读展示骨架，轮询保留策略草稿。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { NodeInstallationSettings } from "@/components/node-installation-settings";
 import { useUI } from "@/components/providers";
 import { ErrorBox, Field, SectionTitle, Loading } from "@/components/common";
@@ -14,6 +14,7 @@ import { SubmitForm } from "@/components/forms";
 import { NodeFacts } from "@/components/node-detail-parts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/ui/dialog";
 import { mutation, useRemote } from "@/lib/api";
 import { asError } from "@/lib/errors";
 import { matchesProductVersion } from "@/lib/emissary-version";
@@ -43,6 +44,37 @@ function ReleaseStatus({ version }: { version: EmissaryVersion }) {
   return <p className="text-xs leading-5 text-muted-foreground" data-testid="emissary-release-status">{t(`ota.releaseStatus.${version.release_status}`, { version: version.product_version })}</p>;
 }
 
+function RequestUpdate({ node, version, allowed, reload }: { node: Node; version: EmissaryVersion; allowed: boolean; reload: () => Promise<unknown> }) {
+  const { t } = useUI();
+  const [target, setTarget] = useState<{ product: string; release: string | null }>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<Error>();
+  const submitting = useRef(false);
+  const unchanged = target?.product === version.product_version && target?.release === version.release_id;
+  async function submit() {
+    if (!allowed || !unchanged || submitting.current) return;
+    submitting.current = true; setBusy(true); setError(undefined);
+    try {
+      await mutation(`/nodes/${node.id}/emissary-update`, { product_version: target.product, release_id: target.release });
+      setTarget(undefined); notify.success(t("ota.requested")); await reload();
+    } catch (cause) { setError(asError(cause)); }
+    finally { submitting.current = false; setBusy(false); }
+  }
+  return <>
+    <Button variant="secondary" disabled={!allowed || busy} onClick={() => {
+      setError(undefined); setTarget({ product: version.product_version, release: version.release_id });
+    }}>{t("ota.upgradeTo", { version: version.product_version })}</Button>
+    <Modal open={!!target} onOpenChange={open => { if (!open && !submitting.current) setTarget(undefined); }} dismissible={!busy}
+      title={t("ota.confirmTitle")} description={t("ota.confirmDescription", { name: node.name, version: target?.product || "" })}>
+      <p className="text-sm leading-6 text-muted-foreground">{t("ota.confirmRecovery")}</p>
+      {(!allowed || !unchanged) && <p role="status" className="mt-3 text-sm text-warning">{t("ota.conditionsChanged")}</p>}
+      <ErrorBox message={error} />
+      <div className="form-footer"><Button variant="secondary" disabled={busy} onClick={() => setTarget(undefined)}>{t("common.cancel")}</Button>
+        <Button disabled={busy || !allowed || !unchanged} onClick={() => void submit()}>{t(busy ? "common.processing" : "ota.confirmUpgrade")}</Button></div>
+    </Modal>
+  </>;
+}
+
 export function NodeOTA({ node, user, version, updates, reload, actionsReady = true }: { node: Node; user: User; version?: EmissaryVersion; updates: EmissaryUpdate[]; reload: () => Promise<unknown>; actionsReady?: boolean }) {
   const { t } = useUI();
   const history = updates.filter(u => u.node_id === node.id);
@@ -51,7 +83,9 @@ export function NodeOTA({ node, user, version, updates, reload, actionsReady = t
   const supported = node.capabilities.includes("emissary-ota-v1");
   const current = node.emissary_current_version || node.diagnostics.emissary_version || "";
   const aligned = !!version && matchesProductVersion(current, version.product_version);
-  const phase = !supported ? "ota.bootstrap" : active ? `ota.stages.${active.status}` : aligned ? "ota.aligned" : node.emissary_pool_paused ? "ota.paused" : version?.release_status === "ready" ? "ota.awaitingUpdate" : "ota.waitingRelease";
+  const certificateValid = Date.parse(node.certificate_expires_at) > Date.now();
+  const phase = active ? `ota.stages.${active.status}` : !supported ? "ota.bootstrap" : aligned ? "ota.aligned" : node.revoked ? "ota.revoked" : !node.online ? "ota.offline" : !certificateValid ? "ota.certificateExpired" : node.emissary_pool_paused ? "ota.paused" : version?.release_status === "ready" ? "ota.awaitingUpdate" : "ota.waitingRelease";
+  const canRequest = actionsReady && user.role === "admin" && supported && node.online && !node.revoked && certificateValid && !aligned && !active && version?.release_status === "ready" && !!version.release_id && !node.emissary_pool_paused;
   return <div className="space-y-4 text-xs" data-testid="node-ota">
     <NodeFacts entries={[
       [t("ota.current"), <span className="font-mono" key="current">{current || "—"}</span>],
@@ -61,11 +95,13 @@ export function NodeOTA({ node, user, version, updates, reload, actionsReady = t
       [t("ota.phase"), version || !supported || active ? t(phase) : "—"],
     ]} />
     {version && <><p className="text-xs leading-5 text-muted-foreground">{t("ota.followsProduct")}</p><ReleaseStatus version={version} /></>}
+    {!supported && <p className="text-xs leading-5 text-muted-foreground">{t("ota.bootstrapHint")}</p>}
     {node.ota_draining && <p className="notice">{t(active?.status === "activating" ? "ota.activatingHint" : "ota.drainHint")}</p>}
     {node.emissary_pool_paused && <p className="text-warning">{t("ota.poolPaused")}</p>}
     {latest?.error && <p className="break-words text-destructive" role="status">{latest.error}</p>}
     {latest?.status === "rolled_back" && <p>{t("ota.restored", { version: node.emissary_current_version || "—" })}</p>}
     {user.role === "admin" && actionsReady && <div className="flex flex-wrap items-start gap-2">
+      {version && supported && !aligned && !active && !node.revoked && <RequestUpdate node={node} version={version} allowed={canRequest} reload={reload} />}
       {latest && !node.revoked && <UpdateActions update={latest} version={version} reload={reload} allowRetry={!aligned} />}
     </div>}
   </div>;

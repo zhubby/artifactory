@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖产品统一版本、租户发行目录和节点池锁。
-//! [OUTPUT]: 读取唯一同版本发行，维护并发、暂停、重试和取消。
-//! [POS]: 升级管理事务边界；历史目标不能覆盖产品统一版本。
+//! [OUTPUT]: 读取唯一同版本发行，原子接受手动升级、重试和取消。
+//! [POS]: 手动升级授权边界；版本差异和池恢复不创建更新。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
 use super::dto;
@@ -97,70 +97,163 @@ impl ControlStore {
         Ok(())
     }
 
+    pub async fn request_emissary_update(
+        &self,
+        node: Uuid,
+        actor: Uuid,
+        product_version: &str,
+        release: Uuid,
+    ) -> Result<Uuid> {
+        if product_version != crate::VERSION {
+            return Err(ApiError::Conflict(
+                "Artifactory version changed; confirm the upgrade again".into(),
+            ));
+        }
+        self.accept_emissary_update(node, actor, Some(release), None)
+            .await
+    }
+
     pub async fn retry_update(&self, id: Uuid, actor: Uuid) -> Result<Uuid> {
-        let u = sql::record(
+        let prior = sql::optional_record(
             &mut self.pool.clone(),
-            "SELECT id,generation,node_id,pool_id,release_id,previous_version,status,cancel_requested,error,retry_of,created_at,updated_at,finished_at,last_command_at FROM emissary_updates WHERE id=$1",
-            params![id],
+            "SELECT node_id,release_id,status FROM emissary_updates WHERE id=$1 AND tenant_id=$2",
+            params![id, self.tenant()?],
             &[
-                ("id", Type::Uuid),
-                ("generation", Type::I64),
                 ("node_id", Type::Uuid),
-                ("pool_id", Type::Uuid),
                 ("release_id", Type::Uuid),
-                ("previous_version", Type::String),
                 ("status", Type::String),
-                ("cancel_requested", Type::Bool),
-                ("error", Type::String),
-                ("retry_of", Type::Uuid),
-                ("created_at", Type::Timestamp),
-                ("updated_at", Type::Timestamp),
-                ("finished_at", Type::Timestamp),
-                ("last_command_at", Type::Timestamp),
             ],
         )
-        .await?;
-        if !["failed", "rolled_back", "canceled"].contains(&u.decode::<String>("status")?.as_str())
+        .await?
+        .ok_or(ApiError::NotFound)?;
+        if !["failed", "rolled_back", "canceled"]
+            .contains(&prior.decode::<String>("status")?.as_str())
         {
             return Err(ApiError::Conflict(
                 "only a failed, rolled back or canceled update can be retried".into(),
             ));
         }
-        let node: Uuid = u.decode("node_id")?;
-        self.validate_product_target(Some(u.decode("release_id")?))
-            .await?;
-        let pool: Uuid = sql::scalar(
-            &mut self.pool.clone(),
-            "SELECT pool_id FROM nodes WHERE id=$1",
-            params![node],
+        self.accept_emissary_update(
+            prior.decode("node_id")?,
+            actor,
+            None,
+            Some((id, prior.decode("release_id")?)),
+        )
+        .await
+    }
+
+    async fn accept_emissary_update(
+        &self,
+        node: Uuid,
+        actor: Uuid,
+        confirmed_release: Option<Uuid>,
+        retry: Option<(Uuid, Uuid)>,
+    ) -> Result<Uuid> {
+        let auth = self.scope.as_ref().ok_or(ApiError::TenantRequired)?;
+        auth.session_role("admin")?;
+        if actor != auth.user_id {
+            return Err(ApiError::Forbidden);
+        }
+        let tenant = self.tenant()?;
+        let mut db = self.pool.clone();
+        let mut tx = db.transaction().await?;
+        // 发行目录使用独立租户互斥锁；共享租户行锁不反转节点写入触发器锁序。
+        sql::execute(
+            &mut tx,
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,105))",
+            params![tenant.to_string()],
         )
         .await?;
-        let mut tx_db = self.pool.clone();
-        let mut tx = tx_db.transaction().await?;
+        let active: Option<Uuid> = sql::optional_scalar(
+            &mut tx,
+            "SELECT id FROM tenants WHERE id=$1 AND status='active' FOR SHARE",
+            params![tenant],
+        )
+        .await?;
+        if active.is_none() {
+            return Err(ApiError::Conflict("tenant is not active".into()));
+        }
+        let member: Option<Uuid> = sql::optional_scalar(&mut tx,
+            "SELECT user_id FROM tenant_members WHERE tenant_id=$1 AND user_id=$2 AND role IN ('owner','admin') FOR SHARE", params![tenant,actor]).await?;
+        if member.is_none() {
+            return Err(ApiError::Forbidden);
+        }
+        let session: Option<String> = sql::optional_scalar(&mut tx,
+            "SELECT token_hash FROM sessions WHERE token_hash=$1 AND user_id=$2 AND expires_at>clock_timestamp() FOR SHARE",
+            params![&auth.credential_hash, actor]).await?;
+        if session.is_none() {
+            return Err(ApiError::Unauthorized);
+        }
+        let pool: Uuid = sql::optional_scalar(
+            &mut tx,
+            "SELECT pool_id FROM nodes WHERE id=$1 AND tenant_id=$2",
+            params![node, tenant],
+        )
+        .await?
+        .ok_or(ApiError::NotFound)?;
         sql::execute(
             &mut tx,
             "SELECT pg_advisory_xact_lock(hashtextextended($1,57))",
             params![pool.to_string()],
         )
         .await?;
-        let n = sql::record(
-            &mut tx,
-            "SELECT pool_id,revoked,emissary_current_version FROM nodes WHERE id=$1 FOR UPDATE",
-            params![node],
-            &[
-                ("pool_id", Type::Uuid),
-                ("revoked", Type::Bool),
-                ("emissary_current_version", Type::String),
-            ],
-        )
-        .await?;
+        let policy = sql::optional_record(&mut tx,
+            "SELECT emissary_updates_paused,emissary_update_concurrency FROM node_pools WHERE id=$1 AND tenant_id=$2 FOR SHARE",
+            params![pool,tenant], &[("emissary_updates_paused",Type::Bool),("emissary_update_concurrency",Type::I32)]).await?.ok_or(ApiError::NotFound)?;
+        let n = sql::optional_record(&mut tx,
+            "SELECT pool_id,emissary_current_version FROM nodes WHERE id=$1 AND tenant_id=$2 FOR UPDATE",
+            params![node,tenant], &[("pool_id",Type::Uuid),("emissary_current_version",Type::String)]).await?.ok_or(ApiError::NotFound)?;
         if n.decode::<Uuid>("pool_id")? != pool {
             return Err(ApiError::Conflict(
                 "node changed pools; retry the request".into(),
             ));
         }
-        if n.decode::<bool>("revoked")? {
-            return Err(ApiError::Conflict("node is revoked".into()));
+        let releases: Vec<Uuid> = sql::scalars(
+            &mut tx,
+            "SELECT id FROM emissary_releases WHERE tenant_id=$1 AND version=ANY($2) FOR SHARE",
+            params![tenant, crate::ota::current_release_versions()],
+        )
+        .await?;
+        let authorized: bool = sql::scalar(&mut tx,
+            "SELECT EXISTS(SELECT 1 FROM sessions s JOIN tenant_members m ON m.user_id=s.user_id JOIN tenants t ON t.id=m.tenant_id WHERE s.token_hash=$1 AND s.user_id=$2 AND s.expires_at>clock_timestamp() AND m.tenant_id=$3 AND m.role IN ('owner','admin') AND t.status='active')",
+            params![&auth.credential_hash,actor,tenant]).await?;
+        if !authorized {
+            return Err(ApiError::Forbidden);
+        }
+        if releases.len() != 1
+            || confirmed_release.is_some_and(|release| releases[0] != release)
+            || retry.is_some_and(|(_, release)| releases[0] != release)
+        {
+            return Err(ApiError::Conflict(
+                "upgrade requires the unique signed release matching the Artifactory version"
+                    .into(),
+            ));
+        }
+        let target = releases[0];
+        if let Some(active) = sql::optional_record(
+            &mut tx,
+            "SELECT id,release_id FROM emissary_updates WHERE node_id=$1 AND finished_at IS NULL",
+            params![node],
+            &[("id", Type::Uuid), ("release_id", Type::Uuid)],
+        )
+        .await?
+        {
+            if active.decode::<Uuid>("release_id")? != target {
+                return Err(ApiError::Conflict(
+                    "an update with a different frozen target is already active".into(),
+                ));
+            }
+            let id = active.decode("id")?;
+            tx.commit().await?;
+            return Ok(id);
+        }
+        let eligible: bool = sql::scalar(&mut tx,
+            "SELECT NOT revoked AND certificate_expires_at>clock_timestamp() AND active_session IS NOT NULL AND connection_owner IS NOT NULL AND last_seen>clock_timestamp()-interval '30 seconds' AND capabilities @> '[\"emissary-ota-v1\"]'::jsonb FROM nodes WHERE id=$1",
+            params![node]).await?;
+        if !eligible {
+            return Err(ApiError::Conflict(
+                "node must be online with a valid certificate and OTA launcher".into(),
+            ));
         }
         if n.decode::<Option<String>>("emissary_current_version")?
             .as_deref()
@@ -170,29 +263,26 @@ impl ControlStore {
                 "node already matches the Artifactory version".into(),
             ));
         }
+        if policy.decode::<bool>("emissary_updates_paused")? {
+            return Err(ApiError::Conflict("pool upgrades are paused".into()));
+        }
         let count: i64 = sql::scalar(
             &mut tx,
             "SELECT count(*) FROM emissary_updates WHERE pool_id=$1 AND finished_at IS NULL",
             params![pool],
         )
         .await?;
-        let limit: i32 = sql::scalar(
-            &mut tx,
-            "SELECT emissary_update_concurrency FROM node_pools WHERE id=$1",
-            params![pool],
-        )
-        .await?;
-        if count >= i64::from(limit) {
+        if count >= i64::from(policy.decode::<i32>("emissary_update_concurrency")?) {
             return Err(ApiError::Conflict("pool upgrade capacity is in use".into()));
         }
-        let new_id = Uuid::new_v4();
+        let id = Uuid::new_v4();
         super::models::EmissaryUpdate::create()
-            .id(new_id)
+            .id(id)
             .node_id(node)
-            .pool_id(n.decode::<Uuid>("pool_id")?)
-            .release_id(u.decode::<Uuid>("release_id")?)
+            .pool_id(pool)
+            .release_id(target)
             .previous_version(n.decode::<Option<String>>("emissary_current_version")?)
-            .retry_of(id)
+            .retry_of(retry.map(|(id, _)| id))
             .exec(&mut tx)
             .await?;
         sql::execute(
@@ -201,22 +291,36 @@ impl ControlStore {
             params![node],
         )
         .await?;
-        sql::execute(
-            &mut tx,
-            "UPDATE node_pools SET emissary_updates_paused=false WHERE id=$1",
-            params![pool],
-        )
-        .await?;
         super::models::AuditEvent::create()
-            .tenant_id(self.scope.as_ref().map(|s| s.tenant_id))
+            .tenant_id(tenant)
             .actor(actor.to_string())
-            .action("emissary_update_retried")
-            .resource_id(new_id.to_string())
-            .details(toasty::Json((json!({"retry_of":id})).clone()))
+            .action(if retry.is_some() {
+                "emissary_update_retried"
+            } else {
+                "emissary_update_requested"
+            })
+            .resource_id(id.to_string())
+            .details(toasty::Json(
+                json!({"node_id":node,"release_id":target,"retry_of":retry.map(|(id,_)|id)}),
+            ))
             .exec(&mut tx)
             .await?;
+        // 写入和审计触发器也能等待；提交前再次校验原会话和设备时钟。
+        let still_authorized: bool = sql::scalar(&mut tx,
+            "SELECT EXISTS(SELECT 1 FROM sessions s JOIN tenant_members m ON m.user_id=s.user_id JOIN tenants t ON t.id=m.tenant_id WHERE s.token_hash=$1 AND s.user_id=$2 AND s.expires_at>clock_timestamp() AND m.tenant_id=$3 AND m.role IN ('owner','admin') AND t.status='active')",
+            params![&auth.credential_hash,actor,tenant]).await?;
+        if !still_authorized {
+            return Err(ApiError::Forbidden);
+        }
+        let still_eligible: bool = sql::scalar(&mut tx,
+            "SELECT NOT revoked AND certificate_expires_at>clock_timestamp() AND active_session IS NOT NULL AND connection_owner IS NOT NULL AND last_seen>clock_timestamp()-interval '30 seconds' FROM nodes WHERE id=$1", params![node]).await?;
+        if !still_eligible {
+            return Err(ApiError::Conflict(
+                "node became unavailable before the upgrade was accepted".into(),
+            ));
+        }
         tx.commit().await?;
-        Ok(new_id)
+        Ok(id)
     }
 
     pub async fn cancel_update(&self, id: Uuid, actor: Uuid) -> Result<()> {
