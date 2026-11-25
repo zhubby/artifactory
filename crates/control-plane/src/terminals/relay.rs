@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖实例租约、每次进程启动的证书与 Ed25519 身份。
-//! [OUTPUT]: 启动私有 TLS 终端流并验证单次跨副本委托。
+//! [OUTPUT]: 启动私有 TLS 终端流，预留时钟差并验证单次委托。
 //! [POS]: 只在数据库固定的实例间转发，不接受客户端提供的 URL。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{Frames, Runtime, frame};
@@ -25,6 +25,10 @@ use tonic::{
 };
 use uuid::Uuid;
 
+// 为副本时钟差预留一秒，接收端仍拒绝已过期的委托。
+const DELEGATION_LIFETIME_MS: i64 = 4_000;
+const DELEGATION_MAX_FUTURE_MS: i64 = 5_000;
+
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Delegation {
@@ -34,6 +38,13 @@ pub(super) struct Delegation {
     pub expires_at_ms: i64,
     pub role: String,
     pub context: serde_json::Value,
+}
+
+fn valid_window(delegation: &Delegation, target: Uuid, now: i64) -> bool {
+    delegation.target == target
+        && delegation.source != target
+        && delegation.expires_at_ms >= now
+        && delegation.expires_at_ms <= now.saturating_add(DELEGATION_MAX_FUTURE_MS)
 }
 
 pub(super) async fn start(state: AppState) -> anyhow::Result<Arc<Runtime>> {
@@ -157,7 +168,7 @@ pub(super) async fn forward(
         source: runtime.instance.id,
         target: owner,
         nonce: Uuid::new_v4(),
-        expires_at_ms: chrono::Utc::now().timestamp_millis() + 5_000,
+        expires_at_ms: chrono::Utc::now().timestamp_millis() + DELEGATION_LIFETIME_MS,
         role: role.into(),
         context,
     };
@@ -222,11 +233,7 @@ pub(super) async fn verify(
     let delegation: Delegation = serde_json::from_str(&first.payload_json)
         .map_err(|_| Status::unauthenticated("invalid relay identity"))?;
     let now = chrono::Utc::now().timestamp_millis();
-    if delegation.target != runtime.instance.id
-        || delegation.source == runtime.instance.id
-        || delegation.expires_at_ms < now
-        || delegation.expires_at_ms > now + 5_000
-    {
+    if !valid_window(&delegation, runtime.instance.id, now) {
         return Err(Status::permission_denied(
             "relay identity expired or wrong owner",
         ));
@@ -261,4 +268,35 @@ pub(super) async fn verify(
         return Err(Status::permission_denied("relay delegation replayed"));
     }
     Ok(delegation)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relay_accepts_bounded_clock_difference_without_extending_expiry() {
+        let target = Uuid::new_v4();
+        let sent_at = 100_000;
+        let mut delegation = Delegation {
+            source: Uuid::new_v4(),
+            target,
+            nonce: Uuid::new_v4(),
+            expires_at_ms: sent_at + DELEGATION_LIFETIME_MS,
+            role: "device".into(),
+            context: serde_json::json!({}),
+        };
+        assert!(valid_window(&delegation, target, sent_at - 75));
+        assert!(valid_window(&delegation, target, sent_at - 1_000));
+        assert!(valid_window(&delegation, target, delegation.expires_at_ms));
+        assert!(!valid_window(
+            &delegation,
+            target,
+            delegation.expires_at_ms + 1
+        ));
+        assert!(!valid_window(&delegation, Uuid::new_v4(), sent_at));
+        assert!(!valid_window(&delegation, delegation.source, sent_at));
+        delegation.expires_at_ms = sent_at + 5_001;
+        assert!(!valid_window(&delegation, target, sent_at));
+    }
 }

@@ -95,6 +95,8 @@ OTA 实际处于 downloading、draining 或 activating 时停止终端准入并�
 
 每个终端固定当前设备控制连接所在的 owner。浏览器入口、设备终端入口和 owner 能分别落在三个副本。各实例在 PostgreSQL 登记短租约、临时 TLS 证书和 Ed25519 公钥；内部委托绑定实例、会话和身份，并防重放。
 
+内部委托有效期为四秒，接收端最多接受距本地时间五秒的截止值，为副本时钟差预留一秒。已经过期的委托仍立即拒绝，转发授权仍按五秒截止。集群节点须保持时钟同步。
+
 内部端口默认绑定 loopback 随机端口，适用于单进程开发。多实例设置 `ARTIFACTORY_TERMINAL_RELAY_BIND` 和 `ARTIFACTORY_TERMINAL_RELAY_HOST`；显式 `ARTIFACTORY_TERMINAL_RELAY_ENDPOINT` 只能指向该实例的固定 HTTPS 地址。Helm 注入 Pod IP 与私有 8446 端口，NetworkPolicy 仅允许 Control Pod 访问。公网 Service 不公开此端口。NetworkPolicy 按允许规则求并集；试用命名空间的宽泛入站策略必须排除 Control，再由专用策略限定 8446。只新增专用策略不能覆盖旧的全端口放行。
 
 owner 故障终止旧会话，不迁移 Shell。浏览器入口失效允许原页面恢复；设备终端流或其内部转发流失效则关闭，避免重启第二个 Shell。实例地址复用不能替换原实例私钥。
