@@ -1,5 +1,5 @@
 //! [INPUT]: Planning CRD、直接规划 Pod 与源码任务契约。
-//! [OUTPUT]: 验证执行身份、池代理、凭据隔离与不可变契约。
+//! [OUTPUT]: 验证执行身份、池代理、凭据隔离与空值安全不可变契约。
 //! [POS]: Planning Operator 的离线资源回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_planning_operator::{api::*, pods, resources};
@@ -112,11 +112,19 @@ fn immutable_crd_context_is_enforced_by_the_api_server_schema() {
                     .unwrap()
                     .contains(&serde_json::json!("projectId"))
             );
-            assert_eq!(
-                value["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]["x-kubernetes-validations"]
-                    [0]["rule"],
-                "self == oldSelf"
-            );
+            let rule = spec["x-kubernetes-validations"][0]["rule"]
+                .as_str()
+                .unwrap();
+            for field in ["runId", "projectId", "generation", "pool", "sourceRequired"] {
+                assert!(rule.contains(&format!("self.{field} == oldSelf.{field}")));
+            }
+            for field in ["sourceManifestId", "sourceDigest"] {
+                assert!(rule.contains(&format!("has(self.{field}) == has(oldSelf.{field})")));
+                assert!(rule.contains(&format!(
+                    "(!has(self.{field}) || self.{field} == oldSelf.{field})"
+                )));
+            }
+            assert!(!rule.contains("self == oldSelf"));
         } else if kind == "SourceTask" {
             let rules = &value["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]
                 ["x-kubernetes-validations"];

@@ -288,7 +288,7 @@ spec:
             type: object
             x-kubernetes-validations:
             - message: execution context is immutable
-              rule: self == oldSelf
+              rule: self.runId == oldSelf.runId && self.projectId == oldSelf.projectId && self.generation == oldSelf.generation && self.pool == oldSelf.pool && self.sourceRequired == oldSelf.sourceRequired && has(self.sourceManifestId) == has(oldSelf.sourceManifestId) && (!has(self.sourceManifestId) || self.sourceManifestId == oldSelf.sourceManifestId) && has(self.sourceDigest) == has(oldSelf.sourceDigest) && (!has(self.sourceDigest) || self.sourceDigest == oldSelf.sourceDigest)
           status:
             nullable: true
             properties:
