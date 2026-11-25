@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 隔离命名空间、基础验收部署与统一镜像 tag。
-[OUTPUT]: 配置私有 S3、Gateway 入口、镜像池读取和 Release 发布权限。
+[OUTPUT]: 配置私有 S3、Gateway 网络身份、镜像池读取和 Release 发布权限。
 [POS]: 复用公开夹具，等待存储后端端口就绪后再启动转发。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -166,6 +166,8 @@ def install(a, platforms, allow_emulation=False, emulation_selector=None, extern
     gateway = {name:base64.b64decode(value).decode() for name,value in json.loads(a.kubectl('get','secret','gateway','-o','json'))['data'].items()}
     gateway['ARTIFACTORY_GATEWAY_REGISTRY']='http://artifactory-registry:5000'
     gateway_workload=clean(json.loads(a.kubectl('get','deploy','gateway','-o','json')))
+    gateway_workload['spec']['template']['metadata'].setdefault('labels', {}).update({
+        'app.kubernetes.io/name':'artifactory', 'app.kubernetes.io/component':'gateway'})
     gateway_workload['spec']['replicas']=2
     a.apply(role,a.secret('control-plane',environment),a.secret('gateway',gateway),control,gateway_workload)
     for name in ['control-plane','gateway']:

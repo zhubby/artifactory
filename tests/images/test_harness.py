@@ -1,5 +1,5 @@
-"""[INPUT]: 合成 OCI Blob、隔离身份与模拟 Kubernetes 读接口。
-[OUTPUT]: 验证 Release 发布、OCI 元数据、容器隔离和故障证据。
+"""[INPUT]: 合成 OCI Blob、隔离安装与模拟 Kubernetes 接口。
+[OUTPUT]: 验证镜像池权限、Gateway 网络身份与执行证据。
 [POS]: 端到端脚本的离线回归，不连接任何集群。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -7,6 +7,9 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import re
+import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -97,6 +100,78 @@ class DeadlineClient:
 
 
 class HarnessTests(unittest.TestCase):
+    def installed_image_setup(self, directory):
+        client=ImageAcceptance.__new__(ImageAcceptance)
+        client.run=Path(directory);client.context='offline';client.ns='artifact-image-offline'
+        client.image_tag='fixture';client.registry='example.invalid/fixture';client.pull_policy='IfNotPresent'
+        client.evidence={};client.jar=[];client.applied=[];client.helm_values={}
+        private=client.run/'image-private';private.mkdir()
+        (private/'credentials.json').write_text(json.dumps({key:'synthetic-fixture' for key in ['admin','storage','http','external']}))
+        for name in ['registry.key','registry.pem']: (private/name).write_text('synthetic-fixture')
+        role=client.control_identity()[1]
+        client.original_rules=json.loads(json.dumps(role['rules']))
+        fixtures={('role','artifactory-control'):role}
+        for name in ['upstream','control-plane','gateway']:
+            fixture=client.workload(name,'example.invalid/original',[])
+            fixture['spec']['template']['metadata']['labels']['fixture-label']='preserved'
+            fixtures['deploy',name]=fixture
+        for name in ['control-plane','gateway']:
+            fixtures['secret',name]={'data':{}}
+        def kubectl(*args):
+            if args[0]=='get':
+                return json.dumps(fixtures[args[1],args[2]])
+            self.assertEqual(args[0],'rollout')
+            return ''
+        def command(args,data=None):
+            self.assertIn(args[0],['helm','kubectl'])
+            if args[0]=='helm':
+                client.helm_values[args[args.index('--install')+1]]=json.loads(Path(args[args.index('-f')+1]).read_text())
+            return ''
+        client.kubectl=kubectl;client.command=command
+        client.apply=lambda *items:client.applied.extend(json.loads(json.dumps(items)))
+        client.forward=Mock();client.stop_forwards=Mock();client.wait=lambda callback,*_:callback()
+        client.api=Mock(return_value={'ok':True})
+        with patch('setup.create_bucket'):
+            install(client,['linux/amd64'])
+        return client
+
+    def test_installed_control_role_can_only_read_builderpools(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client=self.installed_image_setup(directory)
+        role=next(item for item in client.applied if item['kind']=='Role')
+        self.assertEqual(role['rules'][:len(client.original_rules)],client.original_rules)
+        grants=[rule for rule in role['rules'] if
+            set(rule['apiGroups']) & {'images.artifactory.dev','*'} and
+            set(rule['resources']) & {'builderpools','*'}]
+        self.assertEqual(grants,[{'apiGroups':['images.artifactory.dev'],
+            'resources':['builderpools'],'verbs':['get']}])
+
+    @unittest.skipUnless(shutil.which('helm'),'requires helm')
+    def test_installed_gateway_matches_merged_registry_network_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client=self.installed_image_setup(directory)
+            values=Path(directory)/'render-registry.json'
+            values.write_text(json.dumps(client.helm_values['image']))
+            chart=Path(__file__).resolve().parents[2]/'charts/artifactory-registry'
+            rendered=subprocess.run(['rtk','proxy','helm','template','image',str(chart),
+                '--kube-version','1.28.3','-f',str(values)],check=True,capture_output=True,text=True).stdout
+        gateway=next(item for item in client.applied if
+            item['kind']=='Deployment' and item['metadata']['name']=='gateway')
+        labels=gateway['spec']['template']['metadata']['labels']
+        self.assertEqual(gateway['spec']['selector']['matchLabels'],{'app':'gateway'})
+        self.assertEqual(labels['fixture-label'],'preserved')
+        self.assertEqual(gateway['spec']['replicas'],2)
+        policies=[doc for doc in rendered.split('\n---\n') if 'kind: NetworkPolicy\n' in doc]
+        self.assertEqual(len(policies),1)
+        ingress=policies[0].split('  ingress:\n',1)[1]
+        selector=dict(re.findall(r'^              ([^: ]+): ([^\n]+)$',ingress,re.MULTILINE))
+        self.assertEqual(selector,{'app':'gateway','app.kubernetes.io/name':'artifactory',
+            'app.kubernetes.io/component':'gateway'})
+        self.assertTrue(all(labels.get(key)==value for key,value in selector.items()),
+            f'Gateway labels do not match the rendered registry selector: {selector}')
+        self.assertNotIn('namespaceSelector',ingress)
+        self.assertIn('{protocol: TCP, port: 5000}',ingress)
+
     def test_release_publication_waits_for_stop_and_existing_publisher(self):
         client=Mock()
         release={'status':'published','selected_build_id':'build','version':'1.2.3',
