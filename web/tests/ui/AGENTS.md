@@ -5,7 +5,7 @@ ai-builds.spec.ts: 验证应用与宿主分类、规划、具名消息、澄清�
 accessibility.spec.ts: 验证租户卡片、业务页面与覆盖面板的 WCAG 自动检查。
 browser-audit.spec.ts: 验证侧栏设置草稿保护与退出重试。
 build-source-edge.spec.ts: 验证构建弹窗三视口源码建议等宽对齐、搜索、键盘与光标、默认值、失败重试和迟到响应隔离。
-build-history.spec.ts: 验证终态静态日志、分页锚点、尾部事件与发布状态轮询。
+build-history.spec.ts: 验证显式执行标签的终态静态日志、分页锚点、尾部事件与发布状态轮询。
 build-detail-design.spec.ts: 验证当前计划身份、历史选择轮询、执行归属、澄清草稿、日志标签生命周期与双语主题响应式无障碍。
 build-execution-states.spec.ts: 验证无设备尝试的镜像执行、混合目标切换和无任务、无计划的终态说明。
 build-process.spec.ts: 验证本代 ready、started 门槛，旧代隔离、源码失败和双语主题可读性。
@@ -17,7 +17,7 @@ dashboard.spec.ts: 验证聚合、范围、请求隔离、等宽图表、空态�
 emissary-ota.spec.ts: 验证固定产品版本、手动升级提示、签名发行状态和历史权限。
 emissary-manual-update.spec.ts: 验证管理员确认发起、条件围栏、状态变化、失败恢复和多视口无障碍。
 errors.spec.ts: 验证错误状态和本地化。
-dropdown-controls.spec.ts: 验证明暗主题与普通表单弹层齐宽对齐、焦点、必填空值、迟到默认值、字段事件、重置及长列表边界。
+dropdown-controls.spec.ts: 验证首读门控、明暗主题与普通表单弹层齐宽对齐、焦点、必填空值、迟到默认值、字段事件、重置及长列表边界。
 select-helpers.ts: 通过可见触发器和选项执行共享下拉选择。
 filter-layout.spec.ts: 验证筛选同行、尺寸断点、长名称与滚动焦点边界。
 fixtures.ts: 提供 Release、构建目标、节点池计数、节点安装、设备平台与概览 HTTP 夹具。
@@ -38,7 +38,7 @@ terminal.spec.ts: 验证真实 xterm、字节 ACK、重连、撤权屏幕及播�
 node-detail-design.spec.ts: 验证设备摘要、图形设备型号、分钟趋势断点、范围、重试和窄屏布局。
 node-identification.spec.ts: 验证身份、重名短 ID、重命名权限、草稿、UTF8、Unicode 空白与接口快照。
 notifications.spec.ts: 验证浮层布局、顶栏访问、字段校验、弹窗焦点、计时暂停及交互期间的来源隔离与轮询恢复。
-node-pagination.spec.ts: 验证节点分页和筛选。
+node-pagination.spec.ts: 验证节点分页筛选及结构化元数据分组。
 node-pools.spec.ts: 验证节点池导航、管理员增改删、失败草稿、设备筛选和双语窄屏无障碍。
 node-installation.spec.ts: 验证固定同版本安装、过期、关闭秘密清理和系统地址权限。
 node-installation-commands.spec.ts: 隔离执行 Shell 与 PowerShell，验证传参、摘要、进程策略与 CA 保留。

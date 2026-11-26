@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖业务页面、共享下拉与成员接口夹具。
- * [OUTPUT]: 验证弹层齐宽对齐、组合输入、分层关闭和表单合同。
+ * [OUTPUT]: 验证弹层齐宽对齐、首读门控、组合输入与表单事件。
  * [POS]: 设计规范中全站下拉要求的回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -180,29 +180,29 @@ test("late credential options preserve the saved default and emit only the real 
     await page.goto(tenantURL(`/projects/${project.slug}/settings/resources`));
     const credential = page.locator('[role="combobox"][data-name="credential_id"]');
     const form = page.locator("form").filter({ has: credential });
-    await expect(credential).toHaveAttribute("data-value", "");
-    await form.evaluate(element => {
-      const form = element as HTMLFormElement;
-      form.dataset.selectChanges = "[]";
-      form.addEventListener("change", event => {
-        if (!(event.target instanceof HTMLSelectElement)) return;
-        const changes = JSON.parse(form.dataset.selectChanges || "[]") as string[];
+    await expect(credential).toHaveCount(0);
+    await expect(page.locator("#workspace-content .skeleton-form")).toBeVisible();
+    await page.evaluate(() => {
+      document.documentElement.dataset.credentialChanges = "[]";
+      document.addEventListener("change", event => {
+        if (!(event.target instanceof HTMLSelectElement) || event.target.name !== "credential_id") return;
+        const changes = JSON.parse(document.documentElement.dataset.credentialChanges || "[]") as string[];
         changes.push(`${event.target.name}:${event.target.value}`);
-        form.dataset.selectChanges = JSON.stringify(changes);
+        document.documentElement.dataset.credentialChanges = JSON.stringify(changes);
       });
     });
     release();
     await expect(credential).toHaveAttribute("data-value", project.credential_id!);
     await expect(credential).toContainText("Saved deploy credential");
-    await expect(form).toHaveAttribute("data-select-changes", "[]");
+    await expect(page.locator("html")).toHaveAttribute("data-credential-changes", "[]");
     expect(await form.evaluate(element => new FormData(element as HTMLFormElement).get("credential_id"))).toBe(project.credential_id);
     await chooseOption(credential, "");
-    await expect(form).toHaveAttribute("data-select-changes", '["credential_id:"]');
+    await expect(page.locator("html")).toHaveAttribute("data-credential-changes", '["credential_id:"]');
     await expect(form).toHaveAttribute("data-dirty", "true");
     expect(await form.evaluate(element => new FormData(element as HTMLFormElement).get("credential_id"))).toBe("");
     await form.evaluate(element => (element as HTMLFormElement).reset());
     await expect(credential).toHaveAttribute("data-value", project.credential_id!);
     expect(await form.evaluate(element => new FormData(element as HTMLFormElement).get("credential_id"))).toBe(project.credential_id);
-    await expect(form).toHaveAttribute("data-select-changes", '["credential_id:"]');
+    await expect(page.locator("html")).toHaveAttribute("data-credential-changes", '["credential_id:"]');
   } finally { release(); }
 });

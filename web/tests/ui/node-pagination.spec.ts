@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖有界节点分页和结构化启动元数据夹具。
+ * [OUTPUT]: 验证服务端筛选分页与按需读取的元数据分组。
+ * [POS]: 节点列表和详情元数据标签的浏览器回归。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 import { expect, test } from "@playwright/test";
 import {fixtureAPI, nodes, tenantURL } from "./fixtures";
 
@@ -83,7 +89,7 @@ test("node metadata loads in its detail tab and preserves structured values", as
   await page.getByRole("tab", { name: "Metadata", exact: true }).click();
   await expect(page.getByText("custom.site", { exact: true })).toBeVisible();
   await expect(page.getByText("lab", { exact: true })).toBeVisible();
-  await expect(page.getByText("tools.cargo", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "tools.cargo", exact: true })).toBeVisible();
   expect(queries).toBe(1);
   await page.screenshot({
     path: `test-results/ui/node-metadata-${test.info().project.name}.png`,

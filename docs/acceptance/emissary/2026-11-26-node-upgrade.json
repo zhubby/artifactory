@@ -281,5 +281,22 @@
     "archive-verified.json": "4a603614d8ee5838df1a40062f0b0c2b82a4389e61b6956b539b2461651ba67b",
     "remote-stage-cleanup.json": "e89a8ba8bb65cc6eb962ab2d2ee1dbabace07b22bffffb2b6b90128e1ac62ba5",
     "resume-success.json": "f895df7ebc66000c73a979de843106f0f7d9fd9c4d8d1a6d56ca36db1d5159f8"
+  },
+  "main_ci_conclusion": "cancelled",
+  "main_ci_details": {
+    "attempt": 2,
+    "successful_gate_groups": [
+      "six_native_platforms",
+      "kubernetes_1_28",
+      "kubernetes_planning",
+      "compose_tls",
+      "control_ota",
+      "legacy_receiver"
+    ],
+    "linux_end_to_end": "cancelled_at_45_minute_job_limit",
+    "ui_tests_total": 1230,
+    "ui_last_completed_test_number": 458,
+    "ui_failures_before_cancellation": 19,
+    "followup": "Update stale UI tests and run frontend validation in an independent CI job. Signed release and deployed product source stay unchanged."
   }
 }

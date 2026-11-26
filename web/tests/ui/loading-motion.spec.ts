@@ -147,6 +147,7 @@ test("a persistent build stream stays live after foreground loading finishes", a
   }, build);
   try {
     await page.goto(tenantURL("/projects/desktop-client/builds/128"));
+    await page.getByRole("tab", { name: "执行", exact: true }).click();
     const log = page.getByRole("log");
     await expect(log).toContainText("persistent stream opened");
     await expect(page.getByRole("progressbar")).toBeVisible();

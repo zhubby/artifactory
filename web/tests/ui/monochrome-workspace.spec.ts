@@ -106,6 +106,7 @@ test("detail tabs and preferences preserve the live subscription and the log pos
         JSON.stringify({ id: 1, attempt_id: "attempt-main", step: "compile", text: "native compilation complete\n".repeat(300) }) + "\n\n" });
   });
   await page.goto(tenantURL("/projects/desktop-client/builds/128"));
+  await page.getByRole("tab", { name: "执行", exact: true }).click();
   const log = page.getByRole("log");
   await expect(log).toContainText("native compilation complete");
   await page.getByRole("button", { name: "暂停跟随日志", exact: true }).click();
@@ -151,6 +152,7 @@ test("returning to execution follows background log updates while paused readers
     };
   }, build);
   await page.goto(tenantURL("/projects/desktop-client/builds/128"));
+  await page.getByRole("tab", { name: "执行", exact: true }).click();
   const log = page.locator('[role="log"]');
   const distanceFromEnd = () => log.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop);
   await expect(log).toContainText("initial output");

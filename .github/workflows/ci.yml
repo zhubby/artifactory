@@ -1,5 +1,5 @@
 # [INPUT]: 提交源码、Kubernetes 1.28 kind、Cilium 网络策略与隔离租户服务。
-# [OUTPUT]: 验证镜像链、切换、Control OTA、文件系统故障与Linux原生满盘补报。
+# [OUTPUT]: 分离前端与服务验收，验证镜像链、Control OTA及原生满盘补报。
 # [POS]: 合并交付的自动化验证入口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: platform-contracts
@@ -52,7 +52,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: packages/planning-worker/package-lock.json
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -71,10 +71,6 @@ jobs:
       - run: npm ci && npm run check && npm test
         working-directory: packages/planning-worker
       - run: rustup toolchain install 1.95.0 --profile minimal --component rustfmt,clippy && rustup default 1.95.0
-      - name: Install pinned documentation tools
-        run: |
-          cargo install --locked --version 0.4.40 mdbook
-          cargo install --locked --version 0.14.0 mdbook-mermaid
       - run: sh scripts/local-services.sh
       - run: python3 scripts/check_data_access.py --dependencies
       - run: python3 scripts/check_module_boundaries.py
@@ -110,6 +106,22 @@ jobs:
           python3 tests/images/gateway.py
       - run: cargo build --locked --bin artifactory-emissary
       - run: sh scripts/cross-build-emissary.sh
+  frontend-contracts:
+    needs: version-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: rustup toolchain install 1.95.0 --profile minimal && rustup default 1.95.0
+      - name: Install pinned documentation tools
+        run: |
+          cargo install --locked --version 0.4.40 mdbook
+          cargo install --locked --version 0.14.0 mdbook-mermaid
       - run: npm ci && npm run typecheck && npm run build && npx playwright install --with-deps chromium
         working-directory: web
       - name: Validate complete documentation and generated links
@@ -118,7 +130,7 @@ jobs:
         run: npm run test:docs
         working-directory: web
       - name: Frontend locales, themes and motion
-        run: npm run test:ui
+        run: npm run test:ui -- --workers=2
         working-directory: web
         env:
           ARTIFACTORY_UI_PRODUCTION: '1'

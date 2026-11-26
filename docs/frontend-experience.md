@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 本地化、主题、全局工具、内容骨架与工作区实现。
-[OUTPUT]: 定义导航加载、页面动作、偏好、日志与审计阅读，并关联设备终端契约。
+[OUTPUT]: 定义导航、日志与终端体验，以及独立前端CI验证。
 [POS]: 说明当前前端行为，并保留带日期的历史验收记录。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -127,9 +127,14 @@ cd web
 rtk npm ci
 rtk npm run typecheck
 rtk npm run build
-rtk proxy env ARTIFACTORY_UI_PRODUCTION=1 npm run test:ui
+rtk proxy env ARTIFACTORY_UI_PRODUCTION=1 npm run test:ui -- --workers=2
 rtk npm run test:docs
 ```
+
+CI 的 `frontend-contracts` 独立执行生产构建、文档检查和三视口 UI 回归。
+服务端 Rust 回归由 `linux-end-to-end` 执行。
+两项任务分别保留45分钟上限。
+日志断言先打开“执行”标签；默认“过程”标签保留。
 
 独立 UI 测试使用完整 API fixtures，不需要账号、数据库或 Agent；覆盖桌面 1440px、平板 820px、手机 390px，中英双语、深浅配色、系统主题变化、语言与主题持久化、原始内容、无横向页面溢出、对话框焦点、权限控件及切换偏好时的状态保留。动效测试检查默认动画、系统减少动态效果和旧关闭值不生效。axe 自动检查覆盖核心页面、设备侧面板、个人设置与快捷面板。
 

@@ -152,6 +152,7 @@ test("personal preferences preserve list filters and the SSE subscription", asyn
     page.getByRole("textbox", { name: "Filter current list", exact: true }),
   ).toHaveValue("main");
   await page.goto(tenantURL("/projects/desktop-client/builds/128"));
+  await page.getByRole("tab", { name: "Execution", exact: true }).click();
   await expect(page.getByRole("log")).toContainText(
     "native compilation complete",
   );

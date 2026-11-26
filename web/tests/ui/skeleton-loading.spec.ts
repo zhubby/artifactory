@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖延迟 API 夹具与真实控制台组件。
- * [OUTPUT]: 验证读取骨架、失败收尾和日志分页保留。
+ * [OUTPUT]: 验证显式执行标签中的读取骨架、失败收尾和日志分页保留。
  * [POS]: 加载界面的行为回归，不替代后台接口验收。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -52,6 +52,7 @@ test("history starts with a log skeleton and keeps existing output while paging"
     } });
   });
   await page.goto(tenantURL("/projects/desktop-client/builds/128"));
+  await page.getByRole("tab", { name: "执行", exact: true }).click();
   const log = page.getByRole("log");
   try {
     await expect(log.locator(".loading-state")).toBeVisible();

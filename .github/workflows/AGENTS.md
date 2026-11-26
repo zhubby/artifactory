@@ -1,7 +1,7 @@
 # .github/workflows/
 > L2 | Parent: ../AGENTS.md
 
-ci.yml: 验证镜像链、遥测、切换及OTA；常规回归排除专用服务用例，Linux原生满盘由独立门禁执行。
+ci.yml: 独立验证前端与服务契约；验证镜像链、切换及OTA，专用服务和Linux原生满盘使用原生门禁。
 deployment-images.yml: 按源码 SHA 发布服务与构建运行镜像的 amd64 产物。
 emissary-release.yml: 固定来源标签，六平台维护和Linux原生满盘及ext4故障通过后签名发布。
 release-images.yml: 发布含监督型 BuildKit 的双架构镜像和四个版本化 Chart。
