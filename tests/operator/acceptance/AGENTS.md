@@ -9,7 +9,7 @@ fixture.go: 提供同源 Git/LFS、app/image 固定目标和无自定义标签�
 fixture_test.go: 验证 LFS 同源地址、构建目标、空标签和双架构 RUN 源码夹具。
 live_provider.go: 转发显式选择的真实模型并记录脱敏时序。
 provider.py: 经 Release 验证真实模型预算、取消和供应商故障。
-native.py: 临时放行单节点 Git NodePort；验证 Release 原生构建后撤销出口。
+native.py: 临时放行单节点Git NodePort；核对Release原生构建与四次真实模型调用，再撤销出口。
 network.py: 用地址快照验证冷 Pod 首次 TCP 策略，独立记录 DNS。
 telemetry.py: 预检池准入，经 Release 验证遥测中断并保存白名单执行诊断。
 cleanup.py: 创建 Release 构建，按台账 UID 等待 Pi，验证失联撤权后恢复数据库和 DNS。

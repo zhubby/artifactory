@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 隔离命名空间、TimescaleDB、节点出口策略和主机原生 Rust 工具链。
-[OUTPUT]: 经 Release 验证主机构建并恢复出口和设备原值。
+[OUTPUT]: 经 Release 验证主机构建、四次模型调用及恢复出口和设备原值。
 [POS]: 直拉共同可达的 Git NodePort；出口只覆盖本次节点和端口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -260,7 +260,13 @@ def run(args):
         a.verify_artifact_gateway(detail['artifacts'][0])
         assert a.sql('business', "SELECT count(*) FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE j.build_id='" + build + "' AND a.node_id='" + node['id'] + "' AND a.status='succeeded'") == '1'
         history = a.api('/api/v1/builds/' + build + '/plans')
-        assert len(history['plans']) == 1 and len(history['runs']) == 1 and history['runs'][0]['calls'] == 0
+        evidence['planning_history'] = {
+            'plans': len(history['plans']),
+            'runs': [{key: run.get(key) for key in ('id', 'state', 'calls')} for run in history['runs']],
+        }
+        (directory / 'evidence.json').write_text(json.dumps(evidence, indent=2))
+        # 夹具读取两份源码，提交无效计划，再提交修正计划。
+        assert len(history['plans']) == 1 and len(history['runs']) == 1 and history['runs'][0]['calls'] == 4, evidence['planning_history']
         latest=a.wait(lambda: (v if (v:=a.api('/api/v1/nodes/'+node['id']+'/telemetry'))['host'] and v['host']['fresh'] and v['inventory'] else None))
         inventory=latest['inventory']['inventory']
         assert inventory['os']==host_os and inventory['arch']==arch and inventory['physical_memory_bytes']>0 and inventory['tools']['git']['available']

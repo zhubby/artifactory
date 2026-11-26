@@ -1,5 +1,5 @@
 //! [INPUT]: 测试命令、执行截止和共享进程组/Job回收原语。
-//! [OUTPUT]: 隔离父进程数据库凭据，提供有界等待、超额拒收和完整文件输出。
+//! [OUTPUT]: 隔离父进程数据库凭据，提供有界等待、超额拒收和完整输出，读回异步退出。
 //! [POS]: 原生服务夹具的同步命令边界，不启动服务或提权。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_execution_support::process;
@@ -345,17 +345,27 @@ mod tests {
             .unwrap()
             .parse::<u32>()
             .unwrap();
-        let mut system = sysinfo::System::new();
-        system.refresh_processes(
-            sysinfo::ProcessesToUpdate::Some(&[sysinfo::Pid::from_u32(pid)]),
-            true,
-        );
-        assert!(
-            system
+        // TerminateJobObject返回时，Windows仍可短暂报告正在退出的后代。
+        // 500ms读回预算小于夹具剩余睡眠，不能把自然退出误判为回收成功。
+        let deadline = Instant::now() + Duration::from_millis(500);
+        loop {
+            let mut system = sysinfo::System::new();
+            system.refresh_processes(
+                sysinfo::ProcessesToUpdate::Some(&[sysinfo::Pid::from_u32(pid)]),
+                true,
+            );
+            if system
                 .process(sysinfo::Pid::from_u32(pid))
-                .is_none_or(|process| process.status() == sysinfo::ProcessStatus::Zombie),
-            "ordinary process survived timeout cleanup"
-        );
+                .is_none_or(|process| process.status() == sysinfo::ProcessStatus::Zombie)
+            {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "ordinary process survived timeout cleanup"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[test]

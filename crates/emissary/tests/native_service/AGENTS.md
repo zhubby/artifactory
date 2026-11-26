@@ -1,7 +1,7 @@
 # crates/emissary/tests/native_service/
 > L2 | Parent: ../AGENTS.md
 
-command.rs: 隔离父进程数据库凭据，限制命令截止与双流输出；私有文件显式预算。
+command.rs: 隔离父进程数据库凭据，限制命令与双流输出；有界读回Job终止后的异步退出。
 cleanup.rs: 共用只读清理门禁，账户残留、目录残留或查询失败均阻断成功。
 durable.rs: 固定mTLS端点，在维护或满盘恢复后由原生服务确认原源和新样本的真实事务ACK。
 disk.rs: 在父驱动私有ext4卷填满空间，核对原生服务、会话与原队列保持及恢复采集。

@@ -1,4 +1,4 @@
-//! [INPUT]: 依赖真实操作日志、连接消息与冻结操作信封。
+//! [INPUT]: 依赖真实操作日志、连接消息与冻结操作信封；Shell围栏仅用于Unix。
 //! [OUTPUT]: 验证重连隔离结果重放和确认，精确再授权不重跑探测。
 //! [POS]: 操作旁路的认证、维护围栏和关闭边界回归。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -75,6 +75,7 @@ async fn quiet(output: &mut mpsc::Receiver<pb::EmissaryEvent>) {
     );
 }
 
+#[cfg(unix)]
 async fn journal_state(root: &std::path::Path, id: Uuid, expected: OperationState) {
     tokio::time::timeout(Duration::from_secs(3), async {
         loop {

@@ -5,6 +5,7 @@
 """
 from pathlib import Path
 import plistlib
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -123,6 +124,18 @@ class FilesystemGateTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 gate.detach(root)
             run.assert_called_once_with(["hdiutil", "detach", "/dev/disk999"])
+
+    def test_detach_retries_busy_only_after_exact_identity_readback(self):
+        root = Path("/tmp/owned-fixture")
+        image = {"system-entities": [{"dev-entry": "/dev/disk999"}]}
+        busy = subprocess.CalledProcessError(16, ["hdiutil", "detach", "/dev/disk999"])
+        with patch.object(gate, "owned_images", side_effect=[[image], [image], []]), patch.object(gate, "command", side_effect=[busy, b""]) as run, patch.object(gate.time, "sleep"), patch.object(Path, "is_mount", return_value=False):
+            gate.detach(root)
+            self.assertEqual(run.call_count, 2)
+        with patch.object(gate, "owned_images", side_effect=[[image], []]), patch.object(gate, "command", side_effect=busy) as run, patch.object(gate.time, "sleep"), patch.object(Path, "is_mount", return_value=True):
+            with self.assertRaisesRegex(RuntimeError, "identity changed"):
+                gate.detach(root)
+            run.assert_called_once()
 
     def test_failed_process_cleanup_preserves_image_and_skips_detach(self):
         for raises in (False, True):

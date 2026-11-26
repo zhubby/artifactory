@@ -16,6 +16,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 from check_emissary_legacy_sender import Supervisor, clean_environment, compile_test, private_json
@@ -85,7 +86,20 @@ def detach(directory):
     devices = [entry["dev-entry"] for entry in entries if "dev-entry" in entry]
     if not devices or not all(device.startswith("/dev/disk") for device in devices):
         raise RuntimeError("owned device identity missing")
-    command(["hdiutil", "detach", devices[0]])
+    for attempt in range(5):
+        try:
+            command(["hdiutil", "detach", devices[0]])
+            break
+        except subprocess.CalledProcessError as error:
+            if error.returncode != 16 or attempt == 4:
+                raise
+            # Spotlight等系统进程短暂占卷；每次重试前重新核对镜像和设备。
+            time.sleep(.5)
+            current = owned_images(directory)
+            if not current and not (directory / "mount").is_mount():
+                return
+            if current != images:
+                raise RuntimeError("owned image identity changed during detach") from error
     if owned_images(directory) or (directory / "mount").is_mount():
         raise RuntimeError("owned image detach not confirmed")
 

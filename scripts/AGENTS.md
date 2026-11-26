@@ -7,9 +7,9 @@ check_ephemeral_source.py: 只读检查直接 Pod、临时卷与空闲清理；�
 check_emissary_legacy_receiver.py: 导出冻结旧路由或完整旧main，以mTLS和隔离库验证发送器并回收角色。
 check_emissary_legacy_sender.py: 监督冻结旧发送与编译进程，定点清理自有库并验证反向版本矩阵。
 check_emissary_current_main.py: 监督完整Telemetry与冻结旧发送，验证双库、积压新鲜度和事务确认。
-check_emissary_ota_filesystem.py: 读回HFS+/APFS/ext4私有卷身份，验证监督器、故障和队列恢复，精确清理库及镜像。
+check_emissary_ota_filesystem.py: 读回私有卷身份，验证故障和队列；macOS忙卷重试前复核精确镜像。
 emissary_linux_filesystem.py: 创建160至1024MiB的ext4私有镜像，按loop及挂载身份读回后精确卸载。
-check_emissary_native_disk.py: 在自有ext4卷运行Linux系统服务，验证满盘连续性、事务补报与资源清理。
+check_emissary_native_disk.py: 在自有ext4卷运行Linux系统服务，验证满盘补报与清理，失败输出脱敏断言。
 check_emissary_control_main.py: 验证注册、操作ACK、停旧切换与网关OTA，定点回收S3与数据库。
 emissary_safe_cutover.py: 验证停旧迁移、双副本读删与冻结同源码兼容副本的原件补交。
 emissary_control_ota.py: 构造同源码旧版本号夹具，经签名导入和真实网关验证固定launcher的runtime OTA。

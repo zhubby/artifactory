@@ -116,6 +116,15 @@ def main():
         child = supervisor.start([native, "native_service_disk_recovery", "--ignored", "--exact", "--nocapture"],
                                  cwd=ROOT, env=env, log=directory / "native-disk.log", label="native-disk")
         if child.wait(930):
+            # 只输出断言和Cause，避免把私有服务环境或凭据带入CI日志。
+            lines = (directory / "native-disk.log").read_text(errors="replace").splitlines()
+            diagnostics = []
+            for index, line in enumerate(lines):
+                if "panicked at" in line:
+                    diagnostics.extend(lines[index:index + 4])
+            for line in diagnostics[:12]:
+                if not any(marker in line.lower() for marker in ("postgres://", "postgresql://", "password", "secret", "token")):
+                    print(line[:600], file=sys.stderr, flush=True)
             raise RuntimeError("native disk test failed; inspect private log")
         proof = json.loads((directory / "evidence/durable_recovery.json").read_text())
         validate_proof(proof)
