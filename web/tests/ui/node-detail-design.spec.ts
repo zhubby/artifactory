@@ -8,6 +8,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { Node, NodeTelemetry } from "../../src/lib/types";
 import { themeStorage } from "../../src/lib/preferences";
 import { fixtureAPI, nodes, nodeTelemetry, tenantURL } from "./fixtures";
+import { chooseOption } from "./select-helpers";
 
 const ipv6 = "2001:0db8:1234:5678:9abc:def0:1234:5678";
 
@@ -153,6 +154,87 @@ test("optional fields keep zero, scalar metadata keeps false, and JSON expands o
   const snapshot = disclosure(dialog, "快照信息");
   await snapshot.locator("summary").first().click();
   await expect(snapshot.getByText("snapshot-instance", { exact: true })).toBeVisible();
+});
+
+test("graphics resources present the model separately from the identifier and distinguish missing metrics from zero", async ({ page }, info) => {
+  if (info.project.name === "mobile") await page.setViewportSize({ width: 320, height: 800 });
+  const state = await setup(page);
+  const telemetry = structuredClone(nodeTelemetry);
+  telemetry.inventory!.inventory.accelerators = [{ id: "display-0", model: "Apple M4 Max" }];
+  telemetry.host!.sample.accelerators = [
+    { id: "display-0", utilization_percent: null, memory_used_bytes: null },
+    { id: "gpu-missing-model", utilization_percent: 0, memory_used_bytes: 0 },
+  ];
+  state.updateTelemetry(telemetry);
+  const dialog = await open(page);
+  await dialog.getByRole("tab", { name: "资源", exact: true }).click();
+  const graphics = dialog.locator(".node-detail-section").filter({
+    has: page.getByRole("heading", { name: "图形设备", exact: true }),
+  });
+  await expect(graphics.getByRole("columnheader")).toHaveText(["型号", "GPU 利用率", "已用显存"]);
+  const apple = graphics.getByRole("row").filter({ hasText: "display-0" });
+  await expect(apple.getByText("Apple M4 Max", { exact: true })).toBeVisible();
+  await expect(apple.getByText("设备 ID · display-0", { exact: true })).toBeVisible();
+  await expect(apple.getByRole("cell", { name: "未上报", exact: true })).toHaveCount(2);
+  const unknown = graphics.getByRole("row").filter({ hasText: "gpu-missing-model" });
+  await expect(unknown.getByText("未知", { exact: true })).toBeVisible();
+  await expect(unknown.getByRole("cell", { name: "0%", exact: true })).toBeVisible();
+  await expect(unknown.getByRole("cell", { name: "0 B", exact: true })).toBeVisible();
+  await noOverflow(page, dialog);
+});
+
+test("resource trends load on demand, preserve gaps, and switch and refresh their window", async ({ page }, info) => {
+  if (info.project.name === "mobile") await page.setViewportSize({ width: 320, height: 800 });
+  const theme = info.project.name === "tablet" ? "dark" : "light";
+  await setup(page, theme);
+  const queries: number[] = [];
+  let retryShortRange = false;
+  await page.route("**/api/v1/nodes/*/telemetry/history?*", route => {
+    const url = new URL(route.request().url());
+    expect(url.pathname).toContain(`/nodes/${nodes[0].id}/`);
+    expect(url.searchParams.get("resolution")).toBe("minute");
+    const start = Date.parse(url.searchParams.get("from")!);
+    const end = Date.parse(url.searchParams.get("to")!);
+    const minutes = (end - start) / 60_000;
+    queries.push(minutes);
+    if (minutes === 15 && !retryShortRange) {
+      retryShortRange = true;
+      return route.fulfill({ status: 503, json: { error: "临时无法读取趋势" } });
+    }
+    const samples = minutes === 15 ? [] : Array.from({ length: minutes }, (_, index) => ({
+      bucket: new Date(start + index * 60_000).toISOString(),
+      cpu_avg: index === 0 ? 0 : 12 + Math.abs(Math.sin(index / 6)) * 48 + (index % 4) * 3,
+      memory_avg: (10 + Math.min(index / 4, 6) + Math.sin(index / 6)) * 1024 ** 3,
+    })).filter((_, index) => index !== 18 && index !== 19);
+    return route.fulfill({ json: { samples, truncated: false } });
+  });
+
+  const dialog = await open(page);
+  expect(queries).toEqual([]);
+  await dialog.getByRole("tab", { name: "资源", exact: true }).click();
+  const trends = dialog.getByRole("region", { name: "资源趋势", exact: true });
+  await expect(trends.locator(".recharts-area-curve")).toHaveCount(2);
+  const curves = await trends.locator(".recharts-area-curve").evaluateAll(paths => paths.map(path => path.getAttribute("d")));
+  expect(curves.map(curve => curve?.match(/M/g)?.length)).toEqual([2, 2]);
+  expect(curves.every(curve => curve?.includes("C"))).toBe(true);
+  expect(queries).toEqual([60]);
+  const plots = await trends.locator(".node-trend-card").evaluateAll(cards => cards.map(card => card.getBoundingClientRect().toJSON()));
+  expect(Math.abs(plots[0].width - plots[1].width)).toBeLessThanOrEqual(1);
+  if (info.project.name === "mobile") expect(plots[1].top).toBeGreaterThan(plots[0].bottom);
+  else expect(plots[0].top).toBe(plots[1].top);
+  await noOverflow(page, dialog);
+  await trends.screenshot({ path: info.outputPath(`node-resource-trends-${theme}.png`) });
+
+  const range = trends.getByRole("combobox", { name: "趋势时间范围", exact: true });
+  await chooseOption(range, "15");
+  await expect(trends.getByText("数据暂不可用", { exact: false })).toBeVisible();
+  await expect(dialog.getByText("48.0 GiB", { exact: true })).toBeVisible();
+  await trends.getByRole("button", { name: "重新加载", exact: true }).click();
+  await expect(trends.getByText("所选时间内暂无采样", { exact: true })).toHaveCount(2);
+  await chooseOption(range, "360");
+  await expect(trends.locator(".recharts-area-curve")).toHaveCount(2);
+  await trends.getByRole("button", { name: "刷新趋势", exact: true }).click();
+  await expect.poll(() => queries).toEqual([60, 15, 15, 360, 360]);
 });
 
 test("polling updates the selected device without closing expanded details", async ({ page }) => {

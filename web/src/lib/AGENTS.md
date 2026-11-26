@@ -19,12 +19,12 @@ build-platforms.ts: 查询项目授权原生平台，优先在线默认并隔离
 releases.ts: 校验严格 SemVer，按 SemVer 比较版本。
 emissary-version.ts: 规范化设备历史标签与构建元数据，比较产品统一版本。
 build-targets.ts: 校验构建目标合同，组合独立源码与目标的交付候选摘要。
-routes.ts: 校验设备终端、项目目录、工作区和设置地址；邮箱返回只接受确认页和单个令牌。
+routes.ts: 校验节点池、设备终端、项目目录和设置地址；邮箱返回只接受确认页和单个令牌。
 tenant.tsx: 提供租户作用域和请求头，以 Next 导航状态连接顶部进度并保留未保存保护。
-types.ts: 定义 Release、产品统一版本、源码准备协议、本代规划摘要、执行修订身份、节点与会话审计。
+types.ts: 定义 Release、节点池计数、产品统一版本、源码准备与规划执行身份。
 unsaved.tsx: 保护未保存编辑。
 utils.ts: 格式化日期、摘要和制品大小。
-workspace-navigation.ts: 租户概览和项目目录使用独立地址；统一项目业务导航、设置分组和权限可见性。
+workspace-navigation.ts: 租户概览、项目目录与节点池使用独立地址；统一项目导航、设置与权限。
 
 notification-types.ts: 声明账户收件箱、完整授权范围、修订、偏好与外部投递合同。
 notification-copy.ts: 共享通知中心、关注星标与失败重试的中英文文案。

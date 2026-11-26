@@ -11,7 +11,7 @@ ai-builds.md: 定义模型兼容、目标准入、两类执行失败修订与构
 ai-builds-acceptance-2026-11-11.md: 记录零侵入 AI 构建验收。
 ai-workspace-build-acceptance-2026-11-16.md: 记录固定源码的双平台真实构建、故障修复与内部发布证据。
 ai-workspace-signing-acceptance-2026-11-17.md: 记录真实 Developer ID 托管签名、制品读回、材料清理及公证边界。
-api.md: 定义 HTTP 输入、构建过程、安全规划摘要与项目权限边界。
+api.md: 定义 HTTP 输入、节点池管理、构建过程、安全规划与项目权限边界。
 artifactory-rename-2026-11-11.md: 记录产品命名迁移。
 signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。
 configuration.md: 定义任务执行计划的结构与限制。
@@ -44,11 +44,11 @@ terminals.md: 定义设备终端权限、配置、输入背压、字节协议、
 toasty-acceptance-2026-11-13.md: 记录 Toasty 数据迁移验收。
 versioning.md: 定义统一产品版本、来源标签与交付约束。
 release-delivery.md: 定义版本元数据、四步构建确认、独立源码与目标、单次不可变交付。
-workspaces.md: 定义两层概览、项目目录、导航骨架、页面动作与个人设置流程。
+workspaces.md: 定义两层概览、项目目录、节点池、导航骨架与个人设置流程。
 acceptance/: 保存子系统在真实环境中的验收记录。
 brand/: 保存品牌规范和视觉资源。
 fonts/: 保存文档构建生成的字体资产。
-plans/: 保存实施方案与修复计划。
+plans/: 保存实施方案、协议目标契约、固定源码评估与修复计划。
 releases/: 保存版本交付、固定镜像与部署验收记录。
 superpowers/: 保存设计说明和实现计划。
 theme/: 提供 mdBook 样式与浏览器资源。

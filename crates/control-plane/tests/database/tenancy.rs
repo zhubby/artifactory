@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖隔离数据库、授权设备和租户 HTTP 会话。
-//! [OUTPUT]: 验证概览、多租户、成员、设备安装和终端排空边界。
+//! [OUTPUT]: 验证概览、节点池、多租户、成员、设备安装和终端排空边界。
 //! [POS]: 数据库验收中的租户与终端生命周期入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Real PostgreSQL and HTTP authorization tests. Accounts start with no membership.
@@ -36,6 +36,9 @@ mod terminal_lifecycle;
 
 #[path = "node_identity.rs"]
 mod node_identity;
+
+#[path = "node_pools.rs"]
+mod node_pools;
 
 #[path = "workspace_lifecycle.rs"]
 mod workspace_lifecycle;

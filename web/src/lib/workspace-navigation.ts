@@ -1,11 +1,11 @@
 /**
  * [INPUT]: 依赖项目权限、项目路由和 Lucide 图标。
- * [OUTPUT]: 提供独立租户概览、项目目录、项目业务和设置导航。
+ * [OUTPUT]: 提供租户概览、项目目录、节点池、项目业务和设置导航。
  * [POS]: 统一侧栏与命令面板；租户概览和项目目录使用独立地址。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import {
-  Archive, BookOpen, Cpu, FileClock, FolderKanban, KeyRound,
+  Archive, BookOpen, Cpu, FileClock, FolderKanban, KeyRound, Layers3,
   LayoutDashboard, Settings, ShieldCheck, SlidersHorizontal,
   Sparkles, Users, Workflow, Webhook, type LucideIcon,
 } from "lucide-react";
@@ -37,6 +37,7 @@ export function workspaceNavigation(context: NavigationContext): {
       { id: "overview", path: "/", label: "navigation.tenantOverview", icon: LayoutDashboard },
       { id: "projects", path: "/projects", label: "navigation.projects", icon: FolderKanban },
       { id: "nodes", path: "/nodes", label: "workspace.sharedDevices", icon: Cpu },
+      { id: "pools", path: "/pools", label: "nodePools.title", icon: Layers3 },
     ],
     settings: {
       id: "settings", path: tenantAdmin ? "/settings" : "/settings/tokens",

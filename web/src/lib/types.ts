@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供 Release、产品统一版本、源码准备、执行身份与规划审计类型。
+ * [OUTPUT]: 提供 Release、节点池计数、产品统一版本、源码与规划审计类型。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -418,6 +418,8 @@ export interface ImageArtifact extends ReleaseImage {
   created_at: string;
 }
 export interface Pool {
+  node_count?: number;
+  online_count?: number;
   is_default?: boolean;
   id: string;
   name: string;

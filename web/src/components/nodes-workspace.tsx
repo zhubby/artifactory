@@ -1,11 +1,12 @@
 /**
- * [INPUT]: 依赖节点查询 API、通知、安装弹窗、工具栏和可重命名侧面板。
+ * [INPUT]: 依赖节点池筛选 URL、节点 API、通知、安装弹窗与侧面板。
  * [OUTPUT]: 提供 NodesWorkspace 设备工作区。
  * [POS]: 衔接节点筛选、列表与详情交互。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Plus } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { useRemote } from "@/lib/api";
@@ -16,6 +17,8 @@ import { NodeDetailDialog } from "@/components/node-detail-dialog";
 import { NodeEnrollmentDialog } from "@/components/node-enrollment-dialog";
 import { Button } from "@/components/ui/button";
 import { ListToolbar } from "@/components/ui/list-toolbar";
+import { Select } from "@/components/ui/select";
+import { useRouter } from "@/lib/tenant";
 import {
   PageTitle,
   ErrorBox,
@@ -31,18 +34,22 @@ export function NodesWorkspace({
   readOnly: boolean;
 }) {
   const { t } = useUI();
+  const parameters = useSearchParams();
+  const router = useRouter();
+  const pool = parameters.get("pool") || "";
   const [query, setQuery] = useState("");
   const [offset, setOffset] = useState(0);
   const [selection, setSelection] = useState<string>();
   const [enroll, setEnroll] = useState(false);
   const nodes = useRemote<Node[]>(
-    `/nodes?limit=100&offset=${offset}&q=${encodeURIComponent(query)}`,
+    `/nodes?limit=100&offset=${offset}&q=${encodeURIComponent(query)}${pool ? `&pool_id=${encodeURIComponent(pool)}` : ""}`,
   );
   const pools = useRemote<Pool[]>("/pools");
   const selected = nodes.data?.find((node) => node.id === selection);
   useEffect(() => {
     setSelection(undefined);
-  }, [query, offset]);
+  }, [query, offset, pool]);
+  useEffect(() => { setOffset(0); }, [pool]);
   useEffect(() => {
     if (selection && nodes.data && !selected) {
       setSelection(undefined);
@@ -68,7 +75,17 @@ export function NodesWorkspace({
             setQuery(value);
             setOffset(0);
           }}
-      />
+      >
+        <Select className="input" aria-label={t("nodePools.filter")} value={pool}
+          onChange={event => {
+            setOffset(0);
+            router.replace(event.target.value ? `/nodes?pool=${encodeURIComponent(event.target.value)}` : "/nodes");
+          }}>
+          <option value="">{t("nodePools.all")}</option>
+          {pool && !pools.data?.some(item => item.id === pool) && <option value={pool}>{pool}</option>}
+          {pools.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </Select>
+      </ListToolbar>
       <ErrorBox message={nodes.error || pools.error} />
       {!nodes.data ? (
         !nodes.error && <Loading />

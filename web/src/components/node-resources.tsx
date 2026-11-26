@@ -1,12 +1,14 @@
 /**
- * [INPUT]: 依赖节点身份、主机遥测快照和节点详情展示组件。
- * [OUTPUT]: 提供资源指标、成对内存负载字段、设备计数与采样诊断。
+ * [INPUT]: 依赖节点身份、主机采样、硬件清单和节点详情展示组件。
+ * [OUTPUT]: 提供资源指标、分钟趋势、图形设备型号与采样诊断。
  * [POS]: 节点详情的资源分区；保留采样时效判断和原始数据入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
+import dynamic from "next/dynamic";
 import { Activity, Cpu, HardDrive } from "lucide-react";
+import { Loading } from "@/components/common";
 import {
   NodeDisclosure,
   NodeFacts,
@@ -17,6 +19,11 @@ import {
 import { useUI } from "@/components/providers";
 import type { Node, NodeTelemetry } from "@/lib/types";
 import { bytes, cn } from "@/lib/utils";
+
+const NodeResourceTrends = dynamic(() => import("@/components/node-resource-trends"), {
+  ssr: false,
+  loading: () => <Loading variant="cards" />,
+});
 
 export function NodeResources({
   node,
@@ -29,8 +36,12 @@ export function NodeResources({
 }) {
   const { t, number } = useUI();
   const host = telemetry?.host;
-  if (!host) return <p className="node-empty">{t("nodes.noResourceSample")}</p>;
+  if (!host) return <div className="node-section-stack">
+    <p className="node-empty">{t("nodes.noResourceSample")}</p>
+    <NodeResourceTrends key={node.id} nodeId={node.id} />
+  </div>;
   const sample = host.sample;
+  const graphicsDevices = telemetry.inventory?.inventory.accelerators;
   const formatBytes = (value?: number | null) =>
     value == null ? t("nodes.unknown") : bytes(value);
   const numeric = (value?: number | null) =>
@@ -90,6 +101,7 @@ export function NodeResources({
           </div>
         ))}
       </div>
+      <NodeResourceTrends key={node.id} nodeId={node.id} />
       <NodeSection title={t("nodes.memoryAndLoad")}>
         <div className="node-resource-facts">
           <NodeFacts
@@ -184,22 +196,36 @@ export function NodeResources({
               <thead>
                 <tr>
                   {[
-                    t("nodes.device"),
-                    t("nodes.cpuUsage"),
-                    t("nodes.memoryUsed"),
+                    t("nodes.model"),
+                    t("nodes.gpuUsage"),
+                    t("nodes.vramUsed"),
                   ].map((label) => (
                     <th key={label}>{label}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {sample.accelerators.map((accelerator) => (
-                  <tr key={accelerator.id}>
-                    <td>{accelerator.id}</td>
-                    <td>{percent(accelerator.utilization_percent)}</td>
-                    <td>{formatBytes(accelerator.memory_used_bytes)}</td>
-                  </tr>
-                ))}
+                {sample.accelerators.map((accelerator) => {
+                  const model = graphicsDevices
+                    ?.find(device => device.id === accelerator.id)?.model?.trim();
+                  const notReported = t("nodes.notReported");
+                  return (
+                    <tr key={accelerator.id}>
+                      <td>
+                        <span>{model && model !== "unknown" ? model : t("nodes.unknown")}</span>
+                        <span className="block text-[11px] text-muted-foreground">
+                          {t("nodes.deviceId")} · {accelerator.id}
+                        </span>
+                      </td>
+                      <td>
+                        {accelerator.utilization_percent == null ? notReported : percent(accelerator.utilization_percent)}
+                      </td>
+                      <td>
+                        {accelerator.memory_used_bytes == null ? notReported : formatBytes(accelerator.memory_used_bytes)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -14,6 +14,7 @@ build_logs.rs: 验证历史日志分页、过滤、授权和终态流结束。
 device_load.rs: 验证三个控制平面的设备群连接、续租和调度预算。
 node_metadata.rs: 验证启动、心跳和重连保留名称及节点查询范围。
 node_identity.rs: 验证注册改名、识别摘要、任务租约与列表预算。
+node_pools.rs: 验证池写入权限、删除保护、注册锁序、审计及授权计数和设备筛选。
 node_placement.rs: 验证候选准入、资源时钟和设备槽位。
 node_tools.rs: 验证内嵌 Coordinator 前缀、服务鉴权及真实 MCP SDK 节点工具。
 readable_routes.rs: 以显式授权设备创建构建，验证 slug 路由和对象权限。
@@ -22,7 +23,7 @@ replication.rs: 验证副本锁和租约回收。
 planning_bridge.rs: 验证无条件规划 outbox 与取消版本。
 signing.rs: 验证真实 PKCS12、固定版本、撤权、可用性与摘要证据。
 source_refs.rs: 验证受权引用任务与错误脱敏。
-tenancy.rs: 提供租户 HTTP 与设备夹具，验证成员和构建权限。
+tenancy.rs: 提供租户 HTTP 与设备夹具，组合节点池、成员和构建权限验收。
 terminals.rs: 验证设备终端原子限额、原账户 Session、一次性票据和设备围栏。
 terminal_lifecycle.rs: 验证租户终端排空、设备租约窗口、删除清扫和项目隔离。
 terminal_routing.rs: 以真实 TLS 验证三副本、丢 ACK 与内部断流恢复、慢快照授权截止。

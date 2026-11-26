@@ -213,7 +213,7 @@ test("switching tenants isolates a late dashboard response and sends the new ten
   } finally { releasePrevious(); }
 });
 
-test("empty periods preserve zero counts and unknown success rate without manufacturing a curve", async ({ page }) => {
+test("empty periods preserve zero counts and unknown success rate without rendering axes", async ({ page }, info) => {
   const failures: string[] = [];
   page.on("pageerror", error => failures.push(error.message));
   await fixtureAPI(page);
@@ -223,9 +223,36 @@ test("empty periods preserve zero counts and unknown success rate without manufa
   await expect(metric(page, "成功率")).toHaveText("—");
   await expect(metric(page, "当前进行中")).toHaveText("0");
   await expect(page.locator(".dashboard-activity a").filter({ hasText: project.name })).toHaveCount(0);
-  await expect(page.locator(".dashboard-charts .recharts-line-curve")).toHaveCount(0);
+  await expect(page.getByText("此时间范围内还没有新建构建", { exact: true })).toBeVisible();
+  await expect(page.getByText("此时间范围内还没有成功构建", { exact: true })).toBeVisible();
+  await expect(page.locator(".dashboard-charts .recharts-wrapper")).toHaveCount(0);
   await expect(page.locator(".dashboard").getByRole("link", { name: /项目/ }).first()).toHaveAttribute("href", tenantURL("/projects"));
+  await page.locator(".dashboard-charts").screenshot({ path: info.outputPath("empty-charts.png") });
   expect(failures).toEqual([]);
+});
+
+test("turnaround distinguishes missing days from isolated samples", async ({ page }) => {
+  await fixtureAPI(page);
+  await page.route("**/api/v1/dashboard?**", route => {
+    const days = Number(new URL(route.request().url()).searchParams.get("days"));
+    const response = dashboardFixture({ days });
+    for (const day of response.daily) day.median_turnaround_seconds = null;
+    if (days === 90) {
+      response.daily[10].median_turnaround_seconds = 0;
+      response.daily[80].median_turnaround_seconds = 7200;
+    }
+    return route.fulfill({ json: response });
+  });
+  await page.goto(tenantURL("/"));
+  const charts = page.locator(".dashboard-charts");
+  await expect(charts.getByText("此时间范围内还没有成功构建", { exact: true })).toBeVisible();
+  await expect(charts.locator(".recharts-wrapper")).toHaveCount(1);
+  await chooseOption(page.getByRole("combobox", { name: "统计时间范围" }), "90");
+  await expect(charts.locator(".recharts-wrapper")).toHaveCount(2);
+  await expect(charts.locator(".dashboard-chart-sample")).toHaveCount(2);
+  const curve = await charts.locator(".recharts-line-curve").getAttribute("d");
+  expect(curve?.match(/M/g)).toHaveLength(2);
+  expect(curve).not.toContain("L");
 });
 
 for (const locale of ["zh-CN", "en"] as const) for (const theme of ["light", "dark"] as const) {
@@ -236,11 +263,29 @@ for (const locale of ["zh-CN", "en"] as const) for (const theme of ["light", "da
     await fixtureAPI(page);
     await page.context().addCookies([{ name: "artifactory-locale", value: locale, url: String(info.project.use.baseURL) }]);
     await page.addInitScript(value => localStorage.setItem("artifactory-theme", value), theme);
+    if (info.project.name === "mobile" && locale === "zh-CN" && theme === "light") {
+      await page.setViewportSize({ width: 320, height: 844 });
+    }
     for (const [name, route] of [["tenant", "/"], ["project", `/projects/${project.slug}`]]) {
       await page.goto(tenantURL(route));
       await expect(page.locator(".dashboard-metrics dd")).toHaveCount(4);
       await expect(page.locator(".dashboard-charts .recharts-wrapper")).toHaveCount(2);
       await page.evaluate(() => document.fonts.ready);
+      const panels = page.locator(".dashboard-chart-panel");
+      const [left, right] = await panels.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().toJSON()));
+      expect(Math.abs(left.width - right.width)).toBeLessThanOrEqual(1);
+      if (info.project.name === "mobile") {
+        expect(right.x).toBe(left.x);
+        expect(right.top).toBeGreaterThan(left.bottom);
+      } else {
+        expect(right.left).toBeGreaterThan(left.right);
+        expect(right.top).toBe(left.top);
+        expect(right.bottom).toBe(left.bottom);
+        const [firstPlot, secondPlot] = await page.locator(".dashboard-chart")
+          .evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().toJSON()));
+        expect(secondPlot.top).toBe(firstPlot.top);
+        expect(secondPlot.bottom).toBe(firstPlot.bottom);
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
       const audit = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
       expect(audit.violations.map(item => ({ id: item.id, targets: item.nodes.map(node => node.target) }))).toEqual([]);

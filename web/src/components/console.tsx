@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖租户路由、设备终端、租户 API、共享顶栏与概览。
+ * [INPUT]: 依赖租户路由、节点池管理、设备终端、租户 API 和共享顶栏。
  * [OUTPUT]: 提供保留作用域身份的 Console 控制台。
  * [POS]: 由租户布局持续挂载，按租户与项目隔离状态，非法路径让位于 404。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -30,6 +30,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { ListToolbar } from "@/components/ui/list-toolbar";
 import { WorkspaceManagement } from "@/components/workspace-management";
 import { NodesWorkspace } from "@/components/nodes-workspace";
+import { NodePoolsWorkspace } from "@/components/node-pools-workspace";
 import { TerminalWorkspace } from "@/components/terminal-workspace";
 import { BuildTable } from "@/components/build-table";
 import { BuildDetail } from "@/components/build-detail";
@@ -279,6 +280,8 @@ function Workspace({
                 pieces[2] === "terminal" ? (
                   <TerminalWorkspace key={pieces[1]} nodeId={pieces[1]} user={user} readOnly={readOnly} />
                 ) : <NodesWorkspace user={user} readOnly={readOnly} />
+              ) : pieces[0] === "pools" ? (
+                <NodePoolsWorkspace user={user} readOnly={readOnly} />
               ) : pieces[0] === "settings" ? (
                 <WorkspaceManagement
                   context={context.data}

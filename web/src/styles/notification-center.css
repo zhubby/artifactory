@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖中性主题、共享顶栏、单行筛选和账户设置类名。
  * [OUTPUT]: 提供未读数、单行筛选、紧凑行和通知抽屉布局。
- * [POS]: 通知中心专属布局；铃铛位于共享顶栏最右侧。
+ * [POS]: 定义共享顶栏铃铛的尺寸和通知中心布局。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 .inbox-bell {

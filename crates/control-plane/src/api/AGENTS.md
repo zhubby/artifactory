@@ -9,7 +9,7 @@ releases.rs: 提供版本元数据、说明编辑、独立构建创建和交付�
 build_logs.rs: 提供日志静态分页与终态排空后结束的 SSE。
 emissary_updates.rs: 提供产品统一版本、手动升级、签名目录与升级策略接口。
 lifecycle.rs: 提供工作区生命周期任务接口。
-management.rs: 提供设备改名、识别摘要、凭据与设备池接口。
+management.rs: 提供节点池增改删、精确设备筛选、设备改名和凭据接口。
 node_installation.rs: 配置系统设备地址，固定同版本可信发行，生成有界安装材料与脚本。
 projects.rs: 提供项目配置、授权原生平台与源码引用查询接口。
 signing.rs: 提供租户凭据、签名方案和项目默认设置。

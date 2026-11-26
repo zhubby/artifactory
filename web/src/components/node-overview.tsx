@@ -39,7 +39,7 @@ export function NodeOverview({ node, inventory }: { node: Node; inventory?: Node
           {device.memory_total_bytes != null && <span>{bytes(device.memory_total_bytes)}</span>}
         </div>
         <NodeDisclosure title={t("nodes.deviceDetails")}><NodeFacts optional entries={[
-          [t("nodes.device"), device.id], [t("nodes.vendor"), device.vendor], [t("nodes.driver"), device.driver],
+          [t("nodes.deviceId"), device.id], [t("nodes.vendor"), device.vendor], [t("nodes.driver"), device.driver],
         ]} /></NodeDisclosure>
       </div>)}</div>
     </NodeSection>}

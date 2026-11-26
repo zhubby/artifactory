@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
- * [OUTPUT]: 验证概览与项目目录导航、顶栏全局入口、顶栏租户切换及草稿保护。
+ * [OUTPUT]: 验证节点池、概览与项目目录导航、租户切换及草稿保护。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -51,9 +51,10 @@ test("tenant and project business sidebars expose only their own scope", async (
   const events = await fixtureAPI(page);
   const sidebar = page.locator(".sidebar");
   for (const [path, labels, active] of [
-    ["/", ["概览", "项目", "构建节点", "租户设置"], "概览"],
-    ["/projects", ["概览", "项目", "构建节点", "租户设置"], "项目"],
-    ["/nodes", ["概览", "项目", "构建节点", "租户设置"], "构建节点"],
+    ["/", ["概览", "项目", "构建节点", "节点池", "租户设置"], "概览"],
+    ["/projects", ["概览", "项目", "构建节点", "节点池", "租户设置"], "项目"],
+    ["/nodes", ["概览", "项目", "构建节点", "节点池", "租户设置"], "构建节点"],
+    ["/pools", ["概览", "项目", "构建节点", "节点池", "租户设置"], "节点池"],
     ["/projects/desktop-client", ["项目概览", "Release 版本", "项目设置"], "项目概览"],
     [`/projects/desktop-client/releases/${release.id}/builds/128`, ["项目概览", "Release 版本", "项目设置"], "Release 版本"],
   ] as const) {

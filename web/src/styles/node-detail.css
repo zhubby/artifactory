@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 tokens.css 的主题变量和设备详情的语义分区。
- * [OUTPUT]: 提供紧凑标题、摘要、成对资源字段与窄屏设备详情样式。
+ * [OUTPUT]: 提供紧凑标题、摘要、资源图表与窄屏设备详情布局。
  * [POS]: 只约束设备侧面板内容，不改变共享弹窗与设备列表。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -52,6 +52,20 @@
 .node-resource-metric + .node-resource-metric { border-left: 1px solid var(--border); }
 .node-resource-metric > span { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--muted-foreground); font-size: 12px; }
 .node-resource-metric strong { display: block; margin-top: 8px; font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.node-trend-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.node-trend-header h3 { font-size: 13px; font-weight: 600; }
+.node-trend-header p { margin-top: 2px; color: var(--muted-foreground); font-size: 11px; }
+.node-trend-controls { display: flex; align-items: center; gap: 8px; }
+.node-trend-controls .select-ui { width: 128px; }
+.node-trend-controls .select-trigger { min-height: 32px; }
+.node-trend-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.node-trend-card { display: flex; flex-direction: column; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); }
+.node-trend-card h4 { margin-bottom: 8px; font-size: 12px; font-weight: 600; }
+.node-trend-plot { height: 150px; min-width: 0; font-variant-numeric: tabular-nums; }
+.node-trend-plot .recharts-surface:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 3px; }
+.node-trend-plot .recharts-tooltip-wrapper { z-index: 1; }
+.node-trend-plot .recharts-default-tooltip { box-shadow: var(--shadow); }
+.node-trend-empty { display: grid; flex: 1; place-items: center; min-height: 96px; padding: 12px; border: 1px dashed var(--border); border-radius: 4px; background: var(--quiet); color: var(--muted-foreground); font-size: 12px; text-align: center; }
 .node-resource-facts > .node-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; }
 .node-resource-facts .node-facts > div { grid-template-columns: 124px minmax(0, 1fr); }
 .node-resource-facts dd { font-variant-numeric: tabular-nums; }
@@ -94,6 +108,8 @@
   .node-resource-metric { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
   .node-resource-metric + .node-resource-metric { border-left: 0; border-top: 1px solid var(--border); }
   .node-resource-metric strong { margin: 0; flex-shrink: 0; }
+  .node-trend-grid { grid-template-columns: minmax(0, 1fr); }
+  .node-trend-controls .select-trigger { min-height: 44px; }
   .node-resource-facts > .node-facts { grid-template-columns: minmax(0, 1fr); }
   .node-resource-facts .node-facts > div { grid-template-columns: 96px minmax(0, 1fr); }
   .node-tool-heading { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }

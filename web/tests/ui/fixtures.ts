@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright 路由拦截与控制台业务类型。
- * [OUTPUT]: 提供构建目标、节点安装、授权设备平台和租户 HTTP 夹具。
+ * [OUTPUT]: 提供构建目标、节点池计数、节点安装和授权设备平台 HTTP 夹具。
  * [POS]: UI 测试的默认服务响应；专项测试覆盖对应响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -489,6 +489,8 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
         },
       },
       [`/nodes/${nodes[1].id}/telemetry`]: { host: null, inventory: null },
+      [`/nodes/${nodes[0].id}/telemetry/history`]: { samples: [], truncated: false },
+      [`/nodes/${nodes[1].id}/telemetry/history`]: { samples: [], truncated: false },
       [`/nodes/${nodes[0].id}/metadata`]: {
         node_id: nodes[0].id,
         startup_id: "startup-main",
@@ -523,7 +525,7 @@ export async function fixtureAPI(page: Page, role: User["role"] = "admin") {
       [`/releases/${release.id}/builds`]: [build, {...build,id:"build-complete",number:127,status:"succeeded",finished_at:created}],
       "/artifacts": [artifact],
       "/images": [],
-      "/pools": [{ id: "pool-main", name: "default", is_default: true }],
+      "/pools": [{ id: "pool-main", name: "default", is_default: true, node_count: 2, online_count: 1 }],
       "/credentials": [
         {
           id: "credential-main",

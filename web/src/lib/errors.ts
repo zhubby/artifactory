@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖构建准入等本地错误词条键和原始异常。
+ * [INPUT]: 依赖节点池名称、构建准入等本地词条键和原始异常。
  * [OUTPUT]: 提供 LocalizedError、asError 与轮询错误等价判断。
  * [POS]: 将请求异常转换为可随语言切换的错误。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -12,6 +12,7 @@ type LocalErrorKey =
   | "common.operationFailed"
   | "common.requestFailed"
   | "projects.nameTooLong"
+  | "nodePools.invalidName"
   | "wizard.invalidProject"
   | "wizard.invalidRef"
   | "wizard.invalidGoal"

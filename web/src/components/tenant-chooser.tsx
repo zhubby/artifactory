@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖账户、租户 API、共享幂等键、表单与通知。
  * [OUTPUT]: 提供租户选择、创建、邀请和共享顶栏工具。
- * [POS]: 登录后的工作区入口；首次读取使用卡片骨架，失败提供重试。
+ * [POS]: 会话确认后显示租户大厅；会话和租户列表读取失败可分别重试。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -44,7 +44,19 @@ export function TenantChooser() {
   const filtered = tenants.data?.filter((tenant) =>
     `${tenant.name} ${tenant.slug}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
-  const hallError = account.error || tenants.error;
+  if (!account.data) {
+    return (
+      <main className="hall-main">
+        <ErrorBox message={account.error} />
+        {account.error ? (
+          <Button variant="secondary" onClick={() => void account.reload()}>
+            {t("common.retry")}
+          </Button>
+        ) : <Loading variant="detail" />}
+      </main>
+    );
+  }
+
   function beginCreate() {
     setKey(createIdempotencyKey());
     setCreating(true);
@@ -58,7 +70,7 @@ export function TenantChooser() {
           </span>
           Artifactory
         </Link>
-        <HeaderTools notification={account.data && <NotificationBell />} />
+        <HeaderTools notification={<NotificationBell />} />
       </header>
       <main className="hall-main">
         <div className="hall-heading">
@@ -66,7 +78,7 @@ export function TenantChooser() {
             <p className="eyebrow">{t("workspace.tenantHall")}</p>
             <h1>
               {t("workspace.welcome", {
-                name: account.data?.display_name || "",
+                name: account.data.display_name,
               })}
             </h1>
             <p>{t("workspace.hallDescription")}</p>
@@ -92,16 +104,13 @@ export function TenantChooser() {
               />
             </label>
           </div>
-          <ErrorBox message={hallError} />
+          <ErrorBox message={account.error || tenants.error} />
           {!filtered ? (
-            hallError ? (
+            tenants.error ? (
               <div className="hall-retry">
                 <Button
                   variant="secondary"
-                  onClick={() => {
-                    if (account.error) void account.reload();
-                    else void tenants.reload();
-                  }}
+                  onClick={() => void tenants.reload()}
                 >
                   {t("common.retry")}
                 </Button>

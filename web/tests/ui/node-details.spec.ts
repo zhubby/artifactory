@@ -119,9 +119,14 @@ for (const theme of ["light", "dark"]) {
     await expect(
       dialog.getByRole("cell", { name: "en0", exact: true }),
     ).toBeVisible();
-    await expect(
-      dialog.getByRole("cell", { name: "gpu-0", exact: true }),
-    ).toBeVisible();
+    const graphics = dialog.locator(".node-detail-section").filter({
+      has: page.getByRole("heading", { name: "Graphics devices", exact: true }),
+    });
+    await expect(graphics.getByRole("columnheader")).toHaveText(["Model", "GPU utilization", "VRAM used"]);
+    const gpu = graphics.getByRole("row").filter({ hasText: "Apple GPU" });
+    await expect(gpu.getByText("Device ID · gpu-0", { exact: true })).toBeVisible();
+    await expect(gpu.getByRole("cell", { name: "12.5%", exact: true })).toBeVisible();
+    await expect(gpu.getByRole("cell", { name: "1.0 GiB", exact: true })).toBeVisible();
     await noOverflow(page);
     await page.screenshot({
       path: `test-results/ui/node-resources-${theme}-${info.project.name}.png`,

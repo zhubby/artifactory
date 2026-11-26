@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户作用域、节点状态与数据库事务。
-//! [OUTPUT]: 提供名称审计事务和有界节点识别摘要。
+//! [OUTPUT]: 提供节点池审计、删除围栏、授权计数和精确设备筛选。
 //! [POS]: 管理接口的持久化边界；不返回完整节点元数据。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::ControlStore;
@@ -85,7 +85,7 @@ impl ControlStore {
     pub async fn pools(&self) -> Result<Vec<dto::PoolSummary>> {
         Ok(sql::scalars(
             &mut self.pool.clone(),
-            "SELECT to_jsonb(p) FROM node_pools p WHERE p.tenant_id=$1 AND ($2 OR EXISTS(SELECT 1 FROM nodes n WHERE n.pool_id=p.id AND EXISTS(SELECT 1 FROM projects pr WHERE pr.id=ANY($3) AND project_node_allowed(pr.id,n.id))) OR EXISTS(SELECT 1 FROM projects pr WHERE pr.id=ANY($3) AND pr.node_access_mode='pools' AND p.id=ANY(pr.pool_ids))) ORDER BY name",
+            "WITH visible_nodes AS (SELECT n.pool_id,NOT n.revoked AND n.last_seen>now()-interval '30 seconds' AS online FROM nodes n WHERE n.tenant_id=$1 AND ($2 OR EXISTS(SELECT 1 FROM projects pr WHERE pr.id=ANY($3) AND project_node_allowed(pr.id,n.id)))) SELECT to_jsonb(p)||jsonb_build_object('node_count',(SELECT count(*) FROM visible_nodes n WHERE n.pool_id=p.id),'online_count',(SELECT count(*) FROM visible_nodes n WHERE n.pool_id=p.id AND n.online)) FROM node_pools p WHERE p.tenant_id=$1 AND ($2 OR EXISTS(SELECT 1 FROM visible_nodes n WHERE n.pool_id=p.id) OR EXISTS(SELECT 1 FROM projects pr WHERE pr.id=ANY($3) AND pr.node_access_mode='pools' AND p.id=ANY(pr.pool_ids))) ORDER BY p.name,p.id",
             params![self.tenant()?,self.scoped_admin(),self.scoped_projects().unwrap_or_default()],
         )
         .await?)
@@ -101,6 +101,87 @@ impl ControlStore {
         Ok(())
     }
 
+    pub async fn rename_pool(&self, id: Uuid, name: &str) -> Result<()> {
+        let auth = self.scope.as_ref().ok_or(ApiError::TenantRequired)?;
+        auth.session_role("admin")?;
+        let tenant = self.tenant()?;
+        let mut db = self.pool.clone();
+        let mut tx = db.transaction().await?;
+        let old_name: String = sql::optional_scalar(
+            &mut tx,
+            "SELECT name FROM node_pools WHERE id=$1 AND tenant_id=$2 FOR UPDATE",
+            params![id, tenant],
+        )
+        .await?
+        .ok_or(ApiError::NotFound)?;
+        sql::execute(
+            &mut tx,
+            "UPDATE node_pools SET name=$3 WHERE id=$1 AND tenant_id=$2",
+            params![id, tenant, name],
+        )
+        .await?;
+        sql::execute(&mut tx, "INSERT INTO audit_events(tenant_id,actor,action,resource_id,details) VALUES($1,$2,'pool_renamed',$3,$4)",
+            params![tenant,auth.user_id.to_string(),id.to_string(),json!({"old_name":old_name,"new_name":name})]).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn delete_pool(&self, id: Uuid) -> Result<()> {
+        let auth = self.scope.as_ref().ok_or(ApiError::TenantRequired)?;
+        auth.session_role("admin")?;
+        let tenant = self.tenant()?;
+        let mut db = self.pool.clone();
+        let mut tx = db.transaction().await?;
+        // 独占池行；注册、设备迁移和项目授权的外键引用等待本事务。
+        let (name, is_default): (String, bool) = sql::tuple(
+            &mut tx,
+            "SELECT name,is_default FROM node_pools WHERE id=$1 AND tenant_id=$2 FOR UPDATE",
+            params![id, tenant],
+        )
+        .await?;
+        if is_default {
+            return Err(ApiError::Conflict(
+                "default node pool cannot be deleted".into(),
+            ));
+        }
+        let in_use: bool = sql::scalar(&mut tx,
+            "SELECT EXISTS(SELECT 1 FROM nodes WHERE pool_id=$1) OR EXISTS(SELECT 1 FROM projects WHERE tenant_id=$2 AND $1=ANY(pool_ids)) OR EXISTS(SELECT 1 FROM project_pool_grants WHERE pool_id=$1) OR EXISTS(SELECT 1 FROM emissary_updates WHERE pool_id=$1)",
+            params![id,tenant]).await?;
+        if in_use {
+            return Err(ApiError::Conflict(
+                "node pool is still referenced by devices, projects or update history".into(),
+            ));
+        }
+        sql::execute(
+            &mut tx,
+            // 注册先锁令牌再创建设备；跳过其令牌，避免等待池外键的注册形成死锁。
+            "DELETE FROM enrollment_tokens WHERE id IN (SELECT id FROM enrollment_tokens WHERE pool_id=$1 FOR UPDATE SKIP LOCKED)",
+            params![id],
+        )
+        .await?;
+        let enrolling: bool = sql::scalar(
+            &mut tx,
+            "SELECT EXISTS(SELECT 1 FROM enrollment_tokens WHERE pool_id=$1)",
+            params![id],
+        )
+        .await?;
+        if enrolling {
+            return Err(ApiError::Conflict(
+                "node pool enrollment is in progress; retry after it finishes".into(),
+            ));
+        }
+        sql::execute(
+            &mut tx,
+            "DELETE FROM node_pools WHERE id=$1 AND tenant_id=$2",
+            params![id, tenant],
+        )
+        .await?;
+        sql::execute(&mut tx, "INSERT INTO audit_events(tenant_id,actor,action,resource_id,details) VALUES($1,$2,'pool_deleted',$3,$4)",
+            params![tenant,auth.user_id.to_string(),id.to_string(),json!({"name":name})]).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn enrollment_token(&self, id: Uuid, hash: String, pool_id: Uuid) -> Result<()> {
         self.authorize_owned("node_pools", pool_id).await?;
         sql::execute(&mut self.pool.clone(), "INSERT INTO enrollment_tokens(id,token_hash,pool_id,expires_at) VALUES($1,$2,$3,now()+interval '15 minutes')", params![id, hash, pool_id]).await?;
@@ -108,6 +189,16 @@ impl ControlStore {
     }
 
     pub async fn nodes(&self, limit: i64, offset: i64, q: &str) -> Result<Vec<dto::NodeSummary>> {
+        self.nodes_in_pool(limit, offset, q, None).await
+    }
+
+    pub async fn nodes_in_pool(
+        &self,
+        limit: i64,
+        offset: i64,
+        q: &str,
+        pool: Option<Uuid>,
+    ) -> Result<Vec<dto::NodeSummary>> {
         // 在数据库投影摘要，避免列表传输和反序列化完整元数据。
         Ok(sql::scalars(&mut self.pool.clone(), r#"SELECT to_jsonb(summary) FROM (
             SELECT n.id,n.name,n.os,n.arch,n.pool_id,n.labels,n.capabilities,CASE WHEN $5 THEN n.diagnostics ELSE '{}'::jsonb END AS diagnostics,identity.summary AS identity,
@@ -131,10 +222,11 @@ impl ControlStore {
                         THEN n.metadata->'hardware.physical_memory_bytes' END END
             )) ELSE '{}'::jsonb END AS summary) identity
             WHERE n.tenant_id=$4 AND ($5 OR EXISTS(SELECT 1 FROM projects pr WHERE pr.id=ANY($6) AND project_node_allowed(pr.id,n.id)))
+                AND ($7::uuid IS NULL OR n.pool_id=$7)
                 AND ($3='' OR strpos(lower(concat_ws(' ',n.name,n.os,n.arch,n.id::text,p.name,
                     identity.summary->>'hostname',identity.summary->>'device_model',identity.summary->>'cpu_model')),lower($3))>0)
             ORDER BY n.created_at DESC,n.id DESC LIMIT $1 OFFSET $2
-        ) summary"#, params![limit, offset, q,self.tenant()?,self.scoped_admin(),self.scoped_projects().unwrap_or_default()]).await?)
+        ) summary"#, params![limit, offset, q,self.tenant()?,self.scoped_admin(),self.scoped_projects().unwrap_or_default(),pool]).await?)
     }
 
     pub async fn rename_node(&self, id: Uuid, name: &str) -> Result<()> {

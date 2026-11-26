@@ -81,6 +81,10 @@
 
 # 设计与计划归档
 
+- [Emissary 演进路线 · 2026-11-25](plans/2026-11-25-001-feat-emissary-evolution-plan.md)
+- [Uplink 与 Emissary 固定源码评估 · 2026-11-25](plans/2026-11-25-emissary-uplink-assessment.md)
+- [Emissary 协议、数据与有限操作契约](plans/2026-11-25-emissary-protocol-data-contracts.md)
+- [Emissary OTA 与固定启动器契约](plans/2026-11-25-emissary-ota-contracts.md)
 - [设备交互终端实施计划 · 2026-11-24](plans/2026-11-24-001-feat-interactive-terminals-plan.md)
 - [节点安装与加入实施计划 · 2026-11-25](plans/2026-11-25-node-installation.md)
 
@@ -127,6 +131,7 @@
 - [AI 审计阅读 Kubernetes 上线记录 · 2026-11-24](releases/2026-11-24-ai-audit-reading-kubernetes.md)
 - [设备终端 Kubernetes 上线记录 · 2026-11-25](releases/2026-11-25-device-terminals-kubernetes.md)
 - [节点安装与三节点终端 · 2026-11-25](releases/2026-11-25-node-installation-terminals.md)
+- [节点池 Kubernetes 上线记录 · 2026-11-25](releases/2026-11-25-node-pools-kubernetes.md)
 - [统一 0.2.3 与三节点手动 OTA · 2026-11-25](releases/2026-11-25-manual-ota-kubernetes.md)
 - [Artifactory 装配 A](brand/README.md)
 - [Artifactory 更名记录 · 2026-11-11](artifactory-rename-2026-11-11.md)

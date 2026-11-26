@@ -19,6 +19,11 @@
   --destructive: #f29b9b;
   --success: #89cfa3;
   --warning: #e3bf78;
+  --chart-succeeded: #8fa99d;
+  --chart-failed: #c08185;
+  --chart-canceled: #76797d;
+  --chart-ongoing: #b39b6c;
+  --chart-turnaround: #ced3d6;
   --sidebar: #191919;
   --header: #151515;
   --table-header: #191919;
@@ -51,6 +56,11 @@
   --destructive: #b4232d;
   --success: #217346;
   --warning: #8b6508;
+  --chart-succeeded: #59766c;
+  --chart-failed: #a56063;
+  --chart-canceled: #898b8d;
+  --chart-ongoing: #927742;
+  --chart-turnaround: #3d4246;
   --sidebar: #f7f7f7;
   --header: #ffffff;
   --table-header: #fafafa;

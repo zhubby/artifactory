@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户鉴权、共享名称校验与凭据加密。
-//! [OUTPUT]: 提供设备改名、配置及凭据的管理接口。
+//! [OUTPUT]: 提供节点池增改删、设备改名、池筛选及凭据接口。
 //! [POS]: 管理写入先验证权限，再进入业务存储。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::auth::TenantState;
@@ -105,15 +105,42 @@ pub async fn create_pool(
     Json(input): Json<Name>,
 ) -> Result<Json<Value>> {
     auth.session_role("admin")?;
-    if input.name.is_empty() || input.name.len() > 100 {
-        return Err(ApiError::BadRequest("invalid pool name".into()));
-    }
+    let name = pool_name(&input.name)?;
     let id = Uuid::new_v4();
-    state.store.create_pool(id, &input.name).await?;
+    state.store.create_pool(id, name).await?;
     state
         .audit(auth.user_id, "pool_created", id, json!({}))
         .await?;
     Ok(Json(json!({"id":id})))
+}
+
+fn pool_name(name: &str) -> Result<&str> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 100 || name.chars().any(char::is_control) {
+        return Err(ApiError::BadRequest("invalid pool name".into()));
+    }
+    Ok(name)
+}
+
+pub async fn rename_pool(
+    TenantState(state): TenantState,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+    Json(input): Json<Name>,
+) -> Result<Json<Value>> {
+    auth.session_role("admin")?;
+    state.store.rename_pool(id, pool_name(&input.name)?).await?;
+    Ok(Json(json!({"ok":true})))
+}
+
+pub async fn delete_pool(
+    TenantState(state): TenantState,
+    auth: Auth,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>> {
+    auth.session_role("admin")?;
+    state.store.delete_pool(id).await?;
+    Ok(Json(json!({"ok":true})))
 }
 
 #[derive(Deserialize)]
@@ -153,6 +180,7 @@ pub struct NodeQuery {
     offset: i64,
     #[serde(default)]
     q: String,
+    pool_id: Option<Uuid>,
 }
 fn node_page_size() -> i64 {
     100
@@ -175,7 +203,7 @@ pub async fn nodes(
     Ok(Json(
         state
             .store
-            .nodes(query.limit, query.offset, &query.q)
+            .nodes_in_pool(query.limit, query.offset, &query.q, query.pool_id)
             .await?,
     ))
 }

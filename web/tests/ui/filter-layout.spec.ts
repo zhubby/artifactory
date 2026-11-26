@@ -33,7 +33,8 @@ test("business list search, status and order stay on one line", async ({ page },
     ["/projects/desktop-client/releases", 3],
     ["/projects/desktop-client/builds", 3],
     ["/projects/desktop-client/artifacts", 2],
-    ["/nodes", 1],
+    ["/nodes", 2],
+    ["/pools", 1],
   ] as const) {
     await page.goto(tenantURL(path));
     await expect(page.locator(".list-count")).toBeVisible();

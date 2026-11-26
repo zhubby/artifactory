@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖公开 JSON 字段和数据库解码。
-//! [OUTPUT]: 提供构建概览、版本元数据与安全规划摘要的公开投影。
+//! [OUTPUT]: 提供构建概览、节点池授权计数、版本与安全规划摘要投影。
 //! [POS]: HTTP 响应的数据边界；不包含秘密信封。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Explicit API projections. These types never contain ORM models or database handles.
@@ -116,6 +116,8 @@ response! { PoolSummary {
     id: Uuid,
     name: String,
     is_default: bool,
+    node_count: i64,
+    online_count: i64,
     emissary_target_release: Option<Uuid>,
     emissary_update_concurrency: i32,
     emissary_updates_paused: bool,

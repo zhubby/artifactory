@@ -1,15 +1,15 @@
 ---
 title: "feat: 从控制台打开被控设备终端"
 type: feat
-status: implemented-local-validation
+status: proposed
 date: 2026-11-24
 depth: deep
 ---
 
 <!--
 [INPUT]: 当前设备协议、租户权限、Control 多副本和 Uplink/Tunshell 源码核验。
-[OUTPUT]: 提供设备终端方案、实施进度与分层验收入口。
-[POS]: 已批准的设备终端计划；真实设备验收独立记录。
+[OUTPUT]: 提供被控设备网页终端的现状评估、架构建议和实施计划。
+[POS]: 控制台远程设备终端的规划文档；不声明实现或验收完成。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
 
@@ -33,7 +33,7 @@ depth: deep
 
 ## 当前代码事实
 
-以下是实施前的源码评估。实施与本地验证结果见文末进度及验收记录。
+以下结论来自本次源码读取。没有运行应用、测试、部署或设备命令。
 
 - `proto/artifactory/emissary/v1/emissary.proto` 已有双向 `Control.Connect` 与独立 `UploadLogs`，没有终端 RPC。
 - `crates/emissary/src/client.rs` 已校验 CA、SAN 和 TLS 1.3。`crates/control-plane/src/grpc.rs` 按实际客户端证书识别节点，并替换旧 session。
@@ -237,11 +237,11 @@ Uplink 代码与 Tunshell 依赖分别遵循 Apache-2.0 和 MIT。直接复制�
 
 ## 实施单元
 
-以下保留批准时的实施落点。实际代码按既有模块拆分，L2/L3已同步；环境边界见实施进度。
+以下文件名是实施落点建议；新增文件和子目录必须补齐 L2/L3。所有行为测试均为后续工作，本次没有运行。
 
 ### U1：会话模型、权限与一次性票据
 
-- [x] 已实现 R4–R6、R9 的控制边界与真实数据库回归。
+- [ ] 覆盖 R4–R6、R9；作为后续单元的控制边界。
 - 修改：`crates/control-plane/src/auth.rs`、`state.rs`、`api/mod.rs`、`store/mod.rs`、`settings.rs`。
 - 新增：`crates/control-plane/src/api/terminals.rs`、`store/terminals.rs`、`store/terminal_tests.rs`、`terminal_policy.rs`。
 - 追加：`crates/control-plane/migrations/history.toml` 与下一条终端迁移及 schema snapshot。执行前重新读取迁移序号，不覆盖现有迁移。
@@ -251,7 +251,7 @@ Uplink 代码与 Tunshell 依赖分别遵循 Apache-2.0 和 MIT。直接复制�
 
 ### U2：设备 PTY 与进程监督
 
-- [x] 已实现 PTY/ConPTY 与进程监督；原生服务账户验收仍分平台记录。
+- [ ] 覆盖 R3、R5、R10；依赖 U1 的生命周期定义，可先独立验证。
 - 扩展现有 `crates/execution-support` 的进程原语，采用仅由 Emissary 终端路径启用的可选 terminal feature，避免让普通构建路径强制启用新终端后端。Control 不依赖 PTY 模块。
 - 新增：`crates/execution-support/src/terminal/{mod.rs,unix.rs,windows.rs}` 与 `tests/terminal_process.rs`；调整该 crate 的 `Cargo.toml` 和 `src/lib.rs`。
 - 优先验证 portable-pty，固定审核后的版本。共享库只提供 PTY、resize、字节读写和进程树监督，不依赖租户或构建领域。真 PTY/ConPTY 失败时明确报告不可用，不降级为 pseudo-shell。
@@ -260,7 +260,7 @@ Uplink 代码与 Tunshell 依赖分别遵循 Apache-2.0 和 MIT。直接复制�
 
 ### U3：多副本 owner 与内部流
 
-- [x] 已实现固定 owner、内部认证流与三副本故障回归。
+- [ ] 覆盖 R7–R8；依赖 U1，与 U2 并行。
 - 新增：`crates/control-plane/src/terminals/{mod.rs,owner.rs,relay.rs}`，以及 `crates/control-plane/tests/database/terminal_routing.rs`。
 - 修改：`main.rs`、`coordination.rs`、`store/replication.rs`、`settings.rs`，以及 `crates/service-transport` 的内部传输扩展。
 - 部署修改：`charts/artifactory/templates/{control-plane.yaml,services.yaml,gateway.yaml}`、`charts/artifactory/values.yaml`、`deploy` 中实际生效的网络策略与证书配置。
@@ -270,7 +270,7 @@ Uplink 代码与 Tunshell 依赖分别遵循 Apache-2.0 和 MIT。直接复制�
 
 ### U4：Emissary 终端协议与设备 supervisor
 
-- [x] 已实现独立设备流、supervisor、租约与 OTA 监督。
+- [ ] 覆盖 R1、R3、R5–R8、R10；依赖 U1–U3。
 - 修改：`proto/artifactory/emissary/v1/emissary.proto`、`crates/emissary-protocol/src/nodes.rs`、`crates/emissary/src/{client.rs,runner.rs,config.rs,main.rs}`、`crates/control-plane/src/{grpc.rs,dispatch.rs}`。
 - 新增：`crates/emissary/src/terminal/{mod.rs,supervisor.rs,worker.rs}`、`crates/emissary/tests/terminal_protocol.rs`；扩展 `src/runner/tests.rs` 与 `tests/live_protocol.rs`。
 - 设备本地默认关闭；启用后上报能力、可用 Shell profile 和实际账户。旧 Emissary 显示不支持，不降级执行普通构建脚本。
@@ -280,7 +280,7 @@ Uplink 代码与 Tunshell 依赖分别遵循 Apache-2.0 和 MIT。直接复制�
 
 ### U5：WebSocket 与终端工作区
 
-- [x] 已实现终端工作区与 WebSocket，并完成真实浏览器到 macOS PTY 链路。
+- [ ] 覆盖 R1–R3、R5–R7；依赖 U1–U4。
 - 修改：`crates/control-plane/Cargo.toml` 开启 Axum ws；`api/terminals.rs` 接入 WSS；核对 `crates/gateway/src/http.rs`、Ingress 和本机网关的升级、空闲与连接预算。
 - 新增：`web/src/components/{terminal-workspace.tsx,terminal-view.tsx}`、`web/src/lib/{terminal.ts,terminal-types.ts}`、`web/src/styles/terminal.css`。
 - 修改：`node-operations.tsx`、`console.tsx`、`web/src/lib/routes.ts`、`web/package.json`、锁文件和中英文消息。工作区切换显式关闭 WS，不能只取消 fetch。
@@ -290,7 +290,7 @@ Uplink 代码与 Tunshell 依赖分别遵循 Apache-2.0 和 MIT。直接复制�
 
 ### U6：分层验收、运维和文档闭环
 
-- [ ] 本地分层测试与文档已执行；真实设备、Windows 服务账户及目标 Kubernetes 仍待环境验收。
+- [ ] 覆盖 R1–R10；依赖 U1–U5。
 - 更新：`docs/{api.md,protocol.md,multitenancy.md,control-ha.md,frontend-experience.md,operations.md,emissary-ota.md}`；新增 `docs/terminals.md` 与 `docs/acceptance/` 中本次真实记录。
 - 测试：`crates/control-plane/tests/database/terminal_load.rs`、`crates/emissary/tests/terminal_protocol.rs`、`tests/images/terminal_gateway.py` 与前述 UI 测试联验。
 - 先覆盖三副本、10 个交互会话与单会话持续大输出；分别验证快速消费和慢消费，再按配置上限扩容。记录 RTT 分布、内存、在途字节、DB 连接、设备出口带宽、构建心跳/取消延迟与残留进程。独立通道只隔离应用队列，不能据此宣称 CPU 和网络已隔离。容量结论仅覆盖实测负载，不引用历史设备连接数代替。
@@ -314,14 +314,6 @@ U1 完成后 U2 与 U3 可独立推进；U4 汇合两者；U5 验证设备端完
 回退时先关闭新建与附着，撤销活动租约并等候/强制回收 Worker，再回退二进制。保留追加表与审计，不执行破坏性降级迁移。旧二进制不认识终端状态，因此不能将回退当成清理手段。关闭功能后仍需保持清扫，直到没有活动会话。
 
 执行目标已经确认，剩余问题均为实施验证：portable-pty 与 Job Object 组合、macOS 父进程强退后的后代回收、实例证书绑定与地址复用、网关长连接限额和 Windows x64 TUI/IME。M0 必须把结果写回本计划，失败则调整对应技术决策，不削弱权限边界。
-
-## 实施进度 · 2026-11-25
-
-实现保留Tokio1、现有mTLS/gRPC/RBAC和PostgreSQL围栏，没有引入旧tunshell-client。新增共享terminal契约、execution-support可选PTY模块、设备terminal supervisor、Control terminals服务、追加迁移2026112403和独立Web工作区。Control不执行Shell。
-
-U1–U5源码已实现。本地验证与ce:review修复覆盖权限、票据、真PTY、退出/清理、三副本、慢读授权截止、积压恢复、真实网关和浏览器。U6按证据分层交付；跨平台编译、模拟设备、多副本测试与真实设备服务账户不互相替代。具体命令、数量、负载与未验收项见[验收记录](../acceptance/2026-11-25-device-terminals.md)。
-
-上述本地实施阶段未执行提交、推送、合并、生产变更或真实设备安装。后续交付按用户授权单独记录。原工作区的两份未提交规划文件保持原样。
 
 ## 官方资料
 

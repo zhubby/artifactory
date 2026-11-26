@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、租户入口和确定性 API 夹具。
- * [OUTPUT]: 验证租户卡片、HTTP 创建入口、幂等重试和读取失败恢复。
+ * [OUTPUT]: 验证会话检查、租户卡片、HTTP 创建入口和失败重试。
  * [POS]: 租户大厅的交互与响应式回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -12,6 +12,45 @@ const tenants: Tenant[] = [
   { id: tenantId, slug: tenantSlug, name: "Build Team", role: "owner", status: "active", archived_at: null, owner_id: "user-main", created_at: "2026-11-10T08:30:00Z" },
   { id: "tenant-beta", slug: "beta-library", name: "Beta 团队工作空间".repeat(5), role: "member", status: "archived", archived_at: "2026-11-19T08:30:00Z", owner_id: "other", created_at: "2026-11-10T08:30:00Z" },
 ];
+
+for (const path of ["/", "/tenants"]) {
+  test(`${path}: unconfirmed sessions never show the tenant hall`, async ({ page }) => {
+    const responseGate = Promise.withResolvers<void>();
+    await page.route("**/api/v1/auth/config", route => route.fulfill({ json: { registration_enabled: false } }));
+    await page.route("**/api/v1/auth/me", async route => {
+      await responseGate.promise;
+      await route.fulfill({ status: 401, json: { error: "Unauthenticated" } });
+    });
+    const checking = page.waitForRequest("**/api/v1/auth/me");
+    await page.goto(path);
+    try {
+      await checking;
+      await expect(page).toHaveURL("/tenants");
+      await expect(page.locator(".loading-state")).toBeVisible();
+      await expect(page.locator(".tenant-hall")).toHaveCount(0);
+    } finally {
+      responseGate.resolve();
+    }
+    await expect(page).toHaveURL("/login");
+    await expect(page.locator('input[name="username"]')).toBeVisible();
+  });
+}
+
+test("the home entry offers retry when the session check fails", async ({ page }) => {
+  await fixtureAPI(page);
+  let accountAvailable = false;
+  await page.route("**/api/v1/auth/me", route => accountAvailable
+    ? route.fallback()
+    : route.fulfill({ status: 503, json: { error: "Account unavailable" } }));
+  await page.goto("/");
+  const retry = page.getByRole("button", { name: "重试", exact: true });
+  await expect(retry).toBeVisible();
+  await expect(page.locator(".tenant-hall")).toHaveCount(0);
+  accountAvailable = true;
+  await retry.click();
+  await expect(page.getByRole("heading", { name: "你好，Alex", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Build Team", exact: true })).toBeVisible();
+});
 
 for (const entry of ["hall-heading", "hall-empty"]) {
   test(`${entry}: tenant creation works on an ordinary HTTP origin and keeps retries idempotent`, async ({ page, context, baseURL }) => {

@@ -1,6 +1,6 @@
 <!--
 [INPUT]: 当前 HTTP 路由、模型能力和租户项目授权。
-[OUTPUT]: 定义公开接口、首次安装、协议兼容与目标准入边界。
+[OUTPUT]: 定义节点池管理、首次安装、协议兼容与目标准入边界。
 [POS]: 控制台与外部集成共用的 HTTP 契约入口。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -38,13 +38,15 @@
 | `POST /operations/{id}/cancel`、`POST /operations/{id}/retry` | 空对象；撤销排空等待，或重试失败步骤，返回操作记录 |
 | `GET, POST /tokens` | 创建 `{name,project_ids,scopes,days}`，仅本次返回明文 |
 | `DELETE /tokens/{id}` | 吊销当前用户的 Token |
-| `GET, POST /pools` | 创建 `{name}` |
+| `GET, POST /pools` | 读取可见池及授权设备计数；管理员创建 `{name}` |
+| `PATCH /pools/{id}` | 租户 owner/admin 会话；`{name}`，只更新池名称 |
+| `DELETE /pools/{id}` | 租户 owner/admin 会话；删除无引用的非默认池，并撤销注册令牌 |
 | `POST /enrollment-tokens` | `{pool_id}`，返回一次性令牌 |
 | `GET, PATCH /system/node-installation` | `{device_endpoint,can_edit}`；PATCH 只接受 `{device_endpoint}`，仅全局系统管理员会话可写 |
 | `GET /node-installation/options` | 租户管理员会话；公开设备地址和当前租户已导入版本的平台选项 |
 | `POST /node-installation` | 租户管理员会话；`{pool_id,release_id,os,arch}`，返回一次性安装材料，禁止缓存 |
 | `GET /node-installation/installer.sh`、`GET /node-installation/installer.ps1` | 无凭证的固定安装脚本；安装材料包含脚本 SHA-256 |
-| `GET /nodes` | 实际能力、诊断、identity 摘要、slots、online、active_jobs；不携带全量 metadata |
+| `GET /nodes` | 可选 `pool_id` UUID 精确筛选；返回实际能力、诊断、identity、slots、online 和 active_jobs，不携带全量 metadata |
 | `GET /nodes/{id}/metadata` | viewer 会话；完整启动 metadata、startup_id、内容摘要与服务端接收时间 |
 | `GET /nodes/{id}/telemetry` | viewer 会话；最新主机采样、fresh 与版本化清单 |
 | `GET /nodes/{id}/inventory` | viewer 会话；最近 100 次清单观察，附 truncated |

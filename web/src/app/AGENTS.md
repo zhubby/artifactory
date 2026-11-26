@@ -11,7 +11,7 @@ icon.svg: 深灰底、白色装配 A 浏览器图标，与控制台中性色一�
 layout.tsx: App Router 根布局，建立主题和语言上下文。
 manifest.webmanifest: WEBMANIFEST；manifest配置或静态资源。
 not-found.tsx: 将未知地址引回已有控制台入口。
-page.tsx: TypeScript；提供 Page。
+page.tsx: 将首页转到租户入口，共用该入口的会话检查。
 
 子目录
 docs/: 独立路由或子模块。

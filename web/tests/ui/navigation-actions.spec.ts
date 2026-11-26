@@ -23,7 +23,7 @@ test("creation actions stay in main page titles and never enter the global topba
 });
 
 for (const theme of ["dark", "light"]) {
-  test(`${theme}: global tools keep documentation before the rightmost bell`, async ({ page }, info) => {
+  test(`${theme}: global tools place the bell between documentation and the topbar account`, async ({ page }, info) => {
     await fixtureAPI(page);
     await page.addInitScript(value => localStorage.setItem("artifactory-theme", value), theme);
     // 默认项目覆盖桌面、平板、390px；手机补充最窄320px。
@@ -35,6 +35,8 @@ for (const theme of ["dark", "light"]) {
         const tools = page.locator(".header-tools");
         const bell = tools.getByRole("button", { name: /通知中心/ });
         const docs = tools.getByRole("link", { name: "文档", exact: true });
+        const account = tools.locator(".account-trigger");
+        const hasTopbarAccount = width < 1024 || path !== tenantURL("/projects/desktop-client");
         await expect(bell).toBeVisible();
         await expect(docs).toBeVisible();
         await expect(page.locator(".sidebar").getByRole("link", { name: "文档", exact: true })).toHaveCount(0);
@@ -42,13 +44,12 @@ for (const theme of ["dark", "light"]) {
         expect(docBounds!.x + docBounds!.width).toBeLessThanOrEqual(bellBounds!.x + 1);
         expect(Math.abs(docBounds!.y + docBounds!.height / 2 - bellBounds!.y - bellBounds!.height / 2)).toBeLessThan(2);
         expect(bellBounds!.x + bellBounds!.width).toBeLessThanOrEqual(width);
-        expect(await bell.evaluate(element => element.parentElement?.lastElementChild === element)).toBe(true);
-        if (width < 1024 || path !== tenantURL("/projects/desktop-client")) {
-          const account = page.locator(".account-trigger");
+        if (hasTopbarAccount) {
           await expect(account).toBeVisible();
           const bounds = (await account.boundingBox())!;
-          expect(bounds.x + bounds.width).toBeLessThanOrEqual(bellBounds!.x + 1);
+          expect(bellBounds!.x + bellBounds!.width).toBeLessThanOrEqual(bounds.x + 1);
           expect(Math.abs(bounds.y + bounds.height / 2 - bellBounds!.y - bellBounds!.height / 2)).toBeLessThan(2);
+          expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
           if (width === 320) {
             expect(bounds.width).toBeGreaterThanOrEqual(44);
             expect(bounds.height).toBeGreaterThanOrEqual(44);
@@ -62,10 +63,6 @@ for (const theme of ["dark", "light"]) {
         }
         await docs.focus();
         await page.keyboard.press("Tab");
-        if (width < 1024 || path !== tenantURL("/projects/desktop-client")) {
-          await expect(page.locator(".account-trigger")).toBeFocused();
-          await page.keyboard.press("Tab");
-        }
         await expect(bell).toBeFocused();
         await page.keyboard.press("Enter");
         const inbox = page.getByRole("dialog", { name: "通知中心", exact: true });
@@ -73,6 +70,10 @@ for (const theme of ["dark", "light"]) {
         await page.keyboard.press("Escape");
         await expect(inbox).toBeHidden();
         await expect(bell).toBeFocused();
+        if (hasTopbarAccount) {
+          await page.keyboard.press("Tab");
+          await expect(account).toBeFocused();
+        }
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
       }
     }

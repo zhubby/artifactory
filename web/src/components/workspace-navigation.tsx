@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户与项目权限、路由类型、账户插槽和统一导航。
- * [OUTPUT]: 提供首读骨架、重试、侧栏和含设备终端的面包屑。
+ * [OUTPUT]: 提供首读骨架、重试、节点池侧栏和含设备终端的面包屑。
  * [POS]: 权限就绪后展示导航，后台失败保留链接；账户位于侧栏底部。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -110,7 +110,7 @@ export function WorkspaceSidebar({
               {Array.from({ length: settingsScope ? 3 : 1 }, (_, group) => (
                 <div className="sidebar-skeleton-group" key={group}>
                   {settingsScope && <span className="skeleton-block sidebar-skeleton-label" />}
-                  {Array.from({ length: settingsScope ? 2 : projectScope ? 2 : 3 }, (_, row) => (
+                  {Array.from({ length: settingsScope ? 2 : projectScope ? 2 : 4 }, (_, row) => (
                     <div className="sidebar-skeleton-link" key={row}><span className="skeleton-block" /><span className="skeleton-block" /></div>
                   ))}
                 </div>
