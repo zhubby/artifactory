@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright 与构建后的 mdBook 资产和共享 Select 交互助手。
- * [OUTPUT]: 验证公开文档的导航、主题和字体。
+ * [OUTPUT]: 验证公开文档的顶栏导航、主题和字体。
  * [POS]: Web 生产构建后的文档浏览器入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -182,9 +182,6 @@ for (const [locale, label] of [["zh-CN", "文档"], ["en", "Documentation"]]) {
     await fixtureAPI(page);
     await page.context().addCookies([{ name: "artifactory-locale", value: locale, url: baseURL! }]);
     await page.goto(tenantURL("/"));
-    if (test.info().project.name === "mobile") {
-      await page.getByRole("button", { name: locale === "en" ? "Open navigation" : "打开导航" }).click();
-    }
     await page.getByRole("link", { name: label, exact: true }).click();
     await expect(page).toHaveURL(/\/docs\/index\.html$/);
     await expect(page.locator("main").getByRole("heading", { name: "Artifactory 文档", exact: true })).toBeVisible();

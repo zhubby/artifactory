@@ -1,4 +1,4 @@
-//! [INPUT]: 管理员签名发行、既有服务配置、原身份与私有围栏发布。
+//! [INPUT]: 管理员签名发行、原身份与私有围栏；Windows ACL使用独立模块路径。
 //! [OUTPUT]: 以可写句柄刷盘备份并替换固定启动器，失败恢复原文件与服务。
 //! [POS]: 原生服务维护事务；不注册新身份或修改runtime版本指针。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -380,7 +380,7 @@ pub fn rollback_launcher(config: &Path, installed_binary: &Path, backup_dir: &Pa
         let acl = backup_dir.join("launcher-acl.sddl");
         ordinary(&acl)?;
         ensure!(fs::metadata(&acl)?.len() <= 16384, "oversized launcher ACL");
-        let status = std::process::Command::new("powershell.exe")
+        let status = windows_powershell()
             .args(["-NoProfile", "-NonInteractive", "-Command", &format!(
                 "$ErrorActionPreference='Stop'; $acl=Get-Acl -LiteralPath {0}; $acl.SetSecurityDescriptorSddlForm((Get-Content -Raw -LiteralPath {1}).Trim()); Set-Acl -LiteralPath {0} -AclObject $acl",
                 ps_literal(installed_binary), ps_literal(&acl)
@@ -512,7 +512,7 @@ fn replace(path: &Path, bytes: &[u8]) -> Result<()> {
     {
         let source = ps_literal(path);
         let target = ps_literal(file.path());
-        let status=std::process::Command::new("powershell.exe").args(["-NoProfile","-NonInteractive","-Command",&format!("$ErrorActionPreference='Stop'; $acl=Get-Acl -LiteralPath {source}; Set-Acl -LiteralPath {target} -AclObject $acl")]).status()?;
+        let status=windows_powershell().args(["-NoProfile","-NonInteractive","-Command",&format!("$ErrorActionPreference='Stop'; $acl=Get-Acl -LiteralPath {source}; Set-Acl -LiteralPath {target} -AclObject $acl")]).status()?;
         ensure!(status.success(), "launcher ACL copy failed");
     }
     file.write_all(bytes)?;
@@ -529,8 +529,16 @@ fn ps_literal(path: &Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', "''"))
 }
 #[cfg(windows)]
+fn windows_powershell() -> std::process::Command {
+    let mut command = std::process::Command::new("powershell.exe");
+    // PowerShell 7的模块不能由Windows PowerShell 5加载。
+    // 原生子进程不经过pwsh的兼容启动器，必须让5自行构造模块路径。
+    command.env_remove("PSModulePath");
+    command
+}
+#[cfg(windows)]
 fn windows_acl(path: &Path) -> Result<Vec<u8>> {
-    let out = std::process::Command::new("powershell.exe")
+    let out = windows_powershell()
         .args([
             "-NoProfile",
             "-NonInteractive",

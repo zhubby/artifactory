@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖真实 PostgreSQL、三份 Control 状态、TLS 设备流和浏览器 WebSocket。
-//! [OUTPUT]: 量化十会话大输出、消费 credit、回显 RTT、心跳、关闭和进程资源。
+//! [OUTPUT]: 量化十会话输出、credit、RTT与资源；心跳超限打印实际采样。
 //! [POS]: 虚拟设备协议负载；不启动 PTY，不代表实机或独立进程副本负载。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
@@ -338,7 +338,7 @@ async fn run(mut session: Session, address: std::net::SocketAddr, barrier: Arc<B
     assert!(!heartbeats.is_empty());
     assert!(
         heartbeats.iter().all(|ms| *ms < 2000.0),
-        "terminal data must not starve Control heartbeats"
+        "terminal data must not starve Control heartbeats: {heartbeats:?}"
     );
     assert!(closing.elapsed() < Duration::from_millis(5250));
     if session.slow {

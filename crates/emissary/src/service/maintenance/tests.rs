@@ -1,5 +1,5 @@
 //! [INPUT]: 签名候选、隔离文件系统与可注入服务故障。
-//! [OUTPUT]: 验证身份保留、替换恢复与维护围栏。
+//! [OUTPUT]: 验证身份保留、替换恢复、维护围栏及Windows模块路径隔离。
 //! [POS]: 固定启动器维护事务的无宿主变更验收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
@@ -254,4 +254,37 @@ fn windows_service_arguments_keep_exact_paths_and_quoted_spaces() {
     assert_eq!(args[0], r"C:\Program Files\Artifactory\emissary.exe");
     assert_ne!(args[0], r"C:\Program Files\Artifactory\emissary.exe-other");
     assert_eq!(args[3], r"C:\Program Data\emissary.json");
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_acl_ignores_inherited_powershell_module_path() {
+    const CHILD: &str = "ARTIFACTORY_TEST_ACL_MODULE_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("launcher with spaces.exe");
+        fs::write(&path, b"original").unwrap();
+        let acl = windows_acl(&path).unwrap();
+        assert!(!acl.is_empty());
+        replace(&path, b"replaced").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"replaced");
+        assert_eq!(windows_acl(&path).unwrap(), acl);
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "service::maintenance::tests::windows_acl_ignores_inherited_powershell_module_path",
+            "--nocapture",
+        ])
+        .env(CHILD, "1")
+        .env("PSModulePath", root.path().join("unavailable-modules"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "Windows ACL child failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

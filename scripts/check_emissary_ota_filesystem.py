@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 平台磁盘镜像工具、文件系统读回与真实OTA测试。
-[OUTPUT]: 创建HFS+/APFS/ext4私有卷，验证故障、队列恢复及精确清理。
+[OUTPUT]: 验证私有卷故障、队列恢复与清理；归属变化保留私有读回。
 [POS]: 普通进程故障门禁；只修改自有临时镜像，不安装服务。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -99,6 +99,7 @@ def detach(directory):
             if not current and not (directory / "mount").is_mount():
                 return
             if current != images:
+                private_json(directory / "detach-identity.json", {"before": images, "after": current})
                 raise RuntimeError("owned image identity changed during detach") from error
     if owned_images(directory) or (directory / "mount").is_mount():
         raise RuntimeError("owned image detach not confirmed")
@@ -350,6 +351,9 @@ def main():
                 raise RuntimeError("database cleanup process unconfirmed")
         failures = cleanup_owned(supervisor, directory, evidence,
                                  database_cleanup=cleanup_database if database_reserved else None)
+        identity = directory / "detach-identity.json"
+        if identity.exists():
+            evidence["detach_identity"] = json.loads(identity.read_text())
         evidence["cleanup_status"] = "unconfirmed" if failures else "confirmed"
         if failures:
             evidence["cleanup_errors"] = failures

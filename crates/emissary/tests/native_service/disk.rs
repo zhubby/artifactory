@@ -1,5 +1,5 @@
 //! [INPUT]: 父驱动自有ext4挂载、仍运行的原生服务和暂拒上传的接收端。
-//! [OUTPUT]: 填满私有卷，验证同进程及会话保持、真实采集失败与释放后恢复。
+//! [OUTPUT]: 填满私有卷，跨两个主机采样周期验证失败、服务保持与恢复。
 //! [POS]: 原生持久补报前的磁盘故障阶段，不创建服务或额外发送器。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::{Machine, command, support};
@@ -125,7 +125,9 @@ pub(super) async fn exercise(
         "native pressure did not reach one-byte ENOSPC"
     );
     let free = fs2::available_space(&mount)?;
-    let observed = tokio::time::timeout(Duration::from_secs(50), async {
+    // 空闲服务每三轮才有主机样本，即30秒一次。任意相位观察两次
+    // 写盘失败需60秒，再留一个10秒心跳周期及调度余量。
+    let observed = tokio::time::timeout(Duration::from_secs(80), async {
         loop {
             let event = connection.event("heartbeat").await;
             let payload: Value = serde_json::from_str(&event.payload_json)?;

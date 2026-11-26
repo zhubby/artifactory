@@ -1,5 +1,5 @@
 """[INPUT]: 私有磁盘镜像归属与故障证据校验入口。
-[OUTPUT]: 验证恢复证据与错身份拒绝，库或进程清理失败保留镜像。
+[OUTPUT]: 验证恢复证据与错身份拒绝，保留变化读回及未确认清理镜像。
 [POS]: 文件系统门禁的资源安全回归；普通平台均可执行。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -132,10 +132,11 @@ class FilesystemGateTests(unittest.TestCase):
         with patch.object(gate, "owned_images", side_effect=[[image], [image], []]), patch.object(gate, "command", side_effect=[busy, b""]) as run, patch.object(gate.time, "sleep"), patch.object(Path, "is_mount", return_value=False):
             gate.detach(root)
             self.assertEqual(run.call_count, 2)
-        with patch.object(gate, "owned_images", side_effect=[[image], []]), patch.object(gate, "command", side_effect=busy) as run, patch.object(gate.time, "sleep"), patch.object(Path, "is_mount", return_value=True):
+        with patch.object(gate, "owned_images", side_effect=[[image], []]), patch.object(gate, "command", side_effect=busy) as run, patch.object(gate.time, "sleep"), patch.object(Path, "is_mount", return_value=True), patch.object(gate, "private_json") as save:
             with self.assertRaisesRegex(RuntimeError, "identity changed"):
                 gate.detach(root)
             run.assert_called_once()
+            save.assert_called_once_with(root / "detach-identity.json", {"before": [image], "after": []})
 
     def test_failed_process_cleanup_preserves_image_and_skips_detach(self):
         for raises in (False, True):
