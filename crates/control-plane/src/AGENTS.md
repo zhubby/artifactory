@@ -2,15 +2,15 @@
 > L2 | Parent: ../AGENTS.md
 
 api/: 提供按租户和项目鉴权的 HTTP 接口。
-installation/: 提供校验固定版本与专用服务账户的首次安装脚本。
+installation/: 提供固定版本首次安装与保留原身份的启动器维护入口。
 auth.rs: 校验会话、令牌和权限；隔离首次管理员密码与常规密码策略。
 build.rs: 校验严格 SemVer，从文件名推断后缀并生成安全交付名称。
 coordination.rs: 协调副本内连接归属与持久化唤醒。
 crypto.rs: 加密私有凭据并计算认证摘要。
-dispatch.rs: 向当前连接发送可重放设备命令。
+dispatch.rs: 复验当前连接授权，重放构建命令与有限操作。
 error.rs: 将业务失败转换为 HTTP 错误。
 execution_plan.rs: 要求显式应用分类，校验并密封 AI 执行计划。
-grpc.rs: 共用名称与完整心跳预算校验，认证节点会话并接收构建事件。
+grpc.rs: 共用名称与完整心跳预算校验，认证节点会话并接收构建事件和有限操作结果。
 grpc_tests.rs: 验证完整 hello 的组合预算、重连与超额拒绝。
 lib.rs: 导出控制平面模块、统一版本与协议。
 lifecycle.rs: 按游标执行工作区清理并清扫镜像日志前缀。
@@ -18,6 +18,8 @@ main.rs: 首次创建默认管理员，启动 HTTP、gRPC、规划运行时、�
 node_query.rs: 按项目授权查询节点能力和资源。
 notifications/: 投影事务事件，隔离邮件与 Webhook 投递，扫描持久异常。
 ota.rs: 读取部署发行配置，规范统一产品版本，验签并派发固定升级包。
+ota_report.rs: 校验真实进度与冻结资产，拒绝迟到序号并投影排空停滞。
+ota_renewal.rs: 用原节点mTLS认证续签原冻结资产，不接受任意对象路径。
 pki.rs: 创建服务和设备证书。
 planning.rs: 按冻结镜像默认池补全计划，复验本次构建的完整目标合同。
 planning_runtime.rs: 为最新活动运行投影用量与当前 Pod 源码准备白名单，隔离旧代与上游不可用。

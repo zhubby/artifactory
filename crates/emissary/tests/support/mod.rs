@@ -1,25 +1,33 @@
-//! [INPUT]: 依赖 loopback mTLS、HTTP Git、测试任务和日志存储。
-//! [OUTPUT]: 提供跨平台源码与独立终端 mTLS 夹具和首连诊断。
+//! [INPUT]: 依赖共享mTLS材料、HTTP Git、Hello事务回调和日志存储。
+//! [OUTPUT]: 提供跨平台控制与终端夹具，发布连接前等待真实Hello回调。
 //! [POS]: Emissary 集成测试共享支持；诊断不输出配置和命令。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Loopback mTLS peer for runtime lifecycle tests; no business scheduler is simulated.
 #![allow(dead_code, reason = "共享夹具由独立集成测试按需调用")]
 use artifactory_emissary::{config::Config, protocol as pb};
-use rcgen::{BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, KeyPair};
+mod tls;
 use std::{
     collections::{HashMap, HashSet},
-    fs,
+    future::Future,
     path::Path,
+    pin::Pin,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
+pub use tls::TlsMaterial;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tonic::{Request, Response, Status, Streaming};
+
+pub type HelloHook = Arc<
+    dyn Fn(pb::EmissaryEvent) -> Pin<Box<dyn Future<Output = Result<(), Status>> + Send>>
+        + Send
+        + Sync,
+>;
 
 pub struct Connection {
     pub hello: pb::EmissaryEvent,
@@ -59,6 +67,7 @@ struct Peer {
     ack_delay: Duration,
     metrics: Arc<TransportMetrics>,
     materials: Arc<Mutex<HashMap<String, String>>>,
+    hello_hook: Arc<Mutex<Option<HelloHook>>>,
 }
 
 pub struct TerminalConnection {
@@ -116,6 +125,13 @@ pub struct TransportMetrics {
 }
 #[tonic::async_trait]
 impl pb::control_server::Control for Peer {
+    async fn renew_emissary_asset(
+        &self,
+        _: Request<pb::EmissaryAssetRenewRequest>,
+    ) -> Result<Response<pb::EmissaryAssetRenewReply>, Status> {
+        Err(Status::unimplemented("fixture renewal unsupported"))
+    }
+
     async fn acquire_source_material(
         &self,
         request: Request<pb::SourceMaterialRequest>,
@@ -163,6 +179,14 @@ impl pb::control_server::Control for Peer {
             .message()
             .await?
             .ok_or_else(|| Status::invalid_argument("hello required"))?;
+        let hook = self
+            .hello_hook
+            .lock()
+            .map_err(|_| Status::internal("hello hook unavailable"))?
+            .clone();
+        if let Some(hook) = hook {
+            hook(hello.clone()).await?;
+        }
         let (commands, mut input) = mpsc::channel(32);
         let (events, receiver) = mpsc::channel(128);
         let (output, response) = mpsc::channel(64);
@@ -294,6 +318,8 @@ pub struct Fixture {
     pub connections: mpsc::Receiver<Connection>,
     pub terminals: mpsc::Receiver<TerminalConnection>,
     pub metrics: Arc<TransportMetrics>,
+    tls: TlsMaterial,
+    hello_hook: Arc<Mutex<Option<HelloHook>>>,
     #[cfg_attr(
         windows,
         allow(
@@ -319,45 +345,18 @@ impl Fixture {
         versions: &[&'static rustls::SupportedProtocolVersion],
         ack_delay: Duration,
     ) -> Self {
-        let ca_key = KeyPair::generate().unwrap();
-        let mut params = CertificateParams::default();
-        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-        let ca = params.self_signed(&ca_key).unwrap();
-        let issuer = rcgen::Issuer::from_params(&params, ca_key);
-        let server_key = KeyPair::generate().unwrap();
-        let mut params =
-            CertificateParams::new(vec!["localhost".into(), "127.0.0.1".into()]).unwrap();
-        params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
-        let certificate = params.signed_by(&server_key, &issuer).unwrap();
-        let client_key = KeyPair::generate().unwrap();
-        let mut params = CertificateParams::default();
-        params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ClientAuth];
-        let client = params.signed_by(&client_key, &issuer).unwrap();
-        fs::write(directory.join("ca.pem"), ca.pem()).unwrap();
-        fs::write(directory.join("client.pem"), client.pem()).unwrap();
-        fs::write(directory.join("client.key"), client_key.serialize_pem()).unwrap();
-        let provider = Arc::new(rustls::crypto::ring::default_provider());
-        let mut roots = rustls::RootCertStore::empty();
-        roots.add(ca.der().clone()).unwrap();
-        let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
-            Arc::new(roots),
-            provider.clone(),
-        )
-        .build()
-        .unwrap();
-        let mut tls = rustls::ServerConfig::builder_with_provider(provider)
-            .with_protocol_versions(versions)
-            .unwrap()
-            .with_client_cert_verifier(verifier)
-            .with_single_cert(
-                vec![certificate.der().clone()],
-                rustls::pki_types::PrivatePkcs8KeyDer::from(server_key.serialize_der()).into(),
-            )
-            .unwrap();
-        tls.alpn_protocols = vec![b"h2".to_vec()];
+        let tls = TlsMaterial::generate().unwrap();
+        let mut cfg = Config {
+            emissary_id: uuid::Uuid::new_v4().to_string(),
+            root: directory.join("managed"),
+            allow_http_uploads: true,
+            ..Default::default()
+        };
+        tls.write_config(directory, &mut cfg).unwrap();
+        let control_tls = tls.control_config(versions).unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = listener.local_addr().unwrap().to_string();
-        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(control_tls));
         let metrics = Arc::new(TransportMetrics::default());
         let accepted = metrics.clone();
         let incoming = futures::stream::unfold(
@@ -389,6 +388,7 @@ impl Fixture {
         let (terminals, terminal_connections) = mpsc::channel(8);
         let logs = Arc::new(Mutex::new(HashMap::new()));
         let materials = Arc::new(Mutex::new(HashMap::new()));
+        let hello_hook = Arc::new(Mutex::new(None));
         let peer = Peer {
             connected,
             terminals,
@@ -396,6 +396,7 @@ impl Fixture {
             ack_delay,
             metrics: metrics.clone(),
             materials: materials.clone(),
+            hello_hook: hello_hook.clone(),
         };
         let cancel = CancellationToken::new();
         let shutdown = cancel.clone();
@@ -407,26 +408,26 @@ impl Fixture {
                 .await
                 .unwrap();
         });
+        cfg.endpoint = endpoint;
         Self {
-            cfg: Config {
-                endpoint,
-                ca_file: directory.join("ca.pem"),
-                certificate_file: directory.join("client.pem"),
-                key_file: directory.join("client.key"),
-                emissary_id: uuid::Uuid::new_v4().to_string(),
-                root: directory.join("managed"),
-                allow_http_uploads: true,
-                ..Default::default()
-            },
+            cfg,
             connections,
             terminals: terminal_connections,
             metrics,
+            tls,
+            hello_hook,
             materials,
             #[cfg(unix)]
             logs,
             cancel,
             server,
         }
+    }
+    pub fn tls(&self) -> TlsMaterial {
+        self.tls.clone()
+    }
+    pub fn set_hello_hook(&self, hook: HelloHook) {
+        *self.hello_hook.lock().expect("hello hook mutex poisoned") = Some(hook);
     }
     #[cfg_attr(
         windows,

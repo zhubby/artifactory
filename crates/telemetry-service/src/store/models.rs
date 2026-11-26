@@ -1,3 +1,7 @@
+//! [INPUT]: Toasty模型映射与遥测迁移投影。
+//! [OUTPUT]: 导出采样幂等键、内容版本和旧观察模型。
+//! [POS]: typed CRUD边界；独立清单表使用有界事务SQL。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use uuid::Uuid;
 
 #[derive(Debug, toasty::Model)]

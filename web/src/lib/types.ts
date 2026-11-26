@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖控制平面公开 JSON 契约。
- * [OUTPUT]: 提供 Release、产品统一版本、源码准备、执行身份与规划审计类型。
+ * [OUTPUT]: 提供Release、可空交付与清单冲突诊断、采样裁剪与规划审计类型。
  * [POS]: API 数据与组件的类型边界；不定义私钥响应。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -273,6 +273,7 @@ export interface Node {
     configured_signing_profiles?: string[];
     buffered_log_bytes?: number;
     metrics?: {
+      telemetry?: NodeTelemetryDelivery;
       logical_cpus?: number;
       emissary_rss_bytes?: number;
       managed_free_bytes?: number;
@@ -281,6 +282,71 @@ export interface Node {
     tools?: Record<string, NodeTool>;
     [key: string]: unknown;
   };
+}
+export interface NodeTelemetryDelivery {
+  state?: string;
+  inventory_state?: string;
+  spool_bytes?: number;
+  spool_records?: number;
+  schema_wait_records?: number | null;
+  oldest_age_seconds?: number | null;
+  inventory_bytes?: number | null;
+  inventory_records?: number | null;
+  inventory_schema_wait_records?: number | null;
+  inventory_oldest_age_seconds?: number | null;
+  inventory_superseded?: number | null;
+  inventory_conflict_records?: number | null;
+  inventory_conflicts_total?: number | null;
+  inventory_last_conflict_at?: string | null;
+  dropped_batches?: number;
+  fresh_bytes?: number | null;
+  fresh_records?: number | null;
+  fresh_oldest_age_seconds?: number | null;
+  coalesced_batches?: number;
+  corrupt_records?: number;
+  quota_eviction_batches?: number;
+  expired_batches?: number;
+  malformed_batches?: number;
+  disk_errors?: number;
+  collector_duration_ms?: number;
+  collector_error?: string;
+  last_successful_ack_at?: string;
+  last_inventory_ack_at?: string;
+  upload_latency_ms?: number;
+  backoff_seconds?: number;
+  negotiation_state?: string;
+  last_rejection_reason?: string;
+  last_rejection_at?: string | null;
+  bounds_exceeded_batches?: number;
+  id_content_conflict_batches?: number;
+  identity_retired_batches?: number;
+  omitted_host_devices?: number;
+  truncated_host_fields?: number;
+  fresh_state?: string;
+  fresh_last_ack_at?: string | null;
+  fresh_last_progress_at?: string | null;
+  fresh_upload_latency_ms?: number;
+  fresh_backoff_seconds?: number;
+  history_state?: string;
+  history_last_ack_at?: string | null;
+  history_last_progress_at?: string | null;
+  history_upload_latency_ms?: number;
+  history_backoff_seconds?: number;
+  inventory_last_ack_at?: string | null;
+  inventory_last_progress_at?: string | null;
+  inventory_upload_latency_ms?: number;
+  inventory_backoff_seconds?: number;
+  disk_state?: string;
+  disk_observed_at?: string | null;
+  disk_file_bytes?: number | null;
+  disk_record_bytes?: number | null;
+  disk_allocated_bytes?: number | null;
+  disk_block_overhead_bytes?: number | null;
+  disk_temporary_bytes?: number | null;
+  disk_index_bytes?: number | null;
+  disk_corrupt_bytes?: number | null;
+  disk_unknown_bytes?: number | null;
+  disk_files?: number | null;
 }
 export interface NodeMetadataSnapshot {
   node_id?: string;

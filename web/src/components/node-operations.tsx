@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖节点授权、Artifactory 统一版本、终端路由与 OTA API。
- * [OUTPUT]: 提供终端入口、升级、配置、诊断和吊销。
+ * [OUTPUT]: 提供链路观测、有限探测、终端、升级、配置和吊销。
  * [POS]: 设备详情的运维分区；保留授权校验、轮询与嵌套弹窗流程。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -9,6 +9,8 @@
 import { useRef, useState } from "react";
 import { Settings2, Terminal } from "lucide-react";
 import { ErrorBox } from "@/components/common";
+import { FiniteNodeOperations } from "@/components/finite-node-operations";
+import { NodeTelemetryStatus } from "@/components/node-telemetry-status";
 import { NodeOTA } from "@/components/emissary-ota";
 import { NodeForm } from "@/components/forms";
 import {
@@ -79,6 +81,8 @@ export function NodeOperations({
   }
   return (
     <div className="node-section-stack" ref={content}>
+      <NodeTelemetryStatus node={node} />
+      <FiniteNodeOperations key={node.id} node={node} user={user} />
       {user.role === "admin" && <NodeSection title={t("terminal.title")}>
         <p className="mb-4 text-sm leading-6 text-muted-foreground">
           {!node.capabilities.includes("terminal-v1") ? t("terminal.disabled")

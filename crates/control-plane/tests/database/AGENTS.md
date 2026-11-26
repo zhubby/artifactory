@@ -8,7 +8,7 @@ release_contract.rs: 验证版本元数据、平台授权查询和原生构建�
 planning_basics.rs: 验证模型兼容配置持久化、密钥脱敏、注册和规划状态边界。
 account_settings.rs: 验证个人设置和项目资源权限。
 ota_versions.rs: 验证手动固定目标、池并发、历史标签与重试围栏。
-ota_manual.rs: 验证无自动授权、手动幂等、池并发、节点准入和权限围栏。
+ota_manual.rs: 验证手动授权、池并发、续签冻结资产、进度序号和权限围栏。
 node_installation.rs: 验证全局设备地址、同版本安装、签名与跨租户拒绝。
 build_logs.rs: 验证历史日志分页、过滤、授权和终态流结束。
 device_load.rs: 验证三个控制平面的设备群连接、续租和调度预算。
@@ -23,12 +23,15 @@ planning_bridge.rs: 验证无条件规划 outbox 与取消版本。
 signing.rs: 验证真实 PKCS12、固定版本、撤权、可用性与摘要证据。
 source_refs.rs: 验证受权引用任务与错误脱敏。
 tenancy.rs: 提供租户 HTTP 与设备夹具，验证成员和构建权限。
+node_operations.rs: 验证有限操作锁后权限、旧会话拒绝、先取消与结果事务确认。
 terminals.rs: 验证设备终端原子限额、原账户 Session、一次性票据和设备围栏。
 terminal_lifecycle.rs: 验证租户终端排空、设备租约窗口、删除清扫和项目隔离。
 terminal_routing.rs: 以真实 TLS 验证三副本、丢 ACK 与内部断流恢复、慢快照授权截止。
 terminal_recovery.rs: 为三副本测试重取附着票据，断言内部短断不产生终态。
 terminal_load.rs: 量化十个虚拟设备会话的输出 credit、RTT、心跳、关闭和测试进程资源。
 transport_certificates.rs: 为设备和终端传输验收签发独立 CA、服务与客户端证书。
+tenancy_isolation.rs: 验证跨租户历史、制品流与源码计划引用拒绝。
+tenancy_locks.rs: 验证权限撤销复验与设备授权外键锁顺序。
 tenancy_regressions.rs: 验证租户隔离和管理权限回归。
 transport.rs: 组合真实 Tonic/mTLS、设备负载与制品传输回归。
 workspace_lifecycle.rs: 以显式授权设备验证构建排空、归档、删除和恢复。

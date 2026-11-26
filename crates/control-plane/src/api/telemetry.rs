@@ -96,7 +96,16 @@ pub async fn latest(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
     node(&s, &auth, id).await?;
-    fetch(&s, &format!("/v1/nodes/{id}/latest"), None).await
+    let startup = s.store.node_metadata(id).await?.and_then(|v| {
+        v["startup_id"]
+            .as_str()
+            .and_then(|s| s.parse::<Uuid>().ok())
+    });
+    let path = match startup {
+        Some(startup) => format!("/v1/nodes/{id}/latest?startup_id={startup}"),
+        None => format!("/v1/nodes/{id}/latest"),
+    };
+    fetch(&s, &path, None).await
 }
 pub async fn inventory(
     TenantState(s): TenantState,

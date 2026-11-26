@@ -47,8 +47,8 @@ async fn main() -> Result<()> {
         );
     let http_bind =
         env::var("ARTIFACTORY_TELEMETRY_HTTP_BIND").unwrap_or_else(|_| "127.0.0.1:8093".into());
-    // Ledger retention exceeds the 48h replay window. Inventory bodies are stored once per digest.
-    let retention = state.store.clone();
+    // 清单按接收时间保留180天，当前startup摘要独立保护。
+    let retention = state.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(3600));
         loop {

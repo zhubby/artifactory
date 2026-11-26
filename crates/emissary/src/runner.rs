@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 mTLS 会话、固定主机诊断、遥测缓存和持久化事件队列。
-//! [OUTPUT]: 提供任务领取、租约心跳、构建和独立终端 Worker 监督。
+//! [OUTPUT]: 提供任务领取、租约心跳、OTA保存故障重试与独立Worker监督。
 //! [POS]: 节点主进程；向 Worker 仅交付被授权的本机方案。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -21,6 +21,10 @@ use tokio::{sync::mpsc, task::JoinSet};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 
+mod command_gate;
+mod operations;
+mod ota_cache;
+mod state;
 mod worker;
 use worker::worker_task;
 
@@ -69,6 +73,7 @@ struct LogRecord {
 struct Spool {
     root: PathBuf,
     bytes: u64,
+    records: u64,
     limit: u64,
 }
 impl Spool {
@@ -86,7 +91,17 @@ impl Spool {
                     },
                 )
             })?;
-        Ok(Self { root, bytes, limit })
+        let records = walkdir::WalkDir::new(root.join("spool"))
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_file())
+            .count() as u64;
+        Ok(Self {
+            root,
+            bytes,
+            records,
+            limit,
+        })
     }
     fn append(&mut self, id: &str, sequence: &mut u64, step: &str, data: &[u8]) -> Result<()> {
         let record = LogRecord {
@@ -110,6 +125,7 @@ impl Spool {
         )?;
         *sequence = record.sequence;
         self.bytes += bytes.len() as u64;
+        self.records = self.records.saturating_add(1);
         Ok(())
     }
     fn batch(&self, id: &str) -> Result<Vec<LogRecord>> {
@@ -148,6 +164,7 @@ impl Spool {
                 let size = entry.metadata()?.len();
                 fs::remove_file(entry.path())?;
                 self.bytes = self.bytes.saturating_sub(size);
+                self.records = self.records.saturating_sub(1);
             }
         }
         Ok(())
@@ -167,333 +184,21 @@ struct State {
     health_at: Option<Instant>,
     drain_request: String,
     drain_update: String,
+    pending_ota: Option<(ota::Request, Instant)>,
     telemetry: Option<crate::telemetry::Handle>,
     startup: Option<artifactory_emissary_protocol::nodes::MetadataSnapshot>,
     metadata_acked: bool,
     terminal_workers: usize,
+    command_gate: command_gate::Gate,
+    operation_active: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    operation_expired: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    ota_cached: ota_cache::Snapshot,
 }
 enum Action {
     Start(String, u32),
     Control(String, Box<Input>),
 }
-impl State {
-    fn new(cfg: Config, diagnostics: Value, capabilities: Vec<String>) -> Result<Self> {
-        let spool = Spool::new(cfg.root.clone(), cfg.log_buffer_bytes)?;
-        Ok(Self {
-            cfg,
-            tasks: HashMap::new(),
-            anchors: HashMap::new(),
-            spool,
-            diagnostics,
-            capabilities,
-            workers: 0,
-            stopping: false,
-            ota_directory: std::env::var_os("ARTIFACTORY_OTA_DIRECTORY").map(PathBuf::from),
-            ota_session: uuid::Uuid::new_v4().to_string(),
-            health_at: None,
-            drain_request: String::new(),
-            drain_update: String::new(),
-            telemetry: None,
-            startup: None,
-            metadata_acked: false,
-            terminal_workers: 0,
-        })
-    }
-    fn heartbeat(&mut self, kind: &str) -> pb::EmissaryEvent {
-        let id = uuid::Uuid::new_v4().to_string();
-        let now = Instant::now();
-        let ota = self.ota_snapshot(&id);
-        self.anchors
-            .retain(|_, at| now.saturating_duration_since(*at) < Duration::from_secs(120));
-        self.anchors.insert(id.clone(), now);
-        let mut metrics = json!({});
-        let mut network_interfaces = None;
-        if let Some(snapshot) = self.telemetry.as_ref().and_then(|h| h.snapshot()) {
-            metrics = snapshot.metrics;
-            network_interfaces = snapshot.network_interfaces;
-        }
-        let mut diagnostics = json!({"emissary_version": self.diagnostics["emissary_version"],"hostname": self.diagnostics["hostname"]});
-        if let Some(network_interfaces) = network_interfaces {
-            diagnostics["network_interfaces"] = network_interfaces;
-        }
-        diagnostics["metrics"] = metrics;
-        diagnostics["buffered_log_bytes"] = json!(self.spool.bytes);
-        pb::EmissaryEvent{emissary_id:self.cfg.emissary_id.clone(),kind:kind.into(),command_id:id,protocol_major:1,payload_json:json!({"active_attempts":self.tasks.iter().map(|(id,t)|json!({"attempt_id":id,"lease_token":t.token})).collect::<Vec<_>>(),"startup":if kind=="hello" {self.startup.as_ref()} else {None},"diagnostics":diagnostics,"ota":ota}).to_string(),..Default::default()}
-    }
-    fn terminal_draining(&self) -> bool {
-        self.stopping
-            || self.ota_directory.as_ref().is_some_and(|directory| {
-                ota::snapshot(directory)
-                    .map(|state| state.active())
-                    .unwrap_or(true)
-            })
-    }
-    fn ota_snapshot(&mut self, request: &str) -> Option<ota::State> {
-        let directory = self.ota_directory.as_ref()?;
-        let mut state = ota::snapshot(directory).ok()?;
-        if state.phase == "draining"
-            && self.tasks.is_empty()
-            && self.workers == 0
-            && self.spool.bytes == 0
-            && self.terminal_workers == 0
-        {
-            state.phase = "activating".into();
-            state.activation_pending = true;
-            self.drain_request = request.into();
-            self.drain_update = state.update_id.clone();
-        }
-        Some(state)
-    }
-    fn command(&mut self, command: pb::Command, now: Instant) -> Result<Vec<Action>> {
-        self.stopping |= source::ready(&self.cfg).is_err();
-        if command.kind == "metadata_ack" {
-            self.metadata_acked = self
-                .startup
-                .as_ref()
-                .is_some_and(|s| command.request_id == s.startup_id.to_string());
-            return Ok(vec![]);
-        }
-        if command.kind == "emissary_health" && self.ota_directory.is_none() {
-            return Ok(vec![]);
-        }
-        if let Some(directory) = &self.ota_directory {
-            match command.kind.as_str() {
-                "emissary_update" => {
-                    ota::submit(directory, &serde_json::from_str(&command.payload_json)?)?;
-                    return Ok(vec![]);
-                }
-                "emissary_health" => {
-                    if let Some(anchor) =
-                        self.anchors.get(&command.request_id).copied().filter(|at| {
-                            now.saturating_duration_since(*at) < Duration::from_secs(30)
-                                && self.health_at.is_none_or(|last| *at > last)
-                        })
-                    {
-                        self.health_at = Some(anchor);
-                        if command.request_id == self.drain_request {
-                            let state = ota::snapshot(directory)?;
-                            if state.phase == "draining" && state.update_id == self.drain_update {
-                                atomic_json(
-                                    &directory.join("drained.json"),
-                                    &json!({"id":state.update_id}),
-                                )?;
-                            }
-                        }
-                        ota::confirm(directory, &self.ota_session, &command.request_id)?;
-                    }
-                    return Ok(vec![]);
-                }
-                _ => {}
-            }
-        }
-        let id = command.attempt_id;
-        if command.kind == "assign" {
-            ensure!(source::valid_id(&id), "invalid attempt ID");
-            if !self.stopping
-                && self.tasks.len() < 32
-                && !self.tasks.contains_key(&id)
-                && command.lease_seconds > 0
-                && let Some(assignment) = command.assignment
-            {
-                self.tasks.insert(
-                    id,
-                    Task::new(command.lease_token, assignment, command.lease_seconds, now),
-                );
-            }
-            return Ok(vec![]);
-        }
-        let Some(task) = self.tasks.get_mut(&id) else {
-            return Ok(vec![]);
-        };
-        if command.kind == "event_ack" {
-            let terminal = task
-                .pending
-                .iter()
-                .any(|e| e.kind == "finished" && e.sequence <= command.ack_sequence);
-            task.pending.retain(|e| e.sequence > command.ack_sequence);
-            if terminal {
-                self.tasks.remove(&id);
-            }
-            return Ok(vec![]);
-        }
-        ensure!(command.lease_token == task.token, "lease token mismatch");
-        match command.kind.as_str() {
-            "start" | "renew" => {
-                if self.stopping && !task.started {
-                    return Ok(vec![]);
-                }
-                let Some(anchor) = self.anchors.get(&command.request_id) else {
-                    return Ok(vec![]);
-                };
-                if !task.lease.renew(now, *anchor, command.lease_seconds) {
-                    self.drop_task(&id, "execution lease expired")?;
-                    return Ok(vec![]);
-                }
-                let seconds = task
-                    .lease
-                    .deadline()
-                    .saturating_duration_since(now)
-                    .as_secs() as u32;
-                if seconds == 0 {
-                    self.drop_task(&id, "execution lease expired")?;
-                    return Ok(vec![]);
-                }
-                if command.kind == "start" && !task.started {
-                    task.started = true;
-                    {
-                        let assignment = &mut task.assignment;
-                        if !assignment.managed_signing_json.is_empty() {
-                            let mut signing: Value =
-                                serde_json::from_str(&assignment.managed_signing_json)?;
-                            signing["session_id"] = json!(command.signing_session_id);
-                            assignment.managed_signing_json = signing.to_string();
-                        }
-                    }
-                    Ok(vec![Action::Start(id, seconds)])
-                } else {
-                    Ok(vec![Action::Control(
-                        id,
-                        Box::new(Input {
-                            kind: "renew".into(),
-                            lease_seconds: seconds,
-                            signing_session_id: command.signing_session_id.clone(),
-                            ..Default::default()
-                        }),
-                    )])
-                }
-            }
-            "cancel" => {
-                if command.message == "lease_invalid" {
-                    self.drop_task(&id, "execution lease expired or revoked")?;
-                    Ok(vec![])
-                } else {
-                    Ok(vec![Action::Control(
-                        id,
-                        Box::new(Input {
-                            kind: "cancel".into(),
-                            reason: "cancel requested".into(),
-                            ..Default::default()
-                        }),
-                    )])
-                }
-            }
-            _ => Ok(vec![]),
-        }
-    }
-    fn drop_task(&mut self, id: &str, reason: &str) -> Result<()> {
-        if let Some(mut task) = self.tasks.remove(id)
-            && let Some(control) = task.control.take()
-        {
-            let _ = control.try_send(Input {
-                kind: "cancel".into(),
-                reason: reason.into(),
-                ..Default::default()
-            });
-        }
-        atomic_json(
-            &self.cfg.root.join("lost").join(format!("{id}.json")),
-            &json!({"attempt_id":id,"reason":reason,"time":chrono::Utc::now()}),
-        )
-    }
-    fn event(&mut self, id: &str, mut event: Event) -> Result<()> {
-        let Some(task) = self.tasks.get_mut(id) else {
-            return Ok(());
-        };
-        if task.finished_at.is_some() {
-            return Ok(());
-        }
-        if event.kind == "log" {
-            if self
-                .spool
-                .append(id, &mut task.log_sequence, &event.step, &event.data)
-                .is_err()
-            {
-                task.buffer_error = true;
-                if let Some(control) = &task.control {
-                    let _ = control.try_send(Input {
-                        kind: "cancel".into(),
-                        reason: "log buffer exhausted or unavailable".into(),
-                        ..Default::default()
-                    });
-                }
-            }
-            return Ok(());
-        }
-        if event.kind == "finished" {
-            task.finished_at = Some(Instant::now());
-            if task.buffer_error {
-                event.payload = json!({"status":"failed","error":"log buffer exhausted or unavailable","failure_kind":"emissary"});
-            }
-        }
-        task.sequence += 1;
-        task.pending.push(pb::EmissaryEvent {
-            emissary_id: self.cfg.emissary_id.clone(),
-            kind: event.kind,
-            attempt_id: id.into(),
-            lease_token: task.token.clone(),
-            sequence: task.sequence,
-            payload_json: event.payload.to_string(),
-            ..Default::default()
-        });
-        Ok(())
-    }
-    fn pending(&mut self) -> Vec<pb::EmissaryEvent> {
-        let mut events = Vec::new();
-        let now = Instant::now();
-        for (id, task) in &mut self.tasks {
-            if !task.started {
-                if self.stopping
-                    || task.last_accept_at.is_some_and(|at| {
-                        now.saturating_duration_since(at) < Duration::from_secs(1)
-                    })
-                {
-                    continue;
-                }
-                task.last_accept_at = Some(now);
-                let request = uuid::Uuid::new_v4().to_string();
-                self.anchors.insert(request.clone(), now);
-                events.push(pb::EmissaryEvent {
-                    emissary_id: self.cfg.emissary_id.clone(),
-                    kind: "accept".into(),
-                    attempt_id: id.clone(),
-                    lease_token: task.token.clone(),
-                    command_id: request,
-                    ..Default::default()
-                });
-            } else {
-                // Replay unacknowledged events on a timer. Replaying on every
-                // acknowledgement amplifies a slow peer's queue and can starve
-                // later step/terminal events and heartbeat processing.
-                if task.replay_at.is_none_or(|at| now >= at) {
-                    task.sent_sequence = 0;
-                    task.replay_at = Some(now + Duration::from_secs(5));
-                }
-                for event in &task.pending {
-                    if event.sequence <= task.sent_sequence {
-                        continue;
-                    }
-                    if event.kind == "finished" && !task.logs_abandoned && !self.spool.empty(id) {
-                        break;
-                    }
-                    events.push(event.clone());
-                }
-            }
-        }
-        events
-    }
-    fn stop(&mut self) {
-        self.stopping = true;
-        for task in self.tasks.values_mut() {
-            if let Some(control) = task.control.take() {
-                let _ = control.try_send(Input {
-                    kind: "cancel".into(),
-                    reason: "Emissary stopping".into(),
-                    ..Default::default()
-                });
-            }
-        }
-    }
-}
+
 enum Message {
     Connected(String, mpsc::Sender<pb::EmissaryEvent>),
     Disconnected(String),
@@ -501,6 +206,8 @@ enum Message {
     Event(String, Event),
     Exit(String),
     Logs(String, Option<u64>),
+    OtaRefresh,
+    MaintenanceReady(uuid::Uuid),
 }
 async fn connect(
     cfg: Config,
@@ -545,8 +252,12 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
     crate::terminal::sweep(&cfg).await?;
     crate::signing::sweep(&cfg).await?;
     let (diagnostics, mut capabilities) = doctor::doctor(&cfg).await;
+    capabilities.push(artifactory_emissary_protocol::commands::CAPABILITY.into());
+    capabilities.push(artifactory_emissary_protocol::commands::NOTIFICATION_CAPABILITY.into());
+    capabilities.push(artifactory_emissary_protocol::operations::CAPABILITY.into());
     if std::env::var_os("ARTIFACTORY_OTA_DIRECTORY").is_some() {
         capabilities.push("emissary-ota-v1".into());
+        capabilities.push(artifactory_emissary_protocol::ota::CAPABILITY.into());
     }
     let terminal_capabilities = crate::terminal::capabilities(&cfg.terminal).await?;
     if terminal_capabilities.enabled {
@@ -578,6 +289,13 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
             inventory,
         ));
     }
+    let operations = operations::start(
+        cfg.clone(),
+        startup_id,
+        state.telemetry.as_ref().map(|h| h.inventory_sink()),
+        state.operation_active.clone(),
+        state.operation_expired.clone(),
+    );
     let (send, mut recv) = mpsc::channel(256);
     let mut jobs = JoinSet::new();
     let transport = CancellationToken::new();
@@ -587,6 +305,17 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
     let mut retry = Instant::now();
     let mut backoff = 1;
     let mut log_busy = HashSet::new();
+    let (ota_cache_input, mut ota_cache_output) =
+        ota_cache::start(state.ota_directory.clone(), &mut jobs);
+    if state.ota_directory.is_some() {
+        // 首连前等待一次后台读取，避免idle启动器被未知缓存暂时拒收。
+        let _ = tokio::time::timeout(Duration::from_secs(2), ota_cache_output.changed()).await;
+        state.ota_cached = ota_cache_output.borrow().clone();
+    }
+    let mut maintenance_ack = None;
+    let mut maintenance_pending = None;
+    let mut ota_refresh_busy = false;
+    let mut ota_refresh_at = Instant::now();
     // Tonic reconnects this independent HTTP/2 channel. Share cheap client
     // clones across upload batches instead of rebuilding TLS for every batch.
     let log_transport = std::sync::Arc::new(tokio::sync::OnceCell::new());
@@ -595,29 +324,49 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
     let mut shutdown: Option<Instant> = None;
     loop {
         if !connecting && outbound.is_none() && Instant::now() >= retry && shutdown.is_none() {
-            connecting = true;
             session = uuid::Uuid::new_v4().to_string();
-            state.ota_session = session.clone();
-            state.health_at = None;
-            if let Some(directory) = &state.ota_directory {
-                ota::confirm(directory, &session, "")?;
+            if state.reset_ota_session(&session) {
+                connecting = true;
+                state.metadata_acked = false;
+                state.command_gate.reset(Instant::now());
+                let hello = state.heartbeat("hello");
+                let cfg = cfg.clone();
+                let send = send.clone();
+                let session = session.clone();
+                let token = transport.clone();
+                jobs.spawn(connect(cfg, session, hello, send, token));
+            } else {
+                retry = Instant::now() + Duration::from_secs(1);
             }
-            state.metadata_acked = false;
-            let hello = state.heartbeat("hello");
-            let cfg = cfg.clone();
-            let send = send.clone();
-            let session = session.clone();
-            let token = transport.clone();
-            jobs.spawn(connect(cfg, session, hello, send, token));
         }
         tokio::select! {
-            _=cancel.cancelled(),if shutdown.is_none()=>{state.stop();terminals.drain();shutdown=Some(Instant::now()+Duration::from_secs(5));},
+            _=cancel.cancelled(),if shutdown.is_none()=>{state.stop();terminals.drain();let _=operations.try_send(operations::Input::Stop);shutdown=Some(Instant::now()+Duration::from_secs(5));},
             _=tick.tick()=>{
                 crate::signing::ready(&cfg)?;
+                state.ota_cached=ota_cache_output.borrow().clone();
+                state.retry_pending_ota(Instant::now());
+                let maintenance=state.ota_cached.maintenance || !state.ota_cached.fresh() && state.ota_directory.is_some();
+                operations.maintenance(maintenance);
+                if !maintenance {maintenance_ack=None;maintenance_pending=None;}
+                if let Some(nonce)=state.ota_cached.maintenance_nonce && maintenance_ack!=Some(nonce) && maintenance_pending!=Some(nonce) {
+                    let (ready,wait)=tokio::sync::oneshot::channel();
+                    if operations.try_send(operations::Input::Fence(ready)).is_ok() {
+                        maintenance_pending=Some(nonce);let send=send.clone();
+                        jobs.spawn(async move {if wait.await.is_ok() {let _=send.send(Message::MaintenanceReady(nonce)).await;}});
+                    }
+                }
                 terminals.tick();
+                // 维护仅关闭准入；已有操作不因维护被取消。
+                let ota_drain=state.stopping || state.ota_cached.state.as_ref().is_some_and(|state|state.active());
+                let _=operations.try_send(operations::Input::Drain(ota_drain));
                 state.terminal_workers=terminals.len();
                 terminals.set_draining(state.terminal_draining() || source::ready(&cfg).is_err());
                 let now=Instant::now();
+                ota_cache_input.send_replace((state.drain_status(),state.command_gate.ota_observability,maintenance_ack));
+                if state.command_gate.ota_observability && outbound.is_some() && !ota_refresh_busy && now>=ota_refresh_at && let Some(directory)=state.ota_directory.clone() && let Some(control_session)=state.command_gate.control_session {
+                    ota_refresh_busy=true;let cfg=cfg.clone();let send=send.clone();
+                    jobs.spawn(async move {let _=tokio::time::timeout(Duration::from_secs(8),ota::forward_url_refresh(&cfg,&directory,&control_session.to_string())).await;let _=send.send(Message::OtaRefresh).await;});
+                }
                 let expired=state.tasks.iter().filter(|(_,task)|task.lease.expired(now)).map(|(id,_)|id.clone()).collect::<Vec<_>>();
                 for id in expired {state.drop_task(&id,"execution lease expired")?;}
                 for task in state.tasks.values_mut() {
@@ -653,8 +402,23 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
                         task.sent_sequence=0;task.replay_at=None;task.last_accept_at=None;
                     }
                 },
-                Message::Disconnected(id) if id==session=>{terminals.disconnect();outbound=None;connecting=false;retry=Instant::now()+client::retry_delay(backoff);backoff=(backoff*2).min(30);if shutdown.is_none(){eprintln!("control connection interrupted; reconnecting");}},
+                Message::Disconnected(id) if id==session=>{let _=operations.try_send(operations::Input::Disconnected);terminals.disconnect();outbound=None;connecting=false;retry=Instant::now()+client::retry_delay(backoff);backoff=(backoff*2).min(30);if shutdown.is_none(){eprintln!("control connection interrupted; reconnecting");}},
                 Message::Command(id,command) if id==session=>{
+                    match state.command_gate.admit(&command, &cfg.emissary_id) {
+                        command_gate::Admission::Proceed => {},
+                        command_gate::Admission::Ignored => continue,
+                        command_gate::Admission::Consumed => {
+                            if let (Some(tx),Some(current),Some(server_time_ms),Some(started),Some(received))=(&outbound,state.command_gate.control_session,state.command_gate.server_time_ms,state.command_gate.started,state.command_gate.received) {
+                                let _=operations.try_send(operations::Input::Connected{sender:tx.clone(),session:current,server_time_ms,started,received});
+                            }
+                            continue;
+                        },
+                        command_gate::Admission::Rejected(event) => {
+                            if let (Some(event),Some(tx))=(event,&outbound) {let _=tx.try_send(event);}
+                            continue;
+                        },
+                    }
+                    if command.kind.starts_with("node_operation") {let _=operations.try_send(operations::Input::Command(command));continue;}
                     if command.kind == "metadata_ack" && command.request_id == startup_id.to_string()
                         && let Ok(control_session)=uuid::Uuid::parse_str(&command.signing_session_id) {
                         terminals.control_session(control_session);
@@ -687,6 +451,8 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
                     state.workers=state.workers.saturating_sub(1);
                     if state.tasks.get(&id).is_some_and(|t|t.finished_at.is_none()) {state.event(&id,Event{kind:"finished".into(),payload:json!({"status":"failed","error":"worker exited without a terminal result","failure_kind":"emissary"}),..Default::default()})?;}
                 },
+                Message::MaintenanceReady(nonce)=>{if state.ota_cached.maintenance_nonce==Some(nonce) {maintenance_ack=Some(nonce);}maintenance_pending=None;},
+                Message::OtaRefresh=>{ota_refresh_busy=false;ota_refresh_at=Instant::now()+Duration::from_secs(2);},
                 Message::Logs(id,through)=>{log_busy.remove(&id);if let Some(through)=through {state.spool.ack(&id,through)?;}},
                 _=>{},
             },
@@ -705,6 +471,9 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
             }
         }
     }
+    drop(ota_cache_input);
+    drop(ota_cache_output);
+    let _ = operations.send(operations::Input::Stop).await;
     transport.cancel();
     state.stop();
     terminals.shutdown().await;
@@ -714,6 +483,10 @@ pub async fn run(cfg: Config, cancel: CancellationToken) -> Result<()> {
     })
     .await;
     jobs.shutdown().await;
+    operations.shutdown().await?;
+    if let Some(telemetry) = state.telemetry.take() {
+        telemetry.shutdown().await?;
+    }
     Ok(())
 }
 #[cfg(test)]

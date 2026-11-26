@@ -1,7 +1,7 @@
-//! [INPUT]: 依赖 Serde、UTC 时间和节点采样身份。
-//! [OUTPUT]: 导出有界遥测批次、主机采样和工具清单。
-//! [POS]: 节点协议的 JSON 遥测边界；供采集、重放和接收共用。
-//! [PROTOCOL]: Update this header on change, then check AGENTS.md
+// [INPUT]: 依赖 Serde、UTC 时间和节点采样身份。
+// [OUTPUT]: 导出有界遥测批次、主机采样和工具清单。
+// [POS]: 节点协议的 JSON 遥测边界；供采集、重放和接收共用。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

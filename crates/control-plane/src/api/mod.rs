@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖租户 HTTP 处理器、统一鉴权和请求限制。
-//! [OUTPUT]: 组合统一版本、手动升级、设备安装和业务路由。
+//! [OUTPUT]: 组合统一版本、手动升级、设备安装、有限操作和业务路由。
 //! [POS]: 控制平面 HTTP 接口入口。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 pub(crate) mod ai_management;
@@ -12,6 +12,7 @@ mod images;
 mod lifecycle;
 mod management;
 mod node_installation;
+mod node_operations;
 mod notification_channels;
 mod notification_health;
 mod notifications;
@@ -44,6 +45,7 @@ pub fn mount_planning(
 pub fn router(state: AppState) -> Router {
     health_routes()
         .merge(terminals::routes())
+        .merge(node_operations::routes())
         .nest(
             "/api/v1",
             notifications::routes().merge(notification_channels::routes()),

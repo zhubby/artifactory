@@ -98,6 +98,17 @@ pub fn start(state: AppState) {
             }
         }
     });
+    let operations = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {_=operations.coordination.stop.cancelled()=>break,_=interval.tick()=>{}}
+            if let Err(error) = crate::dispatch::deliver_node_operations(&operations).await {
+                tracing::warn!(%error,"node operation delivery deferred");
+            }
+        }
+    });
     // Cleanup may wait on external services. Reconcile its durable queue on
     // every replica without blocking admission, commands or housekeeping.
     let lifecycle = state.clone();

@@ -24,7 +24,7 @@ Emissary 在进程启动时探测一次静态信息，控制平面持久化快�
 
 节点 JSON 配置可增加 `"metadata": {"site": "lab", "rack": "A3"}`，上报为 `custom.site`、`custom.rack`；即使配置键使用 `system.os`，它也只会生成 `custom.system.os`。管理员 labels、签名授权和 slots 独立管理，不接受元数据覆盖。
 
-整个编码后的启动快照最多 64 KiB。自动探测不收集环境变量值、凭证或全主机进程清单。Inventory 历史复用同一静态快照，在本进程中缓冲一次并可靠投递；不再每 15 分钟重探测，也不再周期性发送全量静态信息。普通心跳保留任务、在线、OTA 和少量运行指标。
+整个编码后的启动快照最多 64 KiB。自动探测不收集环境变量值、凭证或全主机进程清单。启动Inventory复用同一静态快照，独立持久至观察ID和摘要确认。管理员的`refresh_inventory`新增观察revision；它不改`nodes.metadata`、capabilities、metadata_digest和已固定计划。调度仍使用启动快照；采纳刷新能力需要独立设计。普通心跳保留任务、在线、OTA 和少量运行指标。
 
 `system.hostname` 复用启动时的系统主机名。`hardware.device_model` 和 `hardware.device_vendor` 使用系统产品信息；缺失时省略，不推测营销型号，不采集序列号。控制台列表只投影这三个字段与已有 CPU、物理内存字段。项目范围沿用诊断信息的可见条件。
 

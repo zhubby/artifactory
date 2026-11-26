@@ -53,10 +53,6 @@ impl Config {
             cfg.telemetry_buffer_bytes = 32 << 20;
         }
         ensure!(
-            cfg.telemetry_buffer_bytes >= 1 << 20,
-            "telemetry buffer must be at least 1 MiB"
-        );
-        ensure!(
             cfg.log_buffer_bytes >= 1 << 20,
             "log buffer must be at least 1 MiB"
         );

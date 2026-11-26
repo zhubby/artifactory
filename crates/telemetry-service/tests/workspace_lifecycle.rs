@@ -133,6 +133,7 @@ async fn purging_columnstore_and_expired_raw_preserves_other_identities_and_fenc
         "telemetry_batches",
         "latest_hosts",
         "startup_resources",
+        "startup_hosts",
     ] {
         let count: i64 = sql::scalar(
             &mut pool.clone(),

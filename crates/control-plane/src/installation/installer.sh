@@ -1,7 +1,7 @@
 #!/bin/sh
-# [INPUT]: 固定资产地址、摘要、设备地址、CA、公钥与环境注册凭证。
-# [OUTPUT]: 以专用账户注册节点、初始化 OTA 并启动原生服务。
-# [POS]: 控制平面分发的 Unix 首次安装入口；不覆盖已有身份。
+# [INPUT]: 固定资产、签名候选、服务私有路径与环境注册凭证。
+# [OUTPUT]: 以专用账户首次安装，或固定私有候选来维护原启动器。
+# [POS]: Unix安装与管理员维护入口；保留既有节点身份。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 set -eu
 umask 077
@@ -11,10 +11,13 @@ enrollment_token=${ARTIFACTORY_ENROLLMENT_TOKEN-}
 unset ARTIFACTORY_ENROLLMENT_TOKEN
 temporary=
 token_file=
+maintenance_private=0
 cleanup() {
     unset enrollment_token ARTIFACTORY_ENROLLMENT_TOKEN
     if [ -n "$token_file" ]; then sudo -- rm -f -- "$token_file" || true; fi
-    if [ -n "$temporary" ]; then rm -rf -- "$temporary"; fi
+    if [ -n "$temporary" ]; then
+        if [ "$maintenance_private" = 1 ]; then sudo -- rm -rf -- "$temporary"; else rm -rf -- "$temporary"; fi
+    fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT
@@ -22,7 +25,12 @@ trap 'exit 143' TERM
 
 download_url='' sha256='' size='' endpoint='' ca_base64='' ca_sha256='' public_keys='' os='' arch=''
 service_user='' directory='' binary_directory=''
+maintenance=0 maintenance_binary='' maintenance_candidate='' maintenance_manifest='' maintenance_signature='' maintenance_config='' maintenance_stopped=0 maintenance_sha256=''
 while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --maintain-launcher) maintenance=1; shift; continue ;;
+        --service-stopped) maintenance_stopped=1; shift; continue ;;
+    esac
     [ "$#" -ge 2 ] || fail "Missing value for $1"
     case "$1" in
         --download-url) download_url=$2 ;;
@@ -37,10 +45,42 @@ while [ "$#" -gt 0 ]; do
         --user) service_user=$2 ;;
         --directory) directory=$2 ;;
         --binary-directory) binary_directory=$2 ;;
+        --installed-binary) maintenance_binary=$2 ;;
+        --candidate) maintenance_candidate=$2 ;;
+        --candidate-sha256) maintenance_sha256=$2 ;;
+        --manifest) maintenance_manifest=$2 ;;
+        --signature) maintenance_signature=$2 ;;
+        --config) maintenance_config=$2 ;;
         *) fail "Unknown option: $1" ;;
     esac
     shift 2
 done
+if [ "$maintenance" = 1 ]; then
+    unset enrollment_token
+    for path in "$maintenance_binary" "$maintenance_candidate" "$maintenance_manifest" "$maintenance_signature" "$maintenance_config"; do
+        case "$path" in /*) ;; *) fail 'Maintenance requires absolute local file paths.' ;; esac
+    done
+    case "$maintenance_sha256" in *[!a-f0-9]*) fail 'Invalid signed-release candidate digest.' ;; esac
+    [ ${#maintenance_sha256} -eq 64 ] || fail 'The signed release candidate SHA-256 is required.'
+    # 服务配置父目录保持私有；管理员检查路径，不放宽服务身份权限。
+    for path in "$maintenance_binary" "$maintenance_candidate" "$maintenance_manifest" "$maintenance_signature" "$maintenance_config"; do
+        sudo -- test -f "$path" && sudo -- test ! -L "$path" || fail 'Maintenance files must be ordinary existing files.'
+    done
+    # 在系统临时目录用管理员身份固定副本，再校验真正执行的文件。
+    temporary=$(sudo -- mktemp -d '/tmp/artifactory-maintain.XXXXXXXX')
+    maintenance_private=1
+    sudo -- cp "$maintenance_candidate" "$temporary/maintenance-tool"
+    sudo -- chmod 500 "$temporary/maintenance-tool"
+    actual=$(sudo -- openssl dgst -sha256 "$temporary/maintenance-tool" | sed 's/^.*= //')
+    [ "$actual" = "$maintenance_sha256" ] || fail 'Maintenance candidate SHA-256 mismatch.'
+    # 摘要来自已验签的固定发行；新工具先用既有公钥验签，再改动服务。
+    if [ "$maintenance_stopped" = 1 ]; then
+        sudo -- "$temporary/maintenance-tool" launcher-maintain --config "$maintenance_config" --installed-binary "$maintenance_binary" --candidate "$temporary/maintenance-tool" --manifest "$maintenance_manifest" --signature "$maintenance_signature" --service-stopped
+    else
+        sudo -- "$temporary/maintenance-tool" launcher-maintain --config "$maintenance_config" --installed-binary "$maintenance_binary" --candidate "$temporary/maintenance-tool" --manifest "$maintenance_manifest" --signature "$maintenance_signature"
+    fi
+    exit $?
+fi
 [ -n "$enrollment_token" ] || fail 'ARTIFACTORY_ENROLLMENT_TOKEN is required; generate a new installation command.'
 [ ${#enrollment_token} -le 4096 ] || fail 'Invalid enrollment token.'
 case "$download_url" in https://?*) ;; *) fail 'The binary download URL must use HTTPS.' ;; esac

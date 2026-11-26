@@ -1,7 +1,7 @@
-//! [INPUT]: 依赖 Serde 提供跨服务 JSON 契约。
-//! [OUTPUT]: 提供托管凭据、固定绑定、签名输出及验签证据类型。
-//! [POS]: 控制平面和 Emissary 共用的签名契约；秘密仅用于领取响应。
-//! [PROTOCOL]: Update this header on change, then check AGENTS.md
+// [INPUT]: 依赖 Serde 提供跨服务 JSON 契约。
+// [OUTPUT]: 提供托管凭据、固定绑定、签名输出及验签证据类型。
+// [POS]: 控制平面和 Emissary 共用的签名契约；秘密仅用于领取响应。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]

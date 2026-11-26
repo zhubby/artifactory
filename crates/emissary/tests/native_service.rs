@@ -1,8 +1,25 @@
-//! [INPUT]: 依赖显式启用的隔离宿主、原生服务和直拉源码夹具。
-//! [OUTPUT]: 验证专用账户安装、重启、停止和进程树回收。
+//! [INPUT]: 隔离宿主、原生服务、私有ext4卷及有界命令夹具。
+//! [OUTPUT]: 验证维护、持久补报、可选真实满盘及清理读回。
 //! [POS]: 原生服务生命周期验收，拒绝覆盖现有服务和账户。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
+#[path = "native_service/cleanup.rs"]
+mod cleanup;
+#[path = "native_service/command.rs"]
+mod command;
+#[path = "native_service/disk.rs"]
+mod disk;
+#[path = "native_service/durable.rs"]
+mod durable;
+#[path = "support/durable_receiver.rs"]
+mod durable_receiver;
+#[path = "native_service/maintenance.rs"]
+mod maintenance;
+use maintenance::queues;
 mod support;
+#[path = "support/telemetry_gate.rs"]
+mod telemetry_gate;
+#[path = "support/telemetry_sources.rs"]
+mod telemetry_sources;
 use artifactory_emissary::{ota, platform, protocol as pb, service};
 use std::{
     ffi::OsStr,
@@ -23,6 +40,24 @@ struct Machine {
 }
 impl Machine {
     fn command(&self, admin: bool, program: impl AsRef<OsStr>, args: &[&OsStr]) -> Output {
+        self.try_command(admin, program, args)
+            .expect("native test command failed")
+    }
+    fn try_command(
+        &self,
+        admin: bool,
+        program: impl AsRef<OsStr>,
+        args: &[&OsStr],
+    ) -> std::io::Result<Output> {
+        self.try_command_limited(admin, program, args, 1 << 20)
+    }
+    fn try_command_limited(
+        &self,
+        admin: bool,
+        program: impl AsRef<OsStr>,
+        args: &[&OsStr],
+        limit: usize,
+    ) -> std::io::Result<Output> {
         let mut command = if admin && cfg!(unix) {
             let mut cmd = Command::new("sudo");
             cmd.args(["-n", "--"]).arg(program);
@@ -35,9 +70,7 @@ impl Machine {
             .env("ARTIFACTORY_SERVICE_PASSWORD", &self.password)
             .env("ARTIFACTORY_TEST_SERVICE_PASSWORD", &self.password)
             .env("EMISSARY_SERVICE_DIRECTORY", &self.directory);
-        command
-            .output()
-            .expect("native test command could not start")
+        command::run_with_limit(command, Duration::from_secs(120), limit)
     }
     fn require(&self, program: &str, args: &[&str]) -> String {
         let args = args.iter().map(OsStr::new).collect::<Vec<_>>();
@@ -56,6 +89,10 @@ impl Machine {
         )
     }
     fn action(&self, action: &str) -> Output {
+        self.try_action(action)
+            .expect("native test service command failed")
+    }
+    fn try_action(&self, action: &str) -> std::io::Result<Output> {
         let mut args = vec![
             OsStr::new("service"),
             OsStr::new("--action"),
@@ -71,7 +108,7 @@ impl Machine {
         if action == "install" {
             args.extend([OsStr::new("--user"), OsStr::new(&user)])
         }
-        self.command(true, &self.binary, &args)
+        self.try_command(true, &self.binary, &args)
     }
     fn act(&self, action: &str) {
         let output = self.action(action);
@@ -168,45 +205,85 @@ impl Machine {
 }
 impl Drop for Machine {
     fn drop(&mut self) {
+        let cleanup = |label: &str, result: std::io::Result<Output>| {
+            let succeeded = result.is_ok_and(|output| output.status.success());
+            if !succeeded {
+                eprintln!("native test cleanup failed: {label}");
+            }
+            succeeded
+        };
         if self.installed {
-            let _ = self.action("stop");
-            let _ = self.action("uninstall");
+            let stopped = cleanup("stop", self.try_action("stop"));
+            let uninstalled = cleanup("uninstall", self.try_action("uninstall"));
+            if !stopped || !uninstalled {
+                eprintln!(
+                    "native test recovery files retained: {}",
+                    self.directory.display()
+                );
+                return;
+            }
         }
         if self.account {
-            if cfg!(target_os = "linux") {
-                self.command(true, "userdel", &[OsStr::new(USER)]);
+            let removed = if cfg!(target_os = "linux") {
+                cleanup(
+                    "account removal",
+                    self.try_command(true, "userdel", &[OsStr::new(USER)]),
+                )
             } else if cfg!(target_os = "macos") {
-                self.command(
-                    true,
-                    "dscl",
-                    &[
-                        OsStr::new("."),
-                        OsStr::new("-delete"),
-                        OsStr::new(&format!("/Users/{USER}")),
-                    ],
-                );
+                cleanup(
+                    "account removal",
+                    self.try_command(
+                        true,
+                        "dscl",
+                        &[
+                            OsStr::new("."),
+                            OsStr::new("-delete"),
+                            OsStr::new(&format!("/Users/{USER}")),
+                        ],
+                    ),
+                )
             } else {
                 let script = Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("../../scripts/native-service-account.ps1");
-                self.command(
-                    true,
-                    "pwsh",
-                    &[
-                        OsStr::new("-NoProfile"),
-                        OsStr::new("-File"),
-                        script.as_os_str(),
-                        OsStr::new("-Action"),
-                        OsStr::new("remove"),
-                        OsStr::new("-Directory"),
-                        self.directory.as_os_str(),
-                    ],
+                cleanup(
+                    "account removal",
+                    self.try_command(
+                        true,
+                        "pwsh",
+                        &[
+                            OsStr::new("-NoProfile"),
+                            OsStr::new("-File"),
+                            script.as_os_str(),
+                            OsStr::new("-Action"),
+                            OsStr::new("remove"),
+                            OsStr::new("-Directory"),
+                            self.directory.as_os_str(),
+                        ],
+                    ),
+                )
+            };
+            if !removed {
+                eprintln!(
+                    "native test recovery files retained: {}",
+                    self.directory.display()
                 );
+                return;
             }
         }
         if cfg!(unix) {
-            self.command(true, "rm", &[OsStr::new("-rf"), self.directory.as_os_str()]);
+            cleanup(
+                "directory removal",
+                self.try_command(true, "rm", &[OsStr::new("-rf"), self.directory.as_os_str()]),
+            );
         } else {
-            let _ = fs::remove_dir_all(&self.directory);
+            cleanup(
+                "directory removal",
+                self.try_command(true, "pwsh", &[
+                    OsStr::new("-NoProfile"), OsStr::new("-NonInteractive"),
+                    OsStr::new("-Command"),
+                    OsStr::new("Remove-Item -LiteralPath $env:EMISSARY_SERVICE_DIRECTORY -Recurse -Force -ErrorAction Stop"),
+                ]),
+            );
         }
     }
 }
@@ -216,6 +293,42 @@ impl Drop for Machine {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "changes services and accounts; requires an explicitly enabled disposable runner or dedicated test host"]
 async fn native_service_lifecycle() {
+    lifecycle(None, false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "changes services/accounts and requires an explicit isolated local TimescaleDB on a dedicated host"]
+async fn native_service_durable_recovery() {
+    durable::write_evidence(&serde_json::json!({"passed":false,"execution_status":"incomplete"}))
+        .expect("native durable initial evidence failed");
+    let proof = durable_receiver::isolated(Duration::from_secs(900), |url| async move {
+        Ok(lifecycle(Some(&url), false).await)
+    })
+    .await
+    .expect("native durable recovery failed");
+    durable::write_evidence(&proof).expect("native durable success evidence failed");
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires a dedicated Linux host, an owned ext4 mount and an isolated local TimescaleDB"]
+async fn native_service_disk_recovery() {
+    durable::write_evidence(&serde_json::json!({"passed":false,"execution_status":"incomplete"}))
+        .expect("native disk initial evidence failed");
+    let name = std::env::var("ARTIFACTORY_NATIVE_DISK_DATABASE")
+        .expect("parent-reserved database required");
+    let proof =
+        durable_receiver::isolated_named(Duration::from_secs(900), &name, |url| async move {
+            Ok(lifecycle(Some(&url), true).await)
+        })
+        .await
+        .expect("native disk recovery failed");
+    durable::write_evidence(&proof).expect("native disk success evidence failed");
+}
+
+async fn lifecycle(database: Option<&str>, disk_fault: bool) -> serde_json::Value {
+    static EXCLUSIVE_HOST: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _exclusive = EXCLUSIVE_HOST.lock().await;
     assert_eq!(
         std::env::var("ARTIFACTORY_NATIVE_SERVICE_TESTS").as_deref(),
         Ok("1")
@@ -248,7 +361,9 @@ async fn native_service_lifecycle() {
             }
         );
     }
-    let base = if cfg!(windows) {
+    let base = if disk_fault {
+        disk::mount().expect("native disk requires its private ext4 mount")
+    } else if cfg!(windows) {
         PathBuf::from(std::env::var_os("ProgramData").expect("ProgramData required"))
     } else {
         PathBuf::from("/tmp")
@@ -295,13 +410,24 @@ async fn native_service_lifecycle() {
                 .into(),
         );
     }
+    let mut durable = if let Some(url) = database {
+        Some(durable::Prepared::prepare(url, &mut fixture).await.unwrap())
+    } else {
+        None
+    };
     fixture.cfg.save(&machine.config).unwrap();
+    let maintenance = if let Some(durable) = &durable {
+        maintenance::Prepared::prepare_with_queues(&machine, &fixture.cfg, durable.queues())
+    } else {
+        maintenance::Prepared::prepare(&machine, &fixture.cfg).await
+    };
     // === 上游边界 ===
     // HTTP 源码服务器属于测试进程，仓库保留测试账户所有权。
     let repo = machine.directory.join("upstream repository %n $HOME");
     fs::create_dir(&repo).unwrap();
     let git = |args: &[&str]| {
-        let output = Command::new("git")
+        let mut command = Command::new("git");
+        command
             .arg("-C")
             .arg(&repo)
             .args([
@@ -312,9 +438,8 @@ async fn native_service_lifecycle() {
                 "-c",
                 "commit.gpgsign=false",
             ])
-            .args(args)
-            .output()
-            .unwrap();
+            .args(args);
+        let output = command::run(command, Duration::from_secs(30)).unwrap();
         assert!(
             output.status.success(),
             "fixture Git {args:?} failed: {}",
@@ -400,7 +525,40 @@ async fn native_service_lifecycle() {
     machine.act("install");
     machine.act("start");
     let mut first = fixture.connection().await;
-    assert_eq!(first.hello.emissary_id, fixture.cfg.emissary_id);
+    assert!(
+        first.hello.emissary_id == fixture.cfg.emissary_id,
+        "native service identity changed"
+    );
+    first = maintenance.exercise(&machine, &mut fixture, first).await;
+    if let Some(durable) = &mut durable {
+        let disk = if disk_fault {
+            Some(
+                durable
+                    .disk_fault(&machine, &fixture.cfg, &mut first)
+                    .await
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let mut proof = durable.deliver(&machine, &fixture.cfg).await.unwrap();
+        if let Some(disk) = disk {
+            proof["native_disk_fault"] = disk;
+        }
+        machine.act("stop");
+        first.closed().await;
+        machine.act("uninstall");
+        machine.installed = false;
+        assert!(
+            !machine.state().0,
+            "native durable service remains installed"
+        );
+        let directory = machine.directory.clone();
+        drop(machine);
+        cleanup::verify(&directory).unwrap();
+        proof["service_account_directory_removed"] = serde_json::json!(true);
+        return proof;
+    }
     let first_pid = machine.running().await;
     let long = if cfg!(windows) {
         "$p=Start-Process pwsh -ArgumentList '-NoProfile','-Command','Start-Sleep 120' -PassThru; [IO.File]::WriteAllText('child.pid',$p.Id.ToString()); Write-Output tree-started; Wait-Process -Id $p.Id"
@@ -547,4 +705,8 @@ async fn native_service_lifecycle() {
     machine.act("uninstall");
     machine.installed = false;
     assert!(!machine.state().0);
+    let directory = machine.directory.clone();
+    drop(machine);
+    cleanup::verify(&directory).expect("native lifecycle cleanup not confirmed");
+    serde_json::Value::Null
 }

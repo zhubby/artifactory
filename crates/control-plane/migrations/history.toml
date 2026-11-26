@@ -1,5 +1,5 @@
 # [INPUT]: 依赖业务初始化 SQL 与追加迁移。
-# [OUTPUT]: 声明业务基线、设备安装与兼容追加迁移。
+# [OUTPUT]: 声明业务基线、设备安装、有限操作与兼容追加迁移。
 # [POS]: 控制平面数据库身份；未知历史由启动校验拒绝。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 version = 1
@@ -53,3 +53,8 @@ snapshot_name = "0008_snapshot.toml"
 id = 2026112502
 name = "0009_node_installation.sql"
 snapshot_name = "0009_snapshot.toml"
+
+[[migrations]]
+id = 2026112503
+name = "0010_node_operations.sql"
+snapshot_name = "0010_snapshot.toml"

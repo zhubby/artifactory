@@ -34,7 +34,10 @@ pub async fn ingest(
     .map_err(internal)?;
     let retired:bool=sql::scalar(&mut tx,"SELECT EXISTS(SELECT 1 FROM telemetry_deleted_identities WHERE (kind='node' AND id=$1) OR (kind='attempt' AND id=ANY($2)))",params![node,b.processes.iter().map(|p|p.attempt_id).collect::<Vec<_>>()]).await.map_err(internal)?;
     if retired {
-        return Err(Status::permission_denied("telemetry identity retired"));
+        return Err(
+            artifactory_emissary_protocol::telemetry_negotiation::RejectionReason::IdentityRetired
+                .status(),
+        );
     }
     let digest = crypto::hash(bytes);
     let inserted = models::TelemetryBatch::upsert_by_node_id_and_batch_id(node, b.id)
@@ -50,9 +53,7 @@ pub async fn ingest(
             .map_err(internal)?
             .digest;
         if previous != digest {
-            return Err(Status::already_exists(
-                "batch ID reused with different content",
-            ));
+            return Err(artifactory_emissary_protocol::telemetry_negotiation::RejectionReason::IdContentConflict.status());
         }
         tx.commit().await.map_err(internal)?;
         return Ok(true);
@@ -65,6 +66,7 @@ pub async fn ingest(
         });
         sql::execute(&mut tx,"INSERT INTO startup_resources(node_id,startup_id,sampled_at,received_at,sample) VALUES($1,$2,$3,$4,$5) ON CONFLICT(node_id,startup_id) DO UPDATE SET sampled_at=excluded.sampled_at,received_at=excluded.received_at,sample=excluded.sample WHERE excluded.sampled_at>startup_resources.sampled_at",params![node,b.session_id,b.sampled_at,received,resources]).await.map_err(internal)?;
         sql::execute(&mut tx, "INSERT INTO host_samples(sampled_at,node_id,batch_id,session_id,monotonic_ms,received_at,cpu_percent,memory_total_bytes,memory_used_bytes,swap_total_bytes,swap_used_bytes,load_one,active_attempts,dropped_batches,devices) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)", params![b.sampled_at, node, b.id, b.session_id, b.monotonic_ms as i64, received, h.cpu_percent, h.memory_total_bytes.map(|n|n as i64), h.memory_used_bytes.map(|n|n as i64), h.swap_total_bytes.map(|n|n as i64), h.swap_used_bytes.map(|n|n as i64), h.load_one, h.active_attempts as i32, b.dropped_batches as i64, json!({"disks":h.disks,"networks":h.networks,"accelerators":h.accelerators,"available_memory_bytes":h.available_memory_bytes,"build_disk_available_bytes":h.build_disk_available_bytes})]).await.map_err(internal)?;
+        sql::execute(&mut tx, "INSERT INTO startup_hosts(node_id,startup_id,sampled_at,received_at,monotonic_ms,dropped_batches,sample) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(node_id,startup_id) DO UPDATE SET sampled_at=excluded.sampled_at,received_at=excluded.received_at,monotonic_ms=excluded.monotonic_ms,dropped_batches=excluded.dropped_batches,sample=excluded.sample WHERE excluded.sampled_at>startup_hosts.sampled_at", params![node,b.session_id,b.sampled_at,received,b.monotonic_ms as i64,b.dropped_batches as i64,serde_json::to_value(h).map_err(internal)?]).await.map_err(internal)?;
         sql::execute(&mut tx, "INSERT INTO latest_hosts(node_id,sampled_at,received_at,session_id,monotonic_ms,dropped_batches,sample) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(node_id) DO UPDATE SET sampled_at=excluded.sampled_at,received_at=excluded.received_at,session_id=excluded.session_id,monotonic_ms=excluded.monotonic_ms,dropped_batches=excluded.dropped_batches,sample=excluded.sample WHERE excluded.sampled_at>latest_hosts.sampled_at", params![node, b.sampled_at, received, b.session_id, b.monotonic_ms as i64, b.dropped_batches as i64, serde_json::to_value(h).map_err(internal)?]).await.map_err(internal)?;
     }
     if !b.processes.is_empty() {

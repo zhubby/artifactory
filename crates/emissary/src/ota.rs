@@ -1,5 +1,5 @@
-// [INPUT]: 依赖签名清单、节点配置与受限下载通道。
-// [OUTPUT]: 校验更新镜像并监督运行时激活与回滚。
+// [INPUT]: 依赖签名发行、受限下载存储、能力握手与进程监督。
+// [OUTPUT]: 耐久接受请求并监督激活；保存故障保全进程，候选失败先恢复原程序。
 // [POS]: 原生服务启动器与受信运行时之间的更新边界。
 // [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -10,19 +10,34 @@ use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-use futures::StreamExt;
 use process_wrap::tokio::ChildWrapper;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
     process::Stdio,
     time::{Duration, Instant},
 };
 use tokio::{process::Command, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
+
+pub(crate) mod activity;
+mod download;
+mod progress;
+mod report;
+mod storage;
+mod url_refresh;
+pub use activity::{
+    maintenance_nonce, maintenance_requested, record_activity, record_fenced_activity,
+};
+pub use download::download;
+pub use progress::{LauncherCapabilities, Progress, launcher_snapshot, progress_snapshot};
+pub use report::{CAPABILITY, Drain, Observability, Reporter, forward_url_refresh};
+pub use storage::{GcPressure, GcReport, garbage_collect, required_space};
+pub use url_refresh::{
+    UrlRefreshReply, UrlRefreshRequest, complete_url_refresh, url_refresh_request,
+};
 
 pub const MAX_BINARY_SIZE: u64 = 128 << 20;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -223,7 +238,7 @@ impl State {
         false
     }
 }
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Request {
     pub generation: i64,
@@ -285,6 +300,7 @@ pub fn snapshot(directory: &Path) -> Result<State> {
     read_json(&directory.join("state.json"))
 }
 pub fn submit(directory: &Path, request: &Request) -> Result<()> {
+    let _request = storage::request_lock(directory)?;
     atomic_json(&directory.join("request.json"), request)
 }
 pub fn confirm(directory: &Path, session: &str, id: &str) -> Result<()> {
@@ -346,84 +362,25 @@ pub fn initialize(
         },
     )
 }
-pub async fn download(
-    cfg: &OtaConfig,
-    request: &Request,
-    cancel: &CancellationToken,
-) -> Result<Image> {
-    let (os, arch) = crate::platform();
-    let asset = verify(
-        request.manifest.as_bytes(),
-        &request.signature,
-        &cfg.public_keys,
-        os,
-        arch,
-    )?;
-    let manifest: Manifest = serde_json::from_str(&request.manifest)?;
-    let url = source::validate_url(&request.url, cfg.allow_http)?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(300))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
-    let operation = async {
-        let response = client
-            .get(url)
-            .send()
-            .await
-            .context("release download interrupted")?;
-        ensure!(
-            response.status() == reqwest::StatusCode::OK,
-            "release download returned HTTP {}",
-            response.status()
-        );
-        let directory = cfg.directory.join("versions").join(&asset.sha256);
-        private_dir(&directory)?;
-        let mut file = tempfile::NamedTempFile::new_in(&directory)?;
-        let mut body = response.bytes_stream();
-        let mut size = 0u64;
-        let mut hash = Sha256::new();
-        while let Some(chunk) = body.next().await {
-            let chunk = chunk.context("release download interrupted")?;
-            size += chunk.len() as u64;
-            ensure!(size <= asset.size, "binary size or SHA-256 mismatch");
-            hash.update(&chunk);
-            file.write_all(&chunk)?;
-        }
-        ensure!(
-            size == asset.size && hex::encode(hash.finalize()) == asset.sha256,
-            "binary size or SHA-256 mismatch"
-        );
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            file.as_file()
-                .set_permissions(fs::Permissions::from_mode(0o700))?;
-        }
-        file.as_file().sync_all()?;
-        let target = directory.join(binary_name());
-        if target.try_exists()? {
-            verify_bytes(&fs::read(&target)?, &asset)?;
-        } else {
-            file.persist_noclobber(&target).map_err(|e| e.error)?;
-        }
-        Ok(Image {
-            version: manifest.version,
-            path: target.to_string_lossy().into(),
-        })
-    };
-    tokio::select! {result=operation=>result,_=cancel.cancelled()=>bail!("release download canceled")}
-}
+
 struct Runtime {
     child: Box<dyn ChildWrapper>,
 }
 impl Runtime {
-    fn start(config_path: &Path, cfg: &OtaConfig, path: &str, version: &str) -> Result<Self> {
+    fn start(
+        config_path: &Path,
+        cfg: &OtaConfig,
+        path: &str,
+        version: &str,
+        instance: &str,
+    ) -> Result<Self> {
         let mut command = Command::new(path);
         command
             .args(["run", "--config"])
             .arg(config_path)
             .env("ARTIFACTORY_OTA_DIRECTORY", &cfg.directory)
             .env("ARTIFACTORY_OTA_LAUNCHER_VERSION", version)
+            .env("ARTIFACTORY_OTA_LAUNCHER_INSTANCE", instance)
             .stdin(Stdio::piped())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
@@ -450,15 +407,31 @@ pub async fn supervise(config_path: &Path, version: &str, cancel: CancellationTo
         Duration::from_millis(1),
     )
     .await?;
+    let capabilities = progress::announce(&cfg.directory, version)?;
     let mut state = snapshot(&cfg.directory)?;
     state.recover();
+    storage::release_download(&cfg.directory)?;
     state.launcher_version = version.into();
     let path = cfg.directory.join("state.json");
     atomic_json(&path, &state)?;
-    let mut current = Runtime::start(config_path, &cfg, &state.current.path, version)?;
+    let _ = progress::transition(&cfg.directory, &state);
+    let mut current = Runtime::start(
+        config_path,
+        &cfg,
+        &state.current.path,
+        version,
+        &capabilities.instance_id,
+    )?;
     let mut download_task: Option<JoinHandle<(String, Result<Image>)>> = None;
+    let mut pending_state = false;
+    let mut retry_state_at = Instant::now();
+    let mut retry_activation_at = Instant::now();
+    let mut retry_health_commit_at = Instant::now();
+    let mut pending_request: Option<Request> = None;
+    let mut retry_request_at = Instant::now();
     let mut download_cancel = cancel.child_token();
     let mut health = HealthWindow::default();
+    let mut health_confirmed = false;
     let mut tick = tokio::time::interval(Duration::from_millis(250));
     let result = async {
         loop {
@@ -471,8 +444,15 @@ pub async fn supervise(config_path: &Path, version: &str, cancel: CancellationTo
                     state.phase = "rolled_back".into();
                     state.error = format!("candidate exited before health confirmation ({status})");
                     state.candidate = Image::default();
-                    atomic_json(&path, &state)?;
-                    current = Runtime::start(config_path, &cfg, &state.current.path, version)?;
+                    current = Runtime::start(
+                        config_path,
+                        &cfg,
+                        &state.current.path,
+                        version,
+                        &capabilities.instance_id,
+                    )?;
+                    pending_state = true;
+                    retry_state_at = Instant::now();
                 } else {
                     bail!("Emissary runtime exited; service restart required");
                 }
@@ -494,31 +474,86 @@ pub async fn supervise(config_path: &Path, version: &str, cancel: CancellationTo
                             state.error = e.to_string();
                         }
                     }
-                    atomic_json(&path, &state)?;
+                    pending_state = true;
+                    retry_state_at = Instant::now();
                 }
+            }
+            if pending_state {
+                // 下载或恢复结果未耐久保存前保持可用进程，不接收后续更新。
+                if Instant::now() < retry_state_at {
+                    continue;
+                }
+                if atomic_json(&path, &state).is_err()
+                    || storage::release_download(&cfg.directory).is_err()
+                {
+                    retry_state_at = Instant::now() + Duration::from_secs(1);
+                    continue;
+                }
+                let _ = progress::transition(&cfg.directory, &state);
+                pending_state = false;
             }
             let mailbox = cfg.directory.join("request.json");
-            if let Ok(request) = read_json::<Request>(&mailbox) {
-                fs::remove_file(&mailbox)?;
-                if state.request(&request) {
-                    atomic_json(&path, &state)?;
-                    download_cancel.cancel();
-                    if let Some(task) = download_task.take() {
-                        task.abort();
-                        let _ = task.await;
+            if pending_request.is_none() && Instant::now() >= retry_request_at {
+                if let Ok(_request) = storage::request_lock(&cfg.directory) {
+                    if let Ok(request) = read_json::<Request>(&mailbox) {
+                        let mut accepted = state.clone();
+                        if accept_request(&cfg.directory, &mut accepted, &request) {
+                            // 状态耐久保存前保留邮箱和原内存状态，磁盘恢复后重试。
+                            if atomic_json(&path, &accepted).is_err() {
+                                retry_request_at = Instant::now() + Duration::from_secs(1);
+                                continue;
+                            }
+                            state = accepted;
+                            pending_request = Some(request);
+                        } else if fs::remove_file(&mailbox).is_err() {
+                            retry_request_at = Instant::now() + Duration::from_secs(1);
+                        }
                     }
-                    if state.phase == "downloading" {
-                        download_cancel = cancel.child_token();
-                        let token = download_cancel.clone();
-                        let cfg = cfg.clone();
-                        download_task = Some(tokio::spawn(async move {
-                            let result = download(&cfg, &request, &token).await;
-                            (request.id, result)
-                        }));
-                    }
+                } else {
+                    // 邮箱交接故障不阻止已有候选确认或健康超时恢复。
+                    retry_request_at = Instant::now() + Duration::from_secs(1);
                 }
             }
-            if state.phase == "draining" {
+            if let Some(request) = pending_request.take() {
+                if Instant::now() < retry_request_at {
+                    pending_request = Some(request);
+                    continue;
+                }
+                download_cancel.cancel();
+                if let Some(task) = download_task.take() {
+                    task.abort();
+                    let _ = task.await;
+                }
+                let Ok(_request) = storage::request_lock(&cfg.directory) else {
+                    pending_request = Some(request);
+                    retry_request_at = Instant::now() + Duration::from_secs(1);
+                    continue;
+                };
+                // 清理故障不能停止当前进程，也不能让取消后的下载重启。
+                if storage::release_download(&cfg.directory).is_err()
+                    || (read_json::<Request>(&mailbox).is_ok_and(|value| value == request)
+                        && fs::remove_file(&mailbox).is_err())
+                {
+                    pending_request = Some(request);
+                    retry_request_at = Instant::now() + Duration::from_secs(1);
+                    continue;
+                }
+                // 下载任务退出后再写终态，禁止旧字节进度覆盖取消。
+                let _ = progress::transition(&cfg.directory, &state);
+                if state.phase == "downloading" {
+                    download_cancel = cancel.child_token();
+                    let token = download_cancel.clone();
+                    let cfg = cfg.clone();
+                    download_task = Some(tokio::spawn(async move {
+                        let result = download(&cfg, &request, &token).await;
+                        (request.id, result)
+                    }));
+                }
+            }
+            if state.phase == "draining" && !activity::maintenance_requested(&cfg.directory) {
+                if Instant::now() < retry_activation_at {
+                    continue;
+                }
                 let ready = read_json::<serde_json::Value>(&cfg.directory.join("drained.json"));
                 if ready
                     .ok()
@@ -526,27 +561,52 @@ pub async fn supervise(config_path: &Path, version: &str, cancel: CancellationTo
                     .as_deref()
                     == Some(&state.update_id)
                 {
+                    let Ok(_storage) = storage::lock(&cfg.directory) else {
+                        retry_activation_at = Instant::now() + Duration::from_secs(1);
+                        continue;
+                    };
+                    let mut activating = state.clone();
+                    activating.phase = "activating".into();
+                    activating.started_at = Utc::now();
+                    // 激活意图耐久保存前，保留当前进程及内存中的draining状态。
+                    if atomic_json(&path, &activating).is_err() {
+                        retry_activation_at = Instant::now() + Duration::from_secs(1);
+                        continue;
+                    }
+                    state = activating;
                     current.stop().await;
-                    state.phase = "activating".into();
-                    state.started_at = Utc::now();
                     health = HealthWindow::default();
+                    health_confirmed = false;
+                    retry_health_commit_at = Instant::now();
                     let _ = fs::remove_file(cfg.directory.join("health.json"));
-                    atomic_json(&path, &state)?;
-                    match Runtime::start(config_path, &cfg, &state.candidate.path, version) {
+                    let _ = progress::transition(&cfg.directory, &state);
+                    match Runtime::start(
+                        config_path,
+                        &cfg,
+                        &state.candidate.path,
+                        version,
+                        &capabilities.instance_id,
+                    ) {
                         Ok(runtime) => current = runtime,
                         Err(_) => {
                             state.phase = "rolled_back".into();
                             state.error = "candidate failed to start".into();
                             state.candidate = Image::default();
-                            atomic_json(&path, &state)?;
-                            current =
-                                Runtime::start(config_path, &cfg, &state.current.path, version)?;
+                            current = Runtime::start(
+                                config_path,
+                                &cfg,
+                                &state.current.path,
+                                version,
+                                &capabilities.instance_id,
+                            )?;
+                            pending_state = true;
+                            retry_state_at = Instant::now();
                         }
                     }
                 }
             }
             if state.phase == "activating" {
-                let confirmed = read_json::<Health>(&cfg.directory.join("health.json"))
+                if let Some(ack) = read_json::<Health>(&cfg.directory.join("health.json"))
                     .ok()
                     .filter(|ack| {
                         Utc::now()
@@ -555,12 +615,34 @@ pub async fn supervise(config_path: &Path, version: &str, cancel: CancellationTo
                             .abs()
                             < 25
                     })
-                    .is_some_and(|ack| health.ack(&ack.session, &ack.id, Instant::now()));
-                if confirmed {
-                    state.previous = state.current.clone();
-                    state.current = std::mem::take(&mut state.candidate);
-                    state.phase = "succeeded".into();
-                    atomic_json(&path, &state)?;
+                {
+                    // 同会话的确认跨存储重试保持；新会话必须重新取得三次确认。
+                    if health.session != ack.session || ack.id.is_empty() {
+                        health_confirmed = false;
+                    }
+                    if !health_confirmed {
+                        health_confirmed = health.ack(&ack.session, &ack.id, Instant::now());
+                    }
+                }
+                if health_confirmed {
+                    if Instant::now() < retry_health_commit_at {
+                        continue;
+                    }
+                    let Ok(_storage) = storage::lock(&cfg.directory) else {
+                        retry_health_commit_at = Instant::now() + Duration::from_secs(1);
+                        continue;
+                    };
+                    let mut committed = state.clone();
+                    committed.previous = committed.current.clone();
+                    committed.current = std::mem::take(&mut committed.candidate);
+                    committed.phase = "succeeded".into();
+                    // 已健康的进程继续运行；成功状态耐久保存前不移动内存指向。
+                    if atomic_json(&path, &committed).is_err() {
+                        retry_health_commit_at = Instant::now() + Duration::from_secs(1);
+                        continue;
+                    }
+                    state = committed;
+                    let _ = progress::transition(&cfg.directory, &state);
                 } else if Utc::now()
                     .signed_duration_since(state.started_at)
                     .num_seconds()
@@ -571,8 +653,15 @@ pub async fn supervise(config_path: &Path, version: &str, cancel: CancellationTo
                     state.error =
                         "candidate health confirmation timed out after 120 seconds".into();
                     state.candidate = Image::default();
-                    atomic_json(&path, &state)?;
-                    current = Runtime::start(config_path, &cfg, &state.current.path, version)?;
+                    current = Runtime::start(
+                        config_path,
+                        &cfg,
+                        &state.current.path,
+                        version,
+                        &capabilities.instance_id,
+                    )?;
+                    pending_state = true;
+                    retry_state_at = Instant::now();
                 }
             }
         }
@@ -583,12 +672,41 @@ pub async fn supervise(config_path: &Path, version: &str, cancel: CancellationTo
         task.abort();
         let _ = task.await;
     }
+    let _ = storage::release_download(&cfg.directory);
     current.stop().await;
     result
+}
+fn accept_request(directory: &Path, state: &mut State, request: &Request) -> bool {
+    (!activity::maintenance_requested(directory) || request.action == "cancel")
+        && state.request(request)
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn maintenance_fence_rejects_queued_apply_without_advancing_generation() {
+        let root = tempfile::tempdir().unwrap();
+        atomic_json(
+            &root.path().join("maintenance.json"),
+            &serde_json::json!({"nonce":uuid::Uuid::new_v4(),"backup":root.path()}),
+        )
+        .unwrap();
+        let mut state = State {
+            phase: "idle".into(),
+            ..Default::default()
+        };
+        let mut request = Request {
+            id: "queued".into(),
+            generation: 3,
+            action: "apply".into(),
+            ..Default::default()
+        };
+        assert!(!accept_request(root.path(), &mut state, &request));
+        assert_eq!(state.generation, 0);
+        request.action = "cancel".into();
+        assert!(accept_request(root.path(), &mut state, &request));
+        assert_eq!(state.generation, 3);
+    }
     #[test]
     fn cancel_overtakes_apply_and_persists_generation_fence() {
         let mut state = State {

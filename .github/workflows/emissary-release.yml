@@ -1,6 +1,6 @@
 # [INPUT]: 不可变原生标签、根 VERSION 与 UTF-8 Python 环境。
-# [OUTPUT]: 六平台统一版本程序与签名资产清单。
-# [POS]: 标签定位源码，六平台程序使用全项目统一版本。
+# [OUTPUT]: 最终资产原生维护、Linux满盘补报、ext4故障证据及六平台签名清单。
+# [POS]: 标签定位源码；原生维护回退和Linux补报门禁先于发布。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: Emissary Release
 on:
@@ -18,6 +18,9 @@ env:
   PYTHONUTF8: '1'
 jobs:
   native:
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
     strategy:
       fail-fast: false
       matrix:
@@ -35,7 +38,22 @@ jobs:
           - os: windows-11-arm
             platform: windows/arm64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 50
+    services:
+      timescale:
+        image: ${{ startsWith(matrix.platform, 'linux/') && 'timescale/timescaledb:2.32.0-pg17' || '' }}
+        env:
+          POSTGRES_DB: artifactory
+          POSTGRES_USER: artifactory
+          POSTGRES_PASSWORD: local-native-test-only
+          TIMESCALEDB_TELEMETRY: 'off'
+        ports:
+          - 127.0.0.1:15432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U artifactory -d artifactory"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     defaults:
       run:
         shell: bash
@@ -60,11 +78,6 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then choco install protoc --no-progress -y; fi
       - run: cargo test --locked -p artifactory-emissary -p artifactory-execution-support --all-targets
       - run: cargo clippy --locked -p artifactory-emissary -p artifactory-execution-support --all-targets -- -D warnings
-      - name: Verify native service lifecycle before publishing
-        env:
-          ARTIFACTORY_NATIVE_SERVICE_TESTS: '1'
-          ARTIFACTORY_NATIVE_EXPECTED_PLATFORM: ${{ matrix.platform }}
-        run: cargo test --locked -p artifactory-emissary --test native_service -- --ignored --nocapture
       - name: Build versioned native executable
         env:
           ARTIFACTORY_BUILD_VERSION: ${{ steps.source.outputs.version }}
@@ -73,6 +86,7 @@ jobs:
           export ARTIFACTORY_BUILD_COMMIT
           sh scripts/cross-build-emissary.sh
       - name: Verify the native executable product version
+        id: native-candidate
         env:
           EMISSARY_PLATFORM: ${{ matrix.platform }}
           EMISSARY_VERSION: ${{ steps.source.outputs.version }}
@@ -84,6 +98,70 @@ jobs:
           expected="artifactory-emissary $EMISSARY_VERSION $EMISSARY_PLATFORM protocol=1 commit=$(git rev-parse HEAD)"
           actual=$(".local/emissary-bin/artifactory-emissary-$platform_name$extension" version | tr -d '\r')
           test "$actual" = "$expected"
+          binary=$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' ".local/emissary-bin/artifactory-emissary-$platform_name$extension")
+          printf 'binary=%s\n' "$binary" >> "$GITHUB_OUTPUT"
+      - name: Verify final asset with native service maintenance and rollback
+        env:
+          ARTIFACTORY_NATIVE_SERVICE_TESTS: '1'
+          ARTIFACTORY_NATIVE_EXPECTED_PLATFORM: ${{ matrix.platform }}
+          ARTIFACTORY_NATIVE_EVIDENCE_DIR: ${{ runner.temp }}/emissary-native-evidence
+          ARTIFACTORY_NATIVE_BINARY: ${{ steps.native-candidate.outputs.binary }}
+        run: cargo test --locked -p artifactory-emissary --test native_service native_service_lifecycle -- --ignored --exact --nocapture
+      - name: Verify final Linux asset with native durable recovery
+        if: runner.os == 'Linux'
+        timeout-minutes: 20
+        env:
+          ARTIFACTORY_NATIVE_SERVICE_TESTS: '1'
+          ARTIFACTORY_NATIVE_EXPECTED_PLATFORM: ${{ matrix.platform }}
+          ARTIFACTORY_NATIVE_EVIDENCE_DIR: ${{ runner.temp }}/emissary-native-durable-evidence
+          ARTIFACTORY_NATIVE_BINARY: ${{ steps.native-candidate.outputs.binary }}
+          ARTIFACTORY_TEST_DATABASE_URL: postgres://artifactory:local-native-test-only@127.0.0.1:15432/artifactory
+        run: |
+          cargo test --locked -p artifactory-emissary --test native_service native_service_durable_recovery -- --ignored --exact --nocapture
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          proof = json.loads((Path(os.environ['ARTIFACTORY_NATIVE_EVIDENCE_DIR']) / 'durable_recovery.json').read_text())
+          required = ('passed', 'native_service_executed', 'real_business_migrations',
+                      'transaction_fence_observed', 'source_bytes_retained_before_commit',
+                      'business_ack_removed_sources', 'terminal_operation_unchanged',
+                      'service_account_directory_removed', 'database_removed')
+          if any(proof.get(key) is not True for key in required):
+              raise SystemExit('Native durable transaction or cleanup evidence is incomplete.')
+          if proof.get('source_batches') != 2 or proof.get('source_inventories') != 3:
+              raise SystemExit('Native durable original source coverage is incomplete.')
+          startups = proof.get('native_startups_registered')
+          if type(startups) is not int or startups < 4:
+              raise SystemExit('Native maintenance/OTA/rollback startup coverage is incomplete.')
+          PY
+      - name: Verify Linux ext4 OTA and active spool faults
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        env:
+          ARTIFACTORY_TEST_DATABASE_URL: postgres://artifactory:local-native-test-only@127.0.0.1:15432/artifactory
+        run: |
+          sudo apt-get install -y e2fsprogs util-linux
+          python3 scripts/check_emissary_ota_filesystem.py --filesystem ext4 --with-active-spool --evidence "$RUNNER_TEMP/emissary-ota-filesystem-ext4.json"
+      - name: Linux native service ENOSPC and durable recovery
+        if: runner.os == 'Linux'
+        timeout-minutes: 20
+        shell: bash
+        env:
+          ARTIFACTORY_NATIVE_SERVICE_TESTS: '1'
+          ARTIFACTORY_TEST_DATABASE_URL: postgres://artifactory:local-native-test-only@127.0.0.1:15432/artifactory
+          ARTIFACTORY_NATIVE_BINARY: ${{ steps.native-candidate.outputs.binary }}
+        run: python3 scripts/check_emissary_native_disk.py --evidence "$RUNNER_TEMP/emissary-native-disk.json"
+      - name: Retain native maintenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-evidence-${{ strategy.job-index }}
+          path: |
+            ${{ runner.temp }}/emissary-native-evidence/*.json
+            ${{ runner.temp }}/emissary-native-durable-evidence/*.json
+            ${{ runner.temp }}/emissary-ota-filesystem-*.json
+            ${{ runner.temp }}/emissary-native-disk.json
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: emissary-${{ strategy.job-index }}
