@@ -264,6 +264,15 @@ fn windows_acl_ignores_inherited_powershell_module_path() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("launcher with spaces.exe");
         fs::write(&path, b"original").unwrap();
+        // 固定受保护的DACL，排除首次Set-Acl规范化继承标记的差异。
+        let status = windows_powershell()
+            .args(["-NoProfile", "-NonInteractive", "-Command", &format!(
+                "$ErrorActionPreference='Stop'; $acl=Get-Acl -LiteralPath {0}; $acl.SetAccessRuleProtection($true,$true); Set-Acl -LiteralPath {0} -AclObject $acl",
+                ps_literal(&path)
+            )])
+            .status()
+            .unwrap();
+        assert!(status.success());
         let acl = windows_acl(&path).unwrap();
         assert!(!acl.is_empty());
         replace(&path, b"replaced").unwrap();
