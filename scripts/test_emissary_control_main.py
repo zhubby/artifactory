@@ -25,10 +25,10 @@ import emissary_legacy_retention as retention
 class ResourceBoundaries(unittest.TestCase):
     def test_retention_guard_requires_exact_server_constraint_and_sqlstate(self):
         for result in ('23503:inventory_delivery_content','23503:startup_inventory_content'):
-            self.assertEqual(retention.retention_foreign_key_guard(lambda *_:result,'test'),result)
+            self.assertEqual(retention.retention_foreign_key_guard(lambda *_:result,'test',uuid.uuid4(),'a'*64),result)
         for result in ('23505:inventory_delivery_content','23503:other_constraint','db error',''):
             with self.assertRaisesRegex(RuntimeError,'did not reject'):
-                retention.retention_foreign_key_guard(lambda *_:result,'test')
+                retention.retention_foreign_key_guard(lambda *_:result,'test',uuid.uuid4(),'a'*64)
 
     def test_refresh_source_decoder_verifies_delivery_digest_and_native_identity(self):
         with tempfile.TemporaryDirectory(prefix='controlled-refresh-decode-') as temporary:

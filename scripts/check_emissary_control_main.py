@@ -213,9 +213,10 @@ def exercise_control_restart(controller, *, directory, node, startup, probe, api
     failed_at = time.monotonic()
     original_pid = controller.process.pid
     os.killpg(controller.process.pid,signal.SIGKILL)
-    assert controller.wait(10) == -signal.SIGKILL
+    # 先释放有界探测；进程组回收会扫描宿主进程表，不占探测预算。
     Path(str(probe)+'.go').touch()
     assert time.monotonic()-failed_at < 1, 'Control failure exceeded probe release budget'
+    assert controller.wait(10) == -signal.SIGKILL
     def offline_result():
         journal = json.loads(journal_path.read_bytes())
         entries = [entry for entry in journal['entries'] if entry['envelope']['operation_id']==operation_id]

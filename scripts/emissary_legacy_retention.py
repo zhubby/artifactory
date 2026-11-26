@@ -65,8 +65,11 @@ def verify_frozen(directory):
     return hashlib.sha256(json.dumps(manifest,sort_keys=True).encode()).hexdigest()
 
 
-def retention_foreign_key_guard(sql,database):
-    statement = "DELETE FROM inventory_versions v WHERE NOT EXISTS(SELECT 1 FROM inventory_observations o WHERE o.node_id=v.node_id AND o.digest=v.digest) AND NOT EXISTS(SELECT 1 FROM latest_inventories l WHERE l.node_id=v.node_id AND l.digest=v.digest)"
+def retention_foreign_key_guard(sql,database,node,digest):
+    node = str(__import__('uuid').UUID(str(node)))
+    if len(digest)!=64 or any(value not in '0123456789abcdef' for value in digest):
+        raise RuntimeError('invalid retained inventory digest')
+    statement = f"DELETE FROM inventory_versions WHERE node_id='{node}' AND digest='{digest}'"
     result = sql(database,"""CREATE FUNCTION pg_temp.emissary_retention_guard() RETURNS text
     LANGUAGE plpgsql AS $guard$
     DECLARE rejected_constraint text;
@@ -154,6 +157,11 @@ class Retention:
         original = json.loads(self.sql(self.telemetry,f"SELECT json_build_object('observation',i.observation_id,'digest',i.inventory_digest,'inventory',v.inventory) FROM startup_inventories i JOIN inventory_versions v ON v.node_id=i.node_id AND v.digest=i.inventory_digest WHERE i.node_id='{node}' AND i.startup_id='{startup}'"))
         assert self.sql(self.telemetry,f"SELECT count(*) FROM inventory_observations WHERE node_id='{node}' AND digest='{original['digest']}'")=='0'
         assert self.sql(self.telemetry,f"SELECT count(*) FROM latest_inventories WHERE node_id='{node}' AND digest='{original['digest']}'")=='0'
+        # 真实Runner继续上报会重建legacy投影；独立引用夹具固定旧清扫候选。
+        guard_observation,guard_startup,guard_batch = (__import__('uuid').uuid4() for _ in range(3))
+        guard_body = json.dumps({'retention_fixture':self.nonce},sort_keys=True,separators=(',',':'))
+        guard_digest = hashlib.sha256(guard_body.encode()).hexdigest()
+        self.sql(self.telemetry,f"INSERT INTO inventory_versions(node_id,digest,first_seen,inventory) VALUES('{self.sentinel_node}','{guard_digest}',now(),'{guard_body}'::jsonb); INSERT INTO inventory_deliveries(node_id,observation_id,startup_id,revision,source_batch_id,observed_at,received_at,delivery_digest,inventory_digest) VALUES('{self.sentinel_node}','{guard_observation}','{guard_startup}',0,'{guard_batch}',now(),now(),'{guard_digest}','{guard_digest}');")
         assert self.sql(self.telemetry,f"SELECT pg_cancel_backend(pid) FROM pg_stat_activity WHERE pid={self.fence_pid} AND application_name='{self.lock_name}' AND datname=current_database()")=='t'
         assert self.holder.wait(10)!=0
         assert '57014' in (self.directory/'retention-fence.log').read_text()
@@ -163,6 +171,7 @@ class Retention:
         receipt_count = int(self.sql(self.telemetry,f"SELECT count(*) FROM inventory_deliveries WHERE node_id='{node}' AND observation_id='{original['observation']}'"))
         proof = {'frozen_main_remained_live':True,'real_old_retention_wait_observed':True,
                  'body_count_after_old_retention':body_count,'receipt_count_after_old_retention':receipt_count,
+                 'deterministic_reference_fixture':True,
                  'old_binary_sha256':legacy.digest(self.binaries['artifactory-telemetry-service']),
                  'frozen_manifest_sha256':verify_frozen(self.directory)}
         private_json(self.directory/'legacy-retention-proof.json',proof)
@@ -174,8 +183,9 @@ class Retention:
         self.wait(lambda:'telemetry retention maintenance failed' in
                   (self.directory/'frozen-retention.log').read_text(),
                   'actual old retention rejected',5)
-        # 驱动的Display不保证展开数据库原因；用同一DELETE读回SQLSTATE。
-        rejection = retention_foreign_key_guard(self.sql,self.telemetry)
+        # 驱动Display不保证展开原因；后续legacy投影也会改变原清扫谓词。
+        # 对刚保留的同一正文执行删除，以SQLSTATE核验实际外键。
+        rejection = retention_foreign_key_guard(self.sql,self.telemetry,node,original['digest'])
         proof['old_retention_guard_sqlstate'] = rejection
         assert 'telemetry retention maintenance failed' in (self.directory/'frozen-retention.log').read_text()
         assert self.sql(self.telemetry,f"SELECT count(*) FROM telemetry_batches WHERE node_id='{self.sentinel_node}' AND batch_id='{self.sentinel_batch}'")=='1'

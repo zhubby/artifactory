@@ -1,5 +1,5 @@
 //! [INPUT]: 管理员签名发行、既有服务配置、原身份与私有围栏发布。
-//! [OUTPUT]: 备份并替换固定启动器，失败恢复原文件与服务。
+//! [OUTPUT]: 以可写句柄刷盘备份并替换固定启动器，失败恢复原文件与服务。
 //! [POS]: 原生服务维护事务；不注册新身份或修改runtime版本指针。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -78,6 +78,12 @@ impl Host for Native {
         Ok(())
     }
 }
+fn sync_backup(path: &Path) -> Result<()> {
+    // Windows FlushFileBuffers要求句柄具有写权限。
+    fs::OpenOptions::new().write(true).open(path)?.sync_all()?;
+    Ok(())
+}
+
 fn maintain_with(options: MaintenanceOptions<'_>, host: &impl Host) -> Result<PathBuf> {
     let cfg = Config::load(options.config)?;
     let ota = ota::load(options.config)?;
@@ -156,17 +162,17 @@ fn maintain_with(options: MaintenanceOptions<'_>, host: &impl Host) -> Result<Pa
         backup_dir.join("launcher-acl.sddl"),
         windows_acl(options.installed_binary)?,
     )?;
-    fs::File::open(&backup)?.sync_all()?;
+    sync_backup(&backup)?;
     let backup_config = backup_dir.join("emissary.json");
     fs::copy(options.config, &backup_config)?;
-    fs::File::open(backup_config)?.sync_all()?;
+    sync_backup(&backup_config)?;
     fs::copy(
         ota.directory.join("state.json"),
         backup_dir.join("state.json"),
     )?;
-    fs::File::open(backup_dir.join("state.json"))?.sync_all()?;
+    sync_backup(&backup_dir.join("state.json"))?;
     #[cfg(windows)]
-    fs::File::open(backup_dir.join("launcher-acl.sddl"))?.sync_all()?;
+    sync_backup(&backup_dir.join("launcher-acl.sddl"))?;
     let identity_hash = identity(&cfg)?;
     let old_capabilities: Option<ota::LauncherCapabilities> =
         read_json(&ota.directory.join("capabilities.json")).ok();
