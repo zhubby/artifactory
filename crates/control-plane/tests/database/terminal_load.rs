@@ -1,6 +1,6 @@
 //! [INPUT]: 依赖真实 PostgreSQL、三份 Control 状态、TLS 设备流和浏览器 WebSocket。
 //! [OUTPUT]: 量化十会话输出、credit、RTT与资源；心跳超限打印实际采样。
-//! [POS]: 虚拟设备协议负载；不启动 PTY，不代表实机或独立进程副本负载。
+//! [POS]: 四线程虚拟设备协议负载；不代表PTY、实机或独立进程副本负载。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -367,7 +367,7 @@ fn rss() -> Option<u64> {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
 async fn terminal_ten_sessions_bound_credit_and_keep_control_responsive() {
     let db = Database::with_tenant().await;
@@ -447,7 +447,7 @@ async fn terminal_ten_sessions_bound_credit_and_keep_control_responsive() {
             "bounded terminal queues must not grow unbounded memory"
         );
     }
-    let report = json!({"scope":"10 virtual mTLS devices; 3 independent Control states/TLS listeners in one test process; real PostgreSQL and WS; no PTY, gateway, physical devices or Windows service account","sessions":reports,"rss_baseline_bytes":baseline,"resources":snapshot,"database_scope":"pg_stat_activity for entire shared test database; fixture pool maximum 10 plus admin pool maximum 2","credit_limit_bytes":WINDOW});
+    let report = json!({"scope":"10 virtual mTLS devices; 3 independent Control states/TLS listeners in one test process; real PostgreSQL and WS; no PTY, gateway, physical devices or Windows service account","tokio_worker_threads":4,"sessions":reports,"rss_baseline_bytes":baseline,"resources":snapshot,"database_scope":"pg_stat_activity for entire shared test database; fixture pool maximum 10 plus admin pool maximum 2","credit_limit_bytes":WINDOW});
     let evidence = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../.local/terminal/load-report.json");
     std::fs::create_dir_all(evidence.parent().unwrap()).unwrap();

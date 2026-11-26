@@ -29,7 +29,7 @@ terminals.rs: 验证设备终端原子限额、原账户 Session、一次性票�
 terminal_lifecycle.rs: 验证租户终端排空、设备租约窗口、删除清扫和项目隔离。
 terminal_routing.rs: 以真实 TLS 验证三副本、丢 ACK 与内部断流恢复、慢快照授权截止。
 terminal_recovery.rs: 为三副本测试重取附着票据，断言内部短断不产生终态。
-terminal_load.rs: 量化十会话输出credit、RTT、心跳、关闭与资源；超限保留实际心跳采样。
+terminal_load.rs: 四线程量化十会话credit、RTT、心跳与资源；超限保留实际采样。
 transport_certificates.rs: 为设备和终端传输验收签发独立 CA、服务与客户端证书。
 tenancy_isolation.rs: 验证跨租户历史、制品流与源码计划引用拒绝。
 tenancy_locks.rs: 验证权限撤销复验与设备授权外键锁顺序。
