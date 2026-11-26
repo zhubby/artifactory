@@ -1,5 +1,5 @@
 //! [INPUT]: 签名候选、隔离文件系统与可注入服务故障。
-//! [OUTPUT]: 验证身份保留、替换恢复、维护围栏及Windows模块路径隔离。
+//! [OUTPUT]: 验证身份保留、锁释放、替换恢复、维护围栏及Windows模块路径隔离。
 //! [POS]: 固定启动器维护事务的无宿主变更验收。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::*;
@@ -77,6 +77,21 @@ fn maintenance_and_recovery_share_one_exclusive_lock() {
     let first = maintenance_lock(root.path()).unwrap();
     assert!(maintenance_lock(root.path()).is_err());
     drop(first);
+    assert!(maintenance_lock(root.path()).is_ok());
+}
+#[cfg(unix)]
+#[test]
+fn maintenance_releases_lock_while_an_inherited_descriptor_remains_open() {
+    let root = tempfile::tempdir().unwrap();
+    let first = maintenance_lock(root.path()).unwrap();
+    let inherited = first.0.try_clone().unwrap();
+    assert!(maintenance_lock(root.path()).is_err());
+    drop(first);
+    let reopened = maintenance_lock(root.path()).unwrap();
+    assert!(maintenance_lock(root.path()).is_err());
+    drop(inherited);
+    assert!(maintenance_lock(root.path()).is_err());
+    drop(reopened);
     assert!(maintenance_lock(root.path()).is_ok());
 }
 #[test]

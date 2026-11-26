@@ -19,7 +19,7 @@ examples/ - 构建配方示例。
 vendor/ - 带连接回收修复的 Toasty 源码。
 </directory>
 <config>
-VERSION - 全项目版本 0.2.4。
+VERSION - 全项目版本 0.2.5。
 Cargo.toml - Rust 工作区和统一依赖。
 Dockerfile - 限定控制平面与遥测依赖的运行镜像。
 compose.yaml - 本机完整服务栈。

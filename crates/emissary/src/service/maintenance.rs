@@ -1,5 +1,5 @@
 //! [INPUT]: 管理员签名发行、原身份与私有围栏；Windows ACL使用独立模块路径。
-//! [OUTPUT]: 以可写句柄刷盘备份并替换固定启动器，失败恢复原文件与服务。
+//! [OUTPUT]: 显式释放维护锁，以可写句柄刷盘并替换启动器，失败恢复原文件与服务。
 //! [POS]: 原生服务维护事务；不注册新身份或修改runtime版本指针。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -471,16 +471,23 @@ fn preserved_payload(old: &Path, current: &Path) -> Result<bool> {
         && old.candidate.path == current.candidate.path
         && old.generation == current.generation)
 }
-fn lock_if_present(path: &Path) -> Result<Option<fs::File>> {
+struct HeldLock(fs::File);
+impl Drop for HeldLock {
+    fn drop(&mut self) {
+        // 并发fork在exec前保留描述符；关闭原句柄不能保证立即释放锁。
+        let _ = fs2::FileExt::unlock(&self.0);
+    }
+}
+fn lock_if_present(path: &Path) -> Result<Option<HeldLock>> {
     if !path.try_exists()? {
         return Ok(None);
     }
     ordinary(path)?;
     let file = fs::OpenOptions::new().write(true).open(path)?;
     fs2::FileExt::try_lock_exclusive(&file).context("service process has not exited")?;
-    Ok(Some(file))
+    Ok(Some(HeldLock(file)))
 }
-fn maintenance_lock(directory: &Path) -> Result<fs::File> {
+fn maintenance_lock(directory: &Path) -> Result<HeldLock> {
     let path = directory.join("maintenance.lock");
     if !path.try_exists()? {
         crate::config::private_write(&path, b"", false, false)?;
@@ -488,7 +495,7 @@ fn maintenance_lock(directory: &Path) -> Result<fs::File> {
     ordinary(&path)?;
     let file = fs::OpenOptions::new().read(true).write(true).open(path)?;
     fs2::FileExt::try_lock_exclusive(&file).context("launcher maintenance is already active")?;
-    Ok(file)
+    Ok(HeldLock(file))
 }
 fn replace(path: &Path, bytes: &[u8]) -> Result<()> {
     ordinary(path)?;
