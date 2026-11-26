@@ -17,7 +17,7 @@ emissary_ota_fixture.py: 提供只读回环发行API，记录签名清单与六�
 emissary_ota_mailbox.py: 只读观察真实续签邮箱，核对冻结请求与回复并仅返回URL摘要。
 emissary_ota_processes.py: 在未回收leader身份下清扫自有会话，确认独立runtime组全部退出。
 emissary_s3_fault.py: 只对精确自有bucket的一次资产GET注入403，透传真实认证S3而不伪造成功。
-emissary_legacy_retention.py: 冻结完整旧程序，围栏其真实清扫并核对新增清单引用。
+emissary_legacy_retention.py: 冻结完整旧程序，围栏真实清扫，读回外键SQLSTATE并核对新增清单引用。
 emissary_controlled_refresh.py: 用私有探测夹具和真实事务围栏验证刷新观察确认与启动快照不变。
 check_docs.py: 校验 mdBook 导航覆盖与生成结果中的本地链接。
 compose_acceptance.py: 记录本机中间件容器状态，验证隔离 Compose 的 HTTPS、鉴权与重启。
@@ -33,12 +33,12 @@ native-service-account.ps1: 准备 Windows 原生服务验收账号。
 run-telemetry.sh: 启动本机遥测服务。
 test_ephemeral_source.py: 验证直接 Pod、临时卷、AppArmor 默认化与错误配置拒绝。
 test_emissary_legacy_receiver.py: 验证旧接收器门禁的回环准入、目标覆盖拒绝和私有进程回收。
-test_emissary_legacy_sender.py: 用有限睡眠夹具验证外层超时、中断、编译后代与精确清库回执。
+test_emissary_legacy_sender.py: 隔离驱动时钟，用有限睡眠验证超时、中断、编译后代与精确清库回执。
 test_emissary_current_main.py: 验证完整main证据门槛、阶段、旧进程凭据隔离、源码冻结与超时回收。
 test_emissary_ota_filesystem.py: 验证小卷门禁拒绝缺失ACK源删除及错身份，卸载仅用精确镜像并要求读回。
 test_emissary_linux_filesystem.py: 验证错loop及挂载拒绝、卸载后读回与残留阻断。
 test_emissary_native_disk.py: 拒绝缺失事务确认、原生服务连续性、恢复样本及清理的通过证据。
-test_emissary_control_main.py: 验证门禁资源归属、原清单摘要、两类ACK、刷新夹具和有界故障探针。
+test_emissary_control_main.py: 验证资源归属、外键SQLSTATE、原清单摘要、两类ACK与刷新夹具。
 test_emissary_ota_processes.py: 以真实独立runtime组验证未reap会话回收、失败隔离与旧SID禁查。
 test_emissary_ota_mailbox.py: 验证真实邮箱观察身份匹配，缺失回复拒绝及URL脱敏回执。
 test_emissary_s3_fault.py: 验证单次资产拒收、签名头与原正文透传、私有日志和精确bucket准入。

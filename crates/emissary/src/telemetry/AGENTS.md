@@ -4,7 +4,7 @@
 mod.rs: 固定启动快照，隔离清单故障，缓存观测并驱动mTLS发送。
 durability.rs: 记录目录同步债务；命名空间修改成功后保持内存索引一致。
 collector.rs: 按UTF8字节预算生成新采样；每轮重建接口集合并清除失效地址。
-inventory.rs: 探测工具、容器内存额度与加速器能力。
+inventory.rs: 探测工具、容器内存额度与可取消的平台加速器能力。
 inventory_upload.rs: 持久隔离永久冲突，继续发送有效观察；本地故障和真实ACK分别报告。
 inventory_upload_tests.rs: 真实mTLS回归本地故障、冲突后有效ACK与未知计数。
 inventory_conflict_tests.rs: 验证冲突源保留、索引重开、写盘失败与活动标记有界保留。

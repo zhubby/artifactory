@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 冻结旧完整main、当前注册门禁与本轮双库资源。
-[OUTPUT]: 监督旧清扫等待和迁移后的清单正文读回。
+[OUTPUT]: 监督旧清扫、SQLSTATE外键拒收和迁移后清单正文读回。
 [POS]: 普通进程混部故障夹具；不修改冻结源码或迁移历史。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -63,6 +63,27 @@ def verify_frozen(directory):
     if not manifest or any(legacy.digest(directory/'frozen'/name)!=digest for name,digest in manifest.items()):
         raise RuntimeError('frozen product source changed')
     return hashlib.sha256(json.dumps(manifest,sort_keys=True).encode()).hexdigest()
+
+
+def retention_foreign_key_guard(sql,database):
+    statement = "DELETE FROM inventory_versions v WHERE NOT EXISTS(SELECT 1 FROM inventory_observations o WHERE o.node_id=v.node_id AND o.digest=v.digest) AND NOT EXISTS(SELECT 1 FROM latest_inventories l WHERE l.node_id=v.node_id AND l.digest=v.digest)"
+    result = sql(database,"""CREATE FUNCTION pg_temp.emissary_retention_guard() RETURNS text
+    LANGUAGE plpgsql AS $guard$
+    DECLARE rejected_constraint text;
+    BEGIN
+      BEGIN
+        """+statement+""";
+        RAISE EXCEPTION 'retention guard unexpectedly accepted deletion';
+      EXCEPTION WHEN foreign_key_violation THEN
+        GET STACKED DIAGNOSTICS rejected_constraint = CONSTRAINT_NAME;
+        RETURN SQLSTATE || ':' || rejected_constraint;
+      END;
+    END;
+    $guard$;
+    SELECT pg_temp.emissary_retention_guard();""")
+    if result not in ('23503:inventory_delivery_content','23503:startup_inventory_content'):
+        raise RuntimeError('retention guard did not reject the referenced inventory body')
+    return result
 
 
 class Retention:
@@ -150,8 +171,12 @@ class Retention:
         retained = json.loads(self.sql(self.telemetry,f"SELECT json_build_object('observation',i.observation_id,'digest',i.inventory_digest,'inventory',v.inventory) FROM startup_inventories i JOIN inventory_versions v ON v.node_id=i.node_id AND v.digest=i.inventory_digest WHERE i.node_id='{node}' AND i.startup_id='{startup}'"))
         assert retained==original, 'old retention changed original inventory content or provenance'
         proof['original_inventory_and_provenance_unchanged'] = True
-        self.wait(lambda:'foreign key constraint' in (self.directory/'frozen-retention.log').read_text(),
-                  'actual old retention foreign key rejection',5)
+        self.wait(lambda:'telemetry retention maintenance failed' in
+                  (self.directory/'frozen-retention.log').read_text(),
+                  'actual old retention rejected',5)
+        # 驱动的Display不保证展开数据库原因；用同一DELETE读回SQLSTATE。
+        rejection = retention_foreign_key_guard(self.sql,self.telemetry)
+        proof['old_retention_guard_sqlstate'] = rejection
         assert 'telemetry retention maintenance failed' in (self.directory/'frozen-retention.log').read_text()
         assert self.sql(self.telemetry,f"SELECT count(*) FROM telemetry_batches WHERE node_id='{self.sentinel_node}' AND batch_id='{self.sentinel_batch}'")=='1'
         proof['old_retention_restricted_and_rolled_back'] = True

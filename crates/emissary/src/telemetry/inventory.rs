@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖系统资源、原生工具和节点遥测契约。
-//! [OUTPUT]: 生成启动能力快照和独立刷新清单，旧工具字段保持不变。
+//! [OUTPUT]: 生成启动能力快照和独立刷新清单，平台加速器探测可取消。
 //! [POS]: 节点启动元数据和加速器遥测的探测边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{config::Config, process};
@@ -368,7 +368,7 @@ async fn accelerators_with_cancel(
             .collect();
     }
     #[cfg(windows)]
-    if let Some(text)=output("powershell",&["-NoProfile","-NonInteractive","-Command","@(Get-CimInstance Win32_VideoController | Select-Object PNPDeviceID,Name,DriverVersion,AdapterRAM) | ConvertTo-Json -Compress"],cancel,deadline).await
+    if let Some(text)=accelerator_output("powershell",&["-NoProfile","-NonInteractive","-Command","@(Get-CimInstance Win32_VideoController | Select-Object PNPDeviceID,Name,DriverVersion,AdapterRAM) | ConvertTo-Json -Compress"],cancel,deadline).await
         && let Ok(value)=serde_json::from_str::<Value>(&text) && let Some(cards)=value.as_array() {
         return cards.iter().take(64).map(|v|Accelerator{id:v["PNPDeviceID"].as_str().unwrap_or("unknown").chars().take(256).collect(),vendor:"unknown".into(),model:v["Name"].as_str().unwrap_or("unknown").chars().take(256).collect(),driver:v["DriverVersion"].as_str().map(str::to_owned),memory_total_bytes:v["AdapterRAM"].as_u64().filter(|n|*n>0)}).collect();
     }

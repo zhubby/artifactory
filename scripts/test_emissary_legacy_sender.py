@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 反向兼容驱动和有限寿命的伪接收器、发送器与编译子进程。
-[OUTPUT]: 验证进程组回收、顺序结果与精确清库回执。
+[OUTPUT]: 隔离驱动时钟，验证中断回收、顺序结果与精确清库回执。
 [POS]: 无数据库故障回归；只创建本次私有临时目录和直接子进程。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -123,7 +123,8 @@ class ProcessCleanup(unittest.TestCase):
                 raise KeyboardInterrupt()
             original(seconds)
 
-        with patch.object(driver.time, "sleep", side_effect=interrupt_after_sender_started):
+        with patch.object(driver, "time", wraps=time) as driver_clock:
+            driver_clock.sleep.side_effect = interrupt_after_sender_started
             with self.assertRaises(KeyboardInterrupt):
                 self.delivery(duration=15)
         self.assert_owned_processes_absent()

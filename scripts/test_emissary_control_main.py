@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """[INPUT]: 真实Control门禁的环境、容器端口与精确资源回收边界。
-[OUTPUT]: 验证资源边界、刷新原摘要与工具夹具，拒绝未确认结果。
+[OUTPUT]: 验证资源边界、外键SQLSTATE、刷新原摘要与工具夹具。
 [POS]: 无服务故障回归；完整注册与操作仍由实际main门禁验证。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
@@ -19,9 +19,17 @@ from unittest.mock import patch
 
 import check_emissary_control_main as driver
 import emissary_controlled_refresh as refresh
+import emissary_legacy_retention as retention
 
 
 class ResourceBoundaries(unittest.TestCase):
+    def test_retention_guard_requires_exact_server_constraint_and_sqlstate(self):
+        for result in ('23503:inventory_delivery_content','23503:startup_inventory_content'):
+            self.assertEqual(retention.retention_foreign_key_guard(lambda *_:result,'test'),result)
+        for result in ('23505:inventory_delivery_content','23503:other_constraint','db error',''):
+            with self.assertRaisesRegex(RuntimeError,'did not reject'):
+                retention.retention_foreign_key_guard(lambda *_:result,'test')
+
     def test_refresh_source_decoder_verifies_delivery_digest_and_native_identity(self):
         with tempfile.TemporaryDirectory(prefix='controlled-refresh-decode-') as temporary:
             path = Path(temporary)/'source.inventory'
