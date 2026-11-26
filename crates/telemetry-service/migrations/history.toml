@@ -14,3 +14,13 @@ snapshot_name = "0001_snapshot.toml"
 id = 2026111508
 name = "0002_lifecycle.sql"
 snapshot_name = "0002_snapshot.toml"
+
+[[migrations]]
+id = 2026112501
+name = "0003_inventory_delivery.sql"
+snapshot_name = "0003_snapshot.toml"
+
+[[migrations]]
+id = 2026112601
+name = "0004_inventory_integrity.sql"
+snapshot_name = "0004_snapshot.toml"

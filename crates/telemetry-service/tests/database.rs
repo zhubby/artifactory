@@ -288,6 +288,23 @@ async fn durable_replay_ordering_nulls_columnstore_and_rollups() {
         resources[0]["available_memory_bytes"], 4096,
         "an old startup replay cannot overwrite current-startup resources even with a later event timestamp"
     );
+    let latest = store::TelemetryStore::new(pool.clone(), pool.clone())
+        .latest_for_startup(node, current_startup)
+        .await
+        .unwrap_or_else(|_| panic!("current startup query failed"));
+    assert_eq!(
+        latest.host.as_ref().unwrap()["startup_id"],
+        current_startup.to_string()
+    );
+    assert_eq!(
+        latest.host.as_ref().unwrap()["sample"]["available_memory_bytes"],
+        4096
+    );
+    assert_eq!(latest.inventory.as_ref().unwrap()["provenance"], "legacy");
+    assert!(
+        latest.inventory.as_ref().unwrap()["startup_id"].is_null(),
+        "旧清单不得推造当前startup归属"
+    );
     grpc_authorization(&pool, node, attempt).await;
     drop(pool);
     sql::execute(
@@ -327,7 +344,7 @@ async fn grpc_authorization(pool: &toasty::Db, node: Uuid, attempt: Uuid) {
     let mut params = CertificateParams::default();
     params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ClientAuth];
     let client = params.signed_by(&client_key, &issuer).unwrap();
-    sql::execute(&mut pool.clone(), &format!("DO $fixture$ BEGIN {}; END $fixture$","CREATE TABLE nodes(id uuid PRIMARY KEY,certificate_hash text,revoked boolean NOT NULL DEFAULT false,certificate_expires_at timestamptz NOT NULL DEFAULT now()+interval '1 day'); CREATE TABLE attempts(id uuid PRIMARY KEY,node_id uuid NOT NULL)"), params![]).await.unwrap();
+    sql::execute(&mut pool.clone(), &format!("DO $fixture$ BEGIN {}; END $fixture$","CREATE TABLE nodes(id uuid PRIMARY KEY,certificate_hash text,revoked boolean NOT NULL DEFAULT false,certificate_expires_at timestamptz NOT NULL DEFAULT now()+interval '1 day'); CREATE TABLE attempts(id uuid PRIMARY KEY,node_id uuid NOT NULL); CREATE TABLE node_startups(node_id uuid NOT NULL,startup_id uuid NOT NULL,PRIMARY KEY(node_id,startup_id))"), params![]).await.unwrap();
     sql::execute(
         &mut pool.clone(),
         "INSERT INTO nodes(id,certificate_hash) VALUES($1,$2)",
@@ -418,8 +435,79 @@ async fn grpc_authorization(pool: &toasty::Db, node: Uuid, attempt: Uuid) {
         processes: vec![],
         inventory: None,
     };
+    let negotiation = rpc
+        .negotiate(artifactory_emissary_protocol::telemetry_negotiation::offer())
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(negotiation.batch_schemas, vec![1]);
+    assert_eq!(negotiation.inventory_schemas, vec![1]);
+    assert!(negotiation.features.contains(&"digest_ack_v1".into()));
+    let observation = artifactory_emissary_protocol::InventoryObservation::new(
+        batch.session_id,
+        0,
+        Utc::now() - Duration::days(3),
+        1,
+        &Inventory {
+            os: "linux".into(),
+            arch: "arm64".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let unregistered = rpc.upload_inventory(observation.clone()).await.unwrap_err();
+    assert_eq!(artifactory_emissary_protocol::telemetry_negotiation::RejectionReason::from_status(&unregistered),Some(artifactory_emissary_protocol::telemetry_negotiation::RejectionReason::StartupUnregistered));
+    sql::execute(
+        &mut pool.clone(),
+        "INSERT INTO node_startups(node_id,startup_id) VALUES($1,$2)",
+        params![node, batch.session_id],
+    )
+    .await
+    .unwrap();
+    let ack = rpc
+        .upload_inventory(observation.clone())
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(!ack.duplicate);
+    assert!(observation.matches_ack(&ack));
+    assert!(
+        rpc.upload_inventory(observation.clone())
+            .await
+            .unwrap()
+            .into_inner()
+            .duplicate
+    );
+    use artifactory_emissary_protocol::telemetry_negotiation::RejectionReason;
+    let mut invalid = observation.clone();
+    invalid.inventory_schema = 99;
+    assert_eq!(
+        RejectionReason::from_status(&rpc.upload_inventory(invalid).await.unwrap_err()),
+        Some(RejectionReason::SchemaUnsupported)
+    );
+    let mut invalid = observation.clone();
+    invalid.inventory_json =
+        vec![0; artifactory_emissary_protocol::inventory::MAX_INVENTORY_BYTES + 1];
+    assert_eq!(
+        RejectionReason::from_status(&rpc.upload_inventory(invalid).await.unwrap_err()),
+        Some(RejectionReason::BoundsExceeded)
+    );
+    let mut invalid = observation.clone();
+    invalid.inventory_json = b"{}".to_vec();
+    assert_eq!(
+        RejectionReason::from_status(&rpc.upload_inventory(invalid).await.unwrap_err()),
+        Some(RejectionReason::Malformed)
+    );
+    let mut invalid = observation.clone();
+    invalid.observed_at_ms = (Utc::now() + Duration::minutes(6)).timestamp_millis();
+    invalid.delivery_digest = invalid.computed_digest();
+    assert_eq!(
+        RejectionReason::from_status(&rpc.upload_inventory(invalid).await.unwrap_err()),
+        Some(RejectionReason::ClockFuture)
+    );
     let request = |b: &Batch| TelemetryBatch {
         json: serde_json::to_vec(b).unwrap(),
+        schema_version: 0,
     };
     assert!(
         !rpc.upload(request(&batch))
@@ -436,6 +524,21 @@ async fn grpc_authorization(pool: &toasty::Db, node: Uuid, attempt: Uuid) {
             .duplicate,
         "ACK loss replays the original receipt"
     );
+    let bytes = serde_json::to_vec(&batch).unwrap();
+    let ack = rpc.upload(request(&batch)).await.unwrap().into_inner();
+    assert_eq!(
+        ack.sha256,
+        artifactory_service_transport::crypto::hash(&bytes)
+    );
+    assert_eq!(ack.schema_version, 1);
+    let unsupported = rpc
+        .upload(TelemetryBatch {
+            json: bytes,
+            schema_version: 99,
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(artifactory_emissary_protocol::telemetry_negotiation::RejectionReason::from_status(&unsupported),Some(artifactory_emissary_protocol::telemetry_negotiation::RejectionReason::SchemaUnsupported));
     batch.id = Uuid::new_v4();
     batch.sampled_at = Utc::now() + Duration::minutes(10);
     assert_eq!(
@@ -478,6 +581,14 @@ async fn grpc_authorization(pool: &toasty::Db, node: Uuid, attempt: Uuid) {
         rpc.upload(request(&batch)).await.unwrap_err().code(),
         tonic::Code::Unauthenticated,
         "revocation applies to an existing telemetry connection"
+    );
+    assert_eq!(
+        rpc.negotiate(artifactory_emissary_protocol::telemetry_negotiation::offer())
+            .await
+            .unwrap_err()
+            .code(),
+        tonic::Code::Unauthenticated,
+        "协商也必须实时复核吊销"
     );
     drop(rpc);
     let _ = stop_tx.send(());

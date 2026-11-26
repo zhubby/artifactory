@@ -98,6 +98,11 @@ artifactory-emissary service --action start --config /path/to/emissary.json
 每池默认同时一个升级，失败或回滚会暂停后续升级。
 节点离线时拒绝创建更新；重连后仍需管理员发起。
 已接受的更新断线后，按原执行记录恢复命令发送。
+运行程序提交邮箱遇到锁或磁盘故障时保持运行。
+内存只保留一个待提交请求，每秒重试。
+新generation替换旧请求，同代cancel优先于apply。
+缓存未知或维护围栏存在时，等待准入恢复后再提交。
+提交成功前不报告已接受，锁竞争不覆盖原邮箱。
 控制平面滚动升级期间，已开始的更新继续使用原冻结清单。
 新更新使用接收请求的服务实例所运行的产品统一版本。
 
@@ -117,7 +122,88 @@ artifactory-emissary service --action start --config /path/to/emissary.json
 节点已是当前版本时，拒绝重复重试。
 候选失败时，启动器仍自动恢复上一运行版本。
 
-`spool/` 中存在未确认日志时保持排空，不能通过删除日志绕过。可检查节点磁盘、证书期限、连接状态与产物存储后恢复传输。固定启动器自身、SDK 和系统工具链不属于第一版 OTA；启动器更换需要管理员安装。证书也不会自动续签。
+`spool/` 中存在未确认日志时保持排空，不能通过删除日志绕过。可检查节点磁盘、证书期限、连接状态与产物存储后恢复传输。固定启动器自身、SDK 和系统工具链不属于运行程序 OTA；启动器更换使用独立管理员维护入口。证书也不会自动续签。
+
+## 下载观察与固定启动器维护
+
+实际父启动器使用实例握手报告空间、进度、GC和Range能力。
+运行程序版本不代表固定启动器具备这些能力。
+旧启动器缺少握手时显示未知进度，不能推算百分比。
+Control确认 `emissary-ota-observability-v2` 后接收扩展观察。
+节点详情中的 `emissary_ota_status.observability` 保存最近有效观察。
+进度绑定更新、generation、资产摘要和单调序号。
+排空分别报告Worker、日志记录/字节、终态待确认、终端和有限操作。
+90秒无进展显示停滞，不能据此强制激活或删除队列。
+
+新启动器先校验同摘要缓存，再读取目标文件系统空间。
+需要余量为 `remaining + max(64MiB, ceil(size/10))`。
+GC保护current、previous、candidate和活动下载。
+它额外保留最近使用的两个已验证资产，缓存上限512MiB。
+未知文件、链接和无法确定保护集合的状态拒绝清扫。
+Range只延续当前一次下载，300秒总期限包括重试与续签。
+进程重启仍按原恢复规则失败或回滚，不自动跨进程续传。
+过期票据通过原节点mTLS续签，不能更改冻结发行或资产。
+文件系统报告余量不保证后续写入成功。
+APFS实测在仍报告数MiB余量时返回ENOSPC。
+磁盘满也会阻止失败状态或进度的原子落盘。
+保留进度只代表最近一次成功保存的观察，不能推断成功。
+下载结果保存失败或下载保护释放失败时，启动器保持当前运行程序。
+它每秒重试，结果耐久保存并释放保护后才继续排空与激活。
+满盘期间不能保证写下终态；空间恢复后再保存结果。
+排空确认后，启动器先耐久保存激活意图，再停止当前运行程序。
+存储锁或激活意图保存失败时，保持当前程序并每秒重试。
+候选取得三次健康确认后，成功状态保存失败也保持候选运行。
+启动器保留已取得的确认并每秒重试，耐久保存后才提交版本指向。
+提交重试期间读到新会话时，重新要求该会话的三次独立确认。
+该确认不跨启动器重启保留；重启仍遵循原激活中断恢复规则。
+候选退出、启动失败或健康超时时，先恢复原current，再保存恢复终态。
+恢复终态保存失败时保持原程序，并暂停后续更新直到保存成功。
+新请求先耐久保存接受状态，再删除同一邮箱请求。
+接受状态保存失败时保留原状态、邮箱与当前程序，每秒重试。
+接受后清理旧下载或邮箱失败时，保持当前程序并重试清理。
+取消已接受后不重启原下载；提交与消费共用私有request.lock。
+交接重试保留不同请求，邮箱锁故障不阻止已有候选健康确认。
+运行程序写入健康确认或排空标记失败时保持运行。
+保存成功前不消费该心跳确认，后续有效确认继续尝试。
+重连先耐久清空旧会话健康确认，保存失败每秒重试。
+会话围栏保存成功后才建立新连接，不能复用旧会话确认。
+
+管理员从固定签名发行取得同平台候选、manifest和signature。
+先在受信环境验签并取得候选SHA-256，再执行安装脚本维护模式：
+
+```sh
+sh installer.sh --maintain-launcher \
+  --installed-binary /path/to/fixed/artifactory-emissary \
+  --candidate /path/to/signed/artifactory-emissary \
+  --candidate-sha256 SIGNED_ASSET_SHA256 \
+  --manifest /path/to/emissary-manifest.json \
+  --signature /path/to/emissary-manifest.sig \
+  --config /path/to/emissary.json
+```
+
+Windows安装脚本使用 `-MaintainLauncher` 和对应同名参数。
+旧安装缺少新鲜活动记录时，先由管理员正常停止服务，附加 `--service-stopped`。
+维护工具再次使用既有公钥验签，拒绝活动OTA和未结束操作。
+固定启动器维护保留未确认日志和清单；运行程序OTA仍要求业务排空。
+脚本先固定管理员私有副本，再校验该副本摘要并执行。
+维护与中断恢复共用独占锁，拒绝并发替换。
+维护围栏使用随机标识。运行时关闭新准入后确认同一标识。
+新鲜空闲确认后保存原EXE、权限、配置和状态备份。
+替换不改服务账户、启动模式、UUID、证书、版本指针或队列。
+新启动器与原身份健康确认失败时恢复原EXE。
+文件替换后同步失败也恢复原EXE。
+停止或恢复结果不确定时保留围栏、恢复日志和备份。
+中断恢复要求先停止服务，再执行：
+
+```sh
+artifactory-emissary launcher-rollback --config /path/to/emissary.json \
+  --installed-binary /path/to/fixed/artifactory-emissary \
+  --backup /path/to/launcher-backup-UUID
+```
+
+备份在心跳确认后继续保留。
+管理员分别验收遥测、构建及一次显式OTA后再清理备份。
+本地事务测试不替代Windows x64、macOS arm64、Linux arm64原生服务验收。
 
 ## 管理接口
 
@@ -147,5 +233,17 @@ artifactory-emissary service --action start --config /path/to/emissary.json
 设备终端 Worker 计入 OTA 排空条件。实际 downloading、draining、activating 阶段拒绝新终端并取消已有终端；取消、下载失败与回退后允许显式创建新终端。终端关闭与真实进程回收完成后才计为零；已关闭会话不恢复。见[设备终端](terminals.md)。
 
 `cargo test -p artifactory-emissary --all-targets` 覆盖签名、下载中断、generation、排空和真实子进程经 mTLS 确认的升级 / 回滚。PostgreSQL 测试覆盖节点锁竞争、池限流 / 暂停、权限、过期会话、吊销和证书期限。六平台 CI 覆盖 Darwin、Windows、Linux 各自的 arm64 / amd64，使用 Rust 原生构建；具体通过结果以 CI run 为准。
+
+原生服务门禁在隔离账户中执行启动器维护、签名runtime OTA及两种回退。
+它比较节点身份、证书、有效待确认队列、OTA指向、服务账户和权限。
+runtime OTA区分不同资产下载与相同资产重新激活，均不冒充跨版本验收。
+夹具没有启用Telemetry接收端，队列保留不代表维护后业务入库。
+`emissary-release.yml` 把最终发行二进制传入此门禁，成功后才上传发行资产。
+`ARTIFACTORY_NATIVE_BINARY` 指定同平台候选，要求其摘要不同于已安装测试二进制。
+`ARTIFACTORY_NATIVE_EVIDENCE_DIR` 保存脱敏阶段JSON。
+失败阶段保留`passed=false`，中断不补写成功阶段。
+门禁会创建账户和替换服务，只能显式启用于一次性runner或专用测试宿主。
+三平台操作步骤与阶段读回见[原生服务演进验收](emissary-native-acceptance.md)。
+普通本地测试不执行此门禁；工作流定义不代表实际运行通过。
 
 测试 loopback peer 不替代真实控制平面、对象存储或原生服务安装验收；历史 Go Mac mini 记录不作为 Rust Emissary 的运行证据。各 OS 服务、Xcode / SDK 和正式发行签名需分别验收。

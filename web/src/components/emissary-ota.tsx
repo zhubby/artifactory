@@ -1,12 +1,13 @@
 /**
  * [INPUT]: 依赖产品统一版本、OTA API、系统安装配置与设备详情。
- * [OUTPUT]: 提供固定产品版本的手动升级、并发策略与执行历史。
+ * [OUTPUT]: 提供手动升级、真实进度、并发策略与执行历史。
  * [POS]: 节点确认后发起升级；首读展示骨架，轮询保留策略草稿。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
+import { EmissaryUpdateProgress } from "@/components/emissary-update-progress";
 import { NodeInstallationSettings } from "@/components/node-installation-settings";
 import { useUI } from "@/components/providers";
 import { ErrorBox, Field, SectionTitle, Loading } from "@/components/common";
@@ -94,6 +95,7 @@ export function NodeOTA({ node, user, version, updates, reload, actionsReady = t
       [t("ota.launcher"), <span className="font-mono" key="launcher">{node.emissary_launcher_version || "—"}</span>],
       [t("ota.phase"), version || !supported || active ? t(phase) : "—"],
     ]} />
+    <EmissaryUpdateProgress node={node} />
     {version && <><p className="text-xs leading-5 text-muted-foreground">{t("ota.followsProduct")}</p><ReleaseStatus version={version} /></>}
     {!supported && <p className="text-xs leading-5 text-muted-foreground">{t("ota.bootstrapHint")}</p>}
     {node.ota_draining && <p className="notice">{t(active?.status === "activating" ? "ota.activatingHint" : "ota.drainHint")}</p>}

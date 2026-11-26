@@ -11,8 +11,9 @@ use uuid::Uuid;
 static BUSINESS: MigrationSet = MigrationSet::new(&[MigrationFile::new(
     1,
     "0000_test_schema.sql",
-    "CREATE TABLE nodes(id uuid PRIMARY KEY,certificate_hash text,revoked boolean NOT NULL DEFAULT false,certificate_expires_at timestamptz NOT NULL DEFAULT now()+interval '1 day');
+    "CREATE TABLE nodes(id uuid PRIMARY KEY,certificate_hash text,startup_id uuid,revoked boolean NOT NULL DEFAULT false,certificate_expires_at timestamptz NOT NULL DEFAULT now()+interval '1 day');
      CREATE TABLE attempts(id uuid PRIMARY KEY,node_id uuid NOT NULL);
+     CREATE TABLE node_startups(node_id uuid NOT NULL,startup_id uuid NOT NULL,PRIMARY KEY(node_id,startup_id));
      CREATE TABLE private_business_data(secret text);",
 )]);
 
@@ -52,6 +53,7 @@ async fn business_authorization_starts_with_only_documented_read_grants() -> Res
         }
         let node = Uuid::new_v4();
         let attempt = Uuid::new_v4();
+        let startup = Uuid::new_v4();
         sql::execute(
             &mut owner,
             "INSERT INTO nodes(id,certificate_hash) VALUES($1,'test-certificate')",
@@ -62,6 +64,12 @@ async fn business_authorization_starts_with_only_documented_read_grants() -> Res
             &mut owner,
             "INSERT INTO attempts(id,node_id) VALUES($1,$2)",
             params![attempt, node],
+        )
+        .await?;
+        sql::execute(
+            &mut owner,
+            "INSERT INTO node_startups(node_id,startup_id) VALUES($1,$2)",
+            params![node, startup],
         )
         .await?;
         // Reproduce the previously documented role without any inherited public grants.
@@ -101,6 +109,18 @@ async fn business_authorization_starts_with_only_documented_read_grants() -> Res
             "the restricted role must identify registered nodes"
         );
         authorization.authorize_attempts(node, &[attempt]).await?;
+        authorization.authorize_startup(node, startup).await?;
+        ensure!(
+            authorization.startup_page(None).await? == vec![(node, None)],
+            "当前startup扫描只读业务节点，不从观察推断"
+        );
+        ensure!(
+            authorization
+                .authorize_startup(Uuid::new_v4(), startup)
+                .await
+                .is_err(),
+            "startup归属不能跨节点"
+        );
         ensure!(
             authorization
                 .authorize_attempts(node, &[Uuid::new_v4()])
@@ -139,6 +159,7 @@ async fn business_authorization_starts_with_only_documented_read_grants() -> Res
         for statement in [
             "UPDATE nodes SET revoked=true",
             "DELETE FROM attempts",
+            "DELETE FROM node_startups",
             "UPDATE __toasty_migrations SET id=0",
             "SELECT * FROM private_business_data",
         ] {

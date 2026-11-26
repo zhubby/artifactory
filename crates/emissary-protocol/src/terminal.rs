@@ -1,7 +1,7 @@
-//! [INPUT]: 依赖 UUID、Serde 和生成的终端流信封。
-//! [OUTPUT]: 提供终端启动身份、设备能力、退出信息和有界帧校验。
-//! [POS]: 设备、会话服务和内部流共用的终端契约，不包含秘密日志。
-//! [PROTOCOL]: Update this header on change, then check AGENTS.md
+// [INPUT]: 依赖 UUID、Serde 和生成的终端流信封。
+// [OUTPUT]: 分离终端结构与期限校验，提供设备能力和有界帧校验。
+// [POS]: 设备、会话服务和内部流共用的终端契约，不包含秘密日志。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::TerminalFrame;
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -35,18 +35,14 @@ pub struct OpenTerminal {
 }
 
 impl OpenTerminal {
-    /// 校验启动身份、截止时间和由设备选择的 profile 标识。
+    /// 校验与本机时钟、会话状态无关的终端结构。
     ///
     /// # Errors
-    /// 拒绝过期、空身份、任意路径和超出窗口预算的请求。
-    pub fn validate(&self, now_ms: i64) -> Result<()> {
+    /// 拒绝空身份、任意路径和超出窗口预算的请求。
+    pub fn validate_structure(&self) -> Result<()> {
         ensure!(
             !self.terminal_id.is_nil() && !self.node_session.is_nil() && !self.startup_id.is_nil(),
             "invalid terminal identity"
-        );
-        ensure!(
-            self.expires_at_ms > now_ms && self.expires_at_ms.saturating_sub(now_ms) <= 30_000,
-            "terminal open expired"
         );
         validate_size(self.columns.into(), self.rows.into())?;
         ensure!(identifier(&self.profile), "invalid terminal profile");
@@ -58,6 +54,19 @@ impl OpenTerminal {
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b)),
             "invalid terminal type"
+        );
+        Ok(())
+    }
+
+    /// 校验启动身份、截止时间和由设备选择的 profile 标识。
+    ///
+    /// # Errors
+    /// 拒绝过期、空身份、任意路径和超出窗口预算的请求。
+    pub fn validate(&self, now_ms: i64) -> Result<()> {
+        self.validate_structure()?;
+        ensure!(
+            self.expires_at_ms > now_ms && self.expires_at_ms.saturating_sub(now_ms) <= 30_000,
+            "terminal open expired"
         );
         Ok(())
     }

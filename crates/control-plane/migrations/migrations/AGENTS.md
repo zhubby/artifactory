@@ -13,4 +13,6 @@
 0008_source_preparation.sql: 标记新版源码协议，保存规划准备摘要和有界事件。
 0009_node_installation.sql: 保存系统管理员配置的设备公开连接地址。
 
+0010_node_operations.sql: 保存有限操作、单节点准入锁、结果摘要与有界保留。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

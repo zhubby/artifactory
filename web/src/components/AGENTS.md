@@ -31,7 +31,10 @@ node-overview.tsx: 先展示四项设备摘要，再展示接口与标签，按�
 node-resources.tsx: 展示当前资源采样，按需加载分钟趋势，按设备 ID 查找图形设备型号。
 node-resource-trends.tsx: 请求选定时间窗的 CPU 和已用内存分钟历史，使用等宽图表展示缺失断点。
 node-tools.tsx: 以单列工具行展示版本和可用状态，路径按需展开，签名配置独立分组。
-node-operations.tsx: 按需读取产品统一版本，提供终端、节点配置、诊断与授权吊销。
+node-operations.tsx: 组合链路观测、有限操作、终端、升级与授权吊销。
+finite-node-operations.tsx: 按当前管理员权限发起有限探测，保留幂等请求、取消和分页结果。
+node-telemetry-status.tsx: 从心跳缓存解释队列进展、持久清单冲突、永久拒收、采样裁剪、磁盘占用与未知值。
+emissary-update-progress.tsx: 按实际启动器能力显示真实字节、阶段和排空计数。
 node-network-addresses.tsx: 在设备摘要后按接口对齐 IPv4/IPv6、采样时间和截断状态。
 node-rename.tsx: 提供具名图标入口，只提交名称，按 Unicode White_Space 裁剪后校验 UTF8 与控制字符，保护草稿和焦点。
 node-detail-parts.tsx: 提供分区、折叠区、对齐字段、时间与重试，零值可见且轮询保留展开状态。

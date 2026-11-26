@@ -16,4 +16,9 @@
 2026-11-25-emissary-protocol-data-contracts.md: 定义格式协商、清单独立确认、公平发送和有限诊断的目标契约。
 2026-11-25-emissary-ota-contracts.md: 定义固定启动器迁移、空间、进度、GC 与运行期续传的目标契约。
 
+2026-11-25-001-feat-emissary-evolution-plan.md: 规划八个实施单元、测试设备统一升级与分层验收出口。
+2026-11-25-emissary-uplink-assessment.md: 依据固定源码比较 Uplink 与 Emissary 的协议、操作、采集和 OTA。
+2026-11-25-emissary-protocol-data-contracts.md: 定义格式协商、清单独立确认、公平发送和有限诊断的目标契约。
+2026-11-25-emissary-ota-contracts.md: 定义固定启动器迁移、空间、进度、GC 与运行期续传的目标契约。
+
 [PROTOCOL]: Update this header on change, then check AGENTS.md

@@ -624,3 +624,166 @@ async fn ota_manual_requires_a_strict_confirmation_document() {
     }
     db.close().await;
 }
+
+#[tokio::test]
+#[ignore = "requires ARTIFACTORY_TEST_DATABASE_URL"]
+async fn ota_asset_renewal_is_bound_to_frozen_asset_generation_and_current_session() {
+    use sha2::{Digest, Sha256};
+    let db = Database::with_tenant().await;
+    let node = enabled_node(&db).await;
+    let session = db.state.connections.read().await[&node].session;
+    let release = Uuid::new_v4();
+    let update = Uuid::new_v4();
+    let asset_sha = "a".repeat(64);
+    let manifest=json!({"version":artifactory_control_plane::VERSION,"commit":"b".repeat(40),"protocol_min":1,"protocol_max":1,"assets":[{"os":"linux","arch":"amd64","name":"artifactory-emissary-linux-amd64","size":10,"sha256":asset_sha}]}).to_string();
+    let hash = hex::encode(Sha256::digest(manifest.as_bytes()));
+    sql::execute(&mut db.pool.clone(),"INSERT INTO emissary_releases(tenant_id,id,version,manifest,signature,manifest_hash) VALUES($1,$2,$3,$4,'test',$5)",params![TENANT,release,artifactory_control_plane::VERSION,manifest,&hash]).await.unwrap();
+    sql::execute(&mut db.pool.clone(),"INSERT INTO emissary_updates(id,node_id,pool_id,release_id,generation,status) VALUES($1,$2,$3,$4,42,'downloading')",params![update,node,TENANT,release]).await.unwrap();
+    let input = artifactory_control_plane::protocol::EmissaryAssetRenewRequest {
+        session_id: session.to_string(),
+        request_id: Uuid::new_v4().to_string(),
+        update_id: update.to_string(),
+        generation: 42,
+        manifest_sha256: hash,
+        asset_sha256: asset_sha,
+        asset_size: 10,
+        os: "linux".into(),
+        arch: "amd64".into(),
+    };
+    let renew =
+        |input| artifactory_control_plane::ota::renew_frozen_asset(&db.state, node, session, input);
+    assert!(renew(&input).await.is_ok());
+    let progress = |sequence, done| json!({"diagnostics":{"emissary_version":"0.2.2"},"ota":{"update_id":update,"generation":42,"phase":"downloading","launcher_version":"0.2.3","observability":{"schema_version":1,"sequence":sequence,"launcher_version":"0.2.3","launcher_capabilities":["ota-progress-v1"],"progress":{"update_id":update,"generation":42,"asset_sha256":"a".repeat(64),"sequence":sequence,"subphase":"download","bytes_done":done,"bytes_total":10,"download_attempt":1,"last_progress_at":chrono::Utc::now(),"updated_at":chrono::Utc::now(),"error_code":null},"drain":null,"last_progress_at":chrono::Utc::now(),"stalled":false}}});
+    artifactory_control_plane::ota::report(&db.state, node, session, &progress(2, 8))
+        .await
+        .unwrap();
+    artifactory_control_plane::ota::report(&db.state, node, session, &progress(1, 3))
+        .await
+        .unwrap();
+    let stored: Value = sql::scalar(
+        &mut db.pool.clone(),
+        "SELECT emissary_ota_status FROM nodes WHERE id=$1",
+        params![node],
+    )
+    .await
+    .unwrap();
+    assert_eq!(stored["observability"]["progress"]["bytes_done"], 8);
+    let mut wrong_generation = progress(3, 9);
+    wrong_generation["ota"]["generation"] = json!(41);
+    assert!(
+        artifactory_control_plane::ota::report(&db.state, node, session, &wrong_generation)
+            .await
+            .is_err()
+    );
+    let throttled = json!({"diagnostics":{"emissary_version":"0.2.2"},"ota":{"update_id":update,"generation":42,"phase":"downloading","launcher_version":"0.2.3"}});
+    artifactory_control_plane::ota::report(&db.state, node, session, &throttled)
+        .await
+        .unwrap();
+    let stored: Value = sql::scalar(
+        &mut db.pool.clone(),
+        "SELECT emissary_ota_status FROM nodes WHERE id=$1",
+        params![node],
+    )
+    .await
+    .unwrap();
+    assert_eq!(stored["observability"]["progress"]["sequence"], 2);
+    let mut wrong = input.clone();
+    wrong.generation = 41;
+    assert!(renew(&wrong).await.is_err());
+    let mut wrong = input.clone();
+    wrong.asset_sha256 = "c".repeat(64);
+    assert!(renew(&wrong).await.is_err());
+    assert!(
+        artifactory_control_plane::ota::renew_frozen_asset(&db.state, node, Uuid::new_v4(), &input)
+            .await
+            .is_err()
+    );
+    for change in ["revoked", "session", "cancel", "certificate"] {
+        sql::execute(&mut db.pool.clone(), "UPDATE nodes SET revoked=false,active_session=$2,certificate_expires_at=clock_timestamp()+interval '1 day',last_seen=clock_timestamp() WHERE id=$1", params![node,session]).await.unwrap();
+        sql::execute(
+            &mut db.pool.clone(),
+            "UPDATE emissary_updates SET cancel_requested=false WHERE id=$1",
+            params![update],
+        )
+        .await
+        .unwrap();
+        let mut connection = db.pool.clone();
+        let mut holder = connection.transaction().await.unwrap();
+        sql::execute(
+            &mut holder,
+            "SELECT id FROM nodes WHERE id=$1 FOR UPDATE",
+            params![node],
+        )
+        .await
+        .unwrap();
+        let pid: i32 = sql::scalar(&mut holder, "SELECT pg_backend_pid()", params![])
+            .await
+            .unwrap();
+        let state = db.state.clone();
+        let request = input.clone();
+        let waiting = tokio::spawn(async move {
+            artifactory_control_plane::ota::renew_frozen_asset(&state, node, session, &request)
+                .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(3),async {
+            loop {
+                let blocked:bool=sql::scalar(&mut db.pool.clone(),"SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))",params![pid]).await.unwrap();
+                if blocked {break;}
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        }).await.unwrap();
+        match change {
+            "revoked" => {
+                sql::execute(
+                    &mut holder,
+                    "UPDATE nodes SET revoked=true WHERE id=$1",
+                    params![node],
+                )
+                .await
+                .unwrap();
+            }
+            "session" => {
+                sql::execute(
+                    &mut holder,
+                    "UPDATE nodes SET active_session=$2 WHERE id=$1",
+                    params![node, Uuid::new_v4()],
+                )
+                .await
+                .unwrap();
+            }
+            "certificate" => {
+                sql::execute(&mut holder,"UPDATE nodes SET certificate_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",params![node]).await.unwrap();
+            }
+            _ => {
+                sql::execute(
+                    &mut holder,
+                    "UPDATE emissary_updates SET cancel_requested=true WHERE id=$1",
+                    params![update],
+                )
+                .await
+                .unwrap();
+            }
+        }
+        holder.commit().await.unwrap();
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(5), waiting)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_err(),
+            "{change} while node lock waited must reject renewal"
+        );
+    }
+    sql::execute(&mut db.pool.clone(), "UPDATE nodes SET revoked=false,active_session=$2,certificate_expires_at=clock_timestamp()+interval '1 day',last_seen=clock_timestamp() WHERE id=$1", params![node,session]).await.unwrap();
+    sql::execute(
+        &mut db.pool.clone(),
+        "UPDATE emissary_updates SET cancel_requested=true WHERE id=$1",
+        params![update],
+    )
+    .await
+    .unwrap();
+    assert!(renew(&input).await.is_err());
+    sql::execute(&mut db.pool.clone(),"UPDATE emissary_updates SET cancel_requested=false,status='succeeded',finished_at=now() WHERE id=$1",params![update]).await.unwrap();
+    assert!(renew(&input).await.is_err());
+    db.close().await;
+}

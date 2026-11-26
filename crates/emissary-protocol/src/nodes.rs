@@ -1,7 +1,7 @@
-//! [INPUT]: 依赖节点启动身份、有界元数据和 UTC 时间。
-//! [OUTPUT]: 导出名称校验、有界心跳解码、元数据摘要与选机契约。
-//! [POS]: 节点协议的分配边界；隔离旧启动采样与当前选机。
-//! [PROTOCOL]: Update this header on change, then check AGENTS.md
+// [INPUT]: 依赖节点启动身份、有界元数据和 UTC 时间。
+// [OUTPUT]: 导出分队列及清单冲突有界诊断、心跳解码与选机契约。
+// [POS]: 节点协议的分配边界；隔离旧启动采样与当前选机。
+// [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Result, ensure};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,94 @@ use uuid::Uuid;
 pub const MAX_METADATA_BYTES: usize = 64 * 1024;
 /// 网络诊断的完整 JSON 预算，不进入严格遥测契约。
 pub const MAX_NETWORK_INTERFACES_BYTES: usize = 8 * 1024;
+/// 链路诊断只传播有限键；旧节点缺失时保持未知。
+pub const MAX_DELIVERY_DIAGNOSTICS_BYTES: usize = 4 * 1024;
+pub fn delivery_diagnostics(value: &Value) -> Value {
+    const KEYS: &[&str] = &[
+        "state",
+        "spool_bytes",
+        "spool_records",
+        "oldest_age_seconds",
+        "inventory_bytes",
+        "inventory_records",
+        "inventory_superseded",
+        "inventory_conflict_records",
+        "inventory_conflicts_total",
+        "inventory_last_conflict_at",
+        "inventory_oldest_age_seconds",
+        "fresh_records",
+        "fresh_oldest_age_seconds",
+        "quota_eviction_batches",
+        "expired_batches",
+        "malformed_batches",
+        "disk_errors",
+        "schema_wait_records",
+        "inventory_schema_wait_records",
+        "dropped_batches",
+        "fresh_bytes",
+        "coalesced_batches",
+        "corrupt_records",
+        "last_successful_ack_at",
+        "last_inventory_ack_at",
+        "upload_latency_ms",
+        "backoff_seconds",
+        "inventory_state",
+        "collector_duration_ms",
+        "collector_error",
+        "negotiation_state",
+        "last_rejection_reason",
+        "last_rejection_at",
+        "bounds_exceeded_batches",
+        "id_content_conflict_batches",
+        "identity_retired_batches",
+        "fresh_state",
+        "fresh_last_ack_at",
+        "fresh_last_progress_at",
+        "fresh_upload_latency_ms",
+        "fresh_backoff_seconds",
+        "history_state",
+        "history_last_ack_at",
+        "history_last_progress_at",
+        "history_upload_latency_ms",
+        "history_backoff_seconds",
+        "inventory_last_ack_at",
+        "inventory_last_progress_at",
+        "inventory_upload_latency_ms",
+        "inventory_backoff_seconds",
+        "disk_state",
+        "disk_observed_at",
+        "disk_file_bytes",
+        "disk_record_bytes",
+        "disk_allocated_bytes",
+        "disk_block_overhead_bytes",
+        "disk_temporary_bytes",
+        "disk_index_bytes",
+        "disk_corrupt_bytes",
+        "disk_unknown_bytes",
+        "disk_files",
+        "omitted_host_devices",
+        "truncated_host_fields",
+    ];
+    let mut fields = serde_json::Map::new();
+    for key in KEYS {
+        if let Some(value) = value.get(key)
+            && (value.is_number()
+                || value.is_null()
+                || value
+                    .as_str()
+                    .is_some_and(|s| s.len() <= 128 && !s.chars().any(char::is_control)))
+        {
+            fields.insert((*key).into(), value.clone());
+        }
+    }
+    let result = Value::Object(fields);
+    if serde_json::to_vec(&result).is_ok_and(|bytes| bytes.len() <= MAX_DELIVERY_DIAGNOSTICS_BYTES)
+    {
+        result
+    } else {
+        serde_json::json!({"state":"diagnostics_bounds_exceeded"})
+    }
+}
 /// 完整 hello/heartbeat：64 KiB 启动、8 KiB 网络、24 KiB 运行信封。
 /// 运行信封包含最多 32 项租约、OTA、指标及全部 JSON 字段开销。
 /// 原有 72 KiB 信封加完整网络字段仍低于此上限。
@@ -33,6 +121,19 @@ pub fn decode_heartbeat(payload_json: &str) -> Result<Value> {
     );
     let payload: Value =
         serde_json::from_str(payload_json).map_err(|_| anyhow::anyhow!("invalid heartbeat"))?;
+    if let Some(value) = payload
+        .pointer("/ota/observability")
+        .filter(|v| !v.is_null())
+    {
+        let observation: crate::ota::Observability = serde_json::from_value(value.clone())?;
+        observation.validate()?;
+    }
+    if let Some(value) = payload.pointer("/diagnostics/metrics/telemetry") {
+        ensure!(
+            serde_json::to_vec(value)?.len() <= MAX_DELIVERY_DIAGNOSTICS_BYTES,
+            "oversized telemetry diagnostics"
+        );
+    }
     if let Some(capabilities) = payload.get("capabilities") {
         ensure!(
             capabilities

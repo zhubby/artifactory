@@ -102,23 +102,27 @@ async fn terminate(child: &mut dyn ChildWrapper) -> Result<()> {
         {
             let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
             let mut empty = false;
+            let mut live = true;
             loop {
-                if let Err(error) = child.start_kill()
+                // Darwin 对只剩僵尸的组重复 killpg 返回 EPERM。
+                // 保留未 wait 的 leader 固定 PGID，只向仍有活进程的组重发。
+                if live
+                    && let Err(error) = child.start_kill()
                     && error.raw_os_error() != Some(libc::ESRCH)
                 {
                     return Err(error.into());
                 }
                 tokio::time::sleep(Duration::from_millis(25)).await;
                 let snapshot = tokio::task::spawn_blocking(move || group_has_live_members(group));
-                let alive = tokio::time::timeout_at(deadline, snapshot)
+                live = tokio::time::timeout_at(deadline, snapshot)
                     .await
                     .map_err(|_| {
                         anyhow::anyhow!("process snapshot exceeded cleanup deadline")
                     })???;
-                if !alive && empty {
+                if !live && empty {
                     break;
                 }
-                empty = !alive;
+                empty = !live;
                 anyhow::ensure!(
                     tokio::time::Instant::now() < deadline,
                     "process group descendants remain after cancellation"

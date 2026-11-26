@@ -11,6 +11,7 @@ dashboard_tests.rs: 验证全量构建、状态分母、归档活动、空范围
 errors.rs: 转换数据库约束为业务错误。
 models.rs: 定义 Toasty 私有 CRUD 投影。
 management.rs: 事务改名和删除节点池并审计，保护引用和注册锁序，投影授权计数与池筛选。
+node_operations.rs: 锁后复核管理员与设备会话，持久化有限操作和摘要结果。
 node_installation.rs: 保存系统设备地址，按真实账户角色授权，原子签发安装凭证和审计。
 projects.rs: 写入项目配置和源码授权。
 signing.rs: 写入凭据版本、默认方案并投影方案当前可用性。
@@ -43,6 +44,7 @@ node_metadata.rs: 记录启动元数据和能力摘要。
 terminals.rs: 原子登记设备终端、Session 票据和实例租约，审计真实账户与字节计数。
 node_queries.rs: 聚合项目授权原生平台，查询构建冻结范围内的设备。
 ota.rs: 串行导入发行，只派发已接受升级并保留冻结清单和健康回执。
+ota_renewal.rs: 在节点锁内复验当前会话、取消和原资产，续签不变更目标。
 ota_management.rs: 按真实管理员会话接受手动升级，约束版本、重试、并发和取消。
 ota_import_tests.rs: 验证预授权发行导入和手动升级接受共用租户互斥锁。
 performance.rs: 验证存储查询预算和响应规模。

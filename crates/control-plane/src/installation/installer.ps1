@@ -1,20 +1,28 @@
 # [INPUT]: 固定资产地址、摘要、设备地址、CA、公钥与环境注册凭证。
-# [OUTPUT]: 以本地专用账户注册节点、初始化 OTA 并启动 Windows 服务。
-# [POS]: 控制平面分发的 Windows 首次安装入口；不覆盖已有身份。
+# [OUTPUT]: 以专用账户首次安装，或校验私有副本来维护原启动器。
+# [POS]: Windows安装与管理员维护入口；保留既有节点身份。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 param(
-    [Parameter(Mandatory = $true)][string]$DownloadUrl,
-    [Parameter(Mandatory = $true)][string]$Sha256,
-    [Parameter(Mandatory = $true)][long]$Size,
-    [Parameter(Mandatory = $true)][string]$Endpoint,
-    [Parameter(Mandatory = $true)][string]$CaBase64,
-    [Parameter(Mandatory = $true)][string]$CaSha256,
-    [Parameter(Mandatory = $true)][string]$PublicKeys,
-    [Parameter(Mandatory = $true)][ValidateSet('windows')][string]$Os,
-    [Parameter(Mandatory = $true)][ValidateSet('amd64', 'arm64')][string]$Arch,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Install')][string]$DownloadUrl,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Install')][string]$Sha256,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Install')][long]$Size,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Install')][string]$Endpoint,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Install')][string]$CaBase64,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Install')][string]$CaSha256,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Install')][string]$PublicKeys,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Install')][ValidateSet('windows')][string]$Os,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Install')][ValidateSet('amd64', 'arm64')][string]$Arch,
     [string]$User,
     [string]$Directory,
-    [string]$BinaryDirectory
+    [string]$BinaryDirectory,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Maintenance')][switch]$MaintainLauncher,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Maintenance')][string]$InstalledBinary,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Maintenance')][string]$Candidate,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Maintenance')][string]$CandidateSha256,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Maintenance')][string]$Manifest,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Maintenance')][string]$Signature,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Maintenance')][string]$Config,
+    [Parameter(ParameterSetName = 'Maintenance')][switch]$ServiceStopped
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -22,6 +30,36 @@ $enrollmentToken = $env:ARTIFACTORY_ENROLLMENT_TOKEN
 Remove-Item Env:\ARTIFACTORY_ENROLLMENT_TOKEN -ErrorAction SilentlyContinue
 $temporary = $null
 $credential = $null
+if ($MaintainLauncher) {
+    $enrollmentToken = $null
+    foreach ($path in @($InstalledBinary, $Candidate, $Manifest, $Signature, $Config)) {
+        $file = Get-Item -LiteralPath $path -ErrorAction Stop
+        if (![IO.Path]::IsPathRooted($path) -or $file.PSIsContainer -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Maintenance files must be ordinary absolute local paths.' }
+    }
+    if ($CandidateSha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'Signed-release maintenance candidate SHA-256 required.' }
+    $maintenanceDirectory = Join-Path ([IO.Path]::GetTempPath()) ('artifactory-maintain-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $maintenanceDirectory | Out-Null
+    try {
+        $acl = [Security.AccessControl.DirectorySecurity]::new()
+        $acl.SetOwner([Security.Principal.WindowsIdentity]::GetCurrent().User)
+        $acl.SetAccessRuleProtection($true, $false)
+        $inherit = [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'
+        foreach ($sid in @('S-1-5-18', 'S-1-5-32-544')) {
+            $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid), [Security.AccessControl.FileSystemRights]::FullControl, $inherit, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow))
+        }
+        Set-Acl -LiteralPath $maintenanceDirectory -AclObject $acl
+        $tool = Join-Path $maintenanceDirectory 'artifactory-maintenance.exe'
+        Copy-Item -LiteralPath $Candidate -Destination $tool
+        if ((Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant() -cne $CandidateSha256) { throw 'Signed-release maintenance candidate SHA-256 mismatch.' }
+        $arguments = @('launcher-maintain', '--config', $Config, '--installed-binary', $InstalledBinary, '--candidate', $tool, '--manifest', $Manifest, '--signature', $Signature)
+        if ($ServiceStopped) { $arguments += '--service-stopped' }
+        & $tool @arguments
+        if ($LASTEXITCODE -ne 0) { throw 'Launcher maintenance failed; retained backups contain recovery state.' }
+    } finally {
+        Remove-Item -LiteralPath $maintenanceDirectory -Recurse -Force
+    }
+    return
+}
 
 # ---- 身份切换与目录权限共用边界 ----
 function Set-PrivateDirectory([string]$Path, [Security.Principal.SecurityIdentifier]$ServiceSid, [Security.AccessControl.FileSystemRights]$ServiceRights) {

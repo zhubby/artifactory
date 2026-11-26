@@ -21,6 +21,13 @@ flowchart LR
     T -->|查询池| D
 ```
 
+独立清单的规范身份冲突按ID与摘要持久隔离。
+设备保留原字节和启动检查点，继续发送有效刷新。
+隔离不构成ACK，也不计为等待格式兼容。
+心跳分别上报活动隔离数、累计次数和最近冲突时间。
+控制台在后续发送恢复后仍展示这些诊断。
+索引与源都遵守有界额度，细节见[数据契约](plans/2026-11-25-emissary-protocol-data-contracts.md#13-拒收与重试)。
+
 ## 采集范围
 
 | 数据 | 采集与语义 |
@@ -50,7 +57,21 @@ flowchart LR
 
 分钟 / 小时聚合覆盖主机 CPU、内存、活动 attempt，以及构建 CPU、RSS、进程数和完整性。磁盘、网络、加速器、swap、load 及逐进程 I/O 当前保留原始采样，不生成跨重启或跨设备的累计计数平均值。
 
-静态清单存于 `inventory_versions`，每个节点与内容摘要只存一份；新版 Emissary 每次进程启动复用 metadata 的同一快照向 `inventory_observations` 投递一次，保留 180 天。`latest_hosts` 与 `latest_inventories` 提供常数规模的节点摘要，乱序重放不能覆盖更新的采样。fresh 要求采样时间和接收时间都在 90 秒内，且采样时间不超过服务器 30 秒；重放旧数据不会使设备显示为新鲜。
+静态清单正文存于 `inventory_versions`，按节点和内容摘要去重。新版 Emissary 在启动时持久化独立观察，`inventory_deliveries` 保存观察 ID、startup、revision 和交付摘要；`startup_inventories` 保存每个 startup 的最新观察。历史按接收时间保留180天，当前 startup 的最后观察另行保护。旧 batch 清单继续写入 legacy 观察；升级发送器先从原字节提取独立回填记录，再清扫采样。`latest_hosts` 与 `latest_inventories` 提供常数规模的节点摘要，乱序重放不能覆盖更新的采样。fresh 要求采样时间和接收时间都在 90 秒内，且采样时间不超过服务器 30 秒；重放旧数据不会使设备显示为新鲜。
+
+独立清单的两类引用通过复合外键保护正文。
+清扫或节点删除须先移除引用，再删除正文。
+旧副本的清扫和删除遇到新引用会失败并回滚。
+这只保护数据完整性，不提供旧副本功能兼容。
+约束迁移完整验证既有引用；孤立回执使迁移失败。
+不得删回执或伪造正文以绕过验证。
+
+启用独立清单前，排空并停止全部旧Telemetry副本。
+将查询、删除和写入路由全部切向当前版本。
+旧副本不维护startup_hosts，也不理解当前startup查询。
+原版新旧副本随机混部不属于支持的发布方式。
+本轮按2026-11-26决定停旧后统一升级全部测试设备。
+不建设兼容桥接，不承诺旧功能回退或长期新旧混部。
 
 AI 查询和分配另以 `startup_resources` 保存每个节点／启动的最新资源摘要，批量读取当前业务节点的 `startup_id`，避免重放旧启动的数据影响当前选机。详见 [节点元数据、MCP 与 AI 选机](node-placement.md)。
 
@@ -60,13 +81,13 @@ AI 查询和分配另以 `startup_resources` 保存每个节点／启动的最�
 
 私有 `<prefix>-telemetry` Service 同时提供查询 8093 和写入 8444，不再创建 telemetry-grpc Service。查询仍要求内部 token 与 TLS；写入仍要求设备 mTLS。该 Service 固定为 ClusterIP，设备入口通过 `gateway.service` 发布。Service 端口合并不改变两种协议或认证方式。
 
-批次有 UUID、进程内 session、单调计时、UTC 采样时间；新版 Emissary 的 `session_id` 与 metadata 的 `startup_id` 相同。服务器在事务提交后 ACK；节点与批次 ID 构成幂等键，内容不一致的重复 ID 被拒绝。发送端在 ACK ID 匹配后才删除本地记录。重放窗口为 48 小时；超过窗口或未来超过 5 分钟的记录永久拒收并记为缺口，需要设备修正系统时间。
+批次有 UUID、进程内 session、单调计时、UTC 采样时间；新版 Emissary 的 `session_id` 与 metadata 的 `startup_id` 相同。服务器在事务提交后 ACK；节点与批次 ID 构成幂等键，内容不一致的重复 ID 被拒绝。新发送器独立向 Telemetry 协商，不使用 Control 能力代替。旧服务返回Unimplemented时继续发送精确legacy v1。协商临时Unavailable、限流或20秒超时，沿用上次安全格式或启动v1并重试；权限拒收不降级。采用过摘要确认后，重连与后端切换不能降为仅ID确认。新接收端返回原字节 SHA-256；发送器匹配 ID 和摘要并完成本地持久确认后才删除记录。旧离线字节、ID和时间不改写。采样重放窗口为48小时；超窗记录按明确原因记缺口。未来时钟、权限、未知拒收和格式失配保留并退避。独立清单不套48小时窗口；其观察 ID和交付摘要须单独确认。legacy batch ACK不代替独立观察 ACK。
 
-独立缓存位于 `<root>/telemetry/`，默认 32 MiB、最多 8192 个记录，先淘汰最老记录；记录和丢弃计数原子落盘。主机重启后从相同 managed root 重放。构建日志配额独立。遥测超时、断联、数据库背压、磁盘写入失败均不返回构建错误；最后一种情况会记录本地告警，无法落盘的样本不保证补报。容器化 Emissary 应将 managed root 放在持久卷上。
+独立缓存位于 `<root>/telemetry/`，默认正文额度32MiB：4MiB清单、1MiB新鲜主机槽、27MiB历史采样。清单最多16条；当前启动revision0与最新未确认刷新受保护。新鲜槽分为可替换pending和固定ID的inflight，各最多512KiB。新采样按UTF8字节和实际JSON长度裁剪设备数组，持久记录omitted_host_devices与truncated_host_fields；旧磁盘原字节不裁剪。普通主机与历史合计最多8192条。每完成一个新鲜主机批次，至少给历史一次机会；独立清单使用单独任务与退避。接收端协商额度不兼容时保留原记录，并继续发送兼容记录。历史超额按最老记录淘汰；清单superseded单独记录ID、原因和累计数量。目录同步失败保留同步债务，内存索引跟随已完成的rename/unlink，避免队列卡死。损坏旧批次保留原位并跳过，新鲜槽移入opaque目录并显示数量。损坏独立清单或启动检查点只关闭清单通道；普通资源采样继续。未能提取清单的旧混合批次保持原位，禁止发送确认与额度淘汰。清单条数和字节保持未知，诊断为storage_unavailable。管理员修复存储后需重启读取，程序不猜测身份或覆盖损坏字节。刷新revision检查点损坏只使刷新操作失败，已有观察仍可发送。以上记录不自动当作成功。原子文件、索引及异常原字节的物理开销不包含在正文额度内。自定义额度至少8MiB，过小只停遥测并显示配置错误。主机重启后从相同 managed root 重放。构建日志配额独立。遥测超时、断联、数据库背压、磁盘写入失败均不返回构建错误；最后一种情况会记录本地告警，无法落盘的样本不保证补报。容器化 Emissary 应将 managed root 放在持久卷上。
 
-服务器批次上限 1 MiB，单批最多 2048 个托管进程。读写和授权池分别限连接数，查询有超时、时间范围、6000 行与 2 MiB 响应预算。历史 API 返回 `{"samples":[],"truncated":false}`；`truncated=true` 时缩小时间区间。清单历史最多返回最近 100 次观察。
+服务器批次上限 1 MiB，单批最多 2048 个托管进程。读写和授权池分别限连接数，查询有超时、时间范围、6000 行与 2 MiB 响应预算。历史 API 返回 `{"samples":[],"truncated":false}`；`truncated=true` 时缩小时间区间。清单历史最多返回最近100次观察。节点最新查询携带Control当前startup；legacy数据标记来源且不取得当前startup归属。历史列表保留各startup，不用于调度。
 
-Control 对节点查询要求 viewer 会话，对 attempt 查询要求所属项目的 read 权限。内部查询使用独立 bearer token 和 TLS，Emissary 无该 token。生产授权连接使用独立登录角色，所需权限为业务数据库的 `CONNECT`、业务 schema 的 `USAGE`，以及 `nodes`、`attempts`、`__toasty_migrations` 三张表的 `SELECT`。其中迁移表用于启动时校验 Business 版本；缺少权限会使启动失败。服务连接本身也设置只读模式。查询池可通过 `ARTIFACTORY_TELEMETRY_READ_DATABASE_URL` 指向专门的只读连接。
+Control 对节点查询要求 viewer 会话，对 attempt 查询要求所属项目的 read 权限。内部查询使用独立 bearer token 和 TLS，Emissary 无该 token。生产授权连接使用独立登录角色，所需权限为业务数据库的 `CONNECT`、业务 schema 的 `USAGE`，以及 `nodes`、`attempts`、`node_startups`、`__toasty_migrations` 的 `SELECT`。其中迁移表用于启动时校验 Business 版本；缺少权限会使启动失败。服务连接本身也设置只读模式。查询池可通过 `ARTIFACTORY_TELEMETRY_READ_DATABASE_URL` 指向专门的只读连接。
 
 先由管理员创建授权登录角色并配置凭据，在 Control 初始化当前业务基线 `2026112101` 后，以该业务库的所有者执行最小授权脚本。Telemetry 直接使用 Control 的迁移清单校验业务库，缺少迁移、旧迁移身份或未知版本都会阻止启动；不提供旧版本回退：
 
@@ -80,6 +101,25 @@ psql "$ARTIFACTORY_BUSINESS_ADMIN_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
 将数据库名、schema 与角色名替换为实际值，并将 `ARTIFACTORY_BUSINESS_DATABASE_URL` 配置为该角色的连接。脚本可重复执行，只授予上述对象的读取权限；授权角色不需要拥有业务表、写权限或迁移权限。自定义 schema 时，连接的 `search_path` 必须与授权 schema 一致。
 
 遥测用于趋势、能力筛选与负载参考。启用新版 AI 选机后，控制平面还会在分配前检查当前启动的资源快照及 AI 设定的门槛；现有权限、设备签名限制、capability 和 slots 继续生效。不自动抢占、预留资源或调整并发。
+
+## 交付诊断与有限刷新
+
+普通心跳读取缓存，最多4KiB交付诊断。控制台显示历史、新鲜槽和清单的数量、字节、最老年龄、最后持久ACK、退避、上传延迟、采集耗时及有限错误原因。缺字段显示未知。quota eviction、expired、malformed、coalesced、清单superseded和损坏记录分开计数。Fresh、历史和清单分别记录最后ACK、最后进展、退避、延迟与有限状态。最近永久拒收原因、时间和分类计数持久保留；当前链路ready不抹除缺口解释，丢弃不伪造ACK。后台最多每10秒扫描目录元数据，缓存文件正文、临时、索引、损坏、未分类和Unix分配块占用。扫描最多16384项、8层；失败、链接或越界时总量未知。Windows分配块未知。该观测不是原子文件系统快照，Unix块数不表示CoW或压缩后的可回收空间。心跳不读取磁盘。服务Prometheus标签使用固定reason，不包含节点ID、路径或错误文本。accepted/replayed聚合采样与清单；rejected含三个RPC失败；成功协商不计持久接收。三个RPC共用64个准入许可。
+
+永久拒收和额度淘汰将缺口计数与待删除身份原子提交。
+待删除身份固定相对路径、原ID与原字节SHA256。
+重试和重启先完成相同删除，不重复累计缺口。
+正文变化或来源受保护时，保留来源并报告错误。
+最近拒收身份最多64条、64KiB，不承担长期去重。
+旧版本已发生的分离写入计数不能逆向校正。
+
+清单本地存储故障优先于等待接收端升级。
+队列不可读时，等待数、条数和字节保持未知。
+Fresh同样只在明确缺失时报告零。
+目录同步恢复后，健康空队列恢复ready。
+本地恢复不更新ACK或最后进展时间。
+
+租户owner/admin使用原登录Session发起`collect_diagnostics`或`refresh_inventory`。刷新新增独立清单revision，不修改启动metadata、capabilities或已固定计划。结果有授权、截止、去重、取消、重启与摘要确认边界，见[运维](operations.md)与[协议](protocol.md)。
 
 ## 部署与本地开发
 

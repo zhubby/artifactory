@@ -12,7 +12,7 @@ AGENTS.md: 本目录职责、成员和依赖入口。
 
 子目录
 control-ha/: 独立路由或子模块。
-emissary/: 独立路由或子模块。
+emissary/: 记录执行节点协议、OTA与平台验收，见emissary/AGENTS.md。
 nodes/: 独立路由或子模块。
 operator/: 独立路由或子模块。
 provider/: 独立路由或子模块。

@@ -5,7 +5,7 @@
 use super::{BusinessAuthorizationRepository, TelemetryStore};
 use crate::Service;
 use anyhow::{Context, Result};
-use artifactory_database::{PoolSettings, connect as database, with_options};
+use artifactory_database::{PoolSettings, connect as database, params, sql, with_options};
 use artifactory_service_transport::service;
 use std::{env, time::Duration};
 
@@ -75,6 +75,14 @@ async fn business_authorization(url: &str) -> Result<BusinessAuthorizationReposi
     artifactory_database::validate(&business, &BUSINESS_MIGRATIONS)
     .await
     .context("validate current business database version and SELECT on __toasty_migrations (see docs/telemetry.md)")?;
+    // 新清单接收依赖startup归属，启动时就检查授权，避免收到数据才失败。
+    let _: i64 = sql::scalar(
+        &mut business.clone(),
+        "SELECT count(*) FROM node_startups WHERE false",
+        params![],
+    )
+    .await
+    .context("SELECT on node_startups is required (see telemetry-business-readonly.sql)")?;
     Ok(BusinessAuthorizationRepository::new(business))
 }
 

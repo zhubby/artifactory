@@ -1,7 +1,7 @@
 # web/src/messages/
 > L2 | Parent: ../AGENTS.md
 
-en.json: 提供英文界面、节点池管理、节点安装、手动升级与产品统一版本、源码准备、设备终端和 Release 引导文案。
-zh-CN.json: 提供简体中文界面、节点池管理、节点安装、手动升级与产品统一版本、源码准备、设备终端和 Release 引导文案。
+en.json: 提供英文节点池、队列、清单冲突、采样、OTA、有限操作、终端和Release文案。
+zh-CN.json: 提供中文节点池、队列、清单冲突、采样、OTA、有限操作、终端和Release文案。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

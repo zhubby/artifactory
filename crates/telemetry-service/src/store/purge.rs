@@ -1,3 +1,7 @@
+//! [INPUT]: 节点、attempt身份、清单正文外键与遥测事务。
+//! [OUTPUT]: 删除授权身份的数据并持久保存重放围栏。
+//! [POS]: 生命周期清扫边界；同锁事务先删清单引用再删正文。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 //! Delete identities directly from materializations so expired raw data belonging to
 //! other tenants is never rebuilt or discarded. TimescaleDB 2.32 is required.
 use super::TelemetryStore;
@@ -29,11 +33,15 @@ impl TelemetryStore {
         for table in [
             "host_samples",
             "telemetry_batches",
-            "inventory_versions",
             "inventory_observations",
             "latest_inventories",
             "latest_hosts",
             "startup_resources",
+            "startup_hosts",
+            "inventory_deliveries",
+            "startup_inventories",
+            "inventory_versions",
+            "inventory_ingress",
         ] {
             sql::execute(
                 &mut tx,

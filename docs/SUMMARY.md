@@ -34,6 +34,7 @@
 - [Kubernetes Planning Operator 运维](operator-operations.md)
 - [集群镜像构建、内建仓库与网关](image-builds.md)
 - [Emissary OTA 升级](emissary-ota.md)
+- [Emissary 原生服务演进验收](emissary-native-acceptance.md)
 - [Emissary 时序观测](telemetry.md)
 
 # 接口与架构
@@ -69,6 +70,15 @@
 - [控制平面 HA 与 Toasty · 2026-11-14](acceptance/control-ha/2026-11-14-toasty.md)
 - [控制平面 HA · SQLx 阶段归档](acceptance/control-ha/2026-11-14.md)
 - [Toasty 数据访问迁移 · 2026-11-13](toasty-acceptance-2026-11-13.md)
+- [Emissary 演进本地实施 · 2026-11-26](acceptance/emissary/2026-11-26-evolution.md)
+- [Emissary 遥测冲突与积压验收 · 2026-11-26](acceptance/emissary/2026-11-26-telemetry-conflicts.md)
+- [Emissary OTA请求可靠性验收 · 2026-11-26](acceptance/emissary/2026-11-26-ota-requests.md)
+- [Emissary 演进收口核对 · 2026-11-26](acceptance/emissary/2026-11-26-readiness.md)
+- [Emissary Linux原生服务验收 · 2026-11-26](acceptance/emissary/2026-11-26-linux-native.md)
+- [Emissary Linux ext4故障验收 · 2026-11-26](acceptance/emissary/2026-11-26-linux-ext4.md)
+- [Emissary runtime健康保存验收 · 2026-11-26](acceptance/emissary/2026-11-26-runtime-health.md)
+- [Emissary Linux原生满盘验收 · 2026-11-26](acceptance/emissary/2026-11-26-linux-native-disk.md)
+- [Emissary Control与OTA组合验收 · 2026-11-26](acceptance/emissary/2026-11-26-control-ota.md)
 - [Emissary 六平台 · 2026-11-13](acceptance/emissary/2026-11-13-six-platforms.md)
 - [Rust Emissary · 2026-11-13](acceptance/emissary/2026-11-13.md)
 - [真实供应商链路 · 2026-11-13](acceptance/provider/2026-11-13.md)
@@ -85,6 +95,7 @@
 - [Uplink 与 Emissary 固定源码评估 · 2026-11-25](plans/2026-11-25-emissary-uplink-assessment.md)
 - [Emissary 协议、数据与有限操作契约](plans/2026-11-25-emissary-protocol-data-contracts.md)
 - [Emissary OTA 与固定启动器契约](plans/2026-11-25-emissary-ota-contracts.md)
+
 - [设备交互终端实施计划 · 2026-11-24](plans/2026-11-24-001-feat-interactive-terminals-plan.md)
 - [节点安装与加入实施计划 · 2026-11-25](plans/2026-11-25-node-installation.md)
 
@@ -148,3 +159,5 @@
 - [设计合同模块地图](superpowers/specs/AGENTS.md)
 - [实施计划模块地图](superpowers/plans/AGENTS.md)
 - [原型实施计划地图](plans/AGENTS.md)
+
+- [Emissary验收目录地图](acceptance/emissary/AGENTS.md)

@@ -1,7 +1,7 @@
 """
 [INPUT]: 依赖安装脚本、临时目录及隔离系统命令桩。
-[OUTPUT]: 验证安装前校验、身份保护、服务身份与凭证清理。
-[POS]: 首次安装脚本的无宿主修改行为验收。
+[OUTPUT]: 验证首次安装校验、身份保护、维护入口与凭证清理。
+[POS]: 安装和启动器维护脚本的隔离命令验收。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 """
 import base64
@@ -83,6 +83,102 @@ class InstallerTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("platform", result.stderr.lower())
         self.assertFalse(self.network.exists())
+
+    def test_maintenance_preserves_existing_identity_and_uses_verified_temporary_tool(self):
+        self.data.mkdir()
+        config = self.data / "emissary.json"
+        config.write_text("existing identity")
+        self.bin.mkdir()
+        installed = self.bin / "artifactory-emissary"
+        installed.write_bytes(b"legacy launcher")
+        manifest = self.root / "manifest.json"
+        manifest.write_text("signed release manifest")
+        signature = self.root / "manifest.sig"
+        signature.write_text("signature")
+        result = subprocess.run(["sh", str(SCRIPT), "--maintain-launcher",
+            "--installed-binary", str(installed), "--candidate", str(self.binary),
+            "--candidate-sha256", hashlib.sha256(BINARY).hexdigest(),
+            "--manifest", str(manifest), "--signature", str(signature),
+            "--config", str(config), "--service-stopped"], env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(config.read_text(), "existing identity")
+        self.assertEqual(installed.read_bytes(), b"legacy launcher")
+        self.assertFalse(self.network.exists())
+        calls = self.trace.read_text().splitlines()
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(calls[0].startswith("launcher-maintain "))
+        self.assertIn("--service-stopped", calls[0])
+        self.assertIn("|unset|", calls[0])
+
+    def maintenance_command(self):
+        self.data.mkdir()
+        config = self.data / "emissary.json"
+        config.write_text("existing identity")
+        self.bin.mkdir()
+        installed = self.bin / "artifactory-emissary"
+        installed.write_bytes(b"legacy launcher")
+        manifest = self.root / "manifest.json"
+        manifest.write_text("signed release manifest")
+        signature = self.root / "manifest.sig"
+        signature.write_text("signature")
+        return ["sh", str(SCRIPT), "--maintain-launcher", "--installed-binary", str(installed),
+                "--candidate", str(self.binary), "--candidate-sha256", hashlib.sha256(BINARY).hexdigest(),
+                "--manifest", str(manifest), "--signature", str(signature), "--config", str(config)]
+
+    def test_maintenance_rejects_replacement_copied_before_staged_digest_check(self):
+        real_cp = shutil.which("cp")
+        self.stub("cp", f'if [ "$1" = "$INSTALL_ASSET" ]; then printf "#!/bin/sh\\necho UNVERIFIED-COPY-EXECUTED >> \\\"$INSTALL_TRACE\\\"\\n" > "$1"; fi\nexec "{real_cp}" "$@"')
+        result = subprocess.run(self.maintenance_command(), env=self.env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SHA-256 mismatch", result.stderr)
+        self.assertFalse(self.trace.exists())
+
+    def test_maintenance_uses_staged_candidate_when_original_changes_after_hash(self):
+        real_openssl = shutil.which("openssl")
+        self.stub("openssl", f'"{real_openssl}" "$@" || exit $?\nprintf "changed original candidate" > "$INSTALL_ASSET"')
+        result = subprocess.run(self.maintenance_command(), env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        call = self.trace.read_text()
+        self.assertIn("--candidate /tmp/artifactory-maintain.", call)
+        self.assertNotIn(f"--candidate {self.binary}", call)
+
+    def test_maintenance_checks_service_private_config_with_administrator(self):
+        if os.geteuid() == 0:
+            self.skipTest("private directory admission requires an ordinary operator")
+        command = self.maintenance_command()
+        config = self.data / "emissary.json"
+        # 命令桩只模拟管理员stat；普通调用者确实无法穿过私有目录。
+        self.env["INSTALL_PRIVATE_CONFIG"] = str(config)
+        self.stub("sudo", '''if [ "${1-}" = -- ]; then shift; fi
+if [ "${1-}" = test ]; then
+    case "$*" in
+        "test -f $INSTALL_PRIVATE_CONFIG"|"test ! -L $INSTALL_PRIVATE_CONFIG")
+            printf '%s\\n' "$*" >> "$INSTALL_NETWORK"; exit 0;;
+    esac
+fi
+exec "$@"''')
+        self.data.chmod(0)
+        try:
+            self.assertFalse(config.is_file(), "ordinary operator must not read private config")
+            result = subprocess.run(command, env=self.env, capture_output=True, text=True)
+        finally:
+            self.data.chmod(0o700)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.network.read_text().splitlines(),
+                         [f"test -f {config}", f"test ! -L {config}"])
+        self.assertEqual(config.read_text(), "existing identity")
+        self.assertIn("launcher-maintain", self.trace.read_text())
+
+    def test_maintenance_rejects_config_symlink_before_executing_candidate(self):
+        command = self.maintenance_command()
+        config = self.data / "emissary.json"
+        original = self.data / "original.json"
+        config.rename(original)
+        config.symlink_to(original)
+        result = subprocess.run(command, env=self.env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.trace.exists())
+        self.assertEqual(original.read_text(), "existing identity")
 
     def test_bad_digest_never_executes_binary(self):
         result = self.run_install(sha256="0" * 64)

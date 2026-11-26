@@ -8,6 +8,9 @@
 
 调研日期：2026-11-25。
 
+本报告保留实施前的比较基线。
+后续代码和验证见[本地实施记录](../acceptance/emissary/2026-11-26-evolution.md)。
+
 - Uplink：完整克隆 `https://github.com/bytebeamio/uplink`，固定提交 [`e94a67186d64b3a38233da1afdafc966082f4492`](https://github.com/bytebeamio/uplink/commit/e94a67186d64b3a38233da1afdafc966082f4492)。该提交是本轮 GitHub API 查询的 `main`，对应 v2.18.5；提交及最新正式 Release 日期均为 2025-10-01。
 - Emissary：当前工作区，HEAD `5b8d69e02b1db4db858de61eaf6f0c99b8fdbcfc`，产品版本 0.2.3；以本轮工作树为准，保留已有未提交改动。 调研结束时另有外部文档提交将 HEAD 推进至 `16535fdf1f7b2f10baaab36d58fb666d73903118`；已检查本报告涉及的 Emissary、协议和 Telemetry 源码未随该提交变化。
 - 方法：对照文档、Rust 实现、配置和测试；分别核查协议/Action、遥测/探测、OTA，并交叉复核关键结论。
@@ -219,7 +222,10 @@ P1 不是“已确认线上紧急事故”的严重性标签，而是建议的�
 - Uplink 文档存在漂移：Action ID 文档写 integer 而实现为 String；旧 tunshell 名称和当前 launch_shell 不同；installer 示例与实际 updater 契约不同。评估以固定提交源码为主。
 - 本轮没有验证其商业云端策略、性能和大规模设备行为；不根据 README、提交活跃度或测试存在推断生产保证。
 
-## 9. 本轮验证与复查入口
+## 9. 调研轮验证与复查入口
+
+本节只记录2026-11-25调研轮。
+后续实施与验收以[本地实施记录](../acceptance/emissary/2026-11-26-evolution.md)为准。
 
 已执行：固定 clone SHA、GitHub main/latest Release 查询、本地工作树识别、协议/Action/采集/缓存/OTA 源码交叉核查、Emissary protocol 11 项测试。
 

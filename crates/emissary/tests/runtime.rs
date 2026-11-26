@@ -1,5 +1,5 @@
 //! [INPUT]: 本机执行程序、mTLS 平台夹具和 OTA 签名组件。
-//! [OUTPUT]: 验证 TLS 约束、运行时停机、OTA 升级和回滚。
+//! [OUTPUT]: 验证TLS约束、运行时停机、OTA邮箱锁竞争、升级和回滚。
 //! [POS]: 使用真实子进程；准备失败与停机超时暴露原因和状态。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod support;
@@ -380,6 +380,13 @@ async fn ota_supervisor_mtls_upgrade_and_rollback() {
         result = &mut supervisor => panic!("OTA supervisor exited before initial mTLS connection: {result:?}"),
     };
     assert!(first.hello.payload_json.contains("emissary-ota-v1"));
+    let handoff = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(ota_dir.join("request.lock"))
+        .unwrap();
+    fs2::FileExt::try_lock_exclusive(&handoff).unwrap();
     apply(
         &first,
         &key,
@@ -389,6 +396,13 @@ async fn ota_supervisor_mtls_upgrade_and_rollback() {
         "replacement",
     )
     .await;
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    assert!(
+        !supervisor.is_finished(),
+        "mailbox lock stopped the runtime"
+    );
+    assert_eq!(ota::snapshot(&ota_dir).unwrap().generation, 0);
+    fs2::FileExt::unlock(&handoff).unwrap();
     let state = phase(&ota_dir, "succeeded").await;
     assert_eq!(state.previous.version, "bootstrap");
     assert_eq!(state.current.version, "replacement");

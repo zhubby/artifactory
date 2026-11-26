@@ -1,8 +1,9 @@
-//! [INPUT]: 依赖系统资源、Windows 完整单播地址、受管任务身份与节点遥测契约。
-//! [OUTPUT]: 生成严格遥测批次，每轮重建本地接口诊断缓存。
+//! [INPUT]: 依赖系统资源、UTF8字节预算、完整接口地址与受管任务身份。
+//! [OUTPUT]: 生成字节安全的新采样批次，每轮重建接口诊断缓存。
 //! [POS]: 节点遥测循环的采样器，不建立网络连接。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use super::managed::{self, Registry};
+use super::sample_bounds::text_prefix;
 use crate::config::Config;
 use artifactory_emissary_protocol::telemetry::{
     Batch, DiskSample, HostSample, Inventory, MAX_PROCESSES, NetworkSample, ProcessSample,
@@ -142,8 +143,18 @@ impl Collector {
             })
             .collect();
         self.previous = owners;
+        let mut collector_omitted_host_devices = 0u64;
+        let mut collector_truncated_host_fields = 0u64;
         let h = host.then(|| {
             self.disks.refresh(true);
+            collector_omitted_host_devices = self
+                .disks
+                .list()
+                .iter()
+                .filter(|disk| disk.total_space() > 0)
+                .count()
+                .saturating_sub(256) as u64
+                + self.networks.iter().count().saturating_sub(256) as u64;
             HostSample {
                 cpu_percent: self
                     .cpu_ready
@@ -168,14 +179,13 @@ impl Collector {
                     .take(256)
                     .map(|d| {
                         let usage = d.usage();
+                        let device = d.name().to_string_lossy();
+                        let mount = d.mount_point().to_string_lossy();
+                        collector_truncated_host_fields +=
+                            u64::from(device.len() > 512) + u64::from(mount.len() > 1024);
                         DiskSample {
-                            device: d.name().to_string_lossy().chars().take(512).collect(),
-                            mount: d
-                                .mount_point()
-                                .to_string_lossy()
-                                .chars()
-                                .take(1024)
-                                .collect(),
+                            device: text_prefix(&device, 512).to_owned(),
+                            mount: text_prefix(&mount, 1024).to_owned(),
                             total_bytes: d.total_space(),
                             available_bytes: d.available_space(),
                             read_bytes: if cfg!(any(target_os = "linux", windows)) {
@@ -195,12 +205,15 @@ impl Collector {
                     .networks
                     .iter()
                     .take(256)
-                    .map(|(name, n)| NetworkSample {
-                        interface: name.chars().take(128).collect(),
-                        received_bytes: n.total_received(),
-                        transmitted_bytes: n.total_transmitted(),
-                        receive_errors: n.total_errors_on_received(),
-                        transmit_errors: n.total_errors_on_transmitted(),
+                    .map(|(name, n)| {
+                        collector_truncated_host_fields += u64::from(name.len() > 128);
+                        NetworkSample {
+                            interface: text_prefix(name, 128).to_owned(),
+                            received_bytes: n.total_received(),
+                            transmitted_bytes: n.total_transmitted(),
+                            receive_errors: n.total_errors_on_received(),
+                            transmit_errors: n.total_errors_on_transmitted(),
+                        }
                     })
                     .collect(),
                 active_attempts: roots.len() as u32,
@@ -208,7 +221,7 @@ impl Collector {
             }
         });
         self.cpu_ready = true;
-        let metrics = json!({"logical_cpus":self.system.cpus().len(),"emissary_rss_bytes":self.system.process(Pid::from_u32(std::process::id())).map(|p|p.memory()),"managed_free_bytes":fs2::available_space(&cfg.root).ok()});
+        let metrics = json!({"logical_cpus":self.system.cpus().len(),"emissary_rss_bytes":self.system.process(Pid::from_u32(std::process::id())).map(|p|p.memory()),"managed_free_bytes":fs2::available_space(&cfg.root).ok(),"collector_omitted_host_devices":collector_omitted_host_devices,"collector_truncated_host_fields":collector_truncated_host_fields});
         (
             Batch {
                 id: Uuid::new_v4(),

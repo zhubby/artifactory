@@ -1,4 +1,7 @@
-//! Durable, replayable device commands delivered only by the current connection owner.
+//! [INPUT]: 依赖当前连接归属和持久命令、有限操作记录。
+//! [OUTPUT]: 有界重放构建命令、升级和再授权只读操作。
+//! [POS]: 多副本连接分发边界；传输成功不等于业务接受。
+//! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{protocol::Command, scheduler, state::AppState};
 use anyhow::Result;
 use futures::{StreamExt, stream};
@@ -9,6 +12,7 @@ use futures::{StreamExt, stream};
 /// Returns database claim errors. Individual delivery failures remain pending for replay.
 pub async fn deliver(state: &AppState) -> Result<()> {
     deliver_cancellations(state).await?;
+    deliver_node_operations(state).await?;
     deliver_assignments(state).await
 }
 
@@ -105,6 +109,84 @@ pub(crate) async fn deliver_ota(state: &AppState) -> Result<()> {
         {
             let _ = connection.sender.try_send(Ok(command));
         }
+    }
+    Ok(())
+}
+
+pub(crate) async fn deliver_node_operations(state: &AppState) -> Result<()> {
+    if state.coordination.is_draining() {
+        return Ok(());
+    }
+    let rows = state
+        .store
+        .pending_node_operations(
+            state.coordination.id(),
+            state.settings.control.scheduler_batch.clamp(1, 100) as usize,
+        )
+        .await?;
+    for row in rows {
+        let envelope = &row.envelope;
+        let connection = state
+            .connections
+            .read()
+            .await
+            .get(&envelope.node_id)
+            .cloned();
+        let Some(connection) =
+            connection.filter(|connection| connection.session == envelope.control_session)
+        else {
+            continue;
+        };
+        let Some(cancel_requested) = state
+            .store
+            .node_operation_delivery_authorized(envelope, state.coordination.id())
+            .await?
+        else {
+            continue;
+        };
+        // 新会话先重授权状态；startup变化后只重放interrupted结果。
+        let resume = Command {
+            command_id: envelope.operation_id.to_string(),
+            kind: "node_operation_resume".into(),
+            signing_session_id: envelope.control_session.to_string(),
+            payload_json: serde_json::to_string(&row.resume)?,
+            ..Default::default()
+        };
+        if connection.sender.try_send(Ok(resume)).is_err() {
+            continue;
+        }
+        if row.resume.current_startup_id != envelope.startup_id || !row.execute_allowed {
+            continue;
+        }
+        if cancel_requested {
+            let cancel = artifactory_emissary_protocol::operations::OperationCancel {
+                operation_id: envelope.operation_id,
+                startup_id: envelope.startup_id,
+                control_session: envelope.control_session,
+            };
+            if connection
+                .sender
+                .try_send(Ok(Command {
+                    command_id: envelope.operation_id.to_string(),
+                    kind: "node_operation_cancel".into(),
+                    signing_session_id: envelope.control_session.to_string(),
+                    payload_json: serde_json::to_string(&cancel)?,
+                    ..Default::default()
+                }))
+                .is_err()
+            {
+                continue;
+            }
+        }
+        // 取消先于原投递；设备持久接受后直接取消，不启动探测。
+        let command = Command {
+            command_id: envelope.operation_id.to_string(),
+            kind: "node_operation".into(),
+            signing_session_id: envelope.control_session.to_string(),
+            payload_json: serde_json::to_string(envelope)?,
+            ..Default::default()
+        };
+        let _ = connection.sender.try_send(Ok(command));
     }
     Ok(())
 }

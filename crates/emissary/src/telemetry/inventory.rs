@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖系统资源、原生工具和节点遥测契约。
-//! [OUTPUT]: 生成固定工具、内存和加速器能力快照。
+//! [OUTPUT]: 生成启动能力快照和独立刷新清单，旧工具字段保持不变。
 //! [POS]: 节点启动元数据和加速器遥测的探测边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{config::Config, process};
@@ -266,12 +266,50 @@ async fn output(tool: &str, args: &[&str]) -> Option<String> {
         .then(|| String::from_utf8_lossy(&bytes).into_owned())
 }
 pub(super) async fn accelerators(cfg: &Config) -> Vec<Accelerator> {
-    if let Some(text) = output(
+    accelerators_with_cancel(
+        cfg,
+        &tokio_util::sync::CancellationToken::new(),
+        tokio::time::Instant::now() + Duration::from_secs(10),
+    )
+    .await
+}
+async fn accelerator_output(
+    tool: &str,
+    args: &[&str],
+    cancel: &tokio_util::sync::CancellationToken,
+    deadline: tokio::time::Instant,
+) -> Option<String> {
+    if cancel.is_cancelled() {
+        return None;
+    }
+    let remaining = deadline
+        .saturating_duration_since(tokio::time::Instant::now())
+        .min(Duration::from_secs(3));
+    if remaining.is_zero() {
+        return None;
+    }
+    let mut command = Command::new(tool);
+    command.args(args);
+    let (status, bytes) = crate::doctor::cancellable_probe(command, cancel, remaining)
+        .await
+        .ok()?;
+    status
+        .success()
+        .then(|| String::from_utf8_lossy(&bytes).into_owned())
+}
+async fn accelerators_with_cancel(
+    cfg: &Config,
+    cancel: &tokio_util::sync::CancellationToken,
+    deadline: tokio::time::Instant,
+) -> Vec<Accelerator> {
+    if let Some(text) = accelerator_output(
         &cfg.tool("nvidia-smi"),
         &[
             "--query-gpu=uuid,name,driver_version,memory.total",
             "--format=csv,noheader,nounits",
         ],
+        cancel,
+        deadline,
     )
     .await
     {
@@ -294,9 +332,11 @@ pub(super) async fn accelerators(cfg: &Config) -> Vec<Accelerator> {
             .collect();
     }
     #[cfg(target_os = "macos")]
-    if let Some(text) = output(
+    if let Some(text) = accelerator_output(
         "/usr/sbin/system_profiler",
         &["SPDisplaysDataType", "-json"],
+        cancel,
+        deadline,
     )
     .await
         && let Ok(value) = serde_json::from_str::<Value>(&text)
@@ -328,7 +368,7 @@ pub(super) async fn accelerators(cfg: &Config) -> Vec<Accelerator> {
             .collect();
     }
     #[cfg(windows)]
-    if let Some(text)=output("powershell",&["-NoProfile","-NonInteractive","-Command","@(Get-CimInstance Win32_VideoController | Select-Object PNPDeviceID,Name,DriverVersion,AdapterRAM) | ConvertTo-Json -Compress"]).await
+    if let Some(text)=output("powershell",&["-NoProfile","-NonInteractive","-Command","@(Get-CimInstance Win32_VideoController | Select-Object PNPDeviceID,Name,DriverVersion,AdapterRAM) | ConvertTo-Json -Compress"],cancel,deadline).await
         && let Ok(value)=serde_json::from_str::<Value>(&text) && let Some(cards)=value.as_array() {
         return cards.iter().take(64).map(|v|Accelerator{id:v["PNPDeviceID"].as_str().unwrap_or("unknown").chars().take(256).collect(),vendor:"unknown".into(),model:v["Name"].as_str().unwrap_or("unknown").chars().take(256).collect(),driver:v["DriverVersion"].as_str().map(str::to_owned),memory_total_bytes:v["AdapterRAM"].as_u64().filter(|n|*n>0)}).collect();
     }
@@ -373,6 +413,35 @@ pub(super) async fn accelerator_samples(
         }
     }
     samples
+}
+
+/// 刷新只生成观察值；调用方耐久入队后才报告成功。
+pub(crate) async fn refresh(
+    cfg: &Config,
+    probes: &BTreeMap<String, artifactory_emissary_protocol::operations::ProbeReport>,
+    cancel: &tokio_util::sync::CancellationToken,
+    deadline: tokio::time::Instant,
+) -> Inventory {
+    use artifactory_emissary_protocol::operations::ProbeStatus;
+    let mut system = System::new();
+    system.refresh_cpu_all();
+    system.refresh_memory();
+    let diagnostics = serde_json::json!({"tools":probes.iter().map(|(id,report)|(id.clone(),serde_json::json!({"available":report.status==ProbeStatus::Available,"version":report.version}))).collect::<BTreeMap<_,_>>(),"configured_signing_profiles":cfg.signing_profiles.keys().collect::<Vec<_>>()});
+    let mut capabilities = vec![
+        "external-build-plan-v1".to_owned(),
+        "managed-signing-v1".to_owned(),
+    ];
+    capabilities.extend(
+        probes
+            .iter()
+            .filter(|(_, report)| report.status == ProbeStatus::Available)
+            .map(|(id, _)| id.clone()),
+    );
+    capabilities.sort();
+    let mut inventory = collect(&system, &diagnostics, capabilities);
+    // 加速器探测复用本地固定目录；不接受远端 endpoint。
+    inventory.accelerators = accelerators_with_cancel(cfg, cancel, deadline).await;
+    inventory
 }
 
 #[cfg(test)]

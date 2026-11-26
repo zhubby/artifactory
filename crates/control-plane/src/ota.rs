@@ -15,6 +15,13 @@ use std::{
 };
 use uuid::Uuid;
 
+#[path = "ota_renewal.rs"]
+mod renewal;
+pub use renewal::{renew_asset, renew_frozen_asset};
+
+#[path = "ota_report.rs"]
+pub(crate) mod observability;
+
 /// 历史标签前缀不属于产品版本；构建元数据不触发产品升级。
 pub fn product_version(version: &str) -> Option<&str> {
     let version = version

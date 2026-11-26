@@ -1,5 +1,5 @@
 //! [INPUT]: 依赖 mTLS 身份、共享名称和心跳预算校验与持久化授权。
-//! [OUTPUT]: 提供名称归一化注册、节点任务与材料 RPC。
+//! [OUTPUT]: 提供节点注册、任务、有限操作结果与材料 RPC。
 //! [POS]: 节点与控制平面的认证传输边界。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use crate::{
@@ -108,6 +108,13 @@ impl protocol::enrollment_server::Enrollment for EmissaryService {
 #[tonic::async_trait]
 impl protocol::control_server::Control for EmissaryService {
     type ConnectStream = ReceiverStream<Result<Command, Status>>;
+
+    async fn renew_emissary_asset(
+        &self,
+        request: Request<protocol::EmissaryAssetRenewRequest>,
+    ) -> Result<Response<protocol::EmissaryAssetRenewReply>, Status> {
+        crate::ota::renew_asset(&self.0, request).await
+    }
 
     async fn acquire_source_material(
         &self,
@@ -323,6 +330,12 @@ impl protocol::control_server::Control for EmissaryService {
                 );
                 drop(admission);
                 initialized?;
+                if startup.as_ref().is_some_and(|snapshot|snapshot.capabilities.iter().any(|value|value==artifactory_emissary_protocol::commands::CAPABILITY)) {
+                    let mut responses=vec!["command_rejected".into(),"node_operation_update".into()];
+                    if startup.as_ref().is_some_and(|snapshot|snapshot.capabilities.iter().any(|value|value=="emissary-ota-observability-v2")) {responses.push("emissary-ota-observability-v2".into());}
+                    let ack=artifactory_emissary_protocol::commands::CapabilitiesAck {schema_version:1,server_time_ms:chrono::Utc::now().timestamp_millis(),responses};
+                    sender.send(Ok(Command {kind:"capabilities_ack".into(),signing_session_id:session.to_string(),payload_json:serde_json::to_string(&ack).map_err(internal)?,..Default::default()})).await.map_err(|_|Status::unavailable("connection closed"))?;
+                }
                 if let Some(snapshot)=&startup { metadata_ack(&state,node,session,snapshot,&sender).await?; }
                 loop {
                     let message = tokio::select! {
@@ -339,6 +352,15 @@ impl protocol::control_server::Control for EmissaryService {
                     }
                     if event.kind == "heartbeat" {
                         heartbeat(&state, node, session, &event, &sender).await?;
+                    } else if event.kind == "node_operation_update" {
+                        node_operation_update(&state,node,session,&event,&sender).await?;
+                    } else if event.kind == "command_rejected" {
+                        if event.payload_json.len()>4096 {return Err(Status::invalid_argument("oversized command rejection"))}
+                        let rejection:artifactory_emissary_protocol::commands::CommandRejected=serde_json::from_str(&event.payload_json).map_err(|_|Status::invalid_argument("invalid command rejection"))?;
+                        let valid=state.store.node_operation_session_valid(node,session).await.map_err(internal)?;
+                        if !valid {return Err(Status::permission_denied("stale node session"))}
+                        if rejection.command_id.len()>128 || rejection.kind.len()>128 {return Err(Status::invalid_argument("invalid command rejection"))}
+                        tracing::debug!(%node,code=?rejection.code,"device rejected command");
                     } else if event.kind == "metadata" {
                         if event.payload_json.len()>artifactory_emissary_protocol::nodes::MAX_METADATA_BYTES { return Err(Status::invalid_argument("oversized metadata")); }
                         let snapshot=serde_json::from_str(&event.payload_json).map_err(|_|Status::invalid_argument("invalid metadata"))?;
@@ -684,4 +706,38 @@ async fn metadata_ack(
         }))
         .await
         .map_err(|_| Status::unavailable("connection closed"))
+}
+
+async fn node_operation_update(
+    state: &AppState,
+    node: Uuid,
+    session: Uuid,
+    event: &EmissaryEvent,
+    sender: &mpsc::Sender<Result<Command, Status>>,
+) -> Result<(), Status> {
+    if event.payload_json.len() > artifactory_emissary_protocol::operations::MAX_RESULT_BYTES + 8192
+    {
+        return Err(Status::invalid_argument("oversized operation update"));
+    }
+    let update: artifactory_emissary_protocol::operations::OperationUpdate =
+        serde_json::from_str(&event.payload_json)
+            .map_err(|_| Status::invalid_argument("invalid operation update"))?;
+    let ack = state
+        .store
+        .record_node_operation_update(node, session, &update)
+        .await
+        .map_err(internal)?;
+    if let Some(ack) = ack {
+        sender
+            .send(Ok(Command {
+                kind: "node_operation_result_ack".into(),
+                command_id: ack.operation_id.to_string(),
+                signing_session_id: session.to_string(),
+                payload_json: serde_json::to_string(&ack).map_err(internal)?,
+                ..Default::default()
+            }))
+            .await
+            .map_err(|_| Status::unavailable("connection closed"))?;
+    }
+    Ok(())
 }

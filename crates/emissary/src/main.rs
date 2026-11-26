@@ -1,5 +1,5 @@
 // [INPUT]: 依赖节点名称规范、节点配置、服务控制与运行时库。
-// [OUTPUT]: 提供注册、服务、更新与隔离终端 Worker 命令。
+// [OUTPUT]: 提供注册、服务、更新、启动器维护恢复与隔离终端 Worker 命令。
 // [POS]: 原生节点的 CLI 入口，不承载构建业务。
 // [PROTOCOL]: Update this header on change, then check AGENTS.md
 use anyhow::{Context, Result, ensure};
@@ -25,6 +25,8 @@ enum Action {
     Service(Service),
     Version,
     OtaInit(OtaInit),
+    LauncherMaintain(LauncherMaintain),
+    LauncherRollback(LauncherRollback),
     #[command(hide = true)]
     Worker,
     #[command(hide = true)]
@@ -76,6 +78,30 @@ struct OtaInit {
     common: Common,
     #[arg(long, value_delimiter = ',')]
     public_keys: Vec<String>,
+}
+#[derive(Args)]
+struct LauncherMaintain {
+    #[command(flatten)]
+    common: Common,
+    #[arg(long)]
+    installed_binary: PathBuf,
+    #[arg(long)]
+    candidate: PathBuf,
+    #[arg(long)]
+    manifest: PathBuf,
+    #[arg(long)]
+    signature: PathBuf,
+    #[arg(long)]
+    service_stopped: bool,
+}
+#[derive(Args)]
+struct LauncherRollback {
+    #[command(flatten)]
+    common: Common,
+    #[arg(long)]
+    installed_binary: PathBuf,
+    #[arg(long)]
+    backup: PathBuf,
 }
 fn default_config() -> PathBuf {
     directories::BaseDirs::new()
@@ -196,6 +222,26 @@ async fn run(cli: Cli) -> Result<()> {
                 cfg.allow_http_uploads,
             )?;
         }
+        Action::LauncherMaintain(args) => {
+            let backup =
+                emissary::service::maintain_launcher(emissary::service::MaintenanceOptions {
+                    config: &args.common.config,
+                    installed_binary: &args.installed_binary,
+                    candidate: &args.candidate,
+                    manifest: &args.manifest,
+                    signature: &args.signature,
+                    service_stopped: args.service_stopped,
+                })?;
+            println!(
+                "Launcher maintenance awaits telemetry, build and explicit OTA acceptance; backup retained at {}",
+                backup.display()
+            );
+        }
+        Action::LauncherRollback(args) => emissary::service::rollback_launcher(
+            &args.common.config,
+            &args.installed_binary,
+            &args.backup,
+        )?,
         Action::Service(args) => emissary::service::manage(
             &args.action,
             &std::path::absolute(args.common.config)?,

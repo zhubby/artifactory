@@ -8,6 +8,7 @@ mod cleanup;
 pub mod client;
 pub mod config;
 pub mod doctor;
+pub mod operations;
 pub mod ota;
 pub mod process;
 pub mod runner;

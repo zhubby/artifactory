@@ -21,7 +21,8 @@ emissary-version.ts: 规范化设备历史标签与构建元数据，比较产�
 build-targets.ts: 校验构建目标合同，组合独立源码与目标的交付候选摘要。
 routes.ts: 校验节点池、设备终端、项目目录和设置地址；邮箱返回只接受确认页和单个令牌。
 tenant.tsx: 提供租户作用域和请求头，以 Next 导航状态连接顶部进度并保留未保存保护。
-types.ts: 定义 Release、节点池计数、产品统一版本、源码准备与规划执行身份。
+node-operation-types.ts: 定义有限操作、白名单探测结果和清单交付分页契约。
+types.ts: 定义节点池计数、可空队列、清单冲突、磁盘交付、Release和执行审计类型。
 unsaved.tsx: 保护未保存编辑。
 utils.ts: 格式化日期、摘要和制品大小。
 workspace-navigation.ts: 租户概览、项目目录与节点池使用独立地址；统一项目导航、设置与权限。

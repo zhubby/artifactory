@@ -216,3 +216,18 @@ OCI 客户端通过公开网关的 `/v2/` 访问内建仓库。Registry Token re
 节点名称去除首尾空白后必须为1–100个 UTF-8 字节，且不能包含控制字符。注册和改名使用相同校验。改名需要 CSRF 和可写租户，普通成员、项目管理员和 API Token 均无此权限。成功记录 `node_renamed` 审计及 `old_name`、`new_name`，不更换节点 UUID、证书或节点设置。心跳与重连不覆盖已保存名称。
 
 版本目录、节点 / 节点池目标、执行记录、重试及取消见 [Emissary OTA 管理接口](emissary-ota.md#管理接口)。这些管理写操作只允许管理员会话，项目 API Token 不获得升级权限。
+
+## 设备有限操作
+
+以下接口仅允许当前租户 owner/admin 的登录 Session；项目 Token、API Token 和普通成员均无权限。写入复用统一 CSRF 与 Origin 校验。读取重新校验当前会话和租户成员身份。
+
+| 方法 | 路径 | 输入与结果 |
+|---|---|---|
+| POST | `/api/v1/nodes/{id}/operations` | `request_id` UUID、`kind`、`schema:1`、`input`；返回操作记录 |
+| GET | `/api/v1/nodes/{id}/operations` | `cursor` UUID、`limit` 默认 20、最大 100；返回 items、next_cursor |
+| GET | `/api/v1/node-operations/{id}` | 返回状态、交付状态和未过期结果 |
+| POST | `/api/v1/node-operations/{id}/cancel` | 请求取消；返回记录，不伪造 canceled 终态 |
+
+诊断输入为 `{"probes":["git","cargo"]}`，空集合使用完整安全目录。刷新输入固定为 `{"mode":"full"}`。创建幂等键为 tenant/node/request_id；相同摘要返回原记录，不同摘要返回 409。离线、证书失效、吊销、排空、操作占用或缺少能力均拒绝创建，不离线排队。
+
+`state` 表示设备执行事实，`delivery_state` 表示结果交付。`outcome_unknown` 不等于 failed。刷新结果的 inventory.delivery=pending 表示观察已耐久保存，尚未获得 Telemetry 确认。result_expires_at 之后 result 为空，原终态与 result_digest 保留。刷新不会改写启动调度快照或现有构建计划。

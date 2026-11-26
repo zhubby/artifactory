@@ -1,5 +1,5 @@
 # [INPUT]: 提交源码、Kubernetes 1.28 kind、Cilium 网络策略与隔离租户服务。
-# [OUTPUT]: 验证版本下限、镜像链、原生签名和普通容器生命周期。
+# [OUTPUT]: 验证镜像链、切换、Control OTA、文件系统故障与Linux原生满盘补报。
 # [POS]: 合并交付的自动化验证入口。
 # [PROTOCOL]: Update this header on change, then check AGENTS.md
 name: platform-contracts
@@ -95,7 +95,7 @@ jobs:
           set -a; source .local/env; set +a
           ARTIFACTORY_SERVICE_TOKEN="$(openssl rand -hex 32)"
           export ARTIFACTORY_SERVICE_TOKEN
-          cargo test --locked --workspace --all-targets -- --include-ignored --skip live_emissary_protocol --skip native_service_lifecycle --skip device_fleet_load
+          cargo test --locked --workspace --all-targets -- --include-ignored --skip live_emissary_protocol --skip native_service_lifecycle --skip native_service_durable_recovery --skip native_service_disk_recovery --skip actual_filesystem_faults_preserve_original_assets --skip device_fleet_load --skip current_sender_to_frozen_legacy_receiver --skip frozen_legacy_sender_to_current_durable_receiver --skip reserve_frozen_sender_database --skip cleanup_frozen_sender_database --skip real_inventory_conflict_isolated_across_reopen_and_valid_refresh_commits --skip actual_current_main_uses_separate_databases_and_restricted_business_role --skip reserve_current_main_resources --skip cleanup_current_main_resources
       - name: Generated CRDs match independent Operator charts
         run: |
           cargo run --locked -q -p artifactory-planning-operator --bin artifactory-planning-crdgen > /tmp/artifactory-crds.yaml
@@ -278,10 +278,131 @@ jobs:
             .local/operator-load/*/runtime-before-restart.log
             .local/operator-load/*/runtime-failure.log
             .local/operator-load/*/operator-failure.log
+  emissary-legacy-receiver:
+    needs: version-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ARTIFACTORY_TEST_DATABASE_URL: postgres://artifactory:local-legacy-test-only@127.0.0.1:15432/artifactory
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_INCREMENTAL: '0'
+    services:
+      timescale:
+        image: timescale/timescaledb:2.32.0-pg17
+        env:
+          POSTGRES_DB: artifactory
+          POSTGRES_USER: artifactory
+          POSTGRES_PASSWORD: local-legacy-test-only
+          TIMESCALEDB_TELEMETRY: 'off'
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: rustup toolchain install 1.95.0 --profile minimal && rustup default 1.95.0
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Current sender against frozen service main and storage
+        run: python3 scripts/check_emissary_legacy_receiver.py --receiver-main --evidence "$RUNNER_TEMP/emissary-legacy-evidence.json"
+      - name: Frozen sender against current service and storage
+        run: python3 scripts/check_emissary_legacy_sender.py --evidence "$RUNNER_TEMP/emissary-legacy-sender-evidence.json"
+      - name: Actual inventory conflict, durable quarantine and valid refresh
+        env:
+          ARTIFACTORY_INVENTORY_CONFLICT_EVIDENCE: ${{ runner.temp }}/emissary-inventory-conflict-evidence.json
+        run: |
+          cargo test --locked -p artifactory-emissary --test telemetry_inventory_conflict real_inventory_conflict_isolated_across_reopen_and_valid_refresh_commits -- --ignored --exact --nocapture
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          proof = json.loads(Path(os.environ["ARTIFACTORY_INVENTORY_CONFLICT_EVIDENCE"]).read_text())
+          for field in ("passed", "actual_mtls_service_store", "conflict_generated_by_real_store",
+                        "source_and_startup_checkpoint_preserved", "valid_refresh_matching_ack", "database_removed"):
+              if proof.get(field) is not True:
+                  raise SystemExit(f"inventory conflict evidence incomplete: {field}")
+          if type(proof.get("conflict_uploads_across_reopen")) is not int or proof["conflict_uploads_across_reopen"] != 1:
+              raise SystemExit("inventory conflict was replayed or evidence is invalid")
+          if proof.get("native_service_executed") is not False:
+              raise SystemExit("inventory conflict boundary differs")
+          PY
+      - name: Current main with separate databases and restricted business role
+        run: python3 scripts/check_emissary_current_main.py --with-legacy-sender --with-fairness --evidence "$RUNNER_TEMP/emissary-current-main-evidence.json"
+      - name: Retain legacy compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emissary-legacy-evidence
+          path: |
+            ${{ runner.temp }}/emissary-legacy-evidence.json
+            ${{ runner.temp }}/emissary-legacy-sender-evidence.json
+            ${{ runner.temp }}/emissary-current-main-evidence.json
+            ${{ runner.temp }}/emissary-inventory-conflict-evidence.json
+          if-no-files-found: warn
+  emissary-control-main:
+    needs: version-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: rustup toolchain install 1.95.0 --profile minimal && rustup default 1.95.0
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler postgresql-client
+      - name: Start isolated authenticated dependencies
+        run: sh scripts/local-services.sh
+      - name: Real Control failure replay and frozen old retention protection
+        run: >-
+          python3 scripts/check_emissary_control_main.py
+          --with-control-restart --with-legacy-retention
+          --database-container artifactory-timescaledb-test
+          --s3-container artifactory-s3-test
+          --evidence "$RUNNER_TEMP/emissary-control-recovery-evidence.json"
+      - name: Real Control successful controlled inventory refresh
+        run: >-
+          python3 scripts/check_emissary_control_main.py --with-controlled-refresh
+          --database-container artifactory-timescaledb-test
+          --s3-container artifactory-s3-test
+          --evidence "$RUNNER_TEMP/emissary-controlled-refresh-evidence.json"
+      - name: Stop old replicas before migration and recover pending originals
+        run: >-
+          python3 scripts/check_emissary_control_main.py --with-safe-cutover
+          --database-container artifactory-timescaledb-test
+          --s3-container artifactory-s3-test
+          --evidence "$RUNNER_TEMP/emissary-safe-cutover-evidence.json"
+      - name: Real Control gateway and ordinary launcher runtime OTA
+        run: >-
+          python3 scripts/check_emissary_control_main.py --with-runtime-ota
+          --with-ota-renewal
+          --database-container artifactory-timescaledb-test
+          --s3-container artifactory-s3-test
+          --evidence "$RUNNER_TEMP/emissary-runtime-ota-evidence.json"
+      - name: Retain ordinary process evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emissary-control-main-evidence
+          path: |
+            ${{ runner.temp }}/emissary-control-recovery-evidence.json
+            ${{ runner.temp }}/emissary-controlled-refresh-evidence.json
+            ${{ runner.temp }}/emissary-safe-cutover-evidence.json
+            ${{ runner.temp }}/emissary-runtime-ota-evidence.json
+          if-no-files-found: warn
   native-emissary:
     needs: version-contract
     name: native-emissary (${{ matrix.os }})
-    timeout-minutes: 30
+    timeout-minutes: 50
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
     strategy:
       fail-fast: false
       matrix:
@@ -299,8 +420,26 @@ jobs:
           - os: windows-11-arm
             platform: windows/arm64
     runs-on: ${{ matrix.os }}
+    services:
+      timescale:
+        image: ${{ startsWith(matrix.platform, 'linux/') && 'timescale/timescaledb:2.32.0-pg17' || '' }}
+        env:
+          POSTGRES_DB: artifactory
+          POSTGRES_USER: artifactory
+          POSTGRES_PASSWORD: local-native-test-only
+          TIMESCALEDB_TELEMETRY: 'off'
+        ports:
+          - 127.0.0.1:15432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U artifactory -d artifactory"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
+      - name: Bind native test binaries to the checked-out commit
+        shell: bash
+        run: echo "ARTIFACTORY_BUILD_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: First-install PowerShell syntax
         if: runner.os == 'Windows'
         shell: pwsh
@@ -324,7 +463,70 @@ jobs:
         env:
           ARTIFACTORY_NATIVE_SERVICE_TESTS: '1'
           ARTIFACTORY_NATIVE_EXPECTED_PLATFORM: ${{ matrix.platform }}
-        run: cargo test --locked -p artifactory-emissary --test native_service -- --ignored --nocapture
+          ARTIFACTORY_NATIVE_EVIDENCE_DIR: ${{ runner.temp }}/emissary-native-evidence
+        run: cargo test --locked -p artifactory-emissary --test native_service native_service_lifecycle -- --ignored --exact --nocapture
+      - name: macOS isolated OTA filesystem faults
+        if: runner.os == 'macOS'
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python3 scripts/check_emissary_ota_filesystem.py --filesystem HFS+ --evidence "$RUNNER_TEMP/emissary-ota-filesystem-hfs.json"
+          python3 scripts/check_emissary_ota_filesystem.py --filesystem APFS --evidence "$RUNNER_TEMP/emissary-ota-filesystem-apfs.json"
+      - name: Linux native maintenance followed by durable transaction ACK
+        if: runner.os == 'Linux'
+        timeout-minutes: 20
+        shell: bash
+        env:
+          ARTIFACTORY_NATIVE_SERVICE_TESTS: '1'
+          ARTIFACTORY_NATIVE_EXPECTED_PLATFORM: ${{ matrix.platform }}
+          ARTIFACTORY_NATIVE_EVIDENCE_DIR: ${{ runner.temp }}/emissary-native-durable-evidence
+          ARTIFACTORY_TEST_DATABASE_URL: postgres://artifactory:local-native-test-only@127.0.0.1:15432/artifactory
+        run: |
+          cargo test --locked -p artifactory-emissary --test native_service native_service_durable_recovery -- --ignored --exact --nocapture
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          proof = json.loads((Path(os.environ['ARTIFACTORY_NATIVE_EVIDENCE_DIR']) / 'durable_recovery.json').read_text())
+          required = ('passed', 'native_service_executed', 'real_business_migrations',
+                      'transaction_fence_observed', 'source_bytes_retained_before_commit',
+                      'business_ack_removed_sources', 'terminal_operation_unchanged',
+                      'service_account_directory_removed', 'database_removed')
+          if any(proof.get(key) is not True for key in required):
+              raise SystemExit('Native durable transaction or cleanup evidence is incomplete.')
+          if proof.get('source_batches') != 2 or proof.get('source_inventories') != 3:
+              raise SystemExit('Native durable original source coverage is incomplete.')
+          startups = proof.get('native_startups_registered')
+          if type(startups) is not int or startups < 4:
+              raise SystemExit('Native maintenance/OTA/rollback startup coverage is incomplete.')
+          PY
+      - name: Linux isolated ext4 OTA and active spool faults
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        shell: bash
+        env:
+          ARTIFACTORY_TEST_DATABASE_URL: postgres://artifactory:local-native-test-only@127.0.0.1:15432/artifactory
+        run: |
+          sudo apt-get install -y e2fsprogs util-linux
+          python3 scripts/check_emissary_ota_filesystem.py --filesystem ext4 --with-active-spool --evidence "$RUNNER_TEMP/emissary-ota-filesystem-ext4.json"
+      - name: Linux native service ENOSPC and durable recovery
+        if: runner.os == 'Linux'
+        timeout-minutes: 20
+        shell: bash
+        env:
+          ARTIFACTORY_NATIVE_SERVICE_TESTS: '1'
+          ARTIFACTORY_TEST_DATABASE_URL: postgres://artifactory:local-native-test-only@127.0.0.1:15432/artifactory
+        run: python3 scripts/check_emissary_native_disk.py --evidence "$RUNNER_TEMP/emissary-native-disk.json"
+      - name: Retain native maintenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-evidence-${{ strategy.job-index }}
+          path: |
+            ${{ runner.temp }}/emissary-native-evidence/*.json
+            ${{ runner.temp }}/emissary-native-durable-evidence/*.json
+            ${{ runner.temp }}/emissary-ota-filesystem-*.json
+            ${{ runner.temp }}/emissary-native-disk.json
+          if-no-files-found: warn
   compose-tls:
     needs: version-contract
     runs-on: ubuntu-latest

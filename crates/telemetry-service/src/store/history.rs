@@ -60,12 +60,27 @@ impl TelemetryStore {
     }
     pub async fn latest(&self, id: Uuid) -> Result<LatestTelemetry> {
         let host:Option<Value>=sql::optional_scalar(&mut self.read.clone(), "SELECT to_jsonb(h) || jsonb_build_object('fresh', sampled_at BETWEEN now()-interval '90 seconds' AND now()+interval '30 seconds' AND received_at>now()-interval '90 seconds') FROM latest_hosts h WHERE node_id=$1", params![id]).await?;
-        let inventory:Option<Value>=sql::optional_scalar(&mut self.read.clone(), "SELECT jsonb_build_object('sampled_at',i.sampled_at,'digest',i.digest,'inventory',v.inventory) FROM latest_inventories i JOIN inventory_versions v USING(node_id,digest) WHERE i.node_id=$1", params![id]).await?;
+        let inventory = self.legacy_inventory(id).await?;
+        Ok(LatestTelemetry { host, inventory })
+    }
+
+    async fn legacy_inventory(&self, id: Uuid) -> Result<Option<Value>> {
+        Ok(sql::optional_scalar(&mut self.read.clone(), "SELECT jsonb_build_object('sampled_at',i.sampled_at,'digest',i.digest,'inventory',v.inventory,'provenance','legacy','startup_id',NULL) FROM latest_inventories i JOIN inventory_versions v USING(node_id,digest) WHERE i.node_id=$1", params![id]).await?)
+    }
+
+    /// 显式startup键避免旧进程时钟较大时污染当前设备视图。
+    pub async fn latest_for_startup(&self, node: Uuid, startup: Uuid) -> Result<LatestTelemetry> {
+        let host:Option<Value>=sql::optional_scalar(&mut self.read.clone(), "SELECT to_jsonb(h)||jsonb_build_object('session_id',startup_id,'fresh',sampled_at BETWEEN now()-interval '90 seconds' AND now()+interval '30 seconds' AND received_at>now()-interval '90 seconds') FROM startup_hosts h WHERE node_id=$1 AND startup_id=$2",params![node,startup]).await?;
+        let mut inventory:Option<Value>=sql::optional_scalar(&mut self.read.clone(), "SELECT jsonb_build_object('sampled_at',i.observed_at,'observed_at',i.observed_at,'received_at',i.received_at,'startup_id',i.startup_id,'observation_id',i.observation_id,'revision',i.revision,'digest',i.inventory_digest,'provenance',CASE WHEN i.source_batch_id IS NULL THEN 'native' ELSE 'legacy_backfill' END,'inventory',v.inventory) FROM startup_inventories i JOIN inventory_versions v ON v.node_id=i.node_id AND v.digest=i.inventory_digest WHERE i.node_id=$1 AND i.startup_id=$2",params![node,startup]).await?;
+        // 旧投影缺少startup身份，只能显示legacy来源，不能赋予当前进程归属。
+        if inventory.is_none() {
+            inventory = self.legacy_inventory(node).await?;
+        }
         Ok(LatestTelemetry { host, inventory })
     }
 
     pub async fn inventory(&self, id: Uuid) -> Result<HistoryPage> {
-        bounded("SELECT jsonb_build_object('sampled_at',o.sampled_at,'digest',o.digest,'inventory',v.inventory) FROM inventory_observations o JOIN inventory_versions v USING(node_id,digest) WHERE o.node_id=$1 ORDER BY o.sampled_at DESC LIMIT 101", params![id], &self.read, 100).await
+        bounded("SELECT entry FROM (SELECT o.sampled_at, jsonb_build_object('sampled_at',o.sampled_at,'digest',o.digest,'inventory',v.inventory,'provenance','legacy') AS entry FROM inventory_observations o JOIN inventory_versions v USING(node_id,digest) WHERE o.node_id=$1 UNION ALL SELECT o.observed_at,jsonb_build_object('sampled_at',o.observed_at,'observed_at',o.observed_at,'received_at',o.received_at,'startup_id',o.startup_id,'observation_id',o.observation_id,'revision',o.revision,'digest',o.inventory_digest,'inventory',v.inventory,'provenance',CASE WHEN o.source_batch_id IS NULL THEN 'native' ELSE 'legacy_backfill' END) FROM inventory_deliveries o JOIN inventory_versions v ON v.node_id=o.node_id AND v.digest=o.inventory_digest WHERE o.node_id=$1) observations ORDER BY sampled_at DESC LIMIT 101", params![id], &self.read, 100).await
     }
 
     pub async fn history(&self, id: Uuid, r: &Range) -> Result<HistoryPage> {

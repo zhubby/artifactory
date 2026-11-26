@@ -1,20 +1,24 @@
 //! [INPUT]: 依赖固定主机诊断、Product 型号、平台接口枚举与有界磁盘队列。
-//! [OUTPUT]: 固定启动元数据，缓存动态诊断并异步发送遥测批次。
+//! [OUTPUT]: 固定启动元数据，隔离清单存储故障并异步发送资源采样。
 //! [POS]: 独立于任务租约和构建日志的节点遥测循环。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 mod collector;
-mod inventory;
+mod durability;
+pub(crate) mod inventory;
+mod inventory_delivery;
+mod inventory_lane;
+mod inventory_upload;
 mod managed;
 mod network;
+mod sample_bounds;
+mod scheduler;
 mod spool;
+mod storage_observation;
+mod upload;
 #[cfg(any(windows, test))]
 mod windows_network;
 
-use crate::{
-    client,
-    config::Config,
-    protocol::{TelemetryBatch, telemetry_client::TelemetryClient},
-};
+use crate::config::Config;
 use collector::Collector;
 pub use managed::Registry;
 use serde_json::{Value, json};
@@ -129,6 +133,11 @@ pub struct Handle {
     pub registry: Registry,
     snapshot: Arc<RwLock<Snapshot>>,
     cancel: CancellationToken,
+    spool: Arc<Mutex<Option<Spool>>>,
+    notify: Arc<Notify>,
+    startup_id: uuid::Uuid,
+    started: std::time::Instant,
+    jobs: Vec<tokio::task::JoinHandle<()>>,
 }
 impl Handle {
     /// Start best-effort background collection. Telemetry errors never propagate into execution.
@@ -137,6 +146,8 @@ impl Handle {
         startup_id: uuid::Uuid,
         inventory: artifactory_emissary_protocol::telemetry::Inventory,
     ) -> Self {
+        let observed_at = chrono::Utc::now();
+        let started = std::time::Instant::now();
         let registry = Registry::default();
         let cancel = CancellationToken::new();
         let snapshot = Arc::new(RwLock::new(Snapshot {
@@ -151,10 +162,49 @@ impl Handle {
         let collect_spool = spool.clone();
         let collect_snapshot = snapshot.clone();
         let collect_notify = notify.clone();
-        tokio::spawn(async move {
+        let collection = tokio::spawn(async move {
+            let initial_spool = collect_spool.clone();
+            let initial_cfg = collect_cfg.clone();
+            let initial_inventory = inventory.clone();
+            let initialized = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+                let budget = if initial_cfg.telemetry_buffer_bytes == 0 {
+                    32 << 20
+                } else {
+                    initial_cfg.telemetry_buffer_bytes
+                };
+                anyhow::ensure!(budget >= 8 << 20, "telemetry_configuration_invalid");
+                let mut opened = Spool::open(
+                    initial_cfg.root.join("telemetry"),
+                    budget - inventory_delivery::QUOTA - (1 << 20),
+                )?;
+                let inventory_ready = opened
+                    .inventories
+                    .seed_startup(startup_id, observed_at, &initial_inventory)
+                    .is_ok();
+                if !inventory_ready {
+                    eprintln!("telemetry inventory storage unavailable; ordinary samples continue");
+                }
+                *initial_spool
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("telemetry spool poisoned"))? = Some(opened);
+                Ok(())
+            })
+            .await;
+            if !matches!(initialized, Ok(Ok(()))) {
+                if let Ok(mut snapshot) = collect_snapshot.write() {
+                    snapshot.metrics["telemetry"] =
+                        json!({"state":"storage_or_configuration_unavailable"});
+                }
+                eprintln!("telemetry storage or configuration unavailable; execution continues");
+            }
+            collect_notify.notify_waiters();
             let Ok(mut collector) =
                 tokio::task::spawn_blocking(move || Collector::new(startup_id)).await
             else {
+                if let Ok(mut snapshot) = collect_snapshot.write() {
+                    snapshot.metrics["telemetry"]["collector_error"] =
+                        json!("collector_unavailable");
+                }
                 return;
             };
             let start = tokio::time::Instant::now() + crate::client::retry_delay(10);
@@ -162,27 +212,43 @@ impl Handle {
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut index = 0u64;
             let cards = inventory.accelerators.clone();
-            let mut pending_inventory = Some(inventory);
+            let mut pending_inventory = Some(inventory.clone());
+            let startup_inventory = inventory;
             loop {
                 tokio::select! {_=collect_cancel.cancelled()=>break,_=tick.tick()=>{}}
                 let host = index.is_multiple_of(3);
                 let inventory = pending_inventory.clone();
                 let cfg = collect_cfg.clone();
                 let registry = collect_registry.clone();
+                let collect_started = std::time::Instant::now();
                 let result = tokio::task::spawn_blocking(move || {
                     let data = collector.sample(&cfg, &registry, host, inventory);
                     (collector, data)
                 })
                 .await;
-                let Ok((next, (mut batch, observations))) = result else {
+                let Ok((next, (mut batch, mut observations))) = result else {
+                    if let Ok(mut snapshot) = collect_snapshot.write() {
+                        snapshot.metrics["telemetry"]["collector_error"] =
+                            json!("collector_unavailable");
+                    }
                     break;
                 };
+                let collector_bounds = take_host_bounds(&mut observations);
                 collector = next;
                 if let Some(host) = &mut batch.host {
                     host.accelerators = tokio::select! {_=collect_cancel.cancelled()=>break,v=inventory::accelerator_samples(&collect_cfg,&cards)=>v};
                 }
                 if let Ok(mut snapshot) = collect_snapshot.write() {
+                    let delivery = snapshot.metrics.get("telemetry").cloned();
                     *snapshot = observations;
+                    if let Some(delivery) = delivery {
+                        snapshot.metrics["telemetry"] = delivery;
+                    }
+                    if !snapshot.metrics["telemetry"].is_object() {
+                        snapshot.metrics["telemetry"] = json!({});
+                    }
+                    snapshot.metrics["telemetry"]["collector_duration_ms"] =
+                        json!(collect_started.elapsed().as_millis() as u64);
                 }
                 index = index.saturating_add(1);
                 if batch.host.is_none() && batch.processes.is_empty() && batch.inventory.is_none() {
@@ -191,18 +257,30 @@ impl Handle {
                 let spool = collect_spool.clone();
                 let cfg = collect_cfg.clone();
                 let snapshot = collect_snapshot.clone();
+                let startup_inventory = startup_inventory.clone();
                 let buffered = tokio::task::spawn_blocking(move || {
                     let mut guard = spool.lock().expect("telemetry spool lock poisoned");
                     if guard.is_none() {
+                        if cfg.telemetry_buffer_bytes != 0 && cfg.telemetry_buffer_bytes < 8 << 20 {
+                            return false;
+                        }
                         match Spool::open(
                             cfg.root.join("telemetry"),
                             if cfg.telemetry_buffer_bytes == 0 {
-                                32 << 20
+                                27 << 20
                             } else {
                                 cfg.telemetry_buffer_bytes
+                                    .saturating_sub(inventory_delivery::QUOTA + (1 << 20))
                             },
                         ) {
-                            Ok(s) => *guard = Some(s),
+                            Ok(mut s) => {
+                                let _ = s.inventories.seed_startup(
+                                    startup_id,
+                                    observed_at,
+                                    &startup_inventory,
+                                );
+                                *guard = Some(s);
+                            }
                             Err(_) => {
                                 eprintln!("telemetry spool unavailable; execution continues");
                                 return false;
@@ -211,16 +289,55 @@ impl Handle {
                     }
                     let mut buffered = false;
                     if let Some(spool) = guard.as_mut() {
-                        if batch.validate().is_err() || spool.push(&mut batch).is_err() {
+                        let inventory_deferred =
+                            batch.inventory.is_some() && !spool.inventories.available();
+                        let buffered_result = (|| {
+                            spool.note_host_bounds(collector_bounds.0, collector_bounds.1)?;
+                            // 仅拆分本轮新样本，旧磁盘批次保持原字节。
+                            if batch.host.is_some()
+                                && (!batch.processes.is_empty() || batch.inventory.is_some())
+                            {
+                                let mut host = batch.clone();
+                                host.id = uuid::Uuid::new_v4();
+                                host.processes.clear();
+                                host.inventory = None;
+                                spool.push(&mut host)?;
+                                batch.host = None;
+                            }
+                            if inventory_deferred {
+                                batch.inventory = None;
+                            }
+                            if batch.host.is_none()
+                                && batch.processes.is_empty()
+                                && batch.inventory.is_none()
+                            {
+                                return Ok(());
+                            }
+                            spool.push(&mut batch)
+                        })();
+                        if buffered_result.is_err() {
+                            let _ = spool.note_reason("disk_error");
                             let _ = spool.note_gap();
                             eprintln!(
                                 "telemetry sample could not be buffered; execution continues"
                             );
                         } else {
-                            buffered = true;
+                            buffered = !inventory_deferred;
                         }
+                        spool.refresh_storage();
                         if let Ok(mut snapshot) = snapshot.write() {
                             snapshot.metrics["telemetry_dropped_batches"] = json!(spool.dropped());
+                            let delivery = snapshot
+                                .metrics
+                                .get_mut("telemetry")
+                                .and_then(Value::as_object_mut);
+                            if let Some(delivery) = delivery {
+                                delivery.extend(
+                                    spool.diagnostics().as_object().cloned().unwrap_or_default(),
+                                );
+                            } else {
+                                snapshot.metrics["telemetry"] = spool.diagnostics();
+                            }
                         }
                     }
                     buffered
@@ -230,121 +347,90 @@ impl Handle {
                 if buffered {
                     pending_inventory = None;
                 }
-                collect_notify.notify_one();
+                collect_notify.notify_waiters();
             }
         });
-        let upload_cancel = cancel.clone();
-        tokio::spawn(async move {
-            let mut endpoint = cfg.clone();
-            endpoint.endpoint = cfg.telemetry_endpoint.clone();
-            let mut connection = None;
-            let mut backoff = 1u64;
-            loop {
-                if upload_cancel.is_cancelled() {
-                    break;
-                }
-                let local = spool.clone();
-                let result = tokio::task::spawn_blocking(
-                    move || -> anyhow::Result<Option<(std::path::PathBuf, Vec<u8>)>> {
-                        let mut guard = local
-                            .lock()
-                            .map_err(|_| anyhow::anyhow!("telemetry spool poisoned"))?;
-                        let Some(spool) = guard.as_mut() else {
-                            return Ok(None);
-                        };
-                        match spool.first() {
-                            Ok(value) => Ok(value),
-                            Err(_) => {
-                                spool.discard()?;
-                                Ok(None)
-                            }
-                        }
-                    },
-                )
-                .await;
-                let Ok(Ok(Some((path, bytes)))) = result else {
-                    tokio::select! {_=upload_cancel.cancelled()=>break,_=notify.notified()=>{},_=tokio::time::sleep(Duration::from_secs(10))=>{}};
-                    continue;
-                };
-                let expected = serde_json::from_slice::<
-                    artifactory_emissary_protocol::telemetry::Batch,
-                >(&bytes)
-                .ok()
-                .map(|b| b.id.to_string());
-                let operation = async {
-                    if connection.is_none() {
-                        connection = Some(TelemetryClient::new(
-                            client::dial(&endpoint, false).await.map_err(|_| {
-                                tonic::Status::unavailable("telemetry connection unavailable")
-                            })?,
-                        ));
-                    }
-                    let client = connection.as_mut().ok_or_else(|| {
-                        tonic::Status::unavailable("telemetry connection unavailable")
-                    })?;
-                    client
-                        .upload(TelemetryBatch { json: bytes })
-                        .await
-                        .map(|r| r.into_inner())
-                };
-                let result = tokio::select! {_=upload_cancel.cancelled()=>break,r=tokio::time::timeout(Duration::from_secs(20),operation)=>r};
-                let (remove, drop_record) = match result {
-                    Ok(Ok(ack)) if Some(&ack.batch_id) == expected.as_ref() => {
-                        backoff = 1;
-                        (true, false)
-                    }
-                    Ok(Err(status))
-                        if matches!(
-                            status.code(),
-                            tonic::Code::InvalidArgument
-                                | tonic::Code::OutOfRange
-                                | tonic::Code::AlreadyExists
-                                | tonic::Code::PermissionDenied
-                        ) =>
-                    {
-                        eprintln!(
-                            "telemetry record rejected ({:?}); gap recorded",
-                            status.code()
-                        );
-                        (true, true)
-                    }
-                    _ => {
-                        connection = None;
-                        (false, false)
-                    }
-                };
-                if remove {
-                    let local = spool.clone();
-                    let _ = tokio::task::spawn_blocking(move || {
-                        if let Ok(mut guard) = local.lock()
-                            && let Some(spool) = guard.as_mut()
-                        {
-                            if drop_record {
-                                if spool.first().ok().flatten().is_some_and(|r| r.0 == path) {
-                                    let _ = spool.discard();
-                                }
-                            } else {
-                                let _ = spool.ack(&path);
-                            }
-                        }
-                    })
-                    .await;
-                } else {
-                    tokio::select! {_=upload_cancel.cancelled()=>break,_=tokio::time::sleep(crate::client::retry_delay(backoff))=>{}}
-                    backoff = (backoff * 2).min(30);
-                }
-            }
-        });
+        let inventory_job = tokio::spawn(inventory_upload::run(
+            cfg.clone(),
+            spool.clone(),
+            snapshot.clone(),
+            notify.clone(),
+            cancel.clone(),
+        ));
+        let batch_job = tokio::spawn(upload::run(
+            cfg,
+            spool.clone(),
+            snapshot.clone(),
+            notify.clone(),
+            cancel.clone(),
+        ));
         Self {
             registry,
             snapshot,
             cancel,
+            spool,
+            notify,
+            startup_id,
+            started,
+            jobs: vec![collection, inventory_job, batch_job],
         }
+    }
+    /// 停止采样和两个发送器，释放队列锁后才允许同root重启。
+    pub async fn shutdown(mut self) -> anyhow::Result<()> {
+        self.cancel.cancel();
+        for job in self.jobs.drain(..) {
+            tokio::time::timeout(Duration::from_secs(10), job).await??;
+        }
+        Ok(())
+    }
+    pub fn inventory_sink(&self) -> crate::operations::InventorySink {
+        let spool = self.spool.clone();
+        let notify = self.notify.clone();
+        let startup = self.startup_id;
+        let started = self.started;
+        Arc::new(move |inventory| {
+            let spool = spool.clone();
+            let notify = notify.clone();
+            Box::pin(async move {
+                let result = tokio::task::spawn_blocking(move || {
+                    let mut guard = spool
+                        .lock()
+                        .map_err(|_| anyhow::anyhow!("telemetry spool poisoned"))?;
+                    let spool = guard
+                        .as_mut()
+                        .ok_or_else(|| anyhow::anyhow!("telemetry spool unavailable"))?;
+                    spool.inventories.refresh(
+                        startup,
+                        &inventory,
+                        started.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
+                    )
+                })
+                .await??;
+                notify.notify_one();
+                Ok(result)
+            })
+        })
     }
     /// Read cached observations without any OS probes on the lease heartbeat path.
     pub fn snapshot(&self) -> Option<Snapshot> {
         self.snapshot.read().ok().map(|s| s.clone())
     }
+}
+
+fn take_host_bounds(snapshot: &mut Snapshot) -> (u64, u64) {
+    let Some(metrics) = snapshot.metrics.as_object_mut() else {
+        return (0, 0);
+    };
+    let mut count = |key| {
+        metrics
+            .remove(key)
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0)
+    };
+    (
+        count("collector_omitted_host_devices"),
+        count("collector_truncated_host_fields"),
+    )
 }
 impl Drop for Handle {
     fn drop(&mut self) {
@@ -358,12 +444,64 @@ pub(crate) fn cached_test_handle(snapshot: Snapshot) -> Handle {
         registry: Registry::default(),
         snapshot: Arc::new(RwLock::new(snapshot)),
         cancel: CancellationToken::new(),
+        spool: Arc::new(Mutex::new(None)),
+        notify: Arc::new(Notify::new()),
+        startup_id: uuid::Uuid::new_v4(),
+        started: std::time::Instant::now(),
+        jobs: vec![],
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn collector_bounds_enter_durable_diagnostics_once_without_private_metric_keys() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut snapshot = Snapshot {
+            metrics: json!({"collector_omitted_host_devices":3,"collector_truncated_host_fields":2,"logical_cpus":8}),
+            network_interfaces: None,
+        };
+        let bounds = take_host_bounds(&mut snapshot);
+        assert_eq!(bounds, (3, 2));
+        assert_eq!(take_host_bounds(&mut snapshot), (0, 0));
+        assert_eq!(snapshot.metrics, json!({"logical_cpus":8}));
+        let mut spool = Spool::open(directory.path().into(), 4096).unwrap();
+        spool.note_host_bounds(bounds.0, bounds.1).unwrap();
+        drop(spool);
+        let diagnostics = Spool::open(directory.path().into(), 4096)
+            .unwrap()
+            .diagnostics();
+        assert_eq!(diagnostics["omitted_host_devices"], 3);
+        assert_eq!(diagnostics["truncated_host_fields"], 2);
+    }
+
+    #[tokio::test]
+    async fn invalid_queue_configuration_reports_unknown_storage_without_failing_runtime() {
+        let directory = tempfile::tempdir().unwrap();
+        let handle = Handle::start(
+            Config {
+                root: directory.path().into(),
+                telemetry_buffer_bytes: 1,
+                ..Default::default()
+            },
+            uuid::Uuid::new_v4(),
+            Default::default(),
+        );
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if handle.snapshot().unwrap().metrics["telemetry"]["state"]
+                    == "storage_or_configuration_unavailable"
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(handle.spool.lock().unwrap().is_none());
+    }
 
     #[test]
     fn identity_metadata_preserves_raw_product_model_and_omits_missing_values() {

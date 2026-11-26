@@ -1,6 +1,6 @@
 <!--
 [INPUT]: Emissary 公共协议、设备执行与规划协调器身份。
-[OUTPUT]: 定义设备会话、心跳预算、执行租约和管理员发起的 OTA 边界。
+[OUTPUT]: 定义设备会话、命令目录、有限操作、执行租约和 OTA 边界。
 [POS]: 设备通信入口；规划 Pod 的恢复细节由规划协调器协议定义。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
@@ -24,6 +24,23 @@
 启动快照编码上限 64 KiB，控制平面提交后返回 `metadata_ack`，以 `request_id` 回显启动 ID。ACK 丢失时 `metadata` 事件重发同一快照；普通重连不重新探测，已退役 startup 和旧 session 的提交被拒绝。新进程快照完整替换旧值；管理员 labels、签名权限和 slots 独立维护。普通心跳只保留运行信息，详见 [节点元数据](node-placement.md)。
 
 完整 hello 和 heartbeat 的 `payload_json` 上限为 96 KiB。协议共享此预算：启动快照 64 KiB、网络诊断 8 KiB、运行信封 24 KiB。运行信封包含最多 32 项活动任务、OTA、指标和 JSON 字段开销。旧 72 KiB 事件加完整网络诊断和字段开销仍在新上限内；超过完整预算的事件在 JSON 解码前拒绝。独立启动快照上限不变。
+
+## 命令目录与扩展通知
+
+共享typed目录固定输入与结果schema、能力、授权、截止、去重和取消政策。
+构建、OTA、终端和有限操作保留各自执行器。
+设备声明`command-catalog-v1`后，Control确认可接收的响应集合。
+当前连接确认后，无效请求返回`command_rejected`。
+原因限定`unsupported_kind`、`schema_mismatch`和`invalid_payload`。
+终端身份、尺寸、profile与term在共享入口校验。
+本机开关、会话、排空和期限仍由终端准入检查。
+
+`Command.ignorable_notification`为新增字段12，默认false。
+Control只向声明`command-notification-v1`的设备发送该标记。
+未知kind只有显式标记且不携带执行或授权字段时才可忽略。
+已知命令始终执行原校验，标记不能屏蔽坏请求。
+被忽略通知只增加进程内饱和计数，不调用执行器或生成结果。
+心跳从缓存读取`command_notifications_ignored`；重连保留计数，重启清零。
 
 ## 两阶段开始与租约
 
@@ -87,3 +104,19 @@ Assignment 使用 `source_manifest_json` 传递固定元数据，包含仓库路
 每个 attempt 直接从上游拉取到独立临时目录。Kubernetes 任务使用 init container、投影令牌和 `emptyDir`。控制平面不代理 Git/LFS 流量，不保存源码包或缓存。只有准备进程领取源码凭据，任务退出后清理源码和临时认证材料。
 
 计划提交、澄清、取消和过期回收通过事务排序。重发相同结果返回原回执；过期任务不能生成新的规划或执行。每个 attempt 固定 `source_manifest_id` 与 `plan_revision_id`，修订只替换失败目标。
+
+## 有限只读操作
+
+`node-operations-v1` 只接受 `collect_diagnostics` 和 `refresh_inventory`。操作输入采用 schema 1，最大 8 KiB。诊断只选择共享目录中的 28 个工具 ID，不接受 Shell、可执行路径或 URL。每设备同时执行一个操作，总预算 30 秒，单探测最多 3 秒，最多 8 路并发。工具输出只提取数字版本；结果不包含路径、环境、原始日志或完整命令行。
+
+`node_operation` 绑定租户、节点、startup、当前 Control session、操作者、输入摘要和 30 秒接收窗口。设备使用认证能力握手的服务器时刻与本地单调经过时间判断截止。设备先同步保存 accepted，再发送接受状态，最后启动探测。断线继续有界执行；重启把未终态记录改为 interrupted，不重新采样。
+
+`node_operation_resume` 只授权已有操作的状态续传。它固定原 startup 和输入摘要，并绑定当前 startup 与 session；不会执行操作或延长截止。新连接先恢复授权，再发送持久结果。服务端要求当前节点证书与再授权 session。`node_operation_cancel` 请求取消；取消清扫完成后设备才报告 canceled。清扫失败明确报告 failed，阻止新操作。
+
+设备通过 `node_operation_update` 上报递增序号、状态和类型结果。服务端在同一事务内提交终态、结果和审计，再返回 `node_operation_result_ack`。设备只有匹配 ID 与结果摘要才删除正文。日志最多 64 项、8 MiB，未确认结果不会为新操作淘汰。去重和未确认正文保留最多 7 天；过期不触发重跑。
+
+断线不等于执行失败。超过执行截止 5 分钟仍无结果时，服务端只释放准入锁并显示 outcome_unknown；设备终态仍未知。迟到结果在当前连接重新授权后仍能提交。服务端结果正文保留 24 小时，操作元数据保留 90 天。
+
+ProbeReport 独立携带 available、unsupported、permission_denied、timeout、error，以及观察时间、耗时和探测版本。未执行项使用 skipped。unsupported 是已完成的缺失检查；权限、超时、错误和预算耗尽使操作失败。探测成功只证明版本命令完成，不证明原生构建可用。
+
+有限操作取消先于执行信封投递。设备缓存当前连接内的有限取消身份，持久接受后直接记录取消终态，不启动探测。结果事务先锁节点，再锁操作，锁等待后复验当前设备会话和证书；创建与取消同样在锁等待后复验登录Session期限。

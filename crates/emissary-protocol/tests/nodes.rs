@@ -112,3 +112,42 @@ fn placement_rejects_duplicates_and_unbounded_candidates() {
     let bad: ResourceRequirements = serde_json::from_value(json!({"max_cpu_percent":101})).unwrap();
     assert!(bad.validate().is_err());
 }
+
+#[test]
+fn delivery_diagnostics_remain_bounded_and_legacy_absence_stays_unknown() {
+    use artifactory_emissary_protocol::nodes::{
+        MAX_DELIVERY_DIAGNOSTICS_BYTES, decode_heartbeat, delivery_diagnostics,
+    };
+    assert!(decode_heartbeat(r#"{"diagnostics":{}}"#).is_ok());
+    let value = delivery_diagnostics(
+        &json!({"state":"schema_unsupported","spool_bytes":u64::MAX,"spool_records":8192,"backoff_seconds":30,"last_successful_ack_at":null,"private_path":"secret","collector_errors":"x".repeat(10000)}),
+    );
+    assert!(serde_json::to_vec(&value).unwrap().len() <= MAX_DELIVERY_DIAGNOSTICS_BYTES);
+    assert_eq!(value["state"], "schema_unsupported");
+    assert!(value.get("private_path").is_none());
+    assert!(value.get("collector_errors").is_none());
+    let oversized = json!({"diagnostics":{"metrics":{"telemetry":{"state":"x".repeat(MAX_DELIVERY_DIAGNOSTICS_BYTES)}}}});
+    assert!(decode_heartbeat(&oversized.to_string()).is_err());
+}
+
+#[test]
+fn delivery_projects_lane_progress_and_durable_loss_without_private_values() {
+    use artifactory_emissary_protocol::nodes::delivery_diagnostics;
+    let value = json!({"fresh_last_ack_at":"2026-11-26T00:00:00Z","history_last_progress_at":"2026-11-26T00:00:00Z","inventory_backoff_seconds":30,"inventory_conflict_records":0,"inventory_conflicts_total":1,"inventory_last_conflict_at":"2026-11-26T00:00:00Z","last_rejection_reason":"bounds_exceeded","bounds_exceeded_batches":1,"disk_allocated_bytes":null,"disk_temporary_bytes":33,"private_path":"secret"});
+    let projected = delivery_diagnostics(&value);
+    for key in [
+        "fresh_last_ack_at",
+        "history_last_progress_at",
+        "inventory_backoff_seconds",
+        "inventory_conflict_records",
+        "inventory_conflicts_total",
+        "inventory_last_conflict_at",
+        "last_rejection_reason",
+        "bounds_exceeded_batches",
+        "disk_allocated_bytes",
+        "disk_temporary_bytes",
+    ] {
+        assert_eq!(projected.get(key), value.get(key), "{key}");
+    }
+    assert!(projected.get("private_path").is_none());
+}

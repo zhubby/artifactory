@@ -4,7 +4,7 @@ type: feat
 status: active
 date: 2026-11-25
 planning_status: ready-for-implementation
-implementation_status: not-started
+implementation_status: in-progress
 ---
 <!--
 [INPUT]: Uplink 固定源码评估与 Artifactory 0.2.3 实现。
@@ -18,11 +18,24 @@ implementation_status: not-started
 
 保留 Emissary 的执行围栏与信任模型。
 吸收 Uplink 的命名操作、分流策略和链路观测。
-先补可靠性与兼容性，再增加操作和弱网能力。
+先补可靠性与协议约束，再增加操作和弱网能力。
 
-本计划只确定设计与实施路线。
-产品代码、迁移、发行和部署均未执行。
-实施复选框全部保持未完成。
+2026-11-26用户确定下次部署统一升级全部测试设备。
+本次交付不支持旧功能版本回退或长期新旧混部。
+不同功能版本回退候选和兼容桥接版本不再是出口。
+部署时停旧、迁移、升级服务与固定launcher/runtime。
+全部测试设备版本、能力与身份读回后再恢复接单。
+既有离线数据保留原字节、ID与时间，不因升级清空。
+OTA失败保留原资产与候选健康失败恢复继续生效。
+早期仅授权Linux虚拟机临时账户与服务验收。
+当时Mac mini和Windows既有服务保持不变。
+随后用户授权全部改动合入main、推送并跟进CI。
+用户再授权测试时卸载各构建节点旧版并安装最新Emissary。
+维护固定launcher与runtime前排空，并保留身份及未确认队列。
+
+2026-11-25开始按本计划实现，使用独立工作树。
+代码和迁移按单元验证；按当前授权执行Git交付与节点升级。
+复选框只在该单元验收出口满足后完成。
 每个单元可单独审查、验证和交付。
 交付版本实施时从统一 `VERSION` 选择。
 本计划不预先分配新版本号。
@@ -32,6 +45,7 @@ implementation_status: not-started
 - [固定源码评估](2026-11-25-emissary-uplink-assessment.md)。
 - [协议、数据与有限操作契约](2026-11-25-emissary-protocol-data-contracts.md)。
 - [OTA 与固定启动器契约](2026-11-25-emissary-ota-contracts.md)。
+- [需求、证据与剩余交付条件](../acceptance/emissary/2026-11-26-readiness.md)。
 - 当前行为以 [协议](../protocol.md)、[遥测](../telemetry.md)、[OTA](../emissary-ota.md)、[节点选机](../node-placement.md)为准。
 - 终端已实现，沿用 [终端手册](../terminals.md)。历史终端计划的待办不表示当前缺失。
 
@@ -51,10 +65,14 @@ Uplink 固定为 `e94a67186d64b3a38233da1afdafc966082f4492`。
 | 下载和恢复由固定 launcher 执行 | `crates/emissary/src/ota.rs` 的 `supervise` 与 `download` | launcher 能力单独报告；新能力需管理员安装迁移 |
 | 启动 metadata 已有独立 ACK 与调度摘要 | `crates/control-plane/src/store/node_metadata.rs` | 观测刷新不改调度快照；能力采纳另设门禁 |
 
-清单淘汰与格式失配属于源码确认的风险路径。
-本轮未复现线上丢数，也没有新增运行回归。
+清单淘汰与格式失配属于规划时确认的风险路径。
+规划时未复现线上丢数，也未增加运行回归。
+后续实现及新增回归见[本地实施记录](../acceptance/emissary/2026-11-26-evolution.md)。
+真实Control注册、故障恢复与OTA见[组合验收](../acceptance/emissary/2026-11-26-control-ota.md)。
+清单冲突持久隔离、满记录合并与完整main新鲜度见
+[遥测增量验收](../acceptance/emissary/2026-11-26-telemetry-conflicts.md)。
 不实施时，当前构建围栏仍成立。
-代价是长离线清单缺失和混合部署演进受限。
+代价是长离线清单缺失和格式失配后的补交受限。
 
 未选择的路线：
 
@@ -68,7 +86,7 @@ Uplink 固定为 `e94a67186d64b3a38233da1afdafc966082f4492`。
 
 | ID | 用户关注点与完成条件 | 单元 |
 |---|---|---|
-| R1 | 协议：格式协商独立于 Control，旧端安全降级 | U1 |
+| R1 | 协议：格式协商独立于 Control，失配保留数据 | U1 |
 | R2 | 协议：命令目录、类型解码、明确不支持回执 | U1、U5 |
 | R3 | 上报：清单保留至业务确认，重启和超窗语义明确 | U2 |
 | R4 | 上报：原字节幂等、拒收分类、磁盘与时钟故障可解释 | U1–U3 |
@@ -78,7 +96,7 @@ Uplink 固定为 `e94a67186d64b3a38233da1afdafc966082f4492`。
 | R8 | 探测：刷新不悄悄改变已固定的调度能力 | U5 |
 | R9 | OTA：空间、字节进度、排空与停滞原因可见 | U4 |
 | R10 | OTA：安全 GC、严格续传和过期 URL 刷新 | U7 |
-| R11 | 交付：新旧混合矩阵、launcher 迁移和六平台证据分层 | U8 |
+| R11 | 交付：测试设备统一升级、launcher 迁移和六平台证据分层 | U8 |
 | R12 | 扩展：本地接入、日志源和批次升级有明确准入门槛 | 延后能力 |
 
 ## 不变量
@@ -98,7 +116,7 @@ Uplink 固定为 `e94a67186d64b3a38233da1afdafc966082f4492`。
 
 ```mermaid
 flowchart TD
-  U1[U1 协议兼容基础] --> U2[U2 清单持久确认]
+  U1[U1 协议与格式约束] --> U2[U2 清单持久确认]
   U1 --> U3[U3 链路可见性]
   U1 --> U4[U4 OTA 可见性与空间]
   U1 --> U5[U5 有限诊断与探测]
@@ -114,8 +132,8 @@ flowchart TD
 
 | 批次 | 出口 | 进入下一批的条件 |
 |---|---|---|
-| A：U1–U3 | 格式兼容、清单可靠性、链路指标 | 旧 fixture、混合服务、填满与断电边界通过 |
-| B：U4 | OTA 可解释且空间不足安全失败 | 新旧 launcher 均有明确能力与迁移证据 |
+| A：U1–U3 | 格式约束、清单可靠性、链路指标 | 同版本服务、原队列、填满与断电边界通过 |
+| B：U4 | OTA 可解释且空间不足安全失败 | 当前launcher安装、维护与失败保护有证据 |
 | C：U5 | 有限诊断与观测刷新 | 权限、去重、重启、取消及结果预算通过 |
 | D：U6、U7 | 积压公平发送与弱网下载 | 基于 A/B 指标；不更改已承诺的恢复政策 |
 | E：U8 | 组合运行与分层验收 | 每项证据能追溯源码、配置、环境与结果 |
@@ -138,8 +156,8 @@ U4 的展示与 U2 可以并行开发，但都先落 U1 契约。
 - 用新增 RPC 协商；未实现时仅发送精确 legacy v1。Control 的能力不代替 Telemetry 协商。业务契约见配套文档。
 - 接收端按格式分派；未支持格式在写库前拒绝。新发送端不得把 schema 不匹配当普通坏数据删除。
 - 测试路径：`crates/emissary-protocol/tests/wire_compatibility.rs`、新增 `tests/telemetry_negotiation.rs`；`crates/emissary/tests/live_protocol.rs`、新增 `tests/telemetry_protocol.rs`；`crates/telemetry-service/tests/database.rs`。
-- 场景：旧 JSON/字段号固定；旧新端三方组合；协商超时、Unimplemented、无交集；同负载均衡连接后端变化；显式不支持和空 payload；新端重启重放旧字节；不因未知 schema 删除数据。
-- 出口：接收端先部署时旧设备无行为变化；新设备遇旧服务仍能报 v1。
+- 场景：字段号固定；协商超时、Unimplemented、无交集；显式不支持和空 payload；重启重放原字节；不因未知schema删除数据。已完成的新旧矩阵保留为附加证据。
+- 出口：当前Control与Telemetry分别确认能力；格式失配保留原记录，统一升级后可补交。
 
 ### U2：清单独立持久确认
 
@@ -150,7 +168,7 @@ U4 的展示与 U2 可以并行开发，但都先落 U1 契约。
 - 修改 `deploy/telemetry-business-readonly.sql` 与 `crates/telemetry-service/src/store/{connect.rs,mod.rs}`，补只读startup归属查询；查询接口调用方携带当前startup，不能直接取全节点时间最大值。
 - 分别保护当前启动清单与最新待确认刷新；从可解码旧 `.batch` 提取待确认清单后才允许淘汰。已在旧版本丢失的记录不能凭空恢复。
 - 测试路径：`crates/emissary/src/telemetry/spool.rs` 单元测试、新增 `crates/emissary/tests/inventory_delivery.rs`；`crates/telemetry-service/tests/database.rs` 与 `workspace_lifecycle.rs`。
-- 场景：长离线填满、多个重启、ACK 丢失、事务回滚、同 ID 异摘要、写盘失败、损坏记录、超48h、时钟错、退休 startup、节点删除与补交竞态、旧服务等待兼容端、保护额度耗尽。
+- 场景：长离线填满、多个重启、ACK 丢失、事务回滚、同 ID 异摘要、写盘失败、损坏记录、超48h、时钟错、退休 startup、节点删除与补交竞态、格式失配后等待统一升级、保护额度耗尽。
 - 出口：普通采样填满不删除当前待确认清单；历史清单不能覆盖当前 startup 的视图。
 
 ### U3：链路自观测与控制台解释
@@ -170,9 +188,20 @@ U4 的展示与 U2 可以并行开发，但都先落 U1 契约。
 - 修改 `crates/emissary/src/ota.rs`，按下载/空间/状态职责拆入 `crates/emissary/src/ota/`；修改 `runner.rs`、`service.rs`、`crates/control-plane/src/{ota.rs,store/ota.rs,store/ota_management.rs}`。
 - 同步 `crates/control-plane/src/installation/` 的平台安装器和 `scripts/` 内实际发行/服务验收入口；不能通过运行程序 OTA 冒充 launcher 迁移。
 - Web 沿用节点运维区与当前升级确认；新增 `web/src/components/emissary-update-progress.tsx`，只展示真实支持字段。
-- 空间公式、有限进度频率、drain 详情、旧 launcher 降级、安装迁移与回退见 OTA 契约。
+- 空间公式、有限进度频率、drain详情、固定launcher安装迁移与失败恢复见OTA契约。
 - 测试路径：`crates/emissary/tests/{ota_download.rs,live_protocol.rs,native_service.rs}`、`crates/control-plane/tests/database/{ota_manual.rs,ota_versions.rs}`、`web/tests/ui/{emissary-ota.spec.ts,emissary-manual-update.spec.ts}`。
 - 场景：低空间、检查后被占满、不同挂载点、只读盘、旧 launcher、进度缺失/停滞、构建/日志/终端排空、取消竞态、迁移中断、服务配置与身份读回。
+- 本机macOS私有HFS+/APFS小卷已验证真实低空间、首字节后ENOSPC和只读EROFS，状态与保护资产不变；不代替原生服务或其他平台。
+- 同一故障卷的真实静置队列已验证保全；恢复可写后原批次、清单通过mTLS和真实事务ACK补交，操作日志与身份配置保持。
+- macOS HFS+/APFS普通进程的持续采集满盘组合已通过；两次真实写盘失败后原记录保持，释放空间后同Handle恢复，新样本入库并经设备ACK删除源，错误计数重开保持。不替代其他平台或原生服务。
+- APFS真实满盘仍报告数MiB余量，失败进度写入也会失败；保留进度不表示终态。真实supervisor的受控保存/保护释放故障已验证保持当前进程并在恢复后继续；HFS+/APFS同卷ENOSPC与完整supervisor、原队列和持续采集的顺序组合也已通过。
+- 修复下载结果保存失败导致监督器退出的问题；结果耐久保存并释放下载保护前暂停激活，每秒重试。修复后真实Control、网关、独立S3、冻结URL续签及普通runtime OTA组合通过；不代替原生服务。
+- 修复排空后先停当前runtime再保存激活意图的问题；保存或存储锁失败保持当前进程并重试。真实子进程故障回归及修复后的完整Control普通OTA组合通过。
+- 修复健康候选成功状态保存失败导致监督器退出的问题；三次确认后保持候选并重试，保存后才提交版本指向。真实保存/锁故障及修复后的完整Control OTA组合通过。
+- 候选退出、无法启动或健康超时时先恢复原current，再重试保存终态。三条分支均已用真实Unix进程注入状态保存故障；超时实际等待120秒。该证据不代替原生服务、真实满盘或断电验收。
+- 健康提交重试只保留同session三次确认；新session重新计数。已复现并修复旧确认复用，新session一个ACK保持activating，三个ACK后提交。
+- 请求接受先耐久保存状态再消费邮箱；保存失败保留原状态和进程，清理失败每秒重试。apply/cancel保存、取消保护释放及重试期间新generation的真实进程回归通过。
+- 提交与消费共用私有请求锁；锁故障只退避邮箱，不阻止已有候选健康提交。最终49项OTA集成、Control组合与HFS+/APFS默认故障门禁通过，见[请求可靠性验收](../acceptance/emissary/2026-11-26-ota-requests.md)。
 - 出口：低空间保留旧版本；新字段缺失不显示伪进度；迁移前后 UUID、证书、队列和服务账户一致。
 
 ### U5：有限诊断、探测结果和清单观察刷新
@@ -209,34 +238,56 @@ U4 的展示与 U2 可以并行开发，但都先落 U1 契约。
 - 续传只在一次已授权执行的 300秒下载窗口内发生；预算耗尽失败，不能重置时间无限重试。
 - 测试路径：扩展 `crates/emissary/tests/ota_download.rs`，新增 `tests/ota_storage.rs`；扩展 `crates/control-plane/tests/database/ota_manual.rs`。
 - 场景：HTTP 200/206/416、错 Content-Range、Content-Encoding、对象变化、分块断流、URL 过期刷新、取消迟到响应、GC/激活竞态、符号链接/Windows reparse point、持有句柄、删除后崩溃恢复。
+- 真实回环HTTP与受控时钟已验证重试、续传及续签共享300秒总期限；失败清除部分文件且不安装，新管理员执行身份另获预算。
 - 出口：最终全文件摘要与大小匹配才激活；current/previous/candidate/活动下载从不被 GC 删除。
 
-### U8：混合部署、回退与真实验收
+### U8：统一升级与真实验收
 
-- [ ] 覆盖 R11，复核 R1–R10。按每批出口逐次执行，不等所有单元结束才发现兼容问题。
+- [ ] 覆盖R11，复核R1–R10。按每批出口逐次执行，部署统一升级全部测试设备。
 - 更新 `docs/{protocol.md,telemetry.md,node-placement.md,emissary-ota.md,api.md,operations.md}` 及实际受影响模块的 L3/L2；实施新增顶层边界时更新根 `AGENTS.md`。
 - 在 `docs/acceptance/emissary/` 新建带日期证据，更新该目录地图；本计划状态不能替代验收记录。
 - 验证代码路径：`tests/` 中新增故障场景驱动，复用现有 `crates/emissary/tests/support/live_protocol.rs`；六平台使用 `.github/workflows/emissary-release.yml` 的原生服务门禁。
-- 测试组合：旧设备/新服务、新设备/旧服务、独立新旧 Control/Telemetry、多副本混部、离线旧 spool、旧/新 launcher 与回退运行程序。
+- 必需组合：同版本Control/Telemetry多副本、升级前原spool补交、当前launcher与runtime维护、失败候选恢复，以及全部测试设备统一版本读回。旧功能版本回退和新旧混部不再要求。
+- 普通进程双向门禁已运行，反向覆盖冻结旧Handle到当前Service/store；完整main、统一部署与原生出口分别记录，不由此替代。
+- 当前Handle、两次真实Runner及两个独立冻结旧进程直连同一完整Telemetry main已通过双库与受限角色验收。
+- 冻结旧发送与持续积压选项同次完整main运行已通过；顺序场景共用双库与受限角色，原字节和清理均已读回。
+- 真实Control登录、CLI注册、两次Runner与有限操作已通过普通进程双库组合；本机完整刷新如实返回工具部分失败，原生服务仍待验。
+- 真实Control进程故障后，同Runner保留原结果；新会话重授权后同摘要确认，探测不重跑。
+- 真实三程序组合的受控全量刷新成功，精确观察在事务提交后确认；28项版本变化不改启动metadata、能力或调度摘要。工具夹具不证明宿主SDK可用。
+- 真实Control签名导入、网关私有S3下载与普通launcher/runtime OTA已通过；候选三次健康ACK、服务终态、清单事务和原身份分别读回。起点为当前源码的旧版本号夹具，不证明历史发行兼容或原生服务。
+- 真实旧Telemetry继续运行时，已复现旧清扫删除新引用正文。追加完整外键后，旧清扫和HTTPS删除整体回滚；这不构成随机混部兼容。
+- 四个冻结旧完整main全部退出后迁移，再由两个当前Control/Telemetry组合接管的隔离门禁已通过。两个接收端分别查询与删除，非owner Control派发真实刷新。
+- 全部当前副本停止后，同源码冻结副本在原地址确认原清单与未确认操作结果。该历史证据保留；用户已取消不同功能版本回退要求。
 - 实机优先 Linux arm64、macOS arm64、Windows x64。其余平台保留 CI/原生服务/真实硬件分别记录，不以交叉编译替代。
+- 两份原生工作流为Linux amd64/arm64接入任务私有TimescaleDB与独立持久补报。发行使用最终资产，失败阻断发布；本次未运行远程任务，macOS/Windows补报仍待专用数据库。
+- 生命周期与独立补报成功前均读回账户及目录；读取失败或残留阻断成功，三项普通回归通过，未据此声明原生执行通过。
+- Linux arm64虚拟机已实际通过生命周期、默认候选和显式release候选持久补报。真实服务完成维护、OTA、失败恢复与原源事务ACK；身份、文件权限和清理均独立读回，见[Linux原生记录](../acceptance/emissary/2026-11-26-linux-native.md)。
+- Linux复核修复Runner邮箱锁竞争导致退出、未知缓存拒收退出及操作日志继承描述符保留锁；采用单槽重试、缓存等待和销毁显式解锁，真实锁回归先失败再通过。
+- Linux arm64私有ext4小卷已通过真实低空间、预检后ENOSPC、只读、supervisor满盘保持及同Handle持续采集恢复；原源由事务ACK删除，loop、镜像、隔离库及转发均独立清理。它是普通进程证据，不证明原生服务满盘或物理断电，见[ext4记录](../acceptance/emissary/2026-11-26-linux-ext4.md)。两份工作流已接线，尚未远程运行。
+- 后续复查修复Runner健康和排空保存失败退出及确认被消费的问题；重连必须先保存空会话围栏。真实mTLS进程回归通过，新release候选在Linux原生生命周期、事务补报及同源码ext4持续采集组合全部通过，资源清理已独立读回，见[健康保存记录](../acceptance/emissary/2026-11-26-runtime-health.md)。
+- Linux系统服务随后在768MiB私有ext4卷通过真实满盘：PID、runtime会话和原源保持，释放空间后健康确认、采集和事务补报恢复。两份工作流接入同一门禁但未远程运行，见[原生满盘记录](../acceptance/emissary/2026-11-26-linux-native-disk.md)。
+- 收口审查修正常规CI的`--include-ignored`选择：排除新增原生满盘用例，仍由专用驱动精确执行。真实Linux二进制`--list`对照确认21项普通回归保留，三项服务用例全部排除；没有重新执行服务测试。
+- Mac mini和Windows原服务保持运行，两平台验收暂缓；Linux虚拟机成功不代替物理设备、远程六平台CI或统一部署。
 - 每次交付记录源码、不可变镜像/二进制摘要、迁移、身份、队列、心跳、构建、终端、遥测与 OTA 结果。
-- 出口：有可执行回退步骤和实际读回；未覆盖的物理环境明确列出。
+- 出口：统一升级步骤与当前设备读回可执行；失败升级不损坏身份、原数据或可用资产；未覆盖的物理环境明确列出。
 
-## 发布与恢复
+## 统一升级与故障恢复
 
 接收端先于新发送行为发布。
-先增加表和双读，再启用新写。
-新 schema 首轮默认关闭，只启用兼容协商。
-确认所有接收副本支持后，才提高发送格式上限。
-新字段始终由对应能力门禁控制。
-
-回退先关闭新操作准入和新格式生成。
-保留已接受操作的终态协调与新格式接收。
-新记录排空前不能撤掉唯一兼容接收端。
-旧程序不能读取的新 spool 目录由新发送器保留，不交给旧清扫器。
-数据库使用追加迁移；回退代码不删除新表或回执。
-launcher 回退先确认旧端能读当前状态，必要时导出兼容状态。
-任何回退均保留证书、UUID、未确认日志和受保护清单。
+启用独立清单前，排空并停止全部原版旧Telemetry。
+迁移后将写入、查询和删除全部切向当前版本。
+原版旧副本不维护新startup投影，禁止随机混部。
+本次不建设兼容桥接版本，不保留旧功能服务接单。
+按平台维护固定launcher，再把runtime升级到统一版本。
+不能仅做runtime OTA而让旧下载器继续驻留。
+逐台核对版本、launcher能力、UUID、证书与未确认队列。
+未完成升级的设备继续排空，不授予新任务。
+全部测试设备确认后，再恢复接单并验构建、终端与遥测。
+数据库使用追加迁移，不删除历史回执或迁移记录。
+原样历史二进制拒绝未知迁移，不能直接重启作恢复。
+故障修复使用当前版本，不另建旧功能回退路线。
+下载失败保持current；候选健康失败恢复原可用runtime。
+固定launcher维护失败保留备份、身份、日志与清单。
 
 ## 延后能力及重新评估条件
 
@@ -279,7 +330,7 @@ launcher 回退先确认旧端能读当前状态，必要时导出兼容状态�
 | 反向 | 32MiB额度与新鲜槽有重复计算；固定4/1/27MiB分配和临时峰值 | 逻辑额度、物理开销分别可观测 |
 | 反向 | 断线时不能凭超时推断操作终态；增加awaiting_result与outcome_unknown | 截止不等于成功或已取消 |
 
-复核覆盖R1–R12、每单元文件/场景/出口和兼容回退。
+原审查覆盖R1–R12及兼容回退；后者已由统一升级决定取代。
 当前范围没有待用户决定的阻塞产品问题。
 延后能力的准入条件不计为首批阻塞。
 实施仍需故障注入、真实数据库与平台验收。
@@ -288,4 +339,6 @@ launcher 回退先确认旧端能读当前状态，必要时导出兼容状态�
 
 文档检查：mdBook完整构建与全站链接检查通过。
 新材料均有L3契约，已加入L2与导航；根地图已检查。
-产品实施、提交、推送和部署均未开始。
+产品实施已在独立工作树推进。本地测试通过不等于各单元出口全部完成。验证证据见[本轮记录](../acceptance/emissary/2026-11-26-evolution.md)。
+上述证据在提交和部署前取得。后续Git交付与节点升级单独记录。
+真实多平台验收仍待完成。

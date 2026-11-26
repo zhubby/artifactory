@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 use toasty::stmt::Type;
 
 use uuid::Uuid;
+#[path = "ota_renewal.rs"]
+mod renewal;
 pub(crate) struct OtaOffer {
     pub id: Uuid,
     pub generation: i64,
@@ -185,6 +187,8 @@ impl ControlStore {
         let Some(status) = payload.get("ota").filter(|s| s.is_object()) else {
             return Ok(false);
         };
+        let mut status = status.clone();
+        crate::ota::observability::observation(&status)?;
         let update_id = status["update_id"]
             .as_str()
             .and_then(|id| Uuid::parse_str(id).ok());
@@ -210,8 +214,8 @@ impl ControlStore {
             params![pool.to_string()],
         )
         .await?;
-        let valid:Option<Uuid>=sql::optional_scalar(&mut tx, "SELECT id FROM nodes WHERE id=$1 AND active_session=$2 AND NOT revoked AND certificate_expires_at>clock_timestamp() FOR UPDATE", params![node, session]).await?;
-        ensure!(valid.is_some(), "node session revoked or superseded");
+        let valid=sql::optional_record(&mut tx, "SELECT os,arch,emissary_ota_status FROM nodes WHERE id=$1 AND active_session=$2 AND NOT revoked AND certificate_expires_at>clock_timestamp() FOR UPDATE", params![node, session], &[("os",Type::String),("arch",Type::String),("emissary_ota_status",Type::String)]).await?;
+        let valid = valid.context("node session revoked or superseded")?;
         let still_valid:bool=sql::scalar(&mut tx, "SELECT EXISTS(SELECT 1 FROM nodes WHERE id=$1 AND active_session=$2 AND NOT revoked AND certificate_expires_at>clock_timestamp())", params![node, session]).await?;
         ensure!(
             still_valid,
@@ -220,12 +224,31 @@ impl ControlStore {
         let runtime = payload["diagnostics"]["emissary_version"]
             .as_str()
             .unwrap_or("");
+        {
+            let frozen=sql::optional_record(&mut tx,"SELECT u.generation,r.manifest FROM emissary_updates u JOIN emissary_releases r ON r.id=u.release_id WHERE u.id=$1 AND u.node_id=$2",params![update_id.expect("parsed update"),node],&[("generation",Type::I64),("manifest",Type::String)]).await?.context("unknown observed update")?;
+            let generation: i64 = frozen.decode("generation")?;
+            ensure!(
+                status["generation"]
+                    .as_i64()
+                    .is_none_or(|v| v == generation),
+                "stale update generation"
+            );
+            crate::ota::observability::accept(
+                &mut status,
+                &valid.decode::<Value>("emissary_ota_status")?,
+                Some(generation),
+                Some(&frozen.decode::<String>("manifest")?),
+                &valid.decode::<String>("os")?,
+                &valid.decode::<String>("arch")?,
+            )?;
+        }
         sql::execute(&mut tx, "UPDATE nodes SET emissary_current_version=$2,emissary_launcher_version=$3,emissary_ota_status=$4 WHERE id=$1", params![node, runtime, status["launcher_version"].as_str(), status]).await?;
         let mut health = true;
         if let Some(id) = status["update_id"]
         .as_str()
         .and_then(|s| Uuid::parse_str(s).ok())
         && let Some(u)=sql::optional_record(&mut tx, "SELECT u.id,u.generation,u.node_id,u.pool_id,u.release_id,u.previous_version,u.status,u.cancel_requested,u.error,u.retry_of,u.created_at,u.updated_at,u.finished_at,u.last_command_at,r.manifest FROM emissary_updates u JOIN emissary_releases r ON r.id=u.release_id WHERE u.id=$1 AND u.node_id=$2 AND u.finished_at IS NULL", params![id, node], &[("id", Type::Uuid),("generation", Type::I64),("node_id", Type::Uuid),("pool_id", Type::Uuid),("release_id", Type::Uuid),("previous_version", Type::String),("status", Type::String),("cancel_requested", Type::Bool),("error", Type::String),("retry_of", Type::Uuid),("created_at", Type::Timestamp),("updated_at", Type::Timestamp),("finished_at", Type::Timestamp),("last_command_at", Type::Timestamp),("manifest", Type::String)]).await? {
+            ensure!(status["generation"].as_i64().is_none_or(|v|Some(v)==u.decode::<i64>("generation").ok()),"stale update generation");
             let phase=status["phase"].as_str().unwrap_or("");
             let terminal=["succeeded","failed","rolled_back","canceled"].contains(&phase);
             if phase=="activating"||phase=="succeeded" {

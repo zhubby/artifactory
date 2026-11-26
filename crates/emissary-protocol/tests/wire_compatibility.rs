@@ -3,13 +3,36 @@
 //! [POS]: 节点协议合并的兼容回归；固定摘要使用的原始字节。
 //! [PROTOCOL]: Update this header on change, then check AGENTS.md
 use artifactory_emissary_protocol::{
-    TelemetryAck, TelemetryBatch, nodes::MetadataSnapshot, telemetry::Batch,
+    Command, TelemetryAck, TelemetryBatch, nodes::MetadataSnapshot, telemetry::Batch,
 };
 use prost::Message;
 use sha2::{Digest, Sha256};
 
 const BATCH: &[u8] = include_bytes!("fixtures/telemetry-batch.json");
 const METADATA: &[u8] = include_bytes!("fixtures/metadata-snapshot.json");
+
+#[test]
+fn command_notification_marker_is_additive_and_defaults_to_execution_rejection() {
+    let old = [
+        0x0a, 0x02, b'i', b'd', 0x12, 0x06, b'n', b'o', b't', b'i', b'c', b'e',
+    ];
+    let mut command = Command::decode(old.as_slice()).unwrap();
+    assert!(!command.ignorable_notification);
+    assert_eq!(command.encode_to_vec(), old);
+    command.ignorable_notification = true;
+    let mut appended = old.to_vec();
+    appended.extend([0x60, 0x01]);
+    assert_eq!(
+        command.encode_to_vec(),
+        appended,
+        "新增布尔值只能使用字段12"
+    );
+    assert!(
+        Command::decode(appended.as_slice())
+            .unwrap()
+            .ignorable_notification
+    );
+}
 
 #[test]
 fn telemetry_batch_preserves_replay_bytes() {
@@ -57,5 +80,16 @@ fn telemetry_rpc_preserves_protobuf_field_numbers() {
     assert_eq!(ack.batch_id, "batch");
     assert!(ack.duplicate);
     assert_eq!(ack.server_time_ms, 42);
+    assert_eq!(ack.encode_to_vec(), ack_bytes);
+}
+
+#[test]
+fn telemetry_schema_and_digest_ack_survive_relay_encoding() {
+    let batch_bytes = [0x0a, 0x02, b'{', b'}', 0x10, 0x01];
+    let batch = TelemetryBatch::decode(batch_bytes.as_slice()).unwrap();
+    assert_eq!(batch.encode_to_vec(), batch_bytes);
+
+    let ack_bytes = [0x0a, 0x01, b'x', 0x22, 0x03, b'a', b'b', b'c', 0x28, 0x01];
+    let ack = TelemetryAck::decode(ack_bytes.as_slice()).unwrap();
     assert_eq!(ack.encode_to_vec(), ack_bytes);
 }

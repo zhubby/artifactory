@@ -100,8 +100,21 @@ async fn resources(
         s.store.resources(&nodes).await?,
     )?))
 }
-async fn latest(State(s): State<Service>, Path(id): Path<Uuid>) -> Result<Json<Value>> {
-    Ok(Json(serde_json::to_value(s.store.latest(id).await?)?))
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LatestQuery {
+    startup_id: Option<Uuid>,
+}
+async fn latest(
+    State(s): State<Service>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<LatestQuery>,
+) -> Result<Json<Value>> {
+    let latest = match query.startup_id {
+        Some(startup) => s.store.latest_for_startup(id, startup).await?,
+        None => s.store.latest(id).await?,
+    };
+    Ok(Json(serde_json::to_value(latest)?))
 }
 async fn inventory(State(s): State<Service>, Path(id): Path<Uuid>) -> Result<Json<Value>> {
     Ok(Json(serde_json::to_value(s.store.inventory(id).await?)?))
