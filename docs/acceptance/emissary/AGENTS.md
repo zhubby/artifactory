@@ -13,5 +13,7 @@ AGENTS.md: 定义Emissary验收记录及证据边界。
 2026-11-26-linux-ext4.md: 记录Linux私有ext4小卷满盘、只读及持续采集恢复与精确清理。
 2026-11-26-runtime-health.md: 记录Runner保存故障修复及新候选Linux原生与ext4复核。
 2026-11-26-linux-native-disk.md: 记录systemd服务真实满盘、健康与采集恢复、事务ACK及独立清理。
+2026-11-26-node-upgrade.md: 记录0.2.5平台与三节点统一升级、旧程序清理及真实构建读回。
+2026-11-26-node-upgrade.json: 保存脱敏版本、身份保持、旧程序复扫、操作和制品摘要回执。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

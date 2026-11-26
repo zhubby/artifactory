@@ -4,17 +4,22 @@ type: feat
 status: active
 date: 2026-11-25
 planning_status: ready-for-implementation
-implementation_status: in-progress
+implementation_status: delivered-with-follow-ups
 ---
 <!--
-[INPUT]: Uplink 固定源码评估与 Artifactory 0.2.3 实现。
-[OUTPUT]: 定义演进决策、实施依赖和验收出口。
+[INPUT]: Uplink固定源码评估、0.2.3基线与0.2.5现场回执。
+[OUTPUT]: 定义演进决策、实施依赖、验收出口与交付边界。
 [POS]: Emissary 演进主计划；细节由两份契约补充。
 [PROTOCOL]: Update this header on change, then check AGENTS.md
 -->
 # Emissary 协议、观测与 OTA 演进路线
 
 ## 结论与使用范围
+
+2026-11-26已交付0.2.5平台与三台现有节点。
+launcher/runtime、旧程序清理、接单恢复及真实构建均已读回。
+结果与未覆盖边界见[统一升级记录](../acceptance/emissary/2026-11-26-node-upgrade.md)。
+以下实施清单保留设计阶段的完整场景，未覆盖项不计为通过。
 
 保留 Emissary 的执行围栏与信任模型。
 吸收 Uplink 的命名操作、分流策略和链路观测。
@@ -341,4 +346,5 @@ U4 的展示与 U2 可以并行开发，但都先落 U1 契约。
 新材料均有L3契约，已加入L2与导航；根地图已检查。
 产品实施已在独立工作树推进。本地测试通过不等于各单元出口全部完成。验证证据见[本轮记录](../acceptance/emissary/2026-11-26-evolution.md)。
 上述证据在提交和部署前取得。后续Git交付与节点升级单独记录。
-真实多平台验收仍待完成。
+后续统一升级与真实构建已完成，详见本页开头的交付记录。
+物理断电、长期离线及macOS/Windows原生持久补报仍独立待验。

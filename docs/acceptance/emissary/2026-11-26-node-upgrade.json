@@ -1,0 +1,285 @@
+{
+  "_contract": {
+    "INPUT": "签名发行、集群和三节点现场回执。",
+    "OUTPUT": "脱敏升级、旧程序复扫和真实制品摘要。",
+    "POS": "统一升级文档的结构化证据。",
+    "PROTOCOL": "Update this header on change, then check AGENTS.md"
+  },
+  "schema_version": 1,
+  "recorded_at": "2026-11-26T11:51:28.409243+00:00",
+  "source_commit": "e38f5b25a227245ef7cfd5811d8f43dc2ef64125",
+  "version": "0.2.5",
+  "release_tag": "emissary-v0.2.5",
+  "manifest_sha256": "1af16039c620b63e12fa55ff26ff7c3ec67fb36ee4f2ae0b16856768d4c82c18",
+  "signature_verified": true,
+  "release_ci": "https://github.com/zhubby/artifactory/actions/runs/45801557257",
+  "release_ci_conclusion": "success",
+  "main_ci": "https://github.com/zhubby/artifactory/actions/runs/45801385116",
+  "platform": {
+    "helm_revision": 44,
+    "version": "0.2.5",
+    "build_admission_paused": false,
+    "protected_resources_and_secrets_preserved": true
+  },
+  "nodes": {
+    "cassiopeia": {
+      "id": "22992c14-aff4-4f27-85ca-f745f7e24985",
+      "name": "Cassiopeia",
+      "os": "darwin",
+      "arch": "arm64",
+      "online": true,
+      "runtime_version": "0.2.5",
+      "launcher_version": "0.2.5",
+      "update_id": "ba370a73-ea2d-4254-869f-3a564cfab1ef",
+      "update_state": "succeeded",
+      "identity_and_definition_preserved": true,
+      "unconfirmed_records_at_stop": 0,
+      "old_programs_removed": 11,
+      "old_programs_remaining": 0,
+      "installed_sha256": "e8183fe1855c69c121e40d526074d0c050a1c1a8ef75506c94caa0649a47cfd9",
+      "startup_id": "59af63a6-7f63-4374-a2fd-28ba4ced5226",
+      "host_telemetry_fresh": true,
+      "inventory_provenance": "native",
+      "diagnostics_state": "succeeded",
+      "terminal": {
+        "passed": true,
+        "account": "zhubby",
+        "exit_code": 0
+      },
+      "refresh": {
+        "state": "failed",
+        "host_probe_failures": [
+          "xcodebuild"
+        ],
+        "observation_delivered": false,
+        "metadata_and_capabilities_unchanged": true
+      },
+      "build": {
+        "id": "b0184d02-60cf-4291-87d2-a3b65e4f324a",
+        "status": "succeeded",
+        "source_commit": "d56401a5c86547db0d27456b4737b478fde9376c",
+        "publish_status": "not_requested",
+        "attempt_node_ids": [
+          "22992c14-aff4-4f27-85ca-f745f7e24985"
+        ],
+        "downloaded_artifacts": [
+          {
+            "artifact": "a925d980-224f-419b-82e7-5d999c1efeee",
+            "name": "emissary-acceptance.tar.gz",
+            "bytes": 181018,
+            "sha256": "091633328a11e3087697b296d52e3e389025da319bbcadc6cc267ad8ddc2bac7"
+          },
+          {
+            "artifact": "faf6dd85-5297-4270-a599-38501b62915f",
+            "name": "verification.txt",
+            "bytes": 117,
+            "sha256": "671b82dd0b88d2b7046e32d97828a2df88a979c7f2eb3cd823c118abe43748ab"
+          }
+        ],
+        "verification": "EMISSARY025_NATIVE_OK source_bytes=2888\nd56401a5c86547db0d27456b4737b478fde9376c\nrustc 1.95.0 (59807616e 2026-04-14)\n",
+        "native_archive": {
+          "platform": "darwin/arm64",
+          "archive_members": [
+            "._emissary-acceptance-probe",
+            "emissary-acceptance-probe",
+            "._verification.txt",
+            "verification.txt"
+          ],
+          "native_executable_sha256": "cbfb2e33e49c696041dfe7909f94f2bb6bc29cac7df27647ba821745007bf39a",
+          "native_executable_bytes": 465880,
+          "verification_matches": true,
+          "passed": true
+        }
+      }
+    },
+    "macmini": {
+      "id": "c30da6b0-52f4-403e-a03b-b7909b1635bc",
+      "name": "codehubdeMac-mini.local",
+      "os": "darwin",
+      "arch": "arm64",
+      "online": true,
+      "runtime_version": "0.2.5",
+      "launcher_version": "0.2.5",
+      "update_id": "98e2413d-5292-4863-9641-aa9b1b268879",
+      "update_state": "succeeded",
+      "identity_and_definition_preserved": true,
+      "unconfirmed_records_at_stop": 0,
+      "old_programs_removed": 4,
+      "old_programs_remaining": 0,
+      "installed_sha256": "e8183fe1855c69c121e40d526074d0c050a1c1a8ef75506c94caa0649a47cfd9",
+      "startup_id": "7de4fb58-1001-4704-b79b-9f21997bee0b",
+      "host_telemetry_fresh": true,
+      "inventory_provenance": "native",
+      "diagnostics_state": "succeeded",
+      "terminal": {
+        "passed": true,
+        "account": "artifactbuild",
+        "exit_code": 0
+      },
+      "refresh": {
+        "state": "failed",
+        "host_probe_failures": [
+          "jarsigner",
+          "java",
+          "keytool"
+        ],
+        "observation_delivered": false,
+        "metadata_and_capabilities_unchanged": true
+      },
+      "build": {
+        "id": "23b458c3-764c-4fe6-80dc-d1768b027640",
+        "status": "succeeded",
+        "source_commit": "d56401a5c86547db0d27456b4737b478fde9376c",
+        "publish_status": "not_requested",
+        "attempt_node_ids": [
+          "c30da6b0-52f4-403e-a03b-b7909b1635bc"
+        ],
+        "downloaded_artifacts": [
+          {
+            "artifact": "92e10cd3-6eda-46d7-b6f2-0c7ea4b1328d",
+            "name": "emissary-acceptance.tar.gz",
+            "bytes": 180563,
+            "sha256": "7f9002fb577bcb9736a83a0659dc3d8a89f50ed2810636c340e5f28d1c9be1c6"
+          },
+          {
+            "artifact": "aff48b5d-b6cf-489e-8130-f7ae519729c4",
+            "name": "verification.txt",
+            "bytes": 117,
+            "sha256": "671b82dd0b88d2b7046e32d97828a2df88a979c7f2eb3cd823c118abe43748ab"
+          }
+        ],
+        "verification": "EMISSARY025_NATIVE_OK source_bytes=2888\nd56401a5c86547db0d27456b4737b478fde9376c\nrustc 1.95.0 (59807616e 2026-04-14)\n",
+        "native_archive": {
+          "platform": "darwin/arm64",
+          "archive_members": [
+            "emissary-acceptance-probe",
+            "verification.txt"
+          ],
+          "native_executable_sha256": "8ee7984b4f80103235ce08f386fd9319890fb578e92eef6d78bc24ba8bee38eb",
+          "native_executable_bytes": 465896,
+          "verification_matches": true,
+          "passed": true
+        }
+      }
+    },
+    "windows": {
+      "id": "05c69825-ffc7-46f4-88fe-2cdada414b38",
+      "name": "LAPTOP-VFIEIL8E",
+      "os": "windows",
+      "arch": "amd64",
+      "online": true,
+      "runtime_version": "0.2.5",
+      "launcher_version": "0.2.5",
+      "update_id": "085003f8-8fd9-4bc5-bb97-f570c080c83e",
+      "update_state": "succeeded",
+      "identity_and_definition_preserved": true,
+      "unconfirmed_records_at_stop": 0,
+      "old_programs_removed": 5,
+      "old_programs_remaining": 0,
+      "installed_sha256": "055c3d6c8992e7dbb27ad52b3973ccfb7f5098579e07469789e66c1ac1a00084",
+      "startup_id": "27a3ddcf-8291-44bb-942e-72432c3fce34",
+      "host_telemetry_fresh": true,
+      "inventory_provenance": "native",
+      "diagnostics_state": "succeeded",
+      "terminal": {
+        "passed": true,
+        "account": "laptop-vfieil8e\\emissarybuild",
+        "exit_code": 0
+      },
+      "refresh": {
+        "state": "succeeded",
+        "host_probe_failures": [],
+        "observation_delivered": true,
+        "metadata_and_capabilities_unchanged": true
+      },
+      "build": {
+        "id": "48abe8f9-2b33-495e-9e92-887023ef6f8c",
+        "status": "succeeded",
+        "source_commit": "d56401a5c86547db0d27456b4737b478fde9376c",
+        "publish_status": "not_requested",
+        "attempt_node_ids": [
+          "05c69825-ffc7-46f4-88fe-2cdada414b38"
+        ],
+        "downloaded_artifacts": [
+          {
+            "artifact": "41415f18-7789-41dc-bd34-1f8f487e1b13",
+            "name": "emissary-acceptance.zip",
+            "bytes": 66501,
+            "sha256": "1e457e304919d15b48ce13759673573d2726ab48362a86b4818daf2793775ab4"
+          },
+          {
+            "artifact": "9aa8905c-be5f-4c43-bbeb-5cab6b355640",
+            "name": "verification.txt",
+            "bytes": 155,
+            "sha256": "95f7e1bf8b51873821d62e7e5c89d4eb028fea95bbb361af1b4b8dede6550cca"
+          }
+        ],
+        "verification": "EMISSARY025_NATIVE_OK source_bytes=2963\ngit rev-parse HEAD: d56401a5c86547db0d27456b4737b478fde9376c\nrustc --version: rustc 1.95.0 (59807616e 2026-04-14)\n",
+        "native_archive": {
+          "platform": "windows/amd64",
+          "archive_members": [
+            "emissary-acceptance-probe.exe",
+            "verification.txt"
+          ],
+          "native_executable_sha256": "01ea137d6271c7e4cdeab4c59bc5700a78d4fdd56f7734fb645386d34a94d48f",
+          "native_executable_bytes": 125440,
+          "verification_matches": true,
+          "passed": true
+        }
+      }
+    }
+  },
+  "cleanup": {
+    "temporary_github_secret_and_policy_removed": true,
+    "temporary_relay_stopped": true,
+    "control_definition_restored": true,
+    "owned_s3_removed": true,
+    "remote_staged_program_and_scripts_removed": true,
+    "private_host_auth_removed": true,
+    "shared_services_preserved": true
+  },
+  "final_live": {
+    "nodes": [
+      {
+        "id": "22992c14-aff4-4f27-85ca-f745f7e24985",
+        "name": "Cassiopeia",
+        "online": true,
+        "runtime": "0.2.5",
+        "launcher": "0.2.5",
+        "active_jobs": 0,
+        "fresh": true,
+        "startup": "59af63a6-7f63-4374-a2fd-28ba4ced5226"
+      },
+      {
+        "id": "05c69825-ffc7-46f4-88fe-2cdada414b38",
+        "name": "LAPTOP-VFIEIL8E",
+        "online": true,
+        "runtime": "0.2.5",
+        "launcher": "0.2.5",
+        "active_jobs": 0,
+        "fresh": true,
+        "startup": "27a3ddcf-8291-44bb-942e-72432c3fce34"
+      },
+      {
+        "id": "c30da6b0-52f4-403e-a03b-b7909b1635bc",
+        "name": "codehubdeMac-mini.local",
+        "online": true,
+        "runtime": "0.2.5",
+        "launcher": "0.2.5",
+        "active_jobs": 0,
+        "fresh": true,
+        "startup": "7de4fb58-1001-4704-b79b-9f21997bee0b"
+      }
+    ],
+    "passed": true
+  },
+  "evidence_sha256": {
+    "assets-verified.json": "b18f06b5e35a09579a5bc59308eda399748c3f241ec5132ce033ed06fbbc07b5",
+    "final.json": "0ee23ba713782586d22a58511b489ebb4a5d5e3c8b26f6fffcba3ae23a9b77e0",
+    "final-live.json": "573bd906c67edd48f29cf36f98e753a3b0c6696b6698bcf22fc113742919da49",
+    "downloads-verified.json": "15f4749343b7552818138928c02f6fbcab799c54703f4230563a4f6daeb6d9e4",
+    "archive-verified.json": "4a603614d8ee5838df1a40062f0b0c2b82a4389e61b6956b539b2461651ba67b",
+    "remote-stage-cleanup.json": "e89a8ba8bb65cc6eb962ab2d2ee1dbabace07b22bffffb2b6b90128e1ac62ba5",
+    "resume-success.json": "f895df7ebc66000c73a979de843106f0f7d9fd9c4d8d1a6d56ca36db1d5159f8"
+  }
+}

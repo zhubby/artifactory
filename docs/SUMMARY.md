@@ -78,6 +78,7 @@
 - [Emissary Linux ext4故障验收 · 2026-11-26](acceptance/emissary/2026-11-26-linux-ext4.md)
 - [Emissary runtime健康保存验收 · 2026-11-26](acceptance/emissary/2026-11-26-runtime-health.md)
 - [Emissary Linux原生满盘验收 · 2026-11-26](acceptance/emissary/2026-11-26-linux-native-disk.md)
+- [Emissary 0.2.5统一升级 · 2026-11-26](acceptance/emissary/2026-11-26-node-upgrade.md)
 - [Emissary Control与OTA组合验收 · 2026-11-26](acceptance/emissary/2026-11-26-control-ota.md)
 - [Emissary 六平台 · 2026-11-13](acceptance/emissary/2026-11-13-six-platforms.md)
 - [Rust Emissary · 2026-11-13](acceptance/emissary/2026-11-13.md)
