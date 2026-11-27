@@ -126,7 +126,7 @@ test("required asynchronous choices preserve empty values, reset and form events
   });
   try {
     await page.goto(tenantURL(`/projects/${project.slug}/settings/members`));
-    const user = page.getByRole("combobox", { name: "租户成员", exact: true });
+    const user = page.getByRole("combobox", { name: "工作空间成员", exact: true });
     const form = page.locator("form").filter({ has: user });
     await expect(user).toHaveAttribute("data-value", "");
     await form.getByRole("button", { name: "添加成员", exact: true }).click();
@@ -153,7 +153,7 @@ test("long menus scroll within the viewport and support End selection", async ({
     json: Array.from({ length: 150 }, (_, index) => ({ id: `member-${index}`, username: `Team member ${String(index).padStart(3, "0")} ${"Long name ".repeat(10)}`, role: "member" })),
   }));
   await page.goto(tenantURL(`/projects/${project.slug}/settings/members`));
-  const user = page.getByRole("combobox", { name: "租户成员", exact: true });
+  const user = page.getByRole("combobox", { name: "工作空间成员", exact: true });
   await user.click();
   await expect(page.getByRole("option")).toHaveCount(151);
   await expectMenuAligned(page.getByRole("listbox"), page.locator('button[role="combobox"][data-name="user"]'));

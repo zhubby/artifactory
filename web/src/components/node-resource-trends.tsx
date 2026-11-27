@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖节点分钟遥测、共享请求、下拉与图表主题变量。
  * [OUTPUT]: 提供 CPU 和已用内存趋势、范围切换与刷新。
- * [POS]: 资源分区按需加载的历史视图，使用单调曲线展示采样和断点。
+ * [POS]: 资源分区按需加载的历史视图，圆端渐变曲线保留采样断点。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -47,6 +47,7 @@ function TrendChart({ title, field, color, data, from, to }: {
 }) {
   const { t, locale } = useUI();
   const id = useId();
+  const gradientId = `${id.replace(/:/g, "")}-trend`;
   const time = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" });
   const dateTime = new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" });
   const percent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
@@ -61,7 +62,18 @@ function TrendChart({ title, field, color, data, from, to }: {
         <div className="node-trend-plot">
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <AreaChart data={data} accessibilityLayer aria-label={title} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="var(--border)" vertical={false} />
+              <defs>
+                <linearGradient id={`${gradientId}-area`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity={.2} />
+                  <stop offset="100%" stopColor={color} stopOpacity={.015} />
+                </linearGradient>
+                <linearGradient id={`${gradientId}-line`} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="100%" y2="0">
+                  <stop offset="0%" stopColor={color} stopOpacity={.68} />
+                  <stop offset="65%" stopColor={color} />
+                  <stop offset="100%" stopColor={color} stopOpacity={.86} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="var(--border)" strokeDasharray="3 5" vertical={false} />
               <XAxis {...axis} dataKey="time" type="number" scale="time" domain={[from, to]}
                 ticks={[from, from + Math.floor((to - from) / (2 * minute)) * minute, to]}
                 height={27} interval="preserveStartEnd" tickFormatter={value => time.format(value)} />
@@ -70,16 +82,17 @@ function TrendChart({ title, field, color, data, from, to }: {
                 allowDecimals={false} tickFormatter={formatValue} />
               <Tooltip
                 isAnimationActive={false}
-                contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12 }}
+                contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, fontSize: 12, padding: "12px 14px" }}
                 labelStyle={{ color: "var(--foreground)", fontWeight: 600 }}
                 itemStyle={{ color: "var(--foreground)" }}
                 cursor={{ stroke: "var(--ring)", strokeDasharray: "3 3" }}
                 labelFormatter={value => typeof value === "number" ? dateTime.format(value) : ""}
                 formatter={value => typeof value === "number" ? formatValue(value) : t("nodes.notReported")}
               />
-              <Area name={title} dataKey={field} type="monotoneX" stroke={color} fill={color}
-                strokeWidth={1.75} strokeLinecap="round" fillOpacity={0.09} connectNulls={false} isAnimationActive={false}
+              <Area name={title} dataKey={field} type="monotoneX" stroke={`url(#${gradientId}-line)`} fill={`url(#${gradientId}-area)`}
+                strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" connectNulls={false} isAnimationActive={false}
                 dot={({ cx, cy, index }) => {
+                  if (data[index]?.[field] == null) return null;
                   if (data[index - 1]?.[field] != null || data[index + 1]?.[field] != null) return null;
                   return <Dot cx={cx} cy={cy} r={3} fill={color} />;
                 }}

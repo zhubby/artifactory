@@ -19,7 +19,7 @@ async function expectSingleRow(group: Locator, count: number) {
     expect(Math.abs(box.top - boxes[0].top)).toBeLessThanOrEqual(1);
     expect(Math.abs(box.height - boxes[0].height)).toBeLessThanOrEqual(1);
   }
-  expect(boxes[0].height).toBe(group.page().viewportSize()!.width < 768 ? 44 : 36);
+  expect(boxes[0].height).toBe(group.page().viewportSize()!.width < 768 || await group.locator("xpath=ancestor::*[contains(@class, 'prism-device-toolbar')]").count() ? 44 : 40);
   await expectNoPageOverflow(group.page());
 }
 
@@ -91,18 +91,18 @@ test("notification scope filters remain aligned with long project names", async 
 
 test("standalone searches and dashboard ranges share control sizing", async ({ page }) => {
   await fixtureAPI(page);
-  const height = page.viewportSize()!.width < 768 ? 44 : 36;
-  for (const path of ["/projects", "/tenants"]) {
-    await page.goto(tenantURL(path));
-    const search = page.locator(".workspace-filter").first();
+  const height = page.viewportSize()!.width < 768 ? 44 : 40;
+  for (const path of [tenantURL("/projects"), "/tenants"]) {
+    await page.goto(path);
+    const search = page.locator(path === "/tenants" ? ".ph-search" : ".workspace-filter").first();
     await expect(search).toBeVisible();
-    expect((await search.boundingBox())!.height).toBe(height);
+    expect((await search.boundingBox())!.height).toBe(path === "/tenants" ? 48 : height);
     await expectNoPageOverflow(page);
   }
   await page.goto(tenantURL("/"));
   const range = page.getByRole("combobox", { name: "统计时间范围", exact: true });
   await expect(range).toBeVisible();
-  expect((await range.boundingBox())!.height).toBe(height);
+  expect((await range.boundingBox())!.height).toBe(44);
   await expectNoPageOverflow(page);
   if (test.info().project.name === "desktop") {
     await page.setViewportSize({ width: 680, height: 1000 });

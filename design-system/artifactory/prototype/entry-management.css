@@ -1,0 +1,42 @@
+/**
+ * [INPUT]: 依赖 Standard、Regular 与账户设置视图结构。
+ * [OUTPUT]: 提供账户、通知、设置和紧凑生命周期影响的响应布局。
+ * [POS]: 产品任务布局；玻璃导航浮在稳定内容之外。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.entry-account-layout { display:grid;grid-template-columns:160px minmax(0,1fr);gap:24px;align-items:start; }
+.entry-settings-nav { display:flex;flex-direction:column;gap:5px;padding:8px;border-radius:24px;position:sticky;top:0; }
+.entry-settings-nav .btn { justify-content:flex-start;min-height:44px;white-space:normal;text-align:left; }
+.entry-account-content { min-width:0; }
+.entry-account-content form { display:flex;flex-direction:column;gap:16px; }
+.entry-account-content form>.btn { align-self:flex-start; }
+.entry-notice { width:100%;background:none;text-align:left;color:var(--text); }
+.entry-notice-copy { display:flex;flex:1;min-width:0;flex-direction:column;gap:7px; }
+.entry-notice-copy>span { font-size:13px;color:var(--muted);line-height:1.7; }
+.entry-notice-copy>small { font-size:12px;color:var(--muted); }
+.entry-preference-table { border:1px solid var(--line);border-radius:18px;overflow:hidden;margin:16px 0; }
+.entry-preference-table>div { display:grid;grid-template-columns:minmax(0,1fr) 54px 54px;gap:12px;padding:12px 16px;align-items:center; }
+.entry-preference-table>div+div { border-top:1px solid var(--line); }
+.entry-preference-table label { min-height:32px;display:grid;place-items:center; }
+.entry-confirmation { max-width:640px; }
+.entry-management-grid { display:grid;grid-template-columns:190px minmax(0,1fr);gap:24px;align-items:start; }
+.entry-management-grid .panel { min-width:0; }
+.entry-management-form { display:flex;flex-direction:column;gap:18px; }
+.entry-management-form .field { margin:0; }
+.entry-management-form>.btn { align-self:flex-start; }
+.entry-grants { display:flex;gap:12px;flex-wrap:wrap;padding:12px 0; }
+.entry-grants>label { display:flex;gap:8px;align-items:center;min-height:44px; }
+.entry-lifecycle-impact { min-width:0; }
+.entry-lifecycle-impact h3 { margin:0 0 8px;font-size:13px;font-weight:500;color:var(--muted); }
+.entry-lifecycle-impact dl { margin:0; }
+.entry-lifecycle-impact dl>div { display:flex;justify-content:space-between;gap:20px;padding:12px 0;border-bottom:1px solid var(--line); }
+.entry-lifecycle-impact dt { color:var(--muted); }
+.entry-lifecycle-impact dd { margin:0;font-variant-numeric:tabular-nums; }
+@media(max-width:700px) {
+ .entry-account-layout,.entry-management-grid { grid-template-columns:minmax(0,1fr);gap:20px; }
+ .entry-settings-nav { flex-direction:row;position:relative;overflow:auto;border-radius:20px; }
+ .entry-settings-nav .btn { flex-shrink:0; }
+ .entry-inbox .toolbar { align-items:stretch; }
+}
+
+.entry-grants>label[hidden] { display:none; }

@@ -1,13 +1,13 @@
 /**
  * [INPUT]: 依赖租户节点池 API、共享表单、弹窗和通知。
  * [OUTPUT]: 提供 NodePoolsWorkspace 列表、创建、重命名和删除确认。
- * [POS]: 租户资源入口；设备数量由服务端按当前授权聚合。
+ * [POS]: 工作空间的 Standard 节点池目录；设备计数来自授权聚合。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
 import { useState } from "react";
-import { ArrowUpRight, Layers3, Pencil, Plus, Trash2 } from "lucide-react";
+import { Activity, ArrowUpRight, Layers3, Monitor, Pencil, Plus, Trash2 } from "lucide-react";
 import { Empty, ErrorBox, Field, Loading, PageTitle } from "@/components/common";
 import { SubmitForm } from "@/components/forms";
 import { useUI } from "@/components/providers";
@@ -23,34 +23,37 @@ import type { Pool, User } from "@/lib/types";
 type PoolAction = { kind: "create" } | { kind: "rename" | "delete"; pool: Pool };
 
 export function NodePoolsWorkspace({ user, readOnly }: { user: User; readOnly: boolean }) {
-  const { t } = useUI();
+  const { t, number } = useUI();
   const pools = useRemote<Pool[]>("/pools");
   const [query, setQuery] = useState("");
   const [action, setAction] = useState<PoolAction>();
   const canManage = user.role === "admin" && !readOnly;
   const visible = pools.data?.filter(pool => `${pool.name} ${pool.id}`.toLowerCase().includes(query.trim().toLowerCase()));
-  return <>
+  return <section className="prism-node-pools-workspace">
     <PageTitle eyebrow={t("workspace.tenantWorkbench")} title={t("nodePools.title")} description={t("nodePools.description")}>
       {canManage && <Button onClick={() => setAction({ kind: "create" })}><Plus />{t("nodePools.create")}</Button>}
     </PageTitle>
-    <ListToolbar query={query} onQueryChange={setQuery} count={visible?.length} placeholder={t("nodePools.search")} />
+    <div className="prism-device-toolbar"><ListToolbar query={query} onQueryChange={setQuery} count={visible?.length} placeholder={t("nodePools.search")} /></div>
     <ErrorBox message={pools.error} />
     {pools.error && <Button variant="secondary" onClick={() => void pools.reload()}>{t("common.retry")}</Button>}
     {!pools.data ? !pools.error && <Loading variant="cards" /> : !visible?.length ? (
       <section className="panel"><Empty title={t("nodePools.empty")} detail={t(query ? "nodePools.noMatches" : "nodePools.emptyHint")} /></section>
-    ) : <div className="grid gap-4 lg:grid-cols-2">
-      {visible.map(pool => <article key={pool.id} aria-label={pool.name} className="panel min-w-0 p-5">
+    ) : <div className="node-pool-grid">
+      {visible.map(pool => <article key={pool.id} aria-label={pool.name} className="panel node-pool-card min-w-0">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary"><Layers3 size={18} aria-hidden="true" /></span>
+          <span className="node-pool-icon"><Layers3 size={23} aria-hidden="true" /></span>
           <div className="min-w-0 flex-1">
             <h2 className="break-words text-sm font-medium">{pool.name}</h2>
             <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{pool.id}</p>
           </div>
           {pool.is_default && <span className="shrink-0 rounded border border-border px-2 py-1 text-xs text-muted-foreground">{t("nodePools.default")}</span>}
         </div>
-        <p className="mt-5 text-sm text-muted-foreground">{pool.node_count === undefined || pool.online_count === undefined
-          ? t("nodePools.countUnavailable") : t("nodePools.devices", { total: pool.node_count, online: pool.online_count })}</p>
-        <div className="mt-5 flex flex-wrap items-center gap-2">
+        <dl className="node-pool-metrics">
+          <div><dt><Monitor size={15} aria-hidden="true" />{t("prismDevices.deviceCount")}</dt><dd>{pool.node_count == null ? t("nodes.unknown") : number(pool.node_count)}</dd></div>
+          <div data-known={pool.online_count != null}><dt><Activity size={15} aria-hidden="true" />{t("prismDevices.onlineCount")}</dt><dd>{pool.online_count == null ? t("nodes.unknown") : number(pool.online_count)}</dd></div>
+        </dl>
+        {(pool.node_count == null || pool.online_count == null) && <p className="node-section-note">{t("nodePools.countUnavailable")}</p>}
+        <div className="node-pool-actions">
           <Button asChild variant="secondary" size="sm"><Link href={`/nodes?pool=${encodeURIComponent(pool.id)}`}>{t("nodePools.viewDevices")}<ArrowUpRight aria-hidden="true" /></Link></Button>
           {canManage && <>
             <Button variant="ghost" size="sm" onClick={() => setAction({ kind: "rename", pool })}><Pencil aria-hidden="true" />{t("nodePools.rename")}</Button>
@@ -63,7 +66,7 @@ export function NodePoolsWorkspace({ user, readOnly }: { user: User; readOnly: b
     </div>}
     {canManage && action && <PoolDialog key={action.kind === "create" ? "create" : `${action.kind}/${action.pool.id}`}
       action={action} close={() => setAction(undefined)} reload={pools.reload} />}
-  </>;
+  </section>;
 }
 
 function PoolDialog({ action, close, reload }: { action: PoolAction; close: () => void; reload: () => Promise<void> }) {

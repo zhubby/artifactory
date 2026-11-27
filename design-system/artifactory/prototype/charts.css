@@ -1,0 +1,70 @@
+/**
+ * [INPUT]: 依赖 charts.js 的图形标记与明暗主题。
+ * [OUTPUT]: 提供连续渐变、圆润线端、弧轨与数据反馈样式。
+ * [POS]: 仅覆盖组件展厅；不改变产品页面的图表、进度与微图。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.component-library {
+ --chart-start:#3169df;--chart-end:#4262c6;--chart-area:#497be4;
+ --chart-track:#e3e9f2;--chart-secondary:#7285a7;
+ --chart-danger-start:#c35b75;--chart-danger-end:#a33b59;
+ --chart-neutral-start:#7586a2;--chart-neutral-end:#62748f;
+ --chart-success-start:#26966f;--chart-success-end:#197b64;
+ --chart-purple-start:#8970d6;--chart-purple-end:#6852b7;
+ --chart-bar-top:#5683e3;--chart-bar-bottom:#315bc4;
+ --chart-line-width:3px;--chart-arc-width:16px;--chart-bar-radius:999px;
+}
+[data-theme=dark] .component-library {
+ --chart-start:#aac8ff;--chart-end:#8faff6;--chart-area:#94b7ff;
+ --chart-track:#343e50;--chart-secondary:#7f94b8;
+ --chart-danger-start:#ffb1c1;--chart-danger-end:#e98ba8;
+ --chart-neutral-start:#b0bed2;--chart-neutral-end:#899fbe;
+ --chart-success-start:#96e3c9;--chart-success-end:#72c6b1;
+ --chart-purple-start:#d0bdff;--chart-purple-end:#b39be9;
+ --chart-bar-top:#b0cdff;--chart-bar-bottom:#7599e3;
+}
+ .component-library .chart-series { stroke-width:var(--chart-line-width);stroke-linecap:round;stroke-linejoin:round;fill:none; }
+ .component-library .chart-track { stroke:var(--chart-track); }
+ .component-library .chart-radial { display:block;width:100%;height:auto;overflow:visible; }
+ .component-library .chart-radial .chart-arc { stroke-linecap:round;stroke-linejoin:round; }
+ .component-library .chart-end-label { fill:var(--muted);font:11px var(--font-sans); }
+ .component-library [data-chart-bar] { transform-box:fill-box;transform-origin:center bottom; }
+ .component-library .chart,.component-library .chart-svg,.component-library .cd-line { overflow:visible; }
+ .component-library .chart-legend .legend-dot { border-radius:50%;background:var(--chart-start); }
+ .component-library .chart-legend .legend-dot.pale { background:var(--chart-secondary); }
+ .component-library .sparkline { color:var(--chart-start); }
+ .component-library .cd-legend-dot { background:var(--chart-start); }
+ .component-library .cd-legend-dot.danger { background:var(--chart-danger-start); }
+ .component-library .cd-legend-dot.muted { background:var(--chart-neutral-start); }
+ .component-library .sparkline .chart-series { stroke-width:2.4px; }
+ .component-library .progress-track>span,.component-library .resource-bar>span { background:linear-gradient(90deg,var(--chart-start),var(--chart-end));border-radius:inherit; }
+ .component-library .progress-track { border-radius:999px;overflow:hidden;background:var(--chart-track); }
+ .component-library .chart-value-label { fill:var(--text);font:11px var(--font-sans);font-variant-numeric:tabular-nums; }
+ .component-library .chart-focus-point { fill:var(--chart-end);stroke:var(--surface-solid);stroke-width:3px; }
+ .component-library .chart-surface-label { font-size:12px;color:var(--muted);line-height:1.6; }
+ .component-library .chart-radial-number { font-variant-numeric:tabular-nums;letter-spacing:-1px; }
+@media(prefers-reduced-motion:reduce) {
+ .component-library .chart-series,.component-library .chart-arc,.component-library [data-chart-bar] { transition:none!important;animation:none!important; }
+}
+@media(prefers-contrast:more) {
+ .component-library .chart-track { stroke:var(--line-strong); }
+ .component-library .chart-series { stroke:var(--primary); }
+ .component-library .chart-radial .chart-arc { stroke:var(--primary); }
+ .component-library .chart-sector { stroke:var(--primary); }
+ .component-library .chart-sector[data-chart-segment="1"] { stroke:var(--danger); }
+ .component-library .chart-sector[data-chart-segment="2"] { stroke:var(--muted); }
+}
+ [data-contrast=more] .component-library .chart-track { stroke:var(--line-strong); }
+ [data-contrast=more] .component-library .chart-series { stroke:var(--primary); }
+ [data-contrast=more] .component-library .chart-sector { stroke:var(--primary); }
+ [data-contrast=more] .component-library .chart-sector[data-chart-segment="1"] { stroke:var(--danger); }
+ [data-contrast=more] .component-library .chart-sector[data-chart-segment="2"] { stroke:var(--muted); }
+@media(forced-colors:active) {
+ .component-library .chart-series,.component-library .chart-radial .chart-arc { stroke:Highlight; }
+ .component-library .chart-track { stroke:GrayText; }
+ .component-library .chart-sector { stroke:Highlight; }
+ .component-library [data-chart-bar] { fill:Highlight; }
+ .component-library .chart-value-label,.component-library .chart-end-label { fill:CanvasText; }
+ .component-library .chart-series { forced-color-adjust:auto; }
+ .component-library .chart-area { display:none; }
+}

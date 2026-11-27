@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖真实全局工具、页面标题和项目订阅 API 夹具。
- * [OUTPUT]: 验证动作归位、工具顺序、320px 边界和关注写入恢复。
+ * [OUTPUT]: 验证动作归位、账户就绪后的工具顺序、320px 边界和关注写入恢复。
  * [POS]: 页面入口职责与窄屏交互的浏览器回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -39,13 +39,14 @@ for (const theme of ["dark", "light"]) {
         const hasTopbarAccount = width < 1024 || path !== tenantURL("/projects/desktop-client");
         await expect(bell).toBeVisible();
         await expect(docs).toBeVisible();
+        // 账户首读会填入工具组；等插槽就绪后读取同一布局的坐标。
+        if (hasTopbarAccount) await expect(account).toBeVisible();
         await expect(page.locator(".sidebar").getByRole("link", { name: "文档", exact: true })).toHaveCount(0);
         const [docBounds, bellBounds] = await Promise.all([docs.boundingBox(), bell.boundingBox()]);
         expect(docBounds!.x + docBounds!.width).toBeLessThanOrEqual(bellBounds!.x + 1);
         expect(Math.abs(docBounds!.y + docBounds!.height / 2 - bellBounds!.y - bellBounds!.height / 2)).toBeLessThan(2);
         expect(bellBounds!.x + bellBounds!.width).toBeLessThanOrEqual(width);
         if (hasTopbarAccount) {
-          await expect(account).toBeVisible();
           const bounds = (await account.boundingBox())!;
           expect(bellBounds!.x + bellBounds!.width).toBeLessThanOrEqual(bounds.x + 1);
           expect(Math.abs(bounds.y + bounds.height / 2 - bellBounds!.y - bellBounds!.height / 2)).toBeLessThan(2);

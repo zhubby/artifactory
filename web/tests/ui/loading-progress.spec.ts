@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 Playwright、延迟 API 夹具和真实工作区导航。
+ * [INPUT]: 依赖 Playwright、延迟 API 夹具和真实工作空间导航。
  * [OUTPUT]: 验证前台并发进度、静默轮询和未保存导航取消。
  * [POS]: 全局顶部加载条的浏览器回归边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -75,7 +75,7 @@ test("rejecting an unsaved navigation leaves no progress behind", async ({ page 
   await expect(page.getByRole("progressbar")).toBeHidden();
   await openNavigation(page);
   page.once("dialog", dialog => dialog.dismiss());
-  await page.getByRole("link", { name: "返回租户工作台", exact: true }).click();
+  await page.getByRole("link", { name: "返回工作空间工作台", exact: true }).click();
   await expect(page).toHaveURL(tenantURL("/projects/desktop-client/releases/new"));
   await expect(page.locator('textarea[name="notes"]')).toHaveValue("Keep the current release draft");
   await page.waitForTimeout(350);
@@ -97,7 +97,7 @@ test("leaving a workspace releases progress while its tenant lookup is still pen
     await page.locator(".sidebar .brand").click();
     await expect(page).toHaveURL(/\/tenants$/);
     await expect(page.getByRole("link", { name: "Build Team", exact: true })).toBeVisible();
-    // 旧租户解析仍挂起，页面已离开，不得继续占用进度。
+    // 旧工作空间解析仍挂起，页面已离开，不得继续占用进度。
     await expect(page.getByRole("progressbar")).toBeHidden();
   } finally {
     releaseLookup();

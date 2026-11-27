@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖真实 xterm、Playwright WebSocket 路由和租户 API 夹具。
+ * [INPUT]: 依赖真实 xterm、Playwright WebSocket 路由和工作空间 API 夹具。
  * [OUTPUT]: 验证终端字节交互、撤权完整清屏与键盘边界。
  * [POS]: 终端完整前端链回归；后端 PTY 与设备验收另行执行。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -224,7 +224,7 @@ for (const role of ["viewer", "operator"] as const) {
   test(`${role} cannot create terminal sessions`, async ({ page }) => {
     const { events } = await setup(page, { role });
     await page.goto(tenantURL("/nodes/node-main/terminal"));
-    await expect(page.getByText("A tenant owner or administrator must open this device terminal.", { exact: true })).toBeVisible();
+    await expect(page.getByText("A workspace owner or administrator must open this device terminal.", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Open terminal", exact: true })).toHaveCount(0);
     expect(events.creates).toHaveLength(0);
   });

@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖租户 HTTP 夹具、真实下拉与受控安装材料。
+ * [INPUT]: 依赖工作空间 HTTP 夹具、真实下拉与受控安装材料。
  * [OUTPUT]: 验证产品统一版本安装、过期、秘密清理和系统地址权限。
  * [POS]: 首次节点安装流程的浏览器行为回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md

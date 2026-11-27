@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 Playwright、slug 路由和租户 HTTP 夹具。
- * [OUTPUT]: 验证项目目录与概览深链接、浏览历史及租户请求隔离。
- * [POS]: 约束作用域导航与异步租户解析的回归入口。
+ * [INPUT]: 依赖 Playwright、slug 路由和工作空间 HTTP 夹具。
+ * [OUTPUT]: 验证项目目录与概览深链接、浏览历史及工作空间请求隔离。
+ * [POS]: 约束作用域导航与异步工作空间解析的回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { expect, test } from "@playwright/test";
@@ -158,7 +158,7 @@ test("a delayed tenant lookup cannot send requests after switching tenants", asy
   await page.evaluate(() =>
     window.history.pushState(null, "", "/tenants/beta-team"),
   );
-  await expect(page.getByRole("region", { name: "租户概览", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "工作空间概览", exact: true })).toBeVisible();
   const finished = page.waitForResponse(`**/api/v1/tenants/${tenantSlug}`);
   release();
   await finished;

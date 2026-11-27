@@ -3,7 +3,7 @@
 
 account.tsx: 保持单实例账户菜单、设置草稿和焦点，退出后发出活动会话清理信号。
 ai-settings.tsx: 使用共享下拉配置任意模型、调用预算与独立接口兼容字段。
-auth-shell.tsx: 渲染认证页面布局。
+auth-shell.tsx: 以品牌玻璃雕塑和 Standard 表单组合登录、注册与邀请。
 brand-mark.tsx: 渲染 Artifactory 品牌标记。
 build-detail.tsx: 组合过程、执行、计划、独立 AI 审计与制品；首次展示过程，轮询保留用户标签。
 build-process.tsx: 展示当前 Pod 的源码子步骤、真实阶段和失败分类；保留事件展开状态。
@@ -17,19 +17,20 @@ build-wizard.tsx: 组合四步弹窗、授权设备默认目标、答案草稿�
 build-target-picker.tsx: 按项目授权设备禁选原生平台，高级设置遵守同一设备约束。
 common.tsx: 提供内容骨架、正文标题动作与名称附件，统一字段、通知及下载反馈。
 command-palette.tsx: 复用当前范围导航，保留项目切换和焦点，不抢占终端输入快捷键。
+projects-workspace.tsx: 基于授权快照呈现项目焦点、搜索、排序、生命周期筛选和双视图。
 console.tsx: 按租户与项目隔离工作区，组合顶栏、节点池和设备终端路由、权限骨架与星标。
 dashboard.tsx: 读取完整窗口指标和近期活动，范围切换使用共享下拉，后台刷新保留内容。
-dashboard-charts.tsx: 按需加载 Recharts，呈现构建结果与成功周转趋势，区分空态、日期断点和孤立样本。
+dashboard-charts.tsx: 按需加载 Recharts，以等比例圆角渐变柱和柔和曲线呈现构建结果与成功周转，保留断点和孤立样本。
 emissary-ota.tsx: 确认后发起固定产品版本升级，保留失败重试、取消、并发和暂停。
 node-installation-settings.tsx: 按系统管理员权限配置全局设备公开地址，首读可重试。
 node-enrollment-dialog.tsx: 固定产品统一版本，展示平台安装命令、单用凭证与过期状态。
 forms.tsx: 提供项目、节点、凭据表单，复用下拉并统一提交通知。
 lifecycle.tsx: 分别等待影响与当前操作，使用 HTTP 幂等键提交归档、恢复与删除。
-node-card.tsx: 直接消费列表快照，展示名称、主机名、短 ID、硬件与资源状态。
+node-card.tsx: 直接消费列表快照，以 Standard 卡片呈现身份、硬件、槽位和等比例容量。
 node-detail-dialog.tsx: 组合固定身份标题、五个详情标签和遥测生命周期，保留独立重命名。
 node-overview.tsx: 先展示四项设备摘要，再展示接口与标签，按需展开完整硬件和连接信息。
 node-resources.tsx: 展示当前资源采样，按需加载分钟趋势，按设备 ID 查找图形设备型号。
-node-resource-trends.tsx: 请求选定时间窗的 CPU 和已用内存分钟历史，使用等宽图表展示缺失断点。
+node-resource-trends.tsx: 读取分钟历史，以圆端渐变曲线呈现 CPU 和已用内存，保留缺失断点。
 node-tools.tsx: 以单列工具行展示版本和可用状态，路径按需展开，签名配置独立分组。
 node-operations.tsx: 组合链路观测、有限操作、终端、升级与授权吊销。
 finite-node-operations.tsx: 按当前管理员权限发起有限探测，保留幂等请求、取消和分页结果。
@@ -40,17 +41,18 @@ node-rename.tsx: 提供具名图标入口，只提交名称，按 Unicode White_
 node-detail-parts.tsx: 提供分区、折叠区、对齐字段、时间与重试，零值可见且轮询保留展开状态。
 node-metadata.tsx: 按需读取元数据，直接展示普通值，复杂值与快照信息折叠，保留刷新快照。
 nodes-workspace.tsx: 按节点池精确筛选并保留查询地址，组合安装弹窗，关闭不再匹配的详情。
-node-pools-workspace.tsx: 展示授权池计数，提供创建、重命名、删除确认和池内设备入口。
+node-pools-workspace.tsx: 以 Standard 卡片呈现设备总数与在线计数，保留池操作和设备入口。
 notifications.tsx: 顶部居中显示通知，避开手机顶栏与抽屉导航，桥接校验和弹窗焦点。
 preferences-controls.tsx: 为登录页和个人设置提供自定义语言、主题下拉。
+prism-interactions.tsx: 用事件触发玻璃流光与连续悬停胶囊，无常驻帧循环。
 providers.tsx: 组合账户、语言、主题、顶部进度和全局通知，动效适配系统偏好。
 release-detail.tsx: 组合版本说明、构建历史与单构建交付；发布弹窗固定候选，候选失效须重选；各状态可编辑说明，已发布镜像分发使用固定版本标签。
 release-form.tsx: 创建版本并编辑多行说明，版本创建后只读；源码与目标归属构建引导。
 release-table.tsx: 展示版本、生命周期、说明和构建次数。
-settings.tsx: 配置令牌、源码凭据和审计，首读失败提供重试。
+settings.tsx: 配置令牌、源码凭据和审计，提供表格滚动焦点和首读重试。
 signing-settings.tsx: 等待签名预览和必需凭据后开放配置，按项目身份保留默认方案草稿。
-space-switcher.tsx: 切换租户和项目，查询失败通过全局通知反馈。
-tenant-chooser.tsx: 会话确认后显示租户大厅，首读使用骨架，失败可重试。邀请独立展示，HTTP 创建使用共享幂等键。
+space-switcher.tsx: 切换工作空间和项目，按视口约束菜单并保留键盘导航。
+tenant-chooser.tsx: 会话确认后展示 Prism 工作空间目录，保留骨架、重试、幂等创建与邀请；进入后显示项目。
 top-progress.tsx: 根据并发前台计数延迟显示顶部细进度条，最后请求结束后淡出。
 tenant-members.tsx: 配置租户与项目成员，邀请首读显示列表骨架并提供失败重试。
 workspace-management.tsx: 按权限渲染设置分区，必需资源就绪后挂载表单，按分区隔离状态。

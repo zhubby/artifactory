@@ -1,0 +1,74 @@
+/**
+ * [INPUT]: 依赖工作台结构、Prism 材质和响应式导航。
+ * [OUTPUT]: 提供悬浮导航、连续顶栏、手机44px工具与抽屉。
+ * [POS]: 覆盖旧工作台布局；保留账户单实例和内容本地滚动。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.workspace-shell .sidebar { inset: 16px auto 16px 16px; width: 236px; padding: 20px 14px 14px; border-radius: var(--radius-glass); }
+.workspace-shell .workspace { margin-left: 268px; }
+.workspace-shell .brand { gap: 10px; padding: 6px 10px 24px; font-size: 17px; }
+.brand-mark { width: 32px; height: 32px; border-radius: 10px; }
+.brand-mark svg { width: 23px; height: 23px; }
+.workspace-shell .sidebar-context { padding-bottom: 16px; margin-bottom: 16px; }
+.workspace-current-scope { padding: 8px 12px; font-size: 14px; }
+.workspace-current-scope small { font-size: 11px; margin-bottom: 8px; }
+.workspace-current-scope strong { font-weight: 600; }
+.nav-label { padding: 20px 12px 10px; font-size: 11px; letter-spacing: .03em; }
+.nav-item { gap: 10px; min-height: 44px; padding: 10px 12px; border-radius: 999px; font-size: 14px; }
+.nav-item svg { width: 18px; height: 18px; stroke-width: 1.75px; }
+.nav-item.active { background: var(--primary-soft); color: var(--primary); box-shadow: inset 0 1px 1px var(--glass-inset),0 4px 12px -10px var(--primary); font-weight: 600; }
+.nav-item:hover:not(.active) { background: color-mix(in srgb,var(--card) 45%,transparent); }
+.sidebar-back { border-radius: 999px; padding-inline: 12px; }
+.workspace-topbar { top: 16px; min-height: 64px; margin: 16px 24px 0 0; padding: 10px 20px; border-radius: var(--radius-glass); }
+.workspace-topbar .workspace-breadcrumb { font-size: 13px; gap: 10px; }
+.workspace-topbar .workspace-breadcrumb > svg { width: 14px; }
+.workspace-topbar .workspace-breadcrumb > a { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.main { max-width: 1600px; padding: 36px 32px 64px 8px; }
+.workspace-topbar .header-docs,.command-trigger { min-height: 36px; padding-inline: 10px; border-radius: 999px; }
+.command-trigger { background: var(--glass-reflection); }
+.account-trigger { border-radius: 999px; min-height: 44px; padding: 6px 10px; }
+.account-trigger-name { font-size: 13px; }
+.account-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--primary-soft); color: var(--primary); }
+.account-avatar.large { border-radius: 50%; }
+.account-menu { padding: 8px; }
+.account-menu button[role=menuitem] { border-radius: 12px; min-height: 40px; font-size: 13px; }
+.account-panel > header { padding: 24px 28px; }
+.account-panel > header h2 { font-size: 24px; }
+.account-sections { background: transparent; padding: 16px 12px; }
+.account-sections button { min-height: 40px; padding: 10px 12px; border-radius: 999px; font-size: 13px; }
+.account-sections button.active { background: var(--primary-soft); color: var(--primary); }
+.account-panel-content { background: var(--card); padding: 28px; }
+.management-section { padding: 28px; }
+.management-section h2,.management-section-heading h2 { font-size: 18px; }
+.management-description,.management-section-heading p { font-size: 14px; }
+.lifecycle-counts > div { padding: 16px; border-radius: 16px; }
+.space-selector summary { border-radius: 999px; }
+.space-option { border-radius: 12px; }
+.space-selector-menu { padding: 8px; max-height: var(--space-menu-height,calc(100dvh - 224px)); }
+.workspace-breadcrumb .space-selector-menu { max-height: var(--space-menu-height,calc(100dvh - 112px)); }
+.command-result { min-height: 44px; border-radius: 12px; font-size: 14px; }
+.command-input input { font-size: 16px; }
+.project-identity-strip { font-size: 12px; padding: 16px 20px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; }
+.project-shortcuts a { min-height: 44px; font-size: 14px; }
+@media (min-width:1800px) { .main { padding-inline: 40px; } }
+@media (max-width:1023px) {
+  .workspace-shell .sidebar { width: min(304px,calc(100% - 32px)); z-index: 50; }
+  .workspace-shell .workspace { margin-left: 0; }
+  .workspace-topbar { margin: 12px 16px 0; top: 12px; padding: 8px 12px; }
+  .main { padding: 32px 24px 56px; }
+  .sidebar-close[data-slot=button] { position: absolute; top: 12px; right: 10px; }
+  .workspace-nav-dismiss { background: var(--scrim); backdrop-filter: blur(3px); }
+}
+@media (max-width:767px) {
+  .workspace-topbar { gap: 4px; margin: 8px 12px 0; top: 8px; border-radius: 24px; }
+  .workspace-topbar .header-docs,.command-trigger { min-height: 44px; }
+  .workspace-topbar .workspace-breadcrumb { flex-basis: 100%; gap: 0 5px; font-size: 12px; padding-inline: 6px; }
+  .main { padding: 28px 16px 48px; }
+  .account-panel { border-radius: 24px; }
+  .account-panel > header { padding: 20px; }
+  .account-panel > header h2 { font-size: 22px; }
+  .account-sections button { min-height: 44px; }
+  .account-panel-content { padding: 20px 16px; }
+  .management-section { padding: 20px; }
+  .project-identity-strip { gap: 12px; padding: 16px; }
+}

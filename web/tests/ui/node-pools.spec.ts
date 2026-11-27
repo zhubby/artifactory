@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 Playwright、租户夹具与真实控制台组件。
+ * [INPUT]: 依赖 Playwright、工作空间夹具与真实控制台组件。
  * [OUTPUT]: 验证节点池导航、写入流程、只读权限与设备筛选。
  * [POS]: 节点池管理的浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md

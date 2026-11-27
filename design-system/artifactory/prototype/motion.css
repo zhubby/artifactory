@@ -1,0 +1,100 @@
+/**
+ * [INPUT]: 依赖 motion.js 的动画对象与页面演示控件。
+ * [OUTPUT]: 提供分组入场、控件波纹裁切、图表原点与安全降级。
+ * [POS]: 动效表现补充；业务反馈不依赖动画结束。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.motion-ghost {
+  position: fixed;
+  z-index: 59;
+  pointer-events: none;
+}
+.liquid-surface { transform-style: preserve-3d; }
+.device-card,.project-card,.tenant-card { transition:transform 320ms var(--ease),box-shadow 320ms var(--ease); }
+.liquid-pointer:is(.device-card,.project-card,.tenant-card) { transition:transform 100ms ease-out,box-shadow 320ms var(--ease); }
+.liquid-surface:focus-within { border-color: var(--primary); }
+.glass-nav-indicator,.glass-tab-indicator { transform-origin: left top; }
+.bar-stack,.chart g[data-total],.chart rect[fill="url(#bars)"],.result-chart rect { transform-box:fill-box;transform-origin:center bottom; }
+.glass-nav-indicator,.glass-tab-indicator { overflow:hidden; }
+.glass-nav-indicator::after,.glass-tab-indicator::after {
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(112deg,transparent 15%,rgba(255,255,255,.38) 48%,transparent 78%);
+  opacity:.65;
+}
+.liquid-control { overflow:clip; }
+.liquid-control:where(summary,.workspace-switch) { overflow:clip; }
+:where(.nav-item,.tab,.check-card) { position:relative;isolation:isolate;overflow:clip; }
+.dialog,.overlay-backdrop { animation: none; }
+.dialog-body:has(.liquid-playground) { overflow: visible; }
+.liquid-playground { display: grid; grid-template-columns: 1.1fr 1fr; gap: 30px; align-items: center; }
+.liquid-playground p { font-size: 14px; line-height: 1.9; margin: 10px 0 18px; }
+.liquid-playground h3 { font-size: 24px; letter-spacing: -.5px; }
+.liquid-lab-stage {
+  min-height: 240px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 24px;
+  overflow: hidden;
+  isolation: isolate;
+  background: radial-gradient(ellipse at 14% 20%,rgba(114,173,255,.30),transparent 60%),
+    radial-gradient(ellipse at 83% 78%,rgba(255,176,157,.33),transparent 60%),
+    linear-gradient(120deg,var(--surface-hover),var(--surface));
+  border: 1px solid var(--line);
+}
+.lab-orbit { position:absolute; width:260px; height:110px; border:1px solid rgba(110,153,221,.32); border-radius:50%; transform:rotate(-24deg); }
+.lab-orbit.second { width:180px; height:180px; transform:rotate(40deg); border-color:rgba(174,136,232,.25); }
+.liquid-lab-orb {
+  appearance: none;
+  padding: 0;
+  width: 126px;
+  height: 126px;
+  border-radius: 38px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  position: relative;
+  background: linear-gradient(145deg,rgba(255,255,255,.85),rgba(174,202,255,.35));
+  border:1px solid var(--liquid-edge);
+  color:var(--primary);
+  backdrop-filter:blur(10px) saturate(210%);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,.95),inset 0 -5px 12px rgba(125,162,223,.16),0 22px 45px -18px rgba(52,87,155,.40);
+  isolation:isolate;
+}
+.liquid-lab-orb small { font: 10px var(--font-mono); letter-spacing: 2px; }
+.lab-caption { position:absolute; bottom:16px; font:10px var(--font-mono); letter-spacing:1.5px; color:var(--muted); }
+.lab-state { min-height:20px; color:var(--muted); font-size:12px; }
+.lab-pause { display:flex; gap:8px; align-items:center; font-size:12px; margin-top:17px; color:var(--muted); }
+.liquid-control:focus-visible .icon { color:inherit; }
+.select-options button:hover>.icon { transform:scale(1.12); }
+.nav-item .icon,.icon-button>.icon,.btn>.icon { transition:transform 200ms var(--ease); }
+.nav-item:hover>.icon { transform:translateY(-1px); }
+.btn:not(:disabled):hover>.icon:last-child { transform:translateX(2px); }
+.icon-button:not(:disabled):hover>.icon { transform:rotate(-7deg); }
+.workspace-switch[aria-expanded=true]>.icon { transform:rotate(180deg); }
+.device-card .app-icon { transition:transform 360ms cubic-bezier(.2,1.15,.3,1); }
+.device-card:hover .app-icon { transform:translateY(-2px) rotate(-6deg); }
+[data-theme=dark] .liquid-lab-orb { background:linear-gradient(145deg,rgba(129,161,216,.35),rgba(39,63,105,.55)); }
+@media(max-width:767px) {
+  .liquid-playground { grid-template-columns:minmax(0,1fr); gap:22px; }
+  .liquid-lab-stage { min-height:220px; }
+  .liquid-playground h3 { font-size:22px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .motion-ghost { display:none; }
+  .device-card .app-icon { transform:none!important; }
+  .nav-item .icon,.icon-button>.icon,.btn>.icon { transition:none; transform:none!important; }
+}
+[data-transparency=reduce] :is(.glass-nav-indicator,.glass-tab-indicator)::after,
+[data-contrast=more] :is(.glass-nav-indicator,.glass-tab-indicator)::after { display:none; }
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more),(forced-colors:active) {
+  .glass-nav-indicator::after,.glass-tab-indicator::after { display:none; }
+}
+[data-transparency=reduce] .liquid-lab-orb { background:var(--surface-solid); backdrop-filter:none; box-shadow:var(--shadow); }
+@media(prefers-reduced-transparency:reduce) { .liquid-lab-orb { background:var(--surface-solid); backdrop-filter:none; box-shadow:var(--shadow); } }
+@media(forced-colors:active) {
+  .liquid-lab-orb { background:ButtonFace; color:ButtonText; border:1px solid ButtonText; box-shadow:none; backdrop-filter:none; }
+  .lab-orbit { display:none; }
+}

@@ -1,0 +1,122 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "phase": "confirmation",
+    "passed": true,
+    "rows": 4,
+    "labels": [
+      "项目",
+      "构建",
+      "活动构建",
+      "版本"
+    ],
+    "visible": true,
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "phase": "operation",
+    "passed": true,
+    "rows": 4,
+    "labels": [
+      "项目",
+      "构建",
+      "活动构建",
+      "版本"
+    ],
+    "visible": true,
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "phase": "confirmation",
+    "passed": true,
+    "rows": 4,
+    "labels": [
+      "项目",
+      "构建",
+      "活动构建",
+      "版本"
+    ],
+    "visible": true,
+    "overflow": false
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "phase": "operation",
+    "passed": true,
+    "rows": 4,
+    "labels": [
+      "项目",
+      "构建",
+      "活动构建",
+      "版本"
+    ],
+    "visible": true,
+    "overflow": false
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "phase": "confirmation",
+    "passed": true,
+    "rows": 4,
+    "labels": [
+      "项目",
+      "构建",
+      "活动构建",
+      "版本"
+    ],
+    "visible": true,
+    "overflow": false
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "phase": "operation",
+    "passed": true,
+    "rows": 4,
+    "labels": [
+      "项目",
+      "构建",
+      "活动构建",
+      "版本"
+    ],
+    "visible": true,
+    "overflow": false
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "phase": "confirmation",
+    "passed": true,
+    "rows": 4,
+    "labels": [
+      "项目",
+      "构建",
+      "活动构建",
+      "版本"
+    ],
+    "visible": true,
+    "overflow": false
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "phase": "operation",
+    "passed": true,
+    "rows": 4,
+    "labels": [
+      "项目",
+      "构建",
+      "活动构建",
+      "版本"
+    ],
+    "visible": true,
+    "overflow": false
+  }
+]

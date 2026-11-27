@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖节点池筛选 URL、节点 API、通知、安装弹窗与侧面板。
  * [OUTPUT]: 提供 NodesWorkspace 设备工作区。
- * [POS]: 衔接节点筛选、列表与详情交互。
+ * [POS]: 衔接节点筛选、Standard 设备目录与详情交互。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -57,7 +57,7 @@ export function NodesWorkspace({
     }
   }, [selection, nodes.data, selected, t]);
   return (
-    <>
+    <section className="prism-devices-workspace">
       <PageTitle
         eyebrow={t("workspace.tenant")}
         title={t("workspace.sharedDevices")}
@@ -70,6 +70,7 @@ export function NodesWorkspace({
           </Button>
         )}
       </PageTitle>
+      <div className="prism-device-toolbar">
       <ListToolbar query={query} count={nodes.data?.length} placeholder={t("nodes.searchHint")}
           onQueryChange={(value) => {
             setQuery(value);
@@ -86,6 +87,7 @@ export function NodesWorkspace({
           {pools.data?.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </Select>
       </ListToolbar>
+      </div>
       <ErrorBox message={nodes.error || pools.error} />
       {!nodes.data ? (
         !nodes.error && <Loading />
@@ -107,7 +109,7 @@ export function NodesWorkspace({
         </div>
       )}
       <nav
-        className="flex items-center justify-end gap-3 mt-5"
+        className="node-pagination flex items-center justify-end gap-3 mt-5"
         aria-label={t("nodes.pages")}
       >
         <Button
@@ -137,6 +139,6 @@ export function NodesWorkspace({
         />
       )}
       {enroll && <NodeEnrollmentDialog close={() => setEnroll(false)} />}
-    </>
+    </section>
   );
 }

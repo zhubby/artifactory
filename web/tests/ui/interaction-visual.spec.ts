@@ -31,7 +31,7 @@ test("space switchers enter the last result on ArrowUp from search", async ({ pa
     await expect(search).toBeFocused();
     await search.press("ArrowUp");
     if (kind === "tenant") {
-      await expect(selector.getByRole("link", { name: "查看全部租户", exact: true })).toBeFocused();
+      await expect(selector.getByRole("link", { name: "查看全部工作空间", exact: true })).toBeFocused();
     } else {
       await expect(results).toHaveCount(0);
       await expect(search).toBeFocused();
@@ -180,7 +180,7 @@ test("320px settings topbars keep long scope names and navigation controls usabl
     expect(overlap).toBe(false);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await summary.click();
-    await expect(selector.getByRole("textbox", { name: "搜索租户", exact: true })).toBeFocused();
+    await expect(selector.getByRole("textbox", { name: "搜索工作空间", exact: true })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(summary).toBeFocused();
     await toggle.click();

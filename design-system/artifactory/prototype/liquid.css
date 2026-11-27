@@ -1,0 +1,348 @@
+/**
+ * [INPUT]: 依赖 Apple 材质分层、主题变量与 motion.js 的交互位置。
+ * [OUTPUT]: 提供单层导航光学、玻璃流光、悬停胶囊与辅助偏好。
+ * [POS]: 原型视觉材质；内容无背景折射，功能外壳响应交互。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+
+/* --- 功能材质；参数是 Web 调校值 --- */
+:root {
+  --ambient-blue:rgba(125,170,243,.25);
+  --ambient-apricot:rgba(242,191,160,.16);
+  --ambient-violet:rgba(168,146,229,.16);
+  --glass-top:rgba(255,255,255,.72);
+  --glass-bottom:rgba(230,241,255,.44);
+  --pearl-top:#ffffff;
+  --pearl-bottom:#edf3ff;
+  --liquid-edge:rgba(255,255,255,.8);
+  --liquid-highlight:rgba(255,255,255,.95);
+  --liquid-reflection:rgba(255,255,255,.62);
+  --liquid-control:rgba(255,255,255,.75);
+  --liquid-contact:rgba(38,50,70,.1);
+  --liquid-caustic:rgba(255,255,255,.86);
+  --liquid-hover-top:rgba(255,255,255,.82);
+  --liquid-hover-bottom:rgba(215,231,255,.38);
+  --liquid-duration:240ms;
+  --liquid-spring:cubic-bezier(.2,.85,.25,1);
+  --content-shadow:inset 0 1px 1px rgba(255,255,255,.95),0 18px 38px -27px rgba(41,70,126,.32),0 5px 12px -9px rgba(30,55,98,.16);
+}
+[data-theme=dark] {
+  --ambient-blue:rgba(70,112,200,.23);
+  --ambient-apricot:rgba(167,103,71,.12);
+  --ambient-violet:rgba(128,94,194,.18);
+  --glass-top:rgba(61,79,112,.68);
+  --glass-bottom:rgba(22,35,58,.54);
+  --pearl-top:#242e40;
+  --pearl-bottom:#1b2232;
+  --liquid-edge:rgba(218,231,255,.22);
+  --liquid-highlight:rgba(242,248,255,.48);
+  --liquid-reflection:rgba(218,230,255,.22);
+  --liquid-control:rgba(45,56,74,.85);
+  --liquid-contact:rgba(0,0,0,.3);
+  --liquid-caustic:rgba(225,239,255,.42);
+  --liquid-hover-top:rgba(148,179,225,.22);
+  --liquid-hover-bottom:rgba(71,103,156,.16);
+  --content-shadow:inset 0 1px 1px rgba(226,238,255,.12),0 20px 40px -26px rgba(0,0,0,.6),0 5px 12px -8px rgba(0,0,0,.35);
+}
+
+
+/* --- 内容层：稳定背景，不参加折射 --- */
+.content-surface {
+  position:relative;isolation:isolate;
+  background:linear-gradient(152deg,var(--pearl-top) 8%,var(--pearl-bottom) 100%);
+  border:1px solid var(--line);
+  border-radius:30px;
+  box-shadow:var(--content-shadow);
+}
+.hero-panel.content-surface { background:linear-gradient(122deg,var(--pearl-top) 35%,var(--pearl-bottom)); }
+.metric.content-surface { border-radius:28px; }
+.main:not(:has(.component-library)) .content-surface { border-radius:24px; }
+.project-card.content-surface:hover,.device-card.content-surface:hover {
+  border-color:color-mix(in srgb,var(--primary) 28%,var(--line));
+  box-shadow:var(--content-shadow),0 22px 40px -32px color-mix(in srgb,var(--primary) 42%,transparent);
+}
+.app-icon,.step-circle,.release-feature-icon,.activity-orb {
+  position:relative;background:var(--surface-hover);color:var(--text);
+  border:1px solid var(--line);box-shadow:none;
+}
+.app-icon::before,.release-feature-icon::before,.activity-orb::before { display:none; }
+.device-card .app-icon:not(.gray) {
+  color:var(--primary);background:linear-gradient(145deg,var(--pearl-top),var(--primary-soft));
+  border-color:color-mix(in srgb,var(--primary) 14%,var(--line));
+  box-shadow:inset 0 1px 1px var(--glass-inset),0 8px 16px -12px color-mix(in srgb,var(--primary) 45%,transparent);
+}
+.device-card.content-surface,.project-card.content-surface {
+  background:radial-gradient(ellipse at 100% 0%,color-mix(in srgb,var(--primary-soft) 64%,transparent),transparent 66%),linear-gradient(148deg,var(--pearl-top) 16%,var(--pearl-bottom));
+}
+.device-card .card-footer,.project-card-footer { border-top-color:var(--line);box-shadow:none; }
+
+/* --- Regular：导航、共享工具组与浮层 --- */
+.glass {
+  border-color:var(--liquid-edge);
+  background:radial-gradient(ellipse at 100% 100%,color-mix(in srgb,var(--primary-soft) 20%,transparent),transparent 62%),linear-gradient(160deg,var(--glass-top),var(--glass-bottom));
+  box-shadow:inset 0 1px 1px var(--glass-inset),inset 0 -1px 2px rgba(116,162,226,.13),var(--shadow);
+}
+.glass::before { opacity:.62; }
+.glass::after { height:18px;left:14%;right:14%;opacity:.95;border-top-color:var(--liquid-highlight); }
+.sidebar.glass { border-radius:30px; }
+/* --- 筛选条属于功能层；表格与数据卡不重复模糊 --- */
+.main:not(:has(.component-library)) .toolbar-panel {
+  background:linear-gradient(150deg,var(--glass-top),var(--glass-bottom));
+  border-color:var(--liquid-edge);
+  backdrop-filter:blur(var(--blur)) saturate(var(--saturate));
+  -webkit-backdrop-filter:blur(var(--blur)) saturate(var(--saturate));
+  box-shadow:inset 0 1px 1px var(--glass-inset),var(--shadow);
+}
+.toolbar-panel::after {
+  content:'';position:absolute;top:0;left:12%;right:12%;height:14px;
+  border-top:1px solid var(--liquid-highlight);border-radius:50%;pointer-events:none;
+}
+.topbar { position:sticky;top:16px;z-index:19;isolation:isolate; }
+/* 顶栏整壳承载光学，边缘用自身色散保持连续。 */
+.topbar.glass { border-radius:30px; }
+.topbar .search-trigger,.topbar .topbar-utilities {
+  background:transparent;border:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+.topbar .search-trigger::before,.topbar .search-trigger::after,.topbar .topbar-utilities::before,.topbar .topbar-utilities::after { display:none; }
+.topbar-tools { position:relative;gap:10px;padding:0; }
+.topbar-utilities { display:flex;align-items:center;gap:4px;padding:5px;border-radius:999px; }
+.topbar-tools .search-trigger { min-height:36px;padding:7px 10px;border-radius:999px; }
+.topbar-tools .icon-button,.topbar .mobile-menu { width:44px;height:44px;min-width:44px;min-height:44px;border-radius:50%; }
+.topbar-tools .docs-tool { display:inline-flex; }
+.topbar-tools .icon-button,.sidebar .workspace-switch {
+  background:transparent;border-color:transparent;box-shadow:none;backdrop-filter:none;
+}
+:where(.topbar-tools .search-trigger):hover { background:linear-gradient(160deg,var(--glass-top),var(--glass-bottom)); }
+.topbar-tools .icon-button:hover,.sidebar .workspace-switch:hover { background:var(--surface-hover); }
+.workspace-switch { border-radius:16px; }
+.liquid-surface { --pointer-x:50%;--pointer-y:0%; }
+.liquid-reflection {
+  position:absolute;inset:1px;z-index:-1;border-radius:inherit;pointer-events:none;opacity:.5;
+  background:radial-gradient(230px 110px at var(--pointer-x) var(--pointer-y),var(--liquid-reflection),transparent 75%),linear-gradient(145deg,rgba(255,255,255,.14),transparent 55%);
+  transition:opacity var(--liquid-duration) ease;
+}
+.liquid-pointer>.liquid-reflection { opacity:1; }
+/* --- 流光只移动内层，外层裁切不截断菜单与焦点 --- */
+.liquid-caustic {
+  position:absolute;inset:1px;z-index:-1;overflow:hidden;border-radius:inherit;
+  pointer-events:none;contain:paint;
+}
+.liquid-caustic-light {
+  position:absolute;inset:0;opacity:0;pointer-events:none;
+  background:linear-gradient(112deg,transparent 20%,rgba(179,215,255,.08) 31%,var(--liquid-caustic) 46%,rgba(255,232,211,.26) 48%,rgba(190,174,255,.12) 52%,transparent 66%);
+  mask-image:linear-gradient(transparent,rgba(0,0,0,.8) 10%,#000 55%,transparent);
+}
+.liquid-rimmed { --rim-angle:-35deg; }
+.liquid-rim {
+  position:absolute;inset:-1px;padding:1px;border-radius:inherit;pointer-events:none;z-index:3;
+  background:conic-gradient(from var(--rim-angle),transparent 0deg,rgba(255,255,255,.95) 25deg,rgba(166,209,255,.6) 40deg,transparent 80deg,transparent 180deg,rgba(255,230,208,.3) 210deg,transparent 245deg);
+  mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
+  mask-composite:exclude;-webkit-mask-composite:xor;
+  opacity:.38;transition:opacity 180ms ease;
+}
+.liquid-pointer>.liquid-rim { opacity:.88; }
+
+/* --- 控件：普通表面与有色主操作 --- */
+.btn,.icon-button,.workspace-switch,.search-trigger,.select summary {
+  position:relative;isolation:isolate;transition:background-color 150ms ease,border-color 150ms ease,color 150ms ease;
+}
+.btn { border-radius:999px;background:var(--surface-hover);border-color:var(--line);box-shadow:none; }
+.btn.small { border-radius:999px; }
+.btn:not(:disabled):hover { background:var(--surface-hover);border-color:var(--line-strong);box-shadow:none; }
+.btn.primary {
+  background:var(--primary);color:var(--on-primary);border-color:transparent;
+  background-image:radial-gradient(ellipse at 50% -45%,rgba(255,255,255,.32),transparent 68%),linear-gradient(165deg,rgba(255,255,255,.17),transparent 55%,rgba(0,0,0,.1));
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.78),inset 0 -2px 3px rgba(0,0,0,.14),0 8px 20px -10px color-mix(in srgb,var(--primary) 72%,transparent);
+}
+.btn.primary:hover { background-color:var(--primary);border-color:transparent;filter:brightness(1.04); }
+.main:not(:has(.component-library)) :is(.page-actions,.toolbar-panel)>.btn:not(.primary,.danger,.ghost) {
+  background:linear-gradient(160deg,var(--glass-top),var(--glass-bottom));border-color:var(--liquid-edge);
+  box-shadow:inset 0 1px 1px var(--glass-inset),inset 0 -1px 1px rgba(106,148,211,.12),0 6px 14px -11px var(--liquid-contact);
+}
+.btn.ghost { background:transparent;border-color:transparent;box-shadow:none; }
+.btn.ghost:hover { background:var(--surface-hover);border-color:transparent; }
+.btn.danger { background:var(--danger-bg);color:var(--danger);border-color:transparent; }
+.icon-button { border-radius:50%;background:transparent; }
+.icon-button:hover { background:var(--surface-hover); }
+.search-trigger kbd { background:transparent; }
+.input,textarea,.select summary { background:var(--surface-solid);box-shadow:none; }
+.select summary { border-radius:12px; }
+.select-options {
+  background:linear-gradient(145deg,color-mix(in srgb,var(--glass-top) 18%,transparent),transparent 65%),var(--liquid-control);border:1px solid var(--liquid-edge);border-radius:20px;padding:7px;
+  backdrop-filter:blur(var(--blur)) saturate(var(--saturate));
+  -webkit-backdrop-filter:blur(var(--blur)) saturate(var(--saturate));
+  box-shadow:inset 0 1px 1px var(--glass-inset),inset 0 -1px 2px rgba(116,162,226,.16),0 10px 22px -16px var(--liquid-contact),var(--shadow-high);
+}
+.select-options button { border-radius:13px;min-height:44px; }
+.input:focus,textarea:focus { box-shadow:0 0 0 4px color-mix(in srgb,var(--primary) 10%,transparent); }
+.check-card,.wizard-summary { background:var(--surface-solid);box-shadow:none; }
+.check-card:has(input:checked) { background:var(--primary-soft);box-shadow:none; }
+.liquid-ripple {
+  position:absolute;z-index:-1;border-radius:50%;pointer-events:none;transform-origin:center;
+  border:1px solid color-mix(in srgb,var(--liquid-highlight) 70%,transparent);
+  background:radial-gradient(circle,transparent 30%,rgba(170,207,255,.1) 46%,var(--liquid-reflection) 59%,rgba(255,255,255,.08) 65%,transparent 74%);
+  box-shadow:inset 0 0 9px rgba(255,255,255,.16),0 0 8px rgba(183,213,255,.15);
+}
+
+/* --- 选中层移动；共享容器不重复模糊 --- */
+.nav-scroll { position:relative; }
+.nav-scroll .nav-item { position:relative;z-index:1; }
+.nav-scroll:has(.glass-nav-indicator) .nav-item.active { background:transparent;box-shadow:none; }
+.nav-scroll:has(.glass-nav-indicator) .nav-item.active::before { display:none; }
+.glass-nav-indicator,.glass-tab-indicator {
+  position:absolute;top:0;left:0;z-index:0;pointer-events:none;border:1px solid var(--line);
+  border-radius:13px;background:linear-gradient(150deg,var(--pearl-top),var(--pearl-bottom));
+  box-shadow:inset 0 1px 1px var(--glass-inset),inset 0 -1px 1px rgba(124,165,230,.15),0 5px 12px -7px rgba(24,65,140,.3);
+}
+.tabs { position:relative;isolation:isolate;gap:4px;padding:5px;border:1px solid var(--line);border-radius:999px;background:var(--surface-hover);box-shadow:none; }
+.tab { position:relative;z-index:1;border-radius:999px;padding:10px 16px;border-bottom:0; }
+.tab.active { color:var(--text); }
+.tab:not(.active):hover { background:color-mix(in srgb,var(--surface-raised) 50%,transparent); }
+.glass-tab-indicator { border-radius:999px; }
+/* --- 临时悬停泡和持久选中层互不替代 --- */
+.glass-hover-indicator {
+  position:absolute;top:0;left:0;z-index:0;pointer-events:none;opacity:0;
+  border:1px solid var(--liquid-edge);border-radius:13px;
+  background:linear-gradient(155deg,var(--liquid-hover-top),var(--liquid-hover-bottom));
+  box-shadow:inset 0 1px 1px var(--glass-inset),inset 0 -1px 2px rgba(111,158,224,.16),0 5px 12px -8px var(--liquid-contact);
+  transform-origin:top left;
+}
+.glass-hover-indicator::after {
+  content:'';position:absolute;inset:0;padding:1px;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(125deg,rgba(203,229,255,.5),transparent 38%,rgba(255,222,197,.28) 85%,rgba(209,190,255,.3));
+  mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude;-webkit-mask-composite:xor;
+}
+.tabs>.glass-hover-indicator { border-radius:999px; }
+.topbar-utilities>.glass-hover-indicator { border-radius:50%; }
+.topbar-utilities>.icon-button { position:relative;z-index:1; }
+.nav-scroll:has(>.glass-hover-indicator) .nav-item:not(.active):hover,
+.tabs:has(>.glass-hover-indicator) .tab:not(.active):hover,
+.topbar-utilities:has(>.glass-hover-indicator)>.icon-button:hover { background:transparent; }
+.progress-track { background:var(--surface-hover);box-shadow:none; }
+.progress-track>span { background:var(--primary);box-shadow:none; }
+
+/* --- 临时层，任务越重，背景越实 --- */
+.dialog.glass { background:linear-gradient(145deg,color-mix(in srgb,var(--pearl-top) 96%,transparent),color-mix(in srgb,var(--pearl-bottom) 92%,transparent));border-radius:30px;box-shadow:inset 0 1px 1px var(--glass-inset),var(--shadow-high); }
+.dialog.glass::before { opacity:.56; }
+.dialog.glass::after { opacity:.85; }
+.dialog .liquid-reflection { display:none; }
+.dialog-header { padding:26px 28px 20px; }
+.dialog-footer { padding:18px 28px; }
+.notify-message { border-radius:999px;background:var(--surface-solid);box-shadow:var(--shadow); }
+.drawer.dialog { border-radius:30px; }
+
+/* --- 主题立即更新，玻璃环只提供不中断操作的空间反馈 --- */
+.theme-wave {
+  position:fixed;z-index:110;pointer-events:none;border-radius:50%;opacity:0;
+  background:radial-gradient(circle,transparent 60%,rgba(169,204,255,.035) 63%,rgba(196,220,255,.16) 66%,var(--liquid-caustic) 68%,rgba(230,200,255,.14) 68.3%,transparent 70%);
+  mask-image:radial-gradient(circle,#000 67%,rgba(0,0,0,.45) 69%,transparent 71%);
+  transform-origin:center;contain:paint;
+}
+
+/* --- 偏好与小屏 --- */
+@media(max-width:1023px) {
+  .sidebar.glass { width:min(304px,calc(100% - 32px)); }
+  .topbar { top:12px; }
+  .topbar-tools .search-trigger { min-height:44px; }
+}
+@media(max-width:767px) {
+  .topbar { top:8px;padding:0 8px;gap:4px; }
+  .topbar.glass { border-radius:24px; }
+  .topbar-tools { gap:8px;padding:0; }
+  .topbar-utilities { gap:0;padding:3px; }
+  .topbar-tools .docs-tool { display:none; }
+  .topbar-tools .icon-button { width:44px;height:44px;min-width:44px;min-height:44px;padding:8px; }
+  .topbar-tools .search-trigger { width:44px;height:44px;min-width:44px;min-height:44px;padding:12px; }
+  .breadcrumbs { font-size:12px;gap:4px; }
+  .breadcrumbs>strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px; }
+  .tabs { gap:2px;padding:4px; }
+  .tab { padding:10px 13px;font-size:14px; }
+  .dialog.glass { border-radius:28px;background:var(--surface-solid); }
+  .drawer.dialog { margin:8px;width:calc(100% - 16px);height:calc(100dvh - 16px);max-height:calc(100dvh - 16px);border-radius:28px; }
+  .drawer-backdrop { padding:0; }
+  .dialog-header { padding:24px 24px 18px; }
+  .dialog-body { padding:20px 24px; }
+}
+[data-transparency=reduce] :is(.glass,.select-options,.art-node) { background:var(--surface-solid);backdrop-filter:none;-webkit-backdrop-filter:none; }
+[data-transparency=reduce] :is(.liquid-rim,.liquid-reflection,.liquid-caustic,.glass-hover-indicator,.liquid-ripple,.theme-wave) { display:none; }
+@media(prefers-reduced-transparency:reduce) {
+  :is(.glass,.select-options,.art-node) { background:var(--surface-solid);backdrop-filter:none;-webkit-backdrop-filter:none; }
+  :is(.liquid-rim,.liquid-reflection,.liquid-caustic,.glass-hover-indicator,.liquid-ripple,.theme-wave) { display:none; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .liquid-surface,.liquid-reflection,.liquid-rim { transition:none; }
+  .liquid-caustic,.glass-hover-indicator,.liquid-ripple,.theme-wave { display:none; }
+}
+@media(prefers-contrast:more) {
+  .glass,.select-options,.art-node { background:var(--surface-solid);border-color:var(--text);backdrop-filter:none;-webkit-backdrop-filter:none; }
+  .content-surface,.btn,.input,.select summary { border-color:var(--text); }
+  .liquid-rim,.liquid-reflection,.liquid-caustic,.glass-hover-indicator,.liquid-ripple,.theme-wave,.glass::before,.glass::after { display:none; }
+}
+@media(forced-colors:active) {
+  .glass,.content-surface,.select-options,.art-node { background:Canvas;border:1px solid CanvasText;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none; }
+  .liquid-rim,.liquid-reflection,.liquid-caustic,.glass-hover-indicator,.liquid-ripple,.theme-wave,.glass::before,.glass::after { display:none; }
+  .glass-nav-indicator,.glass-tab-indicator { background:Highlight; }
+  .nav-item.active,.tab.active { color:HighlightText; }
+  .btn.primary { background:Highlight;color:HighlightText; }
+}
+
+[data-contrast=more] :is(.glass,.select-options,.art-node) { background:var(--surface-solid);border-color:var(--text);backdrop-filter:none;-webkit-backdrop-filter:none; }
+[data-contrast=more] :is(.content-surface,.btn,.input,.select summary) { border-color:var(--text); }
+[data-contrast=more] :is(.liquid-rim,.liquid-reflection,.liquid-caustic,.glass-hover-indicator,.liquid-ripple,.theme-wave,.glass::before,.glass::after) { display:none; }
+
+/* --- 长内容滚动不遮挡焦点 --- */
+.content-surface .table-wrap { scroll-padding:16px; }
+.content-surface th { position:relative;padding-block:15px;background:var(--surface-solid); }
+.content-surface td { padding-block:18px; }
+
+/* --- 材质层级在规范页可直接评审 --- */
+.material-hierarchy { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px; }
+.material-hierarchy>div { border-top:1px solid var(--line);padding-top:20px; }
+.hierarchy-layer { font:11px var(--font-mono);color:var(--muted); }
+.material-hierarchy h3 { margin:12px 0 10px;font-size:18px; }
+.material-hierarchy p { font-size:14px;line-height:1.8; }
+@media(max-width:767px) { .material-hierarchy { grid-template-columns:1fr;gap:22px; } .apple-principles .section-heading { flex-wrap:wrap; } }
+@supports not (backdrop-filter:blur(10px)) { .glass,.select-options { background:var(--surface-solid); } }
+
+/* --- 触摸目标覆盖平板与粗指针；组件展厅自有尺寸 --- */
+@media(max-width:1023px),(any-pointer:coarse) {
+  .sidebar .nav-item,.sidebar .workspace-switch,.sidebar-footer { min-height:44px; }
+  .main:not(:has(.component-library)) :is(.btn,.select summary,.tab) { min-height:44px; }
+  .main:not(:has(.component-library)) .icon-button { min-width:44px;min-height:44px; }
+}
+
+/* --- 遮罩保留语义遮蔽，辅助偏好关闭全部背景滤镜 --- */
+[data-transparency=reduce] .overlay-backdrop,[data-contrast=more] .overlay-backdrop { backdrop-filter:none;-webkit-backdrop-filter:none; }
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more),(forced-colors:active) {
+  .overlay-backdrop { backdrop-filter:none;-webkit-backdrop-filter:none; }
+}
+@media(prefers-contrast:more),(forced-colors:active) { .art-node { box-shadow:none; } }
+[data-contrast=more] .art-node { box-shadow:none; }
+
+/* --- 辅助偏好关闭功能层光学；渐隐保留全宽边界 --- */
+[data-transparency=reduce] .toolbar-panel,
+[data-contrast=more] .toolbar-panel {
+  background:var(--surface-solid);backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+[data-transparency=reduce] .main:not(:has(.component-library)) .toolbar-panel,
+[data-contrast=more] .main:not(:has(.component-library)) .toolbar-panel {
+  background:var(--surface-solid);backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+[data-transparency=reduce] .toolbar-panel::after,[data-contrast=more] .toolbar-panel::after { display:none; }
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more),(forced-colors:active) {
+  .main:not(:has(.component-library)) .toolbar-panel { background:var(--surface-solid);backdrop-filter:none;-webkit-backdrop-filter:none; }
+  .toolbar-panel::after { display:none; }
+}
+@media(forced-colors:active) { .toolbar-panel { background:Canvas;box-shadow:none; } }
+
+/* --- 次级操作的镜面也遵守独立材质偏好 --- */
+[data-transparency=reduce] .main:not(:has(.component-library)) :is(.page-actions,.toolbar-panel)>.btn:not(.primary,.danger,.ghost),
+[data-contrast=more] .main:not(:has(.component-library)) :is(.page-actions,.toolbar-panel)>.btn:not(.primary,.danger,.ghost) {
+  background:var(--surface-hover);border-color:var(--line-strong);box-shadow:none;
+}
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more) {
+  .main:not(:has(.component-library)) :is(.page-actions,.toolbar-panel)>.btn:not(.primary,.danger,.ghost) { background:var(--surface-hover);border-color:var(--line-strong);box-shadow:none; }
+}
+@media(forced-colors:active) {
+  .main:not(:has(.component-library)) :is(.page-actions,.toolbar-panel)>.btn:not(.primary,.danger,.ghost) { background:ButtonFace;border-color:ButtonText;box-shadow:none; }
+}

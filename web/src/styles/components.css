@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 tokens.css 的语义变量。
- * [OUTPUT]: 提供内容标题、标题星标、筛选、表格与骨架样式。
+ * [OUTPUT]: 提供内容标题、标题星标、筛选、表格滚动焦点与骨架样式。
  * [POS]: 业务组件共享的视觉基础。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -29,6 +29,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--foreground); w
 .form-stack { display: grid; gap: 20px; }
 .form-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--border); padding-top: 16px; margin-top: 4px; }
 .table-scroll { min-width: 0; max-width: 100%; overflow: auto; }
+.table-scroll:focus-visible { outline-offset: -3px; }
 table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
 th { height: 36px; padding: 8px 16px; color: var(--muted-foreground); background: var(--table-header); font-size: 11px; font-weight: 500; white-space: nowrap; }
 td { height: 52px; padding: 10px 16px; border-top: 1px solid var(--table-border); vertical-align: middle; }

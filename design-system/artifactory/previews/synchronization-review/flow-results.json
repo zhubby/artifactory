@@ -1,0 +1,438 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "build-process",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "build-execution",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "build-plan",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "build-audit",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "build-artifacts",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "build-tab-keyboard",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "execution-older-retention",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "execution-failed-attempt",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "execution-step-retention",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "plan-history-platform",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "clarification-draft",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "audit-pagination-inspector",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "historical-scope",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "release-invalid-candidate",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "release-failed-frozen-retry",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "release-state-retention",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "wizard-four-step-review",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "console-errors",
+    "pass": true,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "build-process",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "build-execution",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "build-plan",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "build-audit",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "build-artifacts",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "build-tab-keyboard",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "execution-older-retention",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "execution-failed-attempt",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "execution-step-retention",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "plan-history-platform",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "clarification-draft",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "audit-pagination-inspector",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "historical-scope",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "release-invalid-candidate",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "release-failed-frozen-retry",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "release-state-retention",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "wizard-four-step-review",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "console-errors",
+    "pass": true,
+    "errors": []
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "build-process",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "build-execution",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "build-plan",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "build-audit",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "build-artifacts",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "build-tab-keyboard",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "execution-older-retention",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "execution-failed-attempt",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "execution-step-retention",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "plan-history-platform",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "clarification-draft",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "audit-pagination-inspector",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "historical-scope",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "release-invalid-candidate",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "release-failed-frozen-retry",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "release-state-retention",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "wizard-four-step-review",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "console-errors",
+    "pass": true,
+    "errors": []
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "build-process",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "build-execution",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "build-plan",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "build-audit",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "build-artifacts",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "build-tab-keyboard",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "execution-older-retention",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "execution-failed-attempt",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "execution-step-retention",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "plan-history-platform",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "clarification-draft",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "audit-pagination-inspector",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "historical-scope",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "release-invalid-candidate",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "release-failed-frozen-retry",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "release-state-retention",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "wizard-four-step-review",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "console-errors",
+    "pass": true,
+    "errors": []
+  }
+]

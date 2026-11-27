@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖租户 API、全局错误通知、项目路由及 UI 词条。
- * [OUTPUT]: 分别提供顶栏租户切换器与侧栏项目切换器。
- * [POS]: 切换器只选择工作范围；项目列表切换保留栏目，其他页面回到项目概览。
+ * [OUTPUT]: 提供顶栏工作空间与侧栏项目切换器，按视口约束菜单。
+ * [POS]: 工作空间进入项目目录；项目切换保留栏目或返回项目概览。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -22,6 +22,14 @@ import { useUI } from "@/components/providers";
 import type { Tenant, Project } from "@/lib/types";
 import { ErrorBox } from "@/components/common";
 
+function fitSelectorMenu(selector: HTMLDetailsElement | null) {
+  if (!selector?.open) return;
+  const menu = selector.querySelector<HTMLElement>(".space-selector-menu");
+  if (!menu) return;
+  const available = window.innerHeight - menu.getBoundingClientRect().top - 16;
+  menu.style.setProperty("--space-menu-height", `${Math.max(0, available)}px`);
+}
+
 function Selector({
   kind,
   label,
@@ -37,6 +45,7 @@ function Selector({
   const input = useRef<HTMLInputElement>(null);
   const focusFrame = useRef(0);
   useEffect(() => {
+    const fit = () => fitSelectorMenu(ref.current);
     const outside = (event: PointerEvent) => {
       if (
         !ref.current?.contains(event.target as globalThis.Node) &&
@@ -45,8 +54,14 @@ function Selector({
         ref.current.open = false;
     };
     document.addEventListener("pointerdown", outside);
+    window.addEventListener("resize", fit);
+    const resize = new ResizeObserver(fit);
+    if (ref.current) resize.observe(ref.current);
+    void document.fonts.ready.then(fit);
     return () => {
       document.removeEventListener("pointerdown", outside);
+      window.removeEventListener("resize", fit);
+      resize.disconnect();
       cancelAnimationFrame(focusFrame.current);
     };
   }, []);
@@ -58,6 +73,7 @@ function Selector({
       onToggle={(event) => {
         cancelAnimationFrame(focusFrame.current);
         if (event.currentTarget.open) {
+          fitSelectorMenu(event.currentTarget);
           document
             .querySelectorAll<HTMLDetailsElement>(".space-selector[open]")
             .forEach((other) => {
@@ -165,7 +181,7 @@ export function TenantSwitcher({ tenant }: { tenant: Tenant }) {
               .map((item) => (
                 <Link
                   key={item.id}
-                  href={`/tenants/${item.slug}`}
+                  href={`/tenants/${item.slug}/projects`}
                   className="space-option"
                   aria-current={item.id === tenant.id ? "true" : undefined}
                 >

@@ -1,0 +1,30 @@
+/*
+ * [INPUT]: 依赖项目列表结构、Standard 内容和 Regular 工具材质。
+ * [OUTPUT]: 定义范围交付列表、文件换行和窄屏工具布局。
+ * [POS]: 仅修饰项目构建与制品页面，不影响概念聚合和组件展厅。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.ep-delivery-page{display:grid;gap:20px;min-width:0}
+.ep-delivery-page>.page-heading,.ep-delivery-page>.ep-back-link{margin-bottom:0}
+.ep-delivery-toolbar{display:flex;align-items:center;gap:12px;min-width:0;padding:12px 14px;position:relative;z-index:8}
+.ep-delivery-toolbar>.search-field{flex:1;min-width:160px;max-width:none}
+.ep-delivery-toolbar>.select{flex-shrink:0}
+.ep-delivery-toolbar>[role=status]{flex-shrink:0;padding-inline:4px}
+.ep-delivery-table{margin-block:4px}
+.ep-delivery-table table{min-width:760px}
+.ep-delivery-table th{white-space:nowrap}
+.ep-delivery-table td{vertical-align:middle}
+.ep-delivery-table td:first-child{min-width:200px}
+.ep-delivery-table .row{white-space:nowrap}
+.ep-delivery-filename{max-width:100%;border:0;padding:0;background:none;font:inherit;text-align:left;overflow-wrap:anywhere;word-break:break-word;line-height:1.5;cursor:pointer}
+.ep-delivery-caption{font-size:12px;line-height:1.65;color:var(--muted);margin:0;overflow-wrap:anywhere}
+.ep-delivery-page .panel>.ep-delivery-caption{margin-top:16px}
+@media(max-width:780px){
+ .ep-delivery-toolbar{flex-wrap:wrap;gap:10px}
+ .ep-delivery-toolbar>.search-field{flex-basis:100%;min-width:0}
+ .ep-delivery-toolbar>.select{flex:1;min-width:0}
+ .ep-delivery-toolbar .select summary{min-width:0;justify-content:space-between}
+ .ep-delivery-table table{min-width:700px}
+ .ep-delivery-table :is(.text-link,.btn){min-height:44px}
+ .ep-delivery-page{gap:16px}
+}

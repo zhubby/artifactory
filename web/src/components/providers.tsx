@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖服务端语言、系统动效偏好、主题、账户、前台进度和全局通知。
- * [OUTPUT]: 提供本地化、主题、动画状态、顶部进度与通知出口。
+ * [INPUT]: 依赖服务端语言、系统偏好、主题、账户、Prism 交互和反馈。
+ * [OUTPUT]: 提供本地化、主题、玻璃交互、顶部进度与通知出口。
  * [POS]: 根布局的客户端上下文边界；动效仅适配系统设置，不读取浏览器动效开关。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -26,6 +26,7 @@ import {
 import { date as formatDate } from "@/lib/utils";
 import { AccountProvider } from "@/components/account";
 import { Notifications } from "@/components/notifications";
+import { PrismInteractions } from "@/components/prism-interactions";
 import { TopProgress } from "@/components/top-progress";
 
 const PreferencesContext = createContext<{
@@ -99,6 +100,7 @@ export function Providers({
           timeZone="UTC"
         >
           <AccountProvider>{children}</AccountProvider>
+          <PrismInteractions />
           <TopProgress />
           <Notifications />
         </NextIntlClientProvider>

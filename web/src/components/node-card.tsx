@@ -1,12 +1,12 @@
 /**
  * [INPUT]: 依赖节点快照、身份摘要、状态组件及 UI 词条。
  * [OUTPUT]: 提供 NodeCard 与节点状态格式函数。
- * [POS]: 设备列表资源行；名称、身份与硬件直接消费列表快照。
+ * [POS]: Standard 设备卡；身份、硬件与容量只消费列表快照。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 
-import { ArrowUpRight, Layers3, Monitor } from "lucide-react";
+import { Apple, ArrowUpRight, Layers3, Monitor, Terminal } from "lucide-react";
 import { Status } from "@/components/common";
 import { useUI } from "@/components/providers";
 import { Button } from "@/components/ui/button";
@@ -22,9 +22,10 @@ export function NodeCard({ node, onDetails }: { node: Node; onDetails: () => voi
   const hostname = nodeHostname(node);
   const identity = [hostname && hostname !== node.name ? hostname : undefined, `${nodePlatform(node.os)} / ${node.arch}`, node.id.slice(0, 8)].filter(Boolean).join(" · ");
   const hardware = nodeHardware(node);
-  return <article className="node-card" aria-label={node.name}>
+  const PlatformIcon = node.os === "darwin" ? Apple : node.os === "linux" ? Terminal : Monitor;
+  return <article className="node-card" aria-label={node.name} data-node-platform={node.os}>
     <div className="node-identity">
-      <span className="node-icon"><Monitor size={17} aria-hidden="true" /></span>
+      <span className="node-icon"><PlatformIcon size={23} aria-hidden="true" /></span>
       <div className="min-w-0">
         <h2 className="truncate text-sm font-medium" title={node.name}>{node.name}</h2>
         <p className="node-identity-line mt-1 font-mono text-[11px] text-muted-foreground" title={identity}>{identity}</p>
@@ -39,10 +40,10 @@ export function NodeCard({ node, onDetails }: { node: Node; onDetails: () => voi
       <div className="mb-2 flex justify-between gap-2 text-[11px] text-muted-foreground">
         <span>{t("nodes.capacity")}</span><span className="font-mono tabular-nums">{number(node.active_jobs)} / {number(node.slots)}</span>
       </div>
-      <div className="node-capacity-track" role="meter" aria-label={t("nodes.capacity")}
+      <div className="node-capacity-track" data-empty={node.active_jobs === 0 || undefined} role="meter" aria-label={t("nodes.capacity")}
         aria-valuemin={0} aria-valuemax={Math.max(node.slots, node.active_jobs, 1)} aria-valuenow={node.active_jobs}
         aria-valuetext={t("nodes.capacityValue", { used: node.active_jobs, total: node.slots })}>
-        <div className="h-full bg-primary" style={{ width: utilization + "%" }} />
+        <div className="node-capacity-fill" style={{ width: utilization + "%" }} />
       </div>
     </div>
     <Button variant="ghost" size="sm" onClick={onDetails} aria-label={t("nodes.viewNamed", { name: node.name })}>

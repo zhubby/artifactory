@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖工作区权限、项目详情、路由切换和可控延迟响应。
+ * [INPUT]: 依赖工作空间权限、项目详情、路由切换和可控延迟响应。
  * [OUTPUT]: 验证侧栏首读骨架、失败重试、范围隔离和静默轮询。
  * [POS]: 授权完成前的导航边界；不替代服务端权限验收。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md

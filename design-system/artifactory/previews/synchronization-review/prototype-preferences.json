@@ -1,0 +1,290 @@
+[
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "regular-blur",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "standard-no-blur",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "no-idle-loops",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "motion-keeps-glass",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "transparency-opaque",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "transparency-hides-optics",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "contrast-opaque",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "forced-colors-no-shadow",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "bar-equal-bounded-radius",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "gradient-user-space",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "chart-layout",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "200pct-reflow",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 1440,
+    "name": "pageerror",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 375,
+    "name": "regular-blur",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 375,
+    "name": "standard-no-blur",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 375,
+    "name": "motion-keeps-glass",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 375,
+    "name": "transparency-opaque",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 375,
+    "name": "transparency-hides-optics",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 375,
+    "name": "contrast-opaque",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 375,
+    "name": "forced-colors-no-shadow",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 375,
+    "name": "bar-equal-bounded-radius",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 375,
+    "name": "gradient-user-space",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 375,
+    "name": "chart-layout",
+    "pass": true
+  },
+  {
+    "theme": "light",
+    "width": 375,
+    "name": "pageerror",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "regular-blur",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "standard-no-blur",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "no-idle-loops",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "motion-keeps-glass",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "transparency-opaque",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "transparency-hides-optics",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "contrast-opaque",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "forced-colors-no-shadow",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "bar-equal-bounded-radius",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "gradient-user-space",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "chart-layout",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "200pct-reflow",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "name": "pageerror",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 375,
+    "name": "regular-blur",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 375,
+    "name": "standard-no-blur",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 375,
+    "name": "motion-keeps-glass",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 375,
+    "name": "transparency-opaque",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 375,
+    "name": "transparency-hides-optics",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 375,
+    "name": "contrast-opaque",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 375,
+    "name": "forced-colors-no-shadow",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 375,
+    "name": "bar-equal-bounded-radius",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 375,
+    "name": "gradient-user-space",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 375,
+    "name": "chart-layout",
+    "pass": true
+  },
+  {
+    "theme": "dark",
+    "width": 375,
+    "name": "pageerror",
+    "pass": true
+  }
+]

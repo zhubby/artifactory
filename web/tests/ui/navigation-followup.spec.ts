@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖账户单实例宿主、项目关注首读和响应式工作区夹具。
+ * [INPUT]: 依赖账户单实例宿主、项目关注首读和响应式工作空间夹具。
  * [OUTPUT]: 验证断点焦点与账户草稿保留、关注读取恢复、404边界和明暗截图。
  * [POS]: 导航审查的边界回归；截图由主任务统一浏览器运行生成。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md

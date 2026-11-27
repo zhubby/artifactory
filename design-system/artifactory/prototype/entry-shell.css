@@ -1,0 +1,46 @@
+/**
+ * [INPUT]: 依赖主题变量与 entry-shell.js 的范围导航。
+ * [OUTPUT]: 提供范围返回、单层头工具、业务控件和移动层级布局。
+ * [POS]: 约束工作空间和项目外壳；不改变正文材质。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.entry-scope-back{min-height:36px;margin:-4px 0 7px;padding:0 7px;font-size:11px;color:var(--muted);gap:7px}
+.workspace-switch>span:not(.avatar){flex:1;min-width:0}
+.workspace-switch strong,.workspace-switch small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.breadcrumbs{flex:1;overflow:hidden}
+.breadcrumbs>a{min-width:0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.breadcrumbs>span{flex:none;display:flex}
+.breadcrumbs>strong{flex:none;white-space:nowrap}
+.entry-header-tools{flex:none;min-width:0}
+.ea-tools .select summary{padding:8px 10px;min-height:40px;min-width:106px;border:0;background:none;font-size:12px}
+.ea-tools .select-options{min-width:120px}
+.ea-header{position:relative;z-index:12}
+.entry-header-account .avatar{width:28px;height:28px;font-size:12px;border-radius:50%}
+.entry-mobile-account{display:none}
+.entry-nav-close{position:absolute;right:10px;top:10px}
+.entry-account-header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:24px max(24px,calc((100vw - 1280px)/2));}
+.entry-account-header .brand{margin:0}
+.entry-account-main{max-width:1280px;margin:auto;padding:24px 32px 40px}
+.entry-settings-content{max-width:960px}
+.entry-prototype-tools{margin-top:8px}
+.entry-prototype-tools>summary{padding:10px;color:var(--muted);font-size:11px;cursor:pointer}
+.entry-prototype-tools .nav-item{font-size:12px}
+/* --- 业务控件使用共同尺寸；展厅保留独立标本尺寸 --- */
+body:not(:has(.component-library)) :is(.main,.dialog) .btn{min-height:36px;padding:6px 14px}
+body:not(:has(.component-library)) :is(.main,.dialog) .btn.small{min-height:32px;padding:4px 10px}
+body:not(:has(.component-library)) :is(.main,.dialog) .input{min-height:44px;padding-block:10px}
+body:not(:has(.component-library)) :is(.search-field .input,.toolbar-panel .select summary){min-height:40px;padding-block:8px}
+body:not(:has(.component-library)) .field .select summary{min-height:44px;padding-block:10px}
+@media(max-width:1023px),(any-pointer:coarse){body:not(:has(.component-library)) :is(.main,.dialog) :is(.btn,.btn.small,.input,.select summary){min-height:44px}body:not(:has(.component-library)) .search-field .input{min-height:44px}}
+@media(max-width:1023px){.entry-mobile-account{display:inline-flex}.sidebar .sidebar-footer{display:none}.entry-header-tools{gap:2px;padding:4px}.entry-header-tools .icon-button{width:40px;min-width:40px}.topbar-tools{gap:8px}}
+@media(max-width:600px){.entry-account-header{padding:18px 16px;gap:12px}.entry-account-header .brand{font-size:16px;gap:8px}.entry-account-header .brand sup{display:none}.entry-account-main{padding:20px 16px 32px}.entry-header-tools .icon-button{width:40px;min-width:40px}.topbar .breadcrumbs{min-width:0}.topbar .breadcrumbs>strong{max-width:54px}.topbar .topbar-tools{gap:4px}}
+[data-entry-scene] .glass{position:absolute;isolation:isolate}
+@media(max-width:600px){.breadcrumbs{gap:4px}.breadcrumbs>a{max-width:100px;font-size:11px}.breadcrumbs>.crumb-tenant+span{display:none}.breadcrumbs>strong{max-width:72px;overflow:hidden;text-overflow:ellipsis}.topbar-tools{flex:none}.entry-scope-back{min-height:44px}}
+
+/* --- 系统强制颜色使用系统语义，明暗偏好不覆盖系统前景 --- */
+@media(forced-colors:active){
+ :root:has(.ea-page,.et-page,.ep-directory,.ep-project){--text:CanvasText;--muted:CanvasText;--subtle:CanvasText;--bg:Canvas;--primary:LinkText;--on-primary:HighlightText;--primary-soft:Canvas;--surface:Canvas;--surface-solid:Canvas;--surface-raised:Canvas;--surface-hover:Canvas;--line:CanvasText;--line-strong:CanvasText;--success:CanvasText;--warning:CanvasText;--danger:CanvasText;--purple:CanvasText}
+ :is(.ea-page,.et-page,.ep-directory,.ep-project) .btn.primary{forced-color-adjust:none;background:Highlight;color:HighlightText}
+ :is(.ea-page,.et-page,.ep-directory,.ep-project) .btn.primary>*{forced-color-adjust:none;background:transparent;color:inherit}
+ .ea-brand img,.ea-core>img{filter:none}
+}

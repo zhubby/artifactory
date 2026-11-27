@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖 Playwright、租户入口和确定性 API 夹具。
- * [OUTPUT]: 验证会话检查、租户卡片、HTTP 创建入口和失败重试。
- * [POS]: 租户大厅的交互与响应式回归入口。
+ * [INPUT]: 依赖 Playwright、工作空间入口和确定性 API 夹具。
+ * [OUTPUT]: 验证会话检查、工作空间卡片、HTTP 创建入口和失败重试。
+ * [POS]: 工作空间大厅的交互与响应式回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { expect, test } from "@playwright/test";
@@ -48,11 +48,11 @@ test("the home entry offers retry when the session check fails", async ({ page }
   await expect(page.locator(".tenant-hall")).toHaveCount(0);
   accountAvailable = true;
   await retry.click();
-  await expect(page.getByRole("heading", { name: "你好，Alex", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "选择工作空间", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Build Team", exact: true })).toBeVisible();
 });
 
-for (const entry of ["hall-heading", "hall-empty"]) {
+for (const entry of ["ph-hero"]) {
   test(`${entry}: tenant creation works on an ordinary HTTP origin and keeps retries idempotent`, async ({ page, context, baseURL }) => {
     const origin = "http://artifactory-http.test";
     await context.route(`${origin}/**`, async route => {
@@ -70,15 +70,15 @@ for (const entry of ["hall-heading", "hall-empty"]) {
     await page.goto(`${origin}/tenants`);
     expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
     expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe("undefined");
-    await page.locator(`.${entry}`).getByRole("button", { name: "创建租户", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "创建租户", exact: true });
+    await page.locator(`.${entry}`).getByRole("button", { name: "创建工作空间", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "创建工作空间", exact: true });
     await expect(dialog).toBeVisible();
-    await dialog.getByRole("textbox", { name: "租户名称", exact: true }).fill("HTTP Team");
-    await dialog.getByRole("button", { name: "创建租户", exact: true }).click();
+    await dialog.getByRole("textbox", { name: "工作空间名称", exact: true }).fill("HTTP Team");
+    await dialog.getByRole("button", { name: "创建工作空间", exact: true }).click();
     await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("无法连接服务");
     await expect(dialog.getByRole("textbox")).toHaveValue("HTTP Team");
-    await dialog.getByRole("button", { name: "创建租户", exact: true }).click();
-    await expect(page).toHaveURL(`${origin}/tenants/${tenantSlug}`);
+    await dialog.getByRole("button", { name: "创建工作空间", exact: true }).click();
+    await expect(page).toHaveURL(`${origin}/tenants/${tenantSlug}/projects`);
     expect(keys).toHaveLength(2);
     expect(keys[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(keys[1]).toBe(keys[0]);
@@ -94,7 +94,7 @@ test("tenant hall uses compact responsive cards and keeps management independent
     error: null, created_at: "2026-11-20T00:00:00Z", updated_at: "2026-11-20T00:00:00Z",
   }] }));
   await page.goto("/tenants");
-  const cards = page.locator(".tenant-card");
+  const cards = page.locator(".ph-workspace-card");
   await expect(cards).toHaveCount(2);
   await expect(page.getByRole("heading", { name: "操作进度", exact: true })).toHaveCount(0);
   await expect(page.getByText("removed-workspace", { exact: true })).toHaveCount(0);
@@ -107,9 +107,9 @@ test("tenant hall uses compact responsive cards and keeps management independent
     expect(Math.abs(first.x - second.x)).toBeLessThan(2);
     expect(second.y).toBeGreaterThanOrEqual(first.y + first.height);
   }
-  await expect(page.getByRole("link", { name: "管理租户 Build Team", exact: true })).toHaveAttribute("href", `/tenants/${tenantSlug}/settings`);
-  await expect(cards.nth(1).getByRole("link")).toHaveCount(1);
-  const search = page.getByRole("textbox", { name: "搜索租户", exact: true });
+  await expect(page.getByRole("link", { name: "管理工作空间 Build Team", exact: true })).toHaveAttribute("href", `/tenants/${tenantSlug}/settings`);
+  await expect(cards.nth(1).getByRole("link")).toHaveCount(2);
+  const search = page.getByRole("searchbox", { name: "搜索工作空间", exact: true });
   await search.fill("BETA-LIBRARY");
   await expect(cards).toHaveCount(1);
   await expect(page.getByRole("link", { name: tenants[1].name, exact: true })).toBeVisible();
@@ -118,10 +118,10 @@ test("tenant hall uses compact responsive cards and keeps management independent
   await search.clear();
   await expect(cards).toHaveCount(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await page.getByRole("heading", { name: "选择租户", exact: true }).click();
+  await page.getByRole("heading", { name: "选择工作空间", exact: true }).click();
   await page.screenshot({ path: info.outputPath("tenant-hall-cards.png"), fullPage: true });
   await cards.first().click({ position: { x: 10, y: 10 } });
-  await expect(page).toHaveURL(tenantURL("/"));
+  await expect(page).toHaveURL(tenantURL("/projects"));
 });
 
 test("tenant hall ends the initial skeleton on failure and offers retry", async ({ page }) => {

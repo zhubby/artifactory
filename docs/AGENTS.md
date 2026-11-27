@@ -15,7 +15,7 @@ api.md: 定义HTTP输入、节点池、有限操作、构建过程和项目权�
 artifactory-rename-2026-11-11.md: 记录产品命名迁移。
 signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。
 configuration.md: 定义任务执行计划的结构与限制。
-design-system.md: 定义中性色、顶栏工具、正文动作、关注星标与导航骨架。
+design-system.md: 定义 Prism 材质、工作空间层级、真实交互与辅助偏好合同。
 direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、启动等待和故障依赖隔离的验证边界。
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义信任源、管理员升级、真实进度、冻结续签与保留身份的启动器维护。

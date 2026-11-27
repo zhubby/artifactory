@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖账户、租户 API、共享幂等键、表单与通知。
- * [OUTPUT]: 提供租户选择、创建、邀请和共享顶栏工具。
- * [POS]: 会话确认后显示租户大厅；会话和租户列表读取失败可分别重试。
+ * [OUTPUT]: 提供 Prism 工作空间目录、创建与邀请入口。
+ * [POS]: 账户入口展示真实工作空间；进入空间后直接显示项目。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -13,14 +13,17 @@ import { useAccount } from "@/components/account";
 import { BrandMark } from "@/components/brand-mark";
 import { Modal } from "@/components/ui/dialog";
 import { Status } from "@/components/common";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ArrowRight,
-  ArrowUpRight,
+  Box,
   Building2,
+  GitBranch,
+  Layers3,
   Plus,
   Search,
   Settings2,
+  X,
 } from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";
 import { useUI } from "@/components/providers";
@@ -34,6 +37,36 @@ import { notify } from "@/lib/notify";
 import { createIdempotencyKey } from "@/lib/idempotency";
 import type { Account, Tenant } from "@/lib/types";
 
+function DeliveryScene() {
+  return (
+    <div className="ph-scene" aria-hidden="true">
+      <span className="ph-scene-aura" />
+      <span className="ph-scene-orbit ph-orbit-back" />
+      <span className="ph-scene-orbit ph-orbit-front" />
+      <span className="ph-scene-floor" />
+      <div className="ph-scene-pane ph-pane-back ph-glass">
+        <GitBranch size={25} strokeWidth={1.5} />
+        <span className="ph-code-line" />
+        <span className="ph-code-line" />
+        <span className="ph-code-line" />
+      </div>
+      <div className="ph-scene-pane ph-pane-front ph-glass">
+        <BrandMark />
+        <span className="ph-pane-caption">ARTIFACTORY</span>
+      </div>
+      <span className="ph-scene-node ph-node-box ph-glass">
+        <Box size={25} strokeWidth={1.5} />
+      </span>
+      <span className="ph-scene-node ph-node-layers ph-glass">
+        <Layers3 size={25} strokeWidth={1.5} />
+      </span>
+      <span className="ph-scene-caption">
+        SOURCE<i />BUILD<i />DELIVER
+      </span>
+    </div>
+  );
+}
+
 export function TenantChooser() {
   const { t } = useUI();
   const account = useAccount();
@@ -41,19 +74,22 @@ export function TenantChooser() {
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [key, setKey] = useState("");
+  const search = useRef<HTMLInputElement>(null);
   const filtered = tenants.data?.filter((tenant) =>
     `${tenant.name} ${tenant.slug}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
   if (!account.data) {
     return (
-      <main className="hall-main">
-        <ErrorBox message={account.error} />
-        {account.error ? (
-          <Button variant="secondary" onClick={() => void account.reload()}>
-            {t("common.retry")}
-          </Button>
-        ) : <Loading variant="detail" />}
-      </main>
+      <div className="authenticated-spaces prism-hall">
+        <main className="hall-main ph-session-loading">
+          <ErrorBox message={account.error} />
+          {account.error ? (
+            <Button variant="secondary" onClick={() => void account.reload()}>
+              {t("common.retry")}
+            </Button>
+          ) : <Loading variant="detail" />}
+        </main>
+      </div>
     );
   }
 
@@ -61,8 +97,15 @@ export function TenantChooser() {
     setKey(createIdempotencyKey());
     setCreating(true);
   }
+  function clearSearch() {
+    setQuery("");
+    search.current?.focus();
+  }
   return (
-    <div className="tenant-hall">
+    <div className="tenant-hall prism-hall">
+      <a className="ph-skip" href="#workspace-directory">
+        {t("prismSpace.skipToSpaces")}
+      </a>
       <header className="hall-header">
         <Link href="/tenants" className="brand">
           <span className="brand-mark">
@@ -73,41 +116,71 @@ export function TenantChooser() {
         <HeaderTools notification={<NotificationBell />} />
       </header>
       <main className="hall-main">
-        <div className="hall-heading">
-          <div>
-            <p className="eyebrow">{t("workspace.tenantHall")}</p>
-            <h1>
-              {t("workspace.welcome", {
-                name: account.data.display_name,
-              })}
+        <section className="ph-hero" aria-labelledby="workspace-hall-title">
+          <div className="ph-hero-copy">
+            <p className="ph-eyebrow">
+              <span aria-hidden="true" />
+              {t("workspace.welcome", { name: account.data.display_name })}
+            </p>
+            <h1 id="workspace-hall-title">
+              {t("prismSpace.heroLineOne")}<br />
+              <span>{t("prismSpace.heroLineTwo")}</span>
             </h1>
-            <p>{t("workspace.hallDescription")}</p>
+            <p className="ph-hero-description">{t("prismSpace.description")}</p>
+            <Button className="ph-create-button" onClick={beginCreate}>
+              <Plus aria-hidden="true" />
+              {t("tenants.create")}
+            </Button>
+            <p className="ph-hero-note">{t("prismSpace.hierarchy")}</p>
           </div>
-          <Button onClick={beginCreate}>
-            <Plus />
-            {t("tenants.create")}
-          </Button>
-        </div>
-        <section className="hall-tenants" aria-labelledby="tenant-list-title">
-          <div className="workspace-section-heading">
-            <div>
+          <DeliveryScene />
+        </section>
+        <section
+          id="workspace-directory"
+          className="ph-directory"
+          aria-labelledby="tenant-list-title"
+          tabIndex={-1}
+        >
+          <div className="ph-directory-heading">
+            <div className="ph-directory-title">
               <h2 id="tenant-list-title">{t("tenants.choose")}</h2>
-              <span>{tenants.data?.length ?? "—"}</span>
+              <span className="ph-directory-count">{tenants.data?.length ?? "—"}</span>
             </div>
-            <label className="workspace-filter">
-              <Search size={16} />
+            <div className="ph-search ph-glass">
+              <Search size={18} aria-hidden="true" />
               <input
+                ref={search}
+                type="search"
                 aria-label={t("workspace.searchTenant")}
                 placeholder={t("workspace.searchTenant")}
+                autoComplete="off"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
               />
-            </label>
+              {query && (
+                <button
+                  type="button"
+                  className="ph-clear"
+                  onClick={clearSearch}
+                  aria-label={t("prismSpace.clearSearch")}
+                >
+                  <X size={17} aria-hidden="true" />
+                </button>
+              )}
+            </div>
           </div>
+          {filtered && (
+            <p className="sr-only" role="status" aria-atomic="true">
+              {t("prismSpace.searchResults", {
+                count: filtered.length,
+                total: tenants.data?.length ?? 0,
+              })}
+            </p>
+          )}
           <ErrorBox message={account.error || tenants.error} />
           {!filtered ? (
             tenants.error ? (
-              <div className="hall-retry">
+              <div className="ph-retry">
                 <Button
                   variant="secondary"
                   onClick={() => void tenants.reload()}
@@ -117,15 +190,17 @@ export function TenantChooser() {
               </div>
             ) : <Loading variant="cards" />
           ) : !filtered.length ? (
-            <section className="hall-empty">
-              <Building2 size={35} />
-              <h2>
+            <div className="ph-empty">
+              <span className="ph-empty-symbol" aria-hidden="true">
+                {tenants.data?.length ? <Search size={27} /> : <Building2 size={27} />}
+              </span>
+              <h3>
                 {t(
                   tenants.data?.length
                     ? "workspace.noResults"
                     : "tenants.welcome",
                 )}
-              </h2>
+              </h3>
               <p>
                 {t(
                   tenants.data?.length
@@ -133,54 +208,59 @@ export function TenantChooser() {
                     : "workspace.emptyHall",
                 )}
               </p>
-              {!tenants.data?.length && (
-                <Button onClick={beginCreate}>
-                  <Plus />
-                  {t("tenants.create")}
+              {tenants.data?.length ? (
+                <Button variant="secondary" onClick={clearSearch}>
+                  {t("prismSpace.clearSearch")}
                 </Button>
-              )}
-            </section>
+              ) : null}
+            </div>
           ) : (
-            <div className="tenant-grid">
+            <div className="ph-workspace-grid">
               {filtered.map((tenant) => (
-                <article key={tenant.id} className="tenant-card">
-                  <div className="tenant-card-top">
-                    <span className="tenant-glyph" aria-hidden="true">
-                      <Building2 size={22} />
+                <article key={tenant.id} className="ph-workspace-card">
+                  <div className="ph-card-top">
+                    <span className="ph-space-avatar" aria-hidden="true">
+                      {Array.from(tenant.name.trim())[0]?.toLocaleUpperCase() || "A"}
                     </span>
-                    <div className="tenant-card-identity">
-                      <Link
-                        href={`/tenants/${tenant.slug}`}
-                        className="tenant-card-title"
-                      >
-                        {tenant.name}
-                        <ArrowUpRight size={16} aria-hidden="true" />
-                      </Link>
-                      <p className="tenant-card-role">
-                        {t(`tenants.${tenant.role}`)}
-                      </p>
-                    </div>
-                    <Status small value={tenant.status} />
+                    <span className="ph-space-role">{t(`tenants.${tenant.role}`)}</span>
                   </div>
-                  <div className="tenant-card-footer">
+                  <h3><Link className="ph-workspace-name" href={`/tenants/${tenant.slug}/projects`}>{tenant.name}</Link></h3>
+                  <div className="ph-space-address">
+                    <Building2 size={14} aria-hidden="true" />
                     <code>{tenant.slug}</code>
-                    {["owner", "admin"].includes(tenant.role) && (
+                  </div>
+                  <div className="ph-card-footer">
+                    <Status small value={tenant.status} />
+                    <div className="ph-card-actions">
+                      {["owner", "admin"].includes(tenant.role) && (
+                        <Link
+                          className="ph-space-settings"
+                          href={`/tenants/${tenant.slug}/settings`}
+                          aria-label={t("workspace.manageTenantNamed", { name: tenant.name })}
+                          title={t("workspace.manage")}
+                        >
+                          <Settings2 size={17} aria-hidden="true" />
+                        </Link>
+                      )}
                       <Link
-                        href={`/tenants/${tenant.slug}/settings`}
-                        aria-label={t("workspace.manageTenantNamed", {
-                          name: tenant.name,
-                        })}
+                        className="ph-enter-space"
+                        href={`/tenants/${tenant.slug}/projects`}
+                        aria-label={t("prismSpace.enterNamed", { name: tenant.name })}
                       >
-                        <Settings2 size={14} aria-hidden="true" />
-                        {t("workspace.manage")}
+                        {t("prismSpace.enter")}
+                        <ArrowRight size={16} aria-hidden="true" />
                       </Link>
-                    )}
+                    </div>
                   </div>
                 </article>
               ))}
             </div>
           )}
         </section>
+        <footer className="ph-footer">
+          <span>{t("prismSpace.footer")}</span>
+          <span>ARTIFACTORY</span>
+        </footer>
       </main>
       <Modal
         open={creating}
@@ -199,7 +279,7 @@ export function TenantChooser() {
             );
             markSaved();
             notify.success(t("common.operationSucceeded"), { persist: true });
-            window.location.assign(`/tenants/${result.slug}`);
+            window.location.assign(`/tenants/${result.slug}/projects`);
           }}
         >
           <Field label={t("tenants.name")}>
@@ -208,6 +288,7 @@ export function TenantChooser() {
               required
               maxLength={100}
               autoComplete="organization"
+              placeholder={t("prismSpace.namePlaceholder")}
             />
           </Field>
         </SubmitForm>
@@ -285,7 +366,7 @@ export function InvitationJoin({ token }: { token: string }) {
                     tenant_slug: string;
                   }>(`/invitations/${encodeURIComponent(token)}/accept`, {});
                   notify.success(t("common.operationSucceeded"), { persist: true });
-                  window.location.assign(`/tenants/${result.tenant_slug}`);
+                  window.location.assign(`/tenants/${result.tenant_slug}/projects`);
                 } catch (error) {
                   setError(asError(error));
                   setBusy(false);

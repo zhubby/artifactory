@@ -1,0 +1,822 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "project scope entries",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "project artifact entry",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "build scope route",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "orbital rows only",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "native controls absent",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "build search",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "build status filter",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "atlas scope isolation",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "scope refresh",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "orbital native files",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "candidate image stays build",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "artifact query",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "atlas artifact empty isolation",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "published formal image",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "release return 2.4.0",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "release return 2.3.8",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "release return 9.9.9",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "unknown release return button",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "build scope return 1047",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "build scope return 1046",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "concept marker builds",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "concept marker artifacts",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "concept marker registry",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "empty workspace overview isolation",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "empty workspace metrics",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "foreign scope builds unavailable",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "foreign scope artifacts unavailable",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "page errors",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "project scope entries",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "project artifact entry",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "build scope route",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "orbital rows only",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "native controls absent",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "build search",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "build status filter",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "atlas scope isolation",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "scope refresh",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "orbital native files",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "candidate image stays build",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "artifact query",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "atlas artifact empty isolation",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "published formal image",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "release return 2.4.0",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "release return 2.3.8",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "release return 9.9.9",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "unknown release return button",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "build scope return 1047",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "build scope return 1046",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "concept marker builds",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "concept marker artifacts",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "concept marker registry",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "empty workspace overview isolation",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "empty workspace metrics",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "foreign scope builds unavailable",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "foreign scope artifacts unavailable",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "page errors",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "project scope entries",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "project artifact entry",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "build scope route",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "orbital rows only",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "native controls absent",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "build search",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "build status filter",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "atlas scope isolation",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "scope refresh",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "orbital native files",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "candidate image stays build",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "artifact query",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "atlas artifact empty isolation",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "published formal image",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "release return 2.4.0",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "release return 2.3.8",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "release return 9.9.9",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "unknown release return button",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "build scope return 1047",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "build scope return 1046",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "concept marker builds",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "concept marker artifacts",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "concept marker registry",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "empty workspace overview isolation",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "empty workspace metrics",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "foreign scope builds unavailable",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "foreign scope artifacts unavailable",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "page errors",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "project scope entries",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "project artifact entry",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "build scope route",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "orbital rows only",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "native controls absent",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "build search",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "build status filter",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "atlas scope isolation",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "scope refresh",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "orbital native files",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "candidate image stays build",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "artifact query",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "atlas artifact empty isolation",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "published formal image",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "release return 2.4.0",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "release return 2.3.8",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "release return 9.9.9",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "unknown release return button",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "build scope return 1047",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "build scope return 1046",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "concept marker builds",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "concept marker artifacts",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "concept marker registry",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "no document overflow",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "empty workspace overview isolation",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "empty workspace metrics",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "foreign scope builds unavailable",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "foreign scope artifacts unavailable",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "page errors",
+    "passed": true
+  },
+  {
+    "name": "build scope return 1048",
+    "passed": true
+  }
+]

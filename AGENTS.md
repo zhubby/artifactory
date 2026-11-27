@@ -15,11 +15,12 @@ scripts/ - 构建、验收与版本检查入口。
 tests/ - 跨服务集成和负载验收。
 todos/ - 实施任务状态与待执行的环境验收。
 docs/ - mdBook 文档与真实环境验收记录。
+design-system/ - Prism 液态玻璃设计规范、产品蓝图与独立交互原型。
 examples/ - 构建配方示例。
 vendor/ - 带连接回收修复的 Toasty 源码。
 </directory>
 <config>
-VERSION - 全项目版本 0.2.5。
+VERSION - 全项目版本 0.2.6。
 Cargo.toml - Rust 工作区和统一依赖。
 Dockerfile - 限定控制平面与遥测依赖的运行镜像。
 compose.yaml - 本机完整服务栈。

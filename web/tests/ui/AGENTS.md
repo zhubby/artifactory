@@ -36,13 +36,14 @@ node-evolution.spec.ts: 验证双语窄屏队列进展、持久清单冲突、�
 node-details.spec.ts: 验证节点详情布局、分区查询和管理操作。
 terminal.spec.ts: 验证真实 xterm、字节 ACK、重连、撤权屏幕及播报清除、粘贴与 320px 焦点。
 node-detail-design.spec.ts: 验证设备摘要、图形设备型号、分钟趋势断点、范围、重试和窄屏布局。
-node-identification.spec.ts: 验证身份、重名短 ID、重命名权限、草稿、UTF8、Unicode 空白与接口快照。
-notifications.spec.ts: 验证浮层布局、顶栏访问、字段校验、弹窗焦点、计时暂停及交互期间的来源隔离与轮询恢复。
+node-identification.spec.ts: 验证身份、重名短 ID、重命名权限、草稿、UTF8、Unicode 空白与边框取整下的溢出。
+notifications.spec.ts: 验证浮层文档布局、顶栏访问、字段校验、弹窗焦点、计时暂停及交互期间的来源隔离与轮询恢复。
 node-pagination.spec.ts: 验证节点分页筛选及结构化元数据分组。
 node-pools.spec.ts: 验证节点池导航、管理员增改删、失败草稿、设备筛选和双语窄屏无障碍。
 node-installation.spec.ts: 验证固定同版本安装、过期、关闭秘密清理和系统地址权限。
 node-installation-commands.spec.ts: 隔离执行 Shell 与 PowerShell，验证传参、摘要、进程策略与 CA 保留。
 peripheral-visual.spec.ts: 验证认证页、邀请页、独立项目目录空态和错误页的视觉边界。
+prism-system.spec.ts: 验证授权项目双视图、查找排序、小屏阅读、独立材质降级和反光收敛。
 preferences.spec.ts: 验证用户视觉和语言偏好。
 readable-routes.spec.ts: 验证项目目录、概览构建深链接、slug 导航和作用域切换。
 registration.spec.ts: 验证注册交互。
@@ -52,7 +53,7 @@ tenant-chooser.spec.ts: 验证会话确认与登录跳转、租户卡片、创�
 tenancy.spec.ts: 验证租户隔离、独立项目目录权限、项目创建与资源授权。
 workspace-hierarchy.spec.ts: 验证节点池、概览与项目目录侧栏、租户切换、设置别名、权限、草稿和生命周期。
 
-navigation-actions.spec.ts: 验证正文动作、全局工具顺序、320px边界和星标失败恢复。
+navigation-actions.spec.ts: 验证正文动作、账户就绪后的全局工具顺序、320px边界和星标失败恢复。
 navigation-followup.spec.ts: 验证账户跨断点焦点和草稿、星标读取重试及明暗骨架截图。
 navigation-readiness.spec.ts: 验证权限首读骨架、范围隔离、失败重试与已就绪导航保留。
 settings-first-read.spec.ts: 验证设置首读依赖门控、失败重试、分区隔离和轮询草稿保留。

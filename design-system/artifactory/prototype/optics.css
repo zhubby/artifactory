@@ -1,0 +1,49 @@
+/**
+ * [INPUT]: 依赖 optics.js 的透镜位置、材质模式与语义主题。
+ * [OUTPUT]: 呈现折射场景、透镜、预设控制与浏览器降级。
+ * [POS]: 光学实验局部样式；与产品正文隔离。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.optics-definitions { position:absolute;width:0;height:0;pointer-events:none; }
+.optics-panel { min-width:0; }
+.optics-panel .section-heading>div>h2 { margin-top:9px; }
+.optics-layout { display:grid;grid-template-columns:1.2fr 1fr;gap:30px;align-items:center; }
+.optics-stage { position:relative;min-height:320px;overflow:hidden;border:1px solid var(--line);border-radius:24px;isolation:isolate;background:var(--surface-hover); }
+.optics-scene { position:absolute;inset:0;background:linear-gradient(135deg,#ccdfff,#e8ecff 45%,#ffdccc);color:#17243b; }
+.optics-scene>* { display:none; }
+.optics-grid { position:absolute;inset:0;background-image:linear-gradient(rgba(70,100,150,.17) 1px,transparent 1px),linear-gradient(90deg,rgba(70,100,150,.17) 1px,transparent 1px);background-size:24px 24px; }
+.optics-disc { position:absolute;width:210px;height:210px;border-radius:50%;opacity:.7; }
+.optics-disc.blue { top:-70px;right:-50px;background:#8aafff; }
+.optics-disc.peach { bottom:-120px;left:40px;background:#ffbca0; }
+.optics-type { position:absolute;left:26px;top:36px;font-size:clamp(38px,4vw,62px);font-weight:700;letter-spacing:-3px;line-height:1.1; }
+.optics-caption { position:absolute;left:28px;bottom:24px;font:9px var(--font-mono);letter-spacing:2px; }
+.optics-lens { --lens-x:0px;--lens-y:0px;position:absolute;left:50%;top:50%;width:174px;height:134px;padding:0;transform:translate(calc(-50% + var(--lens-x)),calc(-50% + var(--lens-y)));cursor:grab;touch-action:none;background:rgba(255,255,255,.12);backdrop-filter:blur(10px) saturate(210%);box-shadow:inset 0 1px 1px rgba(255,255,255,.95),inset 0 -4px 8px rgba(74,110,184,.16),0 25px 50px -20px rgba(40,62,105,.4);overflow:hidden; }
+.optics-lens.is-dragging { cursor:grabbing; }
+.optics-lens-layer { position:absolute;inset:0;border-radius:inherit;pointer-events:none;background-image:linear-gradient(90deg,transparent 0 23px,rgba(56,91,165,.28) 23px 24px,transparent 24px 47px,rgba(56,91,165,.28) 47px 48px),linear-gradient(0deg,transparent 0 23px,rgba(56,91,165,.28) 23px 24px,transparent 24px 47px,rgba(56,91,165,.28) 47px 48px),linear-gradient(135deg,rgba(195,216,255,.65),rgba(255,228,214,.55));background-repeat:repeat; }
+.optics-lens-layer { opacity:.7;background-repeat:no-repeat; }
+.optics-lens-label { position:relative;display:flex;flex-direction:column;align-items:center;gap:12px;z-index:2;color:#15386b;pointer-events:none;text-shadow:0 1px 0 rgba(255,255,255,.8); }
+.optics-lens-label>span { font:9px var(--font-mono);letter-spacing:2px; }
+.optics-controls h3 { font-size:22px;letter-spacing:-.5px; }
+.optics-controls>p { margin:12px 0 18px;font-size:13px;line-height:1.8;color:var(--muted); }
+.optics-presets { display:flex;gap:7px; }
+.optics-presets button { flex:1;display:flex;flex-direction:column;gap:6px;min-height:62px;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--text);font-size:12px;box-shadow:inset 0 1px 1px var(--glass-inset); }
+.optics-presets button[aria-pressed=true] { border-color:var(--primary);background:var(--primary-soft);color:var(--primary); }
+.optics-presets small { font:9px var(--font-mono); }
+.optics-range { display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;font-size:12px;margin:22px 0 16px; }
+.optics-range input { flex-basis:100%;width:100%;accent-color:var(--primary); }
+.optics-range output { font:12px var(--font-mono);color:var(--primary); }
+.optics-measures { display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px; }
+.optics-measures>span { font-size:10px;color:var(--muted); }
+.optics-measures strong { display:block;font:14px var(--font-mono);color:var(--text);margin-top:5px; }
+.optics-controls>.optics-status { font-size:11px;min-height:36px;margin-bottom:0; }
+[data-optics=frosted] .optics-lens-layer { opacity:.3; }
+[data-optics=solid] .optics-lens { background:var(--surface-solid);backdrop-filter:none; }
+[data-optics=solid] .optics-lens-layer { display:none; }
+[data-optics=solid] .optics-lens-label { color:var(--primary);text-shadow:none; }
+[data-theme=dark] .optics-scene { filter:brightness(.65) saturate(.85); }
+[data-theme=dark] .optics-lens-label { color:#122a52; }
+[data-theme=dark] [data-optics=solid] .optics-lens-label { color:var(--primary); }
+@media(max-width:900px) { .optics-layout { grid-template-columns:minmax(0,1fr);gap:24px; } .optics-panel .section-heading { align-items:start;flex-wrap:wrap;gap:15px; } }
+@media(max-width:767px) { .optics-stage { min-height:280px; } .optics-type { font-size:44px; } .optics-lens { width:154px;height:124px; } }
+@media(prefers-reduced-motion:reduce) { .optics-lens,.optics-lens-label { transition:none;animation:none; } }
+@media(forced-colors:active) { .optics-lens { background:Canvas;border:2px solid ButtonText;backdrop-filter:none; } .optics-lens-layer { display:none; } .optics-lens-label { color:ButtonText; } }

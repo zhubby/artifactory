@@ -150,7 +150,7 @@ test("scope choices include accessible historical scopes outside the loaded page
     });
   });
   await page.goto("/notifications");
-  await page.getByRole("combobox", { name: "工作区", exact: true }).click();
+  await page.getByRole("combobox", { name: "工作空间", exact: true }).click();
   await page
     .getByRole("option", { name: "Historical workspace", exact: true })
     .click();

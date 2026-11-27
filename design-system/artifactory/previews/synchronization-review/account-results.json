@@ -1,0 +1,626 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "dirty close resumes secret in DOM",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "password absent storage",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "local cursor first window",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "local cursor next window",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "revision update unread",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "permission loss removes body and link",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "email expired",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "email used",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "email error",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "retry then explicit confirmation",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "email safe login return",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "one time secret initially hidden",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "secret displayed but absent storage",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "test produces pending record",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "retry same delivery",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "delete confirmation excludes password",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "failed lifecycle retry same operation",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "waiting cancel restores object",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "trust public metadata saved",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "trust version disabled",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "no document overflow notifications",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "no document overflow settings",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "no document overflow email-verify/expired",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "no document overflow unsubscribe/used",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "no document overflow project-settings/orbital",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "no pageerror",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "dirty close resumes secret in DOM",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "password absent storage",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "local cursor first window",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "local cursor next window",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "revision update unread",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "permission loss removes body and link",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "email expired",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "email used",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "email error",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "retry then explicit confirmation",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "email safe login return",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "one time secret initially hidden",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "secret displayed but absent storage",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "test produces pending record",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "retry same delivery",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "delete confirmation excludes password",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "failed lifecycle retry same operation",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "waiting cancel restores object",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "trust public metadata saved",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "trust version disabled",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "no document overflow notifications",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "no document overflow settings",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "no document overflow email-verify/expired",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "no document overflow unsubscribe/used",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "no document overflow project-settings/orbital",
+    "passed": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "no pageerror",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "dirty close resumes secret in DOM",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "password absent storage",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "local cursor first window",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "local cursor next window",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "revision update unread",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "permission loss removes body and link",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "email expired",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "email used",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "email error",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "retry then explicit confirmation",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "email safe login return",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "one time secret initially hidden",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "secret displayed but absent storage",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "test produces pending record",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "retry same delivery",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "delete confirmation excludes password",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "failed lifecycle retry same operation",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "waiting cancel restores object",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "trust public metadata saved",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "trust version disabled",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "no document overflow notifications",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "no document overflow settings",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "no document overflow email-verify/expired",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "no document overflow unsubscribe/used",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "no document overflow project-settings/orbital",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "no pageerror",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "dirty close resumes secret in DOM",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "password absent storage",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "local cursor first window",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "local cursor next window",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "revision update unread",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "permission loss removes body and link",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "email expired",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "email used",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "email error",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "retry then explicit confirmation",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "email safe login return",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "one time secret initially hidden",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "secret displayed but absent storage",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "test produces pending record",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "retry same delivery",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "delete confirmation excludes password",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "failed lifecycle retry same operation",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "waiting cancel restores object",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "trust public metadata saved",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "trust version disabled",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "no document overflow notifications",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "no document overflow settings",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "no document overflow email-verify/expired",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "no document overflow unsubscribe/used",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "no document overflow project-settings/orbital",
+    "passed": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "no pageerror",
+    "passed": true
+  }
+]

@@ -27,7 +27,7 @@ test("overview uses complete server aggregates and leaves all projects in their 
     return route.fulfill({ json: [] });
   });
   await page.goto(tenantURL("/"));
-  await expect(page.getByRole("region", { name: "租户概览", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "工作空间概览", exact: true })).toBeVisible();
   await expect(metric(page, "构建次数")).toContainText(numberPattern(1248));
   await expect(metric(page, "当前进行中")).toHaveText("14");
   await expect(page.getByRole("heading", { name: "每日构建结果", exact: true })).toBeVisible();
@@ -204,6 +204,9 @@ test("switching tenants isolates a late dashboard response and sends the new ten
     await previousStarted;
     await page.locator(".space-selector.tenant summary").click();
     await page.locator(".space-selector.tenant .space-option").filter({ hasText: "Beta Team" }).click();
+    await expect(page).toHaveURL(tenantURL("/projects", other.slug));
+    await openNavigation(page);
+    await page.locator(".sidebar").getByRole("link", { name: "概览", exact: true }).click();
     await expect(page).toHaveURL(tenantURL("/", other.slug));
     await expect(metric(page, "构建次数")).toContainText(numberPattern(2222));
     releasePrevious();
@@ -274,7 +277,8 @@ for (const locale of ["zh-CN", "en"] as const) for (const theme of ["light", "da
       const panels = page.locator(".dashboard-chart-panel");
       const [left, right] = await panels.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().toJSON()));
       expect(Math.abs(left.width - right.width)).toBeLessThanOrEqual(1);
-      if (info.project.name === "mobile") {
+      const contentWidth = await page.locator(".dashboard").evaluate(node => node.getBoundingClientRect().width);
+      if (contentWidth < 780) {
         expect(right.x).toBe(left.x);
         expect(right.top).toBeGreaterThan(left.bottom);
       } else {
@@ -295,3 +299,21 @@ for (const locale of ["zh-CN", "en"] as const) for (const theme of ["light", "da
     expect(failures).toEqual([]);
   });
 }
+
+// 连续相同值形成水平路径，渐变坐标不得依赖零高包围盒。
+test("constant turnaround samples retain a visible horizontal trend", async ({ page }) => {
+  await fixtureAPI(page);
+  await page.route("**/api/v1/dashboard?**", route => {
+    const data=dashboardFixture();
+    data.daily.forEach(day => { day.median_turnaround_seconds=120; });
+    return route.fulfill({json:data});
+  });
+  await page.goto(tenantURL("/"));
+  const curve=page.locator(".dashboard-turnaround-line .recharts-line-curve");
+  await expect(curve).toHaveCount(1);
+  await expect(curve).toHaveCSS("visibility", "visible");
+  await expect(curve).toHaveCSS("stroke-width", "3px");
+  const gradientId=(await curve.getAttribute("stroke"))!.slice(5,-1);
+  await expect(page.locator(`[id="${gradientId}"]`)).toHaveAttribute("gradientUnits","userSpaceOnUse");
+  expect((await curve.getAttribute("d"))?.length).toBeGreaterThan(20);
+});

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证租户卡片、业务页面、显式执行日志与覆盖面板的无障碍边界。
+ * [OUTPUT]: 验证工作空间卡片、业务页面、显式执行日志与覆盖面板的无障碍边界。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -53,6 +53,13 @@ for (const theme of ["light", "dark"]) {
     await audit(page);
     await page.goto(tenantURL("/settings/credentials"));
     await expect(page.getByRole("heading", { name: "Git 凭据", level: 1, exact: true })).toBeVisible();
+    const credentials = page.locator(".table-scroll");
+    await credentials.focus();
+    await expect(credentials).toBeFocused();
+    if (await credentials.evaluate(node => node.scrollWidth > node.clientWidth)) {
+      await page.keyboard.press("ArrowRight");
+      await expect.poll(() => credentials.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
+    }
     await audit(page);
     await openPreferences(page);
     await audit(page);

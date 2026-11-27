@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖 Playwright、节点夹具和租户路由。
- * [OUTPUT]: 验证设备身份、独立重命名和草稿保护。
+ * [INPUT]: 依赖 Playwright、节点夹具和工作空间路由。
+ * [OUTPUT]: 验证设备身份、独立重命名、草稿与边框取整下的溢出。
  * [POS]: 节点命名的浏览器行为回归；API 拦截只替代远端服务。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -180,6 +180,7 @@ test("old nodes disable hostname copy; duplicate names and long hardware remain 
     { ...nodes[0], id: "12345678-aaaa", name: "Shared name", identity: { device_model: long, cpu_model: long } },
     { ...nodes[1], id: "87654321-bbbb", name: "Shared name", diagnostics: { hostname: "legacy-host" } },
   ] }));
+  await page.route("**/api/v1/nodes/12345678-aaaa/telemetry", route => route.fulfill({ json: { host: null, inventory: null } }));
   await page.goto(tenantURL("/nodes"));
   const cards = page.locator(".node-card");
   await expect(cards.nth(0)).toContainText("12345678");
@@ -193,7 +194,8 @@ test("old nodes disable hostname copy; duplicate names and long hardware remain 
   await dialog.getByRole("button", { name: "Rename node", exact: true }).click();
   await expect(page.getByRole("button", { name: "Use current hostname", exact: true })).toBeDisabled();
   await expect(page.getByRole("dialog").last()).toContainText("No hostname has been reported");
-  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  // 玻璃边框的亚像素取整产生 1px 差值；内容仍须在面板内。
+  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
 });
 
 test("Chinese copy and offline last network snapshot remain available", async ({ page }) => {

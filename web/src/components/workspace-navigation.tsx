@@ -86,7 +86,7 @@ export function WorkspaceSidebar({
       {ready && tenant && (
         <div className="sidebar-context">
           {(project || state.settings) && (
-            <Link href={state.settings && project ? state.base : "/"} className="sidebar-back">
+            <Link href={state.settings && project ? state.base : "/projects"} className="sidebar-back">
               <ArrowLeft size={14} aria-hidden="true" />
               {t(state.settings && project ? "workspace.returnProject" : "workspace.returnTenant")}
             </Link>

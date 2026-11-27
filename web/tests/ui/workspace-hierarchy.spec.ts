@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
- * [OUTPUT]: 验证节点池、概览与项目目录导航、租户切换及草稿保护。
+ * [OUTPUT]: 验证节点池、概览与项目目录导航、工作空间切换及草稿保护。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -51,10 +51,10 @@ test("tenant and project business sidebars expose only their own scope", async (
   const events = await fixtureAPI(page);
   const sidebar = page.locator(".sidebar");
   for (const [path, labels, active] of [
-    ["/", ["概览", "项目", "构建节点", "节点池", "租户设置"], "概览"],
-    ["/projects", ["概览", "项目", "构建节点", "节点池", "租户设置"], "项目"],
-    ["/nodes", ["概览", "项目", "构建节点", "节点池", "租户设置"], "构建节点"],
-    ["/pools", ["概览", "项目", "构建节点", "节点池", "租户设置"], "节点池"],
+    ["/", ["概览", "项目", "构建节点", "节点池", "工作空间设置"], "概览"],
+    ["/projects", ["概览", "项目", "构建节点", "节点池", "工作空间设置"], "项目"],
+    ["/nodes", ["概览", "项目", "构建节点", "节点池", "工作空间设置"], "构建节点"],
+    ["/pools", ["概览", "项目", "构建节点", "节点池", "工作空间设置"], "节点池"],
     ["/projects/desktop-client", ["项目概览", "Release 版本", "项目设置"], "项目概览"],
     [`/projects/desktop-client/releases/${release.id}/builds/128`, ["项目概览", "Release 版本", "项目设置"], "Release 版本"],
   ] as const) {
@@ -66,8 +66,8 @@ test("tenant and project business sidebars expose only their own scope", async (
     await expect(sidebar.locator('[aria-current="page"]')).toHaveText(active);
     await expect(sidebar.locator(".space-selector.project")).toHaveCount(path.startsWith("/projects/") ? 1 : 0);
     if (path.startsWith("/projects/")) {
-      await expect(sidebar.locator(".sidebar-back")).toHaveText("返回租户工作台");
-      await expect(sidebar.locator(".sidebar-back")).toHaveAttribute("href", tenantURL("/"));
+      await expect(sidebar.locator(".sidebar-back")).toHaveText("返回工作空间工作台");
+      await expect(sidebar.locator(".sidebar-back")).toHaveAttribute("href", tenantURL("/projects"));
       const selector = sidebar.locator(".space-selector.project");
       await selector.locator("summary").click();
       await expect(selector.locator("a:not(.space-option)")).toHaveCount(0);
@@ -95,7 +95,7 @@ test("settings reuse the sidebar with canonical groups and alias selection", asy
       expect(hrefs).toEqual(sections.map(value => tenantURL(`${scope}/settings/${value}`)));
       await expect(sidebar.locator('[aria-current="page"]')).toHaveCount(1);
       await expect(navigation.locator('[aria-current="page"]')).toHaveAttribute("href", tenantURL(`${scope}/settings/${canonical}`));
-      await expect(sidebar.locator(".sidebar-back")).toHaveAttribute("href", tenantURL(scope || "/"));
+      await expect(sidebar.locator(".sidebar-back")).toHaveAttribute("href", tenantURL(scope || "/projects"));
       await expect(page.locator(".management-tabs")).toHaveCount(0);
       await expect(page.locator(".management-content nav")).toHaveCount(0);
       await expect(page).toHaveURL(tenantURL(path));
@@ -107,7 +107,7 @@ test("settings reuse the sidebar with canonical groups and alias selection", asy
       }
     }
     await page.locator(".sidebar-back").click();
-    await expect(page).toHaveURL(tenantURL(scope || "/"));
+    await expect(page).toHaveURL(tenantURL(scope || "/projects"));
     await expect(page.locator(".workspace")).not.toHaveAttribute("inert", "");
   }
   expect(events.writes).toEqual([]);
@@ -119,7 +119,7 @@ test("ordinary members retain tokens while project settings require effective ad
   await openNavigation(page);
   const sidebar = page.locator(".sidebar");
   await expect(sidebar.getByRole("link", { name: "访问令牌", exact: true })).toHaveAttribute("href", tenantURL("/settings/tokens"));
-  await expect(sidebar.getByRole("link", { name: "租户设置", exact: true })).toHaveCount(0);
+  await expect(sidebar.getByRole("link", { name: "工作空间设置", exact: true })).toHaveCount(0);
   await sidebar.getByRole("link", { name: "访问令牌", exact: true }).click();
   await expect(page).toHaveURL(tenantURL("/settings/tokens"));
   await openNavigation(page);
@@ -142,7 +142,7 @@ test("ordinary members retain tokens while project settings require effective ad
   await page.reload();
   await openNavigation(page);
   await expect(sidebar.getByRole("link", { name: "项目设置", exact: true })).toHaveAttribute("href", tenantURL("/projects/desktop-client/settings"));
-  await expect(sidebar.getByRole("link", { name: "租户设置", exact: true })).toHaveCount(0);
+  await expect(sidebar.getByRole("link", { name: "工作空间设置", exact: true })).toHaveCount(0);
 });
 
 test("the topbar tenant selector resets every workspace scope and is keyboard accessible", async ({ page }) => {
@@ -155,17 +155,17 @@ test("the topbar tenant selector resets every workspace scope and is keyboard ac
     await expect(page.locator(".sidebar .space-selector.tenant")).toHaveCount(0);
     await selector.locator("summary").focus();
     await page.keyboard.press("Enter");
-    const search = selector.getByRole("textbox", { name: "搜索租户", exact: true });
+    const search = selector.getByRole("textbox", { name: "搜索工作空间", exact: true });
     await expect(search).toBeFocused();
     await search.fill("Beta");
     await expect(selector.locator(".space-option")).toHaveCount(1);
-    await expect(selector.getByRole("link", { name: "查看全部租户", exact: true })).toHaveAttribute("href", "/tenants");
+    await expect(selector.getByRole("link", { name: "查看全部工作空间", exact: true })).toHaveAttribute("href", "/tenants");
     await expect(selector.locator('a[href*="/settings"]')).toHaveCount(0);
     await search.press("ArrowDown");
     await expect(selector.locator(".space-option")).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(tenantURL("/", betaTenant.slug));
-    await expect(page.getByRole("heading", { name: "Beta Team", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(tenantURL("/projects", betaTenant.slug));
+    await expect(page.getByRole("heading", { name: "项目", exact: true, level: 1 })).toBeVisible();
     await expect(page.locator(".space-selector.project")).toHaveCount(0);
   }
   expect(events.writes).toEqual([]);
@@ -197,7 +197,7 @@ for (const kind of ["tenant", "project"] as const) {
         await expect(page.locator('textarea[name="notes"]')).toHaveValue("Keep this build draft");
       }
     }
-    await expect(page).toHaveURL(kind === "tenant" ? tenantURL("/", betaTenant.slug) : tenantURL("/projects/server-api/releases"));
+    await expect(page).toHaveURL(kind === "tenant" ? tenantURL("/projects", betaTenant.slug) : tenantURL("/projects/server-api/releases"));
     await expect(page.locator(".workspace")).not.toHaveAttribute("inert", "");
     expect(events.writes).toEqual([]);
   });

@@ -1,0 +1,90 @@
+/**
+ * [INPUT]: 依赖 Prism 变量与项目目录的真实快照布局。
+ * [OUTPUT]: 提供项目焦点、Standard 卡片、Regular 工具组和双视图。
+ * [POS]: 项目目录局部样式；不改变其他项目列表。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.prism-project-summary { display:flex; align-items:center; flex-wrap:wrap; gap:16px 32px; margin: -4px 0 28px; color:var(--muted-foreground); font-size:13px; }
+.prism-project-summary > span { display:flex; gap:8px; align-items:baseline; }
+.prism-project-summary strong { color:var(--foreground); font-size:25px; font-weight:600; font-variant-numeric:tabular-nums; }
+.prism-project-summary p { margin-left:auto; font-size:12px; }
+.prism-project-feature { display:grid; grid-template-columns: minmax(0,1fr) 240px; min-height:244px; margin-bottom:32px; padding:28px 32px; background:linear-gradient(115deg,var(--card) 30%,var(--pearl-bottom)); }
+.prism-project-feature h2 { margin:12px 0 10px; font-size:25px; line-height:1.3; font-weight:600; overflow-wrap:anywhere; }
+.prism-feature-repo { display:flex; gap:8px; align-items:center; color:var(--muted-foreground); font:12px/1.6 var(--font-mono); }
+.prism-feature-repo span { overflow-wrap:anywhere; min-width:0; }
+.prism-feature-repo svg { flex-shrink:0; }
+.prism-feature-facts { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin:16px 0; color:var(--muted-foreground); font-size:12px; }
+.prism-project-continue { display:inline-flex; gap:8px; align-items:center; min-height:40px; color:var(--primary); font-size:14px; font-weight:500; }
+.prism-project-object { position:relative; display:grid; place-items:center; min-height:200px; }
+.prism-project-orbit { position:absolute; width:200px; height:114px; border:1px solid var(--border); border-radius:50%; transform:rotate(-23deg); }
+.prism-project-tile,.prism-project-node { position:absolute; display:grid; place-items:center; background:linear-gradient(145deg,var(--glass-top),var(--glass-bottom)); border:1px solid var(--glass-edge); box-shadow:inset 0 1px 1px var(--glass-inset),var(--shadow); color:var(--primary); -webkit-backdrop-filter: blur(10px) saturate(210%); backdrop-filter: blur(10px) saturate(210%); }
+.prism-project-tile { width:112px; height:112px; border-radius:30px; transform:rotate(-13deg); }
+.prism-project-tile::before { content:''; position:absolute; inset:0; border-radius:inherit; border-top:2px solid var(--glass-inset); }
+.prism-project-node { width:52px; height:52px; border-radius:18px; right:20px; top:20px; transform:rotate(12deg); }
+.prism-project-caption { position:absolute; bottom:0; color:var(--muted-foreground); font:10px var(--font-mono); letter-spacing:.12em; }
+.prism-project-heading { margin-bottom:16px; }
+.prism-project-heading h2 { font-size:18px; font-weight:600; }
+.prism-project-heading p { font-size:12px; color:var(--muted-foreground); }
+.prism-project-toolbar { display:flex; gap:12px; align-items:center; padding:12px; border:1px solid var(--glass-edge); border-radius:24px; background:linear-gradient(145deg,var(--glass-top),var(--glass-bottom)); box-shadow:inset 0 1px 1px var(--glass-inset),var(--shadow); -webkit-backdrop-filter: blur(10px) saturate(210%); backdrop-filter: blur(10px) saturate(210%); }
+.prism-project-toolbar .workspace-filter { flex:1 1 240px; min-width:240px; max-width:none; width:auto; }
+.prism-project-toolbar .select-trigger { width:160px; flex:0 0 160px; }
+.prism-project-toolbar .select-trigger { height:40px; min-height:40px; padding:8px 14px; border-radius:999px; }
+.prism-project-view { display:flex; gap:4px; flex-shrink:0; }
+.prism-project-view [aria-pressed=true] { background:var(--card); color:var(--primary); box-shadow:var(--content-shadow); }
+.prism-project-count { margin:16px 4px; color:var(--muted-foreground); font-size:12px; }
+.prism-projects .project-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; border:0; }
+.prism-projects .project-card { display:flex; flex-direction:column; align-items:stretch; gap:18px; padding:24px; border:1px solid var(--border); border-radius:24px; background:linear-gradient(155deg,var(--pearl-top),var(--card) 45%); box-shadow:var(--content-shadow); }
+.prism-project-card .project-glyph { width:48px; height:48px; border-radius:16px; color:var(--primary); background:var(--primary-soft); }
+.prism-project-card .project-card-identity { gap:14px; }
+.prism-project-slug { color:var(--muted-foreground); font:11px var(--font-mono); }
+.prism-project-card h2 { margin-top:4px; font-size:18px; }
+.prism-project-card .project-card-title { font-size:18px; font-weight:600; }
+.prism-project-card .project-card-repository { display:flex; gap:8px; align-items:center; margin:0; color:var(--muted-foreground); font:12px/1.6 var(--font-mono); white-space:normal; }
+.prism-project-card .project-card-repository span { min-width:0; overflow-wrap:anywhere; }
+.prism-project-card .project-card-repository svg { flex-shrink:0; }
+.prism-project-card .project-card-latest { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:12px; }
+.prism-project-card footer { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:auto; padding-top:18px; border-top:1px solid var(--border); }
+.prism-project-card .project-card-count { display:flex; flex-direction:column; gap:4px; font-size:12px; }
+.prism-project-card .project-card-count strong { font-size:22px; font-weight:600; color:var(--foreground); }
+.prism-project-card footer > div { display:flex; gap:8px; }
+.prism-project-settings,.prism-project-enter { display:grid; place-items:center; min-width:40px; min-height:40px; border-radius:50%; color:var(--muted-foreground); }
+.prism-project-enter { background:var(--primary-soft); color:var(--primary); }
+.prism-project-settings:hover { background:var(--secondary); }
+.prism-project-enter:hover { background:var(--accent); }
+.prism-project-grid.is-list { grid-template-columns:minmax(0,1fr); gap:12px; }
+.prism-project-grid.is-list .project-card { display:grid; grid-template-columns:minmax(160px,1fr) minmax(160px,1fr) auto; align-items:center; gap:12px 24px; }
+.prism-project-grid.is-list .project-card-repository { grid-column:1; }
+.prism-project-grid.is-list .project-card-latest { grid-column:2; grid-row:1 / 3; }
+.prism-project-grid.is-list footer { grid-column:3; grid-row:1 / 3; border:0; padding:0; gap:24px; }
+.prism-project-foot { display:flex; flex-wrap:wrap; justify-content:space-between; gap:16px; margin-top:28px; color:var(--muted-foreground); font-size:12px; }
+.prism-project-foot span,.prism-project-foot a { display:inline-flex; align-items:center; gap:8px; }
+.prism-project-foot a { color:var(--primary); }
+.prism-project-empty-action { display:flex; justify-content:center; padding:0 24px 32px; }
+@media(min-width:1700px) { .prism-projects .project-grid:not(.is-list) { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(min-width:768px) and (max-width:1199px) {
+ .prism-project-toolbar { flex-wrap:wrap; }
+ .prism-project-toolbar .workspace-filter { flex:1 0 100%; }
+ .prism-project-toolbar .select-trigger { flex:1 1 160px; }
+}
+@media(max-width:767px) {
+ .prism-project-feature { grid-template-columns:minmax(0,1fr); padding:24px; }
+ .prism-project-object { display:none; }
+ .prism-project-summary { gap:12px 24px; }
+ .prism-project-summary p { margin-left:0; flex-basis:100%; }
+ .prism-project-heading { flex-direction:column; gap:8px; }
+ .prism-project-toolbar { flex-wrap:wrap; gap:8px; padding:10px; border-radius:24px; }
+ .prism-project-toolbar .workspace-filter { flex-basis:100%; }
+ .prism-project-toolbar .select-trigger { width:calc(50% - 4px); flex:1 1 calc(50% - 4px); min-width:0; }
+ .prism-project-toolbar .select-trigger { height:44px; min-height:44px; }
+ .prism-project-view { flex-basis:100%; justify-content:flex-end; }
+ .prism-projects .project-grid { grid-template-columns:minmax(0,1fr); }
+ .prism-projects .project-card { padding:20px; }
+ .prism-project-grid.is-list .project-card { display:flex; }
+ .prism-project-card .project-card-latest { padding:0; }
+ .prism-project-grid.is-list footer { width:100%; border-top:1px solid var(--border); padding-top:18px; }
+ .prism-project-settings,.prism-project-enter { min-width:44px; min-height:44px; }
+ .prism-project-foot a { min-height:44px; }
+}
+@media(prefers-reduced-transparency:reduce) { .prism-project-toolbar,.prism-project-tile,.prism-project-node { background:var(--card); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+[data-transparency=reduce] :is(.prism-project-toolbar,.prism-project-tile,.prism-project-node) { background:var(--card); -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media(forced-colors:active) { .prism-project-toolbar,.prism-project-tile,.prism-project-node { background:Canvas; border-color:CanvasText; -webkit-backdrop-filter: none; backdrop-filter: none; } }

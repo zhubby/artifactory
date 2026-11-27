@@ -1,0 +1,94 @@
+/**
+ * [INPUT]: 依赖语义材质变量与 catalog.js 的分类和组件标记。
+ * [OUTPUT]: 提供共享玻璃检索栏、标准材质标本与分类导航。
+ * [POS]: 组件展厅公共外壳；分册样式只定义标本内部。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.component-library { min-width:0; scroll-margin-top:4px; }
+.cl-foundations { border:1px solid var(--line); border-radius:24px; padding:20px; }
+.cl-foundations>summary { display:flex; align-items:center; justify-content:space-between; cursor:pointer; font-size:14px; font-weight:600; }
+.cl-foundations>div { margin-top:22px; }
+.component-library [hidden] { display:none!important; }
+.cl-heading { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:32px 2px 24px; }
+.cl-heading h2 { margin:10px 0 12px; font-size:30px; line-height:1.35; letter-spacing:-1px; }
+.cl-heading p { color:var(--muted); font-size:14px; line-height:1.8; }
+.cl-total { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; }
+.cl-total strong { font-size:56px; line-height:1; letter-spacing:-4px; color:var(--primary); font-weight:500; }
+.cl-total span { font:9px var(--font-mono); letter-spacing:2px; margin-top:10px; color:var(--muted); }
+.cl-toolbar { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:14px 18px; border-radius:22px; margin-bottom:24px; }
+.cl-search { display:flex; align-items:center; gap:10px; min-width:0; flex:1; color:var(--muted); }
+.cl-search input { min-width:0; width:100%; border:0; background:transparent; padding:8px 0; color:var(--text); font:14px var(--font-sans); outline-offset:4px; }
+.cl-search kbd { padding:3px 7px; border:1px solid var(--line); border-radius:6px; background:var(--surface); font:11px var(--font-mono); }
+.cl-density { display:flex; gap:3px; padding:4px; border:1px solid var(--line); border-radius:13px; background:var(--surface-hover); }
+.cl-density button { display:flex; align-items:center; gap:6px; padding:8px 11px; border-radius:9px; background:none; color:var(--muted); font-size:12px; }
+.cl-density [aria-pressed=true] { color:var(--text); background:var(--surface-solid); box-shadow:0 1px 3px var(--line); }
+.cl-layout { display:grid; grid-template-columns:155px minmax(0,1fr); gap:22px; align-items:start; }
+.cl-categories { position:sticky; top:104px; display:flex; flex-direction:column; gap:4px; }
+.cl-categories button { min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 11px; border-radius:13px; color:var(--muted); background:transparent; text-align:left; border:1px solid transparent; font-size:12px; }
+.cl-categories button>span:last-child { font:10px var(--font-mono); }
+.cl-categories [aria-pressed=true] { color:var(--primary); background:var(--primary-soft); border-color:transparent; box-shadow:none; }
+.cl-category-note { margin-top:20px; padding:16px 11px; color:var(--subtle); border-top:1px solid var(--line); font:9px/2 var(--font-mono); letter-spacing:1px; }
+.cl-results { min-width:0; }
+.cl-result-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:2px 0 14px; color:var(--muted); font-size:12px; }
+.cl-result-heading button { font-size:12px; background:none; }
+.cl-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; align-items:start; }
+.cl-specimen { position:relative; border:1px solid var(--line); border-radius:24px; background:var(--surface-solid); min-width:0; scroll-margin:12px 28px 28px; transition:border-color 200ms; }
+.cl-specimen:focus-within { z-index:4; }
+.cl-specimen:has(details[open]),.cl-specimen:has([data-open=true]) { z-index:5; }
+.cl-specimen-head { display:flex; align-items:center; gap:12px; padding:18px 18px 14px; }
+.cl-number { font:10px var(--font-mono); color:var(--primary); align-self:flex-start; padding-top:3px; }
+.cl-specimen-head h3 { font-size:14px; line-height:1.5; font-weight:600; }
+.cl-specimen-head>div>span { display:block; color:var(--muted); font:10px var(--font-mono); margin-top:2px; }
+.cl-anchor { margin-left:auto; min-width:32px; min-height:32px; display:grid; place-items:center; background:transparent; color:var(--subtle); border-radius:10px; }
+.cl-anchor:hover { color:var(--primary); background:var(--primary-soft); }
+.cl-demo { min-height:165px; display:flex; flex-direction:column; justify-content:center; gap:12px; padding:20px 18px; background:var(--surface-hover); border-block:1px solid var(--line); min-width:0; }
+.cl-demo>* { max-width:100%; }
+.cl-demo h4 { font-size:14px; }
+.cl-demo p { font-size:12px; line-height:1.7; }
+.cl-demo .btn { font-size:12px; min-height:38px; padding:8px 12px; }
+.cl-demo input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),.cl-demo textarea { max-width:100%; }
+.cl-demo .table-wrap { max-width:100%; }
+.cl-specimen-foot { padding:13px 18px 15px; }
+.cl-specimen-foot p { font-size:11px; color:var(--muted); line-height:1.75; margin-bottom:8px; overflow-wrap:anywhere; }
+.cl-specimen-foot>span { display:inline-block; padding:3px 7px; font-size:9px; color:var(--primary); border:1px solid var(--line); border-radius:6px; }
+.cl-highlight { outline:3px solid var(--primary); outline-offset:3px; }
+.cl-empty { padding:70px 20px; text-align:center; border:1px dashed var(--line-strong); border-radius:24px; }
+.cl-empty>span { display:inline-flex; color:var(--primary); margin-bottom:18px; }
+.cl-empty p { margin:12px 0 20px; color:var(--muted); font-size:13px; }
+.cl-bottom-note { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; margin-top:28px; padding:20px 0; border-top:1px solid var(--line); font-size:11px; color:var(--muted); }
+.cl-bottom-note>span:first-child { display:flex; align-items:center; gap:8px; }
+[data-density=compact] .cl-demo { min-height:130px; padding-block:14px; }
+[data-density=compact] .cl-specimen-head { padding-block:12px; }
+[data-density=compact] .cl-specimen-foot { padding-block:10px; }
+[data-density=compact] .cl-grid { gap:12px; }
+.component-library :is(button,a,input,textarea,summary,[tabindex]):focus-visible { outline:3px solid var(--primary); outline-offset:3px; }
+@media(min-width:1700px) { .cl-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:1150px) { .cl-layout { grid-template-columns:125px minmax(0,1fr); gap:16px; } .cl-grid { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:767px) {
+ .cl-heading { padding-top:14px; gap:12px; align-items:flex-start; }
+ .cl-heading h2 { font-size:24px; letter-spacing:-.5px; }
+ .cl-heading p { font-size:13px; }
+ .cl-total strong { font-size:38px; letter-spacing:-2px; }
+ .cl-total span { font-size:7px; letter-spacing:1px; }
+ .cl-toolbar { flex-wrap:wrap; padding:10px 14px; gap:8px; }
+ .cl-search { flex-basis:100%; }
+ .cl-search input { font-size:16px; }
+ .cl-density { margin-left:auto; }
+ .cl-layout { display:block; }
+ .cl-categories { position:static; flex-direction:row; flex-wrap:wrap; gap:6px; margin-bottom:18px; }
+ .cl-categories button { min-height:38px; padding:7px 9px; font-size:11px; gap:6px; border-color:var(--line); }
+ .cl-category-note { display:none; }
+ .cl-grid { grid-template-columns:minmax(0,1fr); }
+ .cl-demo { padding-inline:14px; }
+ .cl-demo :is(input:not([type=range]),textarea) { font-size:16px; }
+}
+@media(prefers-reduced-motion:reduce) { .cl-specimen { transition:none; } }
+[data-transparency=reduce] .cl-categories [aria-pressed=true] { background:var(--surface-solid); backdrop-filter:none; box-shadow:none; border-color:var(--primary); }
+@media(prefers-reduced-transparency:reduce) { .cl-categories [aria-pressed=true] { background:var(--surface-solid); backdrop-filter:none; box-shadow:none; } }
+@media(forced-colors:active) { .cl-categories [aria-pressed=true],.cl-density [aria-pressed=true] { border:2px solid Highlight; } }
+
+/* --- 增强对比度覆盖临时菜单 --- */
+[data-contrast=more] .component-library :is(.cn-menu,.cf-menu-panel,.cd-popover,.cl-toolbar) { background:var(--surface-solid);backdrop-filter:none;-webkit-backdrop-filter:none;border-color:var(--text); }
+@media(prefers-contrast:more) {
+ .component-library :is(.cn-menu,.cf-menu-panel,.cd-popover,.cl-toolbar) { background:var(--surface-solid);backdrop-filter:none;-webkit-backdrop-filter:none;border-color:var(--text); }
+}

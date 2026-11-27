@@ -1,7 +1,7 @@
 /**
  * [INPUT]: 依赖节点身份、主机采样、硬件清单和节点详情展示组件。
  * [OUTPUT]: 提供资源指标、分钟趋势、图形设备型号与采样诊断。
- * [POS]: 节点详情的资源分区；保留采样时效判断和原始数据入口。
+ * [POS]: 节点详情的资源分区；比例只使用当前采样，保留未知值和诊断。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
@@ -65,16 +65,20 @@ export function NodeResources({
       label: `CPU ${t("nodes.cpuUsage")}`,
       value: percent(sample.cpu_percent),
       icon: Cpu,
+      ratio: sample.cpu_percent,
     },
     {
       label: t("nodes.availableMemory"),
       value: formatBytes(sample.available_memory_bytes),
       icon: Activity,
+      ratio: sample.available_memory_bytes != null && sample.memory_total_bytes != null && sample.memory_total_bytes > 0
+        ? sample.available_memory_bytes / sample.memory_total_bytes * 100 : undefined,
     },
     {
       label: t("nodes.disk"),
       value: formatBytes(sample.build_disk_available_bytes),
       icon: HardDrive,
+      ratio: undefined,
     },
   ];
   return (
@@ -91,13 +95,14 @@ export function NodeResources({
         </span>
       </div>
       <div className="node-resource-grid">
-        {metrics.map(({ label, value, icon: Icon }) => (
+        {metrics.map(({ label, value, ratio, icon: Icon }) => (
           <div className="node-resource-metric" key={label}>
             <span>
               <Icon size={15} aria-hidden="true" />
               {label}
             </span>
             <strong>{value}</strong>
+            {ratio != null && <div className="node-resource-meter" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.max(0, ratio))}%` }} /></div>}
           </div>
         ))}
       </div>

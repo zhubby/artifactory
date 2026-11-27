@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖设置 API、统一通知、表单及 UI 词条。
- * [OUTPUT]: 提供 Settings 设置分区。
+ * [OUTPUT]: 提供 Settings 设置分区与可键盘滚动的数据表。
  * [POS]: 在独立分区实例内编辑设置；首读失败提供重试。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -126,7 +126,8 @@ export function Settings({
                 }
               />
             ) : (
-              <div className="table-scroll">
+              <div className="table-scroll" tabIndex={0} role="region"
+                aria-label={tabs.find((entry) => entry.id === tab)?.label || t("security.tokens")}>
                 <table>
                   <thead>
                     <tr>

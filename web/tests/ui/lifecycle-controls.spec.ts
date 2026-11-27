@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖 Playwright、工作区夹具和生命周期 API。
+ * [INPUT]: 依赖 Playwright、工作空间夹具和生命周期 API。
  * [OUTPUT]: 验证 HTTP 操作入口、幂等重试和当前范围恢复入口。
  * [POS]: 生命周期设置的浏览器回归；后端排空仍由服务测试验证。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -59,7 +59,7 @@ test("entry pages and lifecycle settings hide operation history", async ({ page 
   })] }));
   for (const path of ["/tenants", tenantURL("/"), tenantURL("/projects/desktop-client/settings/lifecycle")]) {
     await page.goto(path);
-    await expect(page.getByRole("heading", { name: /选择租户|Build Team|归档与删除/, exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: /选择工作空间|Build Team|归档与删除/, exact: true }).first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "操作进度", exact: true })).toHaveCount(0);
     await expect(page.getByText("deleted-history-entry", { exact: true })).toHaveCount(0);
   }

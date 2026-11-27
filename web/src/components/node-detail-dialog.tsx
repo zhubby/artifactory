@@ -7,7 +7,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Activity, Database, Info, ShieldCheck, Terminal } from "lucide-react";
+import { Activity, Database, Info, Monitor, ShieldCheck, Terminal } from "lucide-react";
 import { Loading, Status } from "@/components/common";
 import { nodePlatform, nodeStatus } from "@/components/node-card";
 import { NodeDataError } from "@/components/node-detail-parts";
@@ -69,6 +69,7 @@ export function NodeDetailDialog({
       placement="side"
       title={
         <span className="node-detail-heading">
+          <span className="node-detail-icon"><Monitor size={22} aria-hidden="true" /></span>
           <span className="node-detail-name">{node.name}</span>
           <Status small value={nodeStatus(node)} />
           {user.role === "admin" && <NodeRename node={node} reload={refresh} />}

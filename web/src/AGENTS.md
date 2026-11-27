@@ -5,6 +5,6 @@ app/: 提供租户业务、账户通知、邮箱确认路由和全局样式。
 components/: 组合 Release 工作台、设备终端、构建、签名设置和共享控件。
 lib/: 提供版本校验、独立构建目标、租户请求、公开类型和路由边界。
 messages/: 提供中文与英文界面文案。
-styles/: 定义中性色、控件、工作台和构建引导样式。
+styles/: 定义 Prism 材质、明暗主题、控件和响应式工作台。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

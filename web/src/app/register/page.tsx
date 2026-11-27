@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖注册 API、作用域导航、AuthShell、共享表单和全局通知。
+ * [INPUT]: 依赖注册 API、作用域导航、Prism 认证框架和密码显隐控件。
  * [OUTPUT]: 提供 Register 注册页面。
  * [POS]: 校验注册输入；错误桥跨配置与表单分支保持挂载。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -8,12 +8,13 @@
 
 import { Link } from "@/lib/tenant";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowRight, RefreshCw } from "lucide-react";
+import { ArrowRight, RefreshCw, UserRound } from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";
-import { ErrorBox, Field, Loading } from "@/components/common";
+import { ErrorBox, Loading } from "@/components/common";
 import { useUI } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { mutation, useRemote } from "@/lib/api";
 import { asError, LocalizedError } from "@/lib/errors";
 import { notify } from "@/lib/notify";
@@ -71,6 +72,7 @@ export default function Register() {
 
   return (
     <AuthShell
+      variant="register"
       title={translate("register.title")}
       description={translate("register.description")}
       notice={translate("register.notice")}
@@ -91,54 +93,65 @@ export default function Register() {
         </p>
       ) : (
         <>
-          <form onSubmit={submit} className="form-stack" aria-busy={busy}>
-            <Field label={translate("login.username")} hint={translate("register.usernameHint")}>
-              <Input
-                name="username"
-                value={draft.username}
-                onChange={(event) => setDraft({ ...draft, username: event.target.value })}
-                autoComplete="username"
-                required
-                autoFocus
-                maxLength={100}
-                disabled={busy}
-                placeholder={translate("login.usernamePlaceholder")}
-              />
-            </Field>
-            <Field label={translate("login.password")} hint={translate("register.passwordHint")}>
-              <Input
+          <form onSubmit={submit} className="form-stack prism-auth-form" aria-busy={busy}>
+            <div className="prism-auth-field">
+              <label htmlFor="register-username">{translate("login.username")}</label>
+              <div className="prism-auth-input-wrap">
+                <UserRound size={18} aria-hidden="true" />
+                <Input
+                  id="register-username"
+                  name="username"
+                  value={draft.username}
+                  onChange={(event) => setDraft({ ...draft, username: event.target.value })}
+                  autoComplete="username"
+                  required
+                  autoFocus
+                  maxLength={100}
+                  disabled={busy}
+                  aria-describedby="register-username-hint"
+                  placeholder={translate("login.usernamePlaceholder")}
+                />
+              </div>
+              <p id="register-username-hint" className="prism-auth-field-hint">{translate("register.usernameHint")}</p>
+            </div>
+            <div className="prism-auth-field">
+              <label htmlFor="register-password">{translate("login.password")}</label>
+              <PasswordInput
+                id="register-password"
                 name="password"
                 value={draft.password}
                 onChange={(event) => setDraft({ ...draft, password: event.target.value })}
-                type="password"
                 autoComplete="new-password"
                 required
                 maxLength={256}
                 disabled={busy}
+                aria-describedby="register-password-hint"
                 placeholder={translate("register.passwordPlaceholder")}
               />
-            </Field>
-            <Field label={translate("register.confirmPassword")}>
-              <Input
+              <p id="register-password-hint" className="prism-auth-field-hint">{translate("register.passwordHint")}</p>
+            </div>
+            <div className="prism-auth-field">
+              <label htmlFor="register-confirm-password">{translate("register.confirmPassword")}</label>
+              <PasswordInput
+                id="register-confirm-password"
                 name="confirmPassword"
                 value={draft.confirmPassword}
                 onChange={(event) => setDraft({ ...draft, confirmPassword: event.target.value })}
-                type="password"
                 autoComplete="new-password"
                 required
                 maxLength={256}
                 disabled={busy}
                 placeholder={translate("register.confirmPlaceholder")}
               />
-            </Field>
-            <Button className="mt-2 w-full" disabled={busy}>
-              {busy ? translate("register.submitting") : translate("register.submit")}
-              <ArrowRight />
+            </div>
+            <Button className="prism-auth-submit mt-2 w-full" disabled={busy}>
+              <span>{busy ? translate("register.submitting") : translate("register.submit")}</span>
+              <ArrowRight aria-hidden="true" />
             </Button>
           </form>
         </>
       )}
-      <p className="mt-5 text-center text-sm">
+      <p className="prism-auth-switch mt-5 text-center text-sm">
         <Link className="text-primary underline underline-offset-4" href={invite ? `/login?invite=${encodeURIComponent(invite)}` : "/login"}>
           {translate("register.backToLogin")}
         </Link>

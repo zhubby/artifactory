@@ -1,0 +1,42 @@
+/**
+ * [INPUT]: 依赖共享通知、账户抽屉与语义变量。
+ * [OUTPUT]: 提供通知玻璃外壳、Standard 消息和账户订阅层级。
+ * [POS]: 保留原账户聚合、修订和读取行为，只统一 Prism 外观。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.notification { border-radius: 20px; padding: 16px 12px 16px 18px; background: linear-gradient(145deg,color-mix(in srgb,var(--card) 94%,transparent),color-mix(in srgb,var(--card) 90%,transparent)); -webkit-backdrop-filter: blur(10px) saturate(210%); backdrop-filter: blur(10px) saturate(210%); box-shadow: inset 0 1px 1px var(--glass-inset),var(--shadow); }
+.notification-close { border-radius: 50%; }
+.notification-content { font-size: 14px; }
+.inbox-bell { border-radius: 50%; width: 36px; height: 36px; }
+.inbox-overlay { background: var(--scrim); backdrop-filter: blur(3px); }
+.inbox-drawer { width: 480px; border-radius: 30px 0 0 30px; background: linear-gradient(145deg,color-mix(in srgb,var(--card) 96%,transparent),color-mix(in srgb,var(--card) 92%,transparent)); -webkit-backdrop-filter: blur(10px) saturate(210%); backdrop-filter: blur(10px) saturate(210%); box-shadow:inset 0 1px 1px var(--glass-inset),var(--shadow-high); animation-duration:var(--motion-enter); animation-timing-function:var(--ease); }
+.inbox-heading { padding: 28px 24px 20px; }
+.inbox-heading h2 { font-size: 22px; }
+.inbox-tabs { gap: 6px; padding-inline: 24px; }
+.inbox-tabs button { border-radius: 999px; min-height: 36px; padding: 8px 14px; font-size: 13px; }
+.inbox-tabs button[aria-pressed=true] { background: var(--primary-soft); color: var(--primary); }
+.inbox-filters { padding-inline: 24px; }
+.inbox-item { padding: 20px 12px 20px 24px; gap: 12px; }
+.inbox-item strong { font-size: 14px; }
+.inbox-item p { font-size: 13px; line-height:1.7; }
+.inbox-item small { font-size: 11px; }
+.is-unread .inbox-dot { background: var(--primary); }
+.inbox-item em { border-radius: 8px; padding: 3px 6px; font-size:11px; background:var(--primary-soft); color:var(--primary); }
+.inbox-footer a { min-height: 40px; font-size:14px; color:var(--primary); }
+.notification-page-header { min-height:80px; border-radius:0 0 24px 24px; background:linear-gradient(145deg,var(--glass-top),var(--glass-bottom)); -webkit-backdrop-filter: blur(10px) saturate(210%); backdrop-filter: blur(10px) saturate(210%); box-shadow:inset 0 1px 1px var(--glass-inset),var(--shadow); }
+.notification-page-title h1 { font-size:32px; letter-spacing:-.025em; }
+.notification-page .inbox-list { border:1px solid var(--border); border-radius:24px; overflow:clip; background:var(--card); box-shadow:var(--content-shadow); }
+.notification-page .inbox-item { padding-left:24px; }
+.notification-page .inbox-list > li:last-child { border-bottom:0; }
+.notification-settings h2,.notification-webhooks > h2 { font-size:18px; }
+.notification-preference-row { font-size:14px; padding-block:16px; }
+.notification-webhook-row h3 { font-size:16px; }
+.notification-webhook-row p { font-size:13px; }
+.notification-secret { border-radius:16px; padding:20px; }
+.notification-verify { padding:32px; border:1px solid var(--border); border-radius:30px; background:var(--card); box-shadow:var(--content-shadow); }
+.notification-verify h1 { font-size:28px; }
+@media(max-width:1023px) { .inbox-bell { width:44px; height:44px; } }
+@media(max-width:600px) { .inbox-drawer { width:100%; border-radius:24px 24px 0 0; } .inbox-heading { padding:24px 20px 16px; } .inbox-tabs { padding-inline:20px; } .inbox-tabs button { min-height:44px; } .notification-page-title h1 { font-size:28px; } .notification-page .inbox-item { padding-left:20px; } .notification-preference-row { grid-template-columns:minmax(0,1fr) 60px 60px; font-size:13px; } .notification-verify { margin:8vh 16px; padding:24px; } }
+@media(prefers-reduced-transparency:reduce) { .notification,.inbox-drawer,.notification-page-header { background:var(--card); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+[data-transparency=reduce] :is(.notification,.inbox-drawer,.notification-page-header) { background:var(--card); -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media(forced-colors:active) { .notification,.inbox-drawer,.notification-page-header { background:Canvas; border:1px solid CanvasText; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow:none; } }

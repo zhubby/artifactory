@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具和共享 Select 交互助手。
- * [OUTPUT]: 验证租户隔离、独立项目目录权限、创建反馈与侧栏切换。
+ * [OUTPUT]: 验证工作空间隔离、独立项目目录权限、创建反馈与侧栏切换。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -54,11 +54,11 @@ test("login always offers tenant choice even for one tenant", async ({
   await page.locator('input[name="password"]').fill("test-account-password");
   await page.getByRole("button", { name: "进入工作空间", exact: true }).click();
   await expect(page).toHaveURL(/\/tenants$/);
-  await expect(page.getByRole("heading", { name: "选择租户" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "选择工作空间" })).toBeVisible();
   await page.getByRole("link", { name: "Build Team", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/tenants/${tenantSlug}$`));
+  await expect(page).toHaveURL(new RegExp(`/tenants/${tenantSlug}/projects$`));
   await expect(
-    page.getByRole("heading", { name: "Build Team", exact: true }),
+    page.getByRole("heading", { name: "项目", exact: true }),
   ).toBeVisible();
 });
 
@@ -76,14 +76,14 @@ test("tenant creation retries with the same idempotency key", async ({
   const keys: string[] = [];
   await page.goto("/tenants");
   await page
-    .getByRole("button", { name: "创建租户", exact: true })
+    .getByRole("button", { name: "创建工作空间", exact: true })
     .first()
     .click();
   await page.locator('input[name="name"]').fill("New Team");
-  await page.getByRole("button", { name: "创建租户", exact: true }).click();
+  await page.getByRole("button", { name: "创建工作空间", exact: true }).click();
   await expect(page.locator('[data-notify][data-kind="error"]')).toContainText("无法连接服务");
-  await page.getByRole("button", { name: "创建租户", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/tenants/${tenantSlug}$`));
+  await page.getByRole("button", { name: "创建工作空间", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/tenants/${tenantSlug}/projects$`));
   expect(keys).toHaveLength(2);
   expect(keys[0]).toBe(keys[1]);
 });
@@ -131,10 +131,10 @@ test("two tabs keep tenant headers independent and switching clears dialogs and 
   await page.goto(tenantURL("/projects"));
   await other.goto(tenantURL("/projects", secondSlug));
   await expect(
-    page.getByRole("link", { name: "Alpha Project", exact: true }),
+    page.locator(".project-card-title").filter({ hasText: "Alpha Project" }),
   ).toBeVisible();
   await expect(
-    other.getByRole("link", { name: "Beta Project", exact: true }),
+    other.locator(".project-card-title").filter({ hasText: "Beta Project" }),
   ).toBeVisible();
   await page.goto(tenantURL("/nodes"));
   let finish: (() => void) | undefined;
@@ -160,11 +160,11 @@ test("two tabs keep tenant headers independent and switching clears dialogs and 
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("link", { name: "Beta Team", exact: true }).click();
   finish!();
-  await expect(page).toHaveURL(new RegExp(`/tenants/${secondSlug}$`));
+  await expect(page).toHaveURL(new RegExp(`/tenants/${secondSlug}/projects$`));
   await expect(page.getByText("ALPHA_ONLY")).toHaveCount(0);
   await expect(other).toHaveURL(new RegExp(`/tenants/${secondSlug}/projects$`));
   await expect(
-    other.getByRole("link", { name: "Beta Project", exact: true }),
+    other.locator(".project-card-title").filter({ hasText: "Beta Project" }),
   ).toBeVisible();
   expect(
     await page.evaluate(
@@ -194,7 +194,7 @@ test("project members without grants get an authorization prompt", async ({
   await page.goto(tenantURL("/projects", secondSlug));
   await expect(page.getByText("暂无项目权限", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("请联系租户管理员申请项目授权。", { exact: true }),
+    page.getByText("请联系工作空间管理员申请项目授权。", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "接入项目", exact: true }),
@@ -271,7 +271,7 @@ test("invited registration confirms membership without creating an empty tenant"
     .click();
   await expect(page).toHaveURL(/\/join\/test-invite$/);
   await page.getByRole("button", { name: "确认加入", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/tenants/${tenantSlug}$`));
+  await expect(page).toHaveURL(new RegExp(`/tenants/${tenantSlug}/projects$`));
   expect(accepted).toBe(1);
   expect(createdTenants).toBe(0);
 });

@@ -45,7 +45,7 @@ for (const locale of ["zh-CN", "en"] as const)
       mkdirSync(directory, { recursive: true });
       const en = locale === "en";
       const routes = [
-        ["hall", "/tenants", en ? "Welcome, Alex" : "你好，Alex"],
+        ["hall", "/tenants", en ? "Choose a workspace" : "选择工作空间"],
         ["tenant", tenantURL("/"), "Build Team"],
         ["projects", tenantURL("/projects"), en ? "Projects" : "项目"],
         ["project", tenantURL("/projects/desktop-client"), "Desktop Client"],
@@ -91,7 +91,7 @@ for (const locale of ["zh-CN", "en"] as const)
       for (const [name, path, heading] of routes) {
         await page.goto(path);
         await expect(
-          page.getByRole("heading", { name: heading, level: 1, exact: true }),
+          page.getByRole("heading", { name: heading, level: name === "hall" ? 2 : 1, exact: true }),
         ).toBeVisible();
         await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
         await expect(page.locator('[data-notify][data-kind="error"]')).toHaveCount(0);
@@ -104,6 +104,8 @@ for (const locale of ["zh-CN", "en"] as const)
           ),
         ).toBe(true);
         await page.evaluate(() => document.fonts.ready);
+        await page.addStyleTag({ content: "nextjs-portal { display:none !important; }" });
+        if (name === "overview" || name === "project") await expect(page.locator(".dashboard-charts .recharts-wrapper")).toHaveCount(2);
         await expect(page.locator("body")).toHaveCSS("font-family", /Inter Variable/);
         await page.screenshot({
           path: resolve(directory, `${locale}-${theme}-${name}.png`),

@@ -7,6 +7,7 @@
 "use client";
 
 import { useUI } from "@/components/providers";
+import { Cpu, Layers3, MemoryStick, Monitor } from "lucide-react";
 import { NodeDisclosure, NodeFacts, NodeRawData, NodeSection, NodeTimestamp } from "@/components/node-detail-parts";
 import { NodeNetworkAddresses } from "@/components/node-network-addresses";
 import { nodeHostname } from "@/lib/node-identity";
@@ -18,16 +19,16 @@ export function NodeOverview({ node, inventory }: { node: Node; inventory?: Node
   const machine = inventory?.inventory;
   const memory = node.identity?.memory_total_bytes ?? machine?.physical_memory_bytes;
   const summary = [
-    [t("nodes.model"), node.identity?.device_model],
-    [t("nodes.cpuModel"), node.identity?.cpu_model || machine?.cpu_model],
-    [t("nodes.physicalMemory"), memory == null ? undefined : bytes(memory)],
-    [t("nodes.capacity"), `${node.active_jobs} / ${node.slots}`],
+    { label: t("nodes.model"), value: node.identity?.device_model, icon: Monitor },
+    { label: t("nodes.cpuModel"), value: node.identity?.cpu_model || machine?.cpu_model, icon: Cpu },
+    { label: t("nodes.physicalMemory"), value: memory == null ? undefined : bytes(memory), icon: MemoryStick },
+    { label: t("nodes.capacity"), value: `${node.active_jobs} / ${node.slots}`, icon: Layers3 },
   ];
   return <div className="node-section-stack">
     <NodeSection title={t("nodes.deviceSummary")}>
       <dl className="node-summary-grid">
-        {summary.map(([label, value]) => <div key={label}>
-          <dt>{label}</dt><dd>{value || t("nodes.unknown")}</dd>
+        {summary.map(({ label, value, icon: Icon }) => <div key={label}>
+          <dt><Icon size={16} aria-hidden="true" />{label}</dt><dd>{value || t("nodes.unknown")}</dd>
         </div>)}
       </dl>
     </NodeSection>

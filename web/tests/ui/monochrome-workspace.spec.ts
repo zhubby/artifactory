@@ -36,7 +36,7 @@ test("quick navigation respects unsaved build drafts and viewer permissions", as
   await page.goto(tenantURL("/projects/desktop-client/releases/new"));
   await page.locator('textarea[name="notes"]').fill("Preserve the exact draft");
   await page.keyboard.press("Control+k");
-  await page.getByRole("combobox", { name: "搜索项目或页面", exact: true }).fill("返回租户工作台");
+  await page.getByRole("combobox", { name: "搜索项目或页面", exact: true }).fill("返回工作空间工作台");
   const rejected = page.waitForEvent("dialog").then(dialog => dialog.dismiss());
   await page.keyboard.press("Enter");
   await rejected;
@@ -192,7 +192,7 @@ test("viewer quick navigation exposes no administrative or create-build actions"
   await page.getByRole("button", { name: "快捷导航", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("option").filter({ hasText: "新建 Release" })).toHaveCount(0);
-  await expect(page.getByRole("option").filter({ hasText: "租户设置" })).toHaveCount(0);
+  await expect(page.getByRole("option").filter({ hasText: "工作空间设置" })).toHaveCount(0);
   await expect(page.getByRole("option").filter({ hasText: project.name }).first()).toBeVisible();
   await page.keyboard.press("Escape");
   await page.goto(tenantURL("/settings/credentials"));

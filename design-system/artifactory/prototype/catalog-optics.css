@@ -1,0 +1,85 @@
+/**
+ * [INPUT]: 依赖组件标本分组、材质标记、主题与辅助偏好。
+ * [OUTPUT]: 提供组件库材质变量、场景层级、光学表面和触发式反馈。
+ * [POS]: 组件库共享精修层；选择器限制在展厅内，不改变产品页面。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.component-library {
+ --cl-accent:var(--primary);--cl-panel:var(--surface-solid);--cl-well:#f2f5fa;
+ --cl-stroke:rgba(56,78,117,.17);--cl-control-radius:999px;
+ --cl-glass-border:rgba(255,255,255,.94);
+ --cl-glass-bg:linear-gradient(155deg,rgba(255,255,255,.91),rgba(240,246,255,.7) 58%,rgba(255,255,255,.84));
+ --cl-glass-shadow:inset 0 1px 1px rgba(255,255,255,.98),inset 0 -1px 1px rgba(115,142,181,.12),0 4px 7px -5px rgba(32,58,100,.24),0 12px 26px -16px rgba(46,76,123,.28);
+ --cl-top-light:rgba(255,255,255,.95);--cl-underlay:rgba(107,151,225,.14);
+ --cl-rim:conic-gradient(from 210deg,rgba(181,220,255,.55),rgba(255,255,255,.96) 18%,rgba(221,199,255,.48) 35%,rgba(255,255,255,.9) 52%,rgba(255,215,186,.45) 72%,rgba(186,230,234,.5),rgba(181,220,255,.55));
+}
+[data-theme=dark] .component-library {
+ --cl-well:#202936;--cl-stroke:rgba(180,202,234,.2);--cl-glass-border:rgba(199,221,255,.24);
+ --cl-glass-bg:linear-gradient(155deg,rgba(91,113,144,.65),rgba(42,57,78,.86) 55%,rgba(55,72,96,.78));
+ --cl-glass-shadow:inset 0 1px 1px rgba(239,247,255,.35),inset 0 -1px 1px rgba(4,14,29,.45),0 5px 9px -5px rgba(0,0,0,.5),0 16px 30px -20px rgba(0,0,0,.7);
+ --cl-top-light:rgba(226,241,255,.55);--cl-underlay:rgba(100,148,226,.12);
+ --cl-rim:conic-gradient(from 210deg,rgba(143,190,240,.28),rgba(224,240,255,.48) 18%,rgba(195,164,229,.24) 35%,rgba(224,240,255,.3) 52%,rgba(232,192,158,.24) 72%,rgba(143,203,213,.25),rgba(143,190,240,.28));
+}
+.component-library .cl-heading { padding:38px 0 28px; }
+.component-library .cl-heading h2 { font-size:38px;line-height:1.18;letter-spacing:-1.5px;margin:15px 0 18px; }
+.component-library .cl-heading p { max-width:640px;line-height:1.85; }
+.component-library .cl-total { border-left:1px solid var(--cl-stroke);padding-left:30px; }
+.component-library .cl-total strong { font-size:66px;letter-spacing:-4px;color:var(--text);font-weight:400; }
+.component-library .cl-toolbar { border-radius:28px;padding:14px 20px;margin-bottom:28px; }
+.component-library .cl-density { border-radius:999px;background:color-mix(in srgb,var(--surface-hover) 70%,transparent);padding:4px; }
+.component-library .cl-density button { border-radius:999px;min-height:36px; }
+.component-library .cl-categories button { min-height:45px;padding:10px 12px;border-radius:15px;transition:background 180ms,color 180ms; }
+.component-library .cl-categories [aria-pressed=true] { background:var(--cl-glass-bg);box-shadow:var(--cl-glass-shadow);border-color:var(--cl-glass-border);color:var(--text); }
+.component-library .cl-categories [aria-pressed=true]>span:last-child { color:var(--primary); }
+.component-library .cl-grid { gap:24px 20px; }
+.component-library .cl-specimen { border-radius:30px;border-color:var(--cl-stroke);box-shadow:0 2px 4px -3px rgba(32,54,88,.16);overflow:visible; }
+.component-library .cl-specimen-head { padding:22px 22px 18px;align-items:center; }
+.component-library .cl-specimen-head h3 { font-size:15px;letter-spacing:-.15px; }
+.component-library .cl-specimen-head>div>span { font-size:10px;letter-spacing:.3px;margin-top:4px; }
+.component-library .cl-number { color:var(--muted);font-size:10px;padding-top:2px; }
+.component-library .cl-anchor { border:1px solid var(--line);width:32px;height:32px;border-radius:50%;color:var(--muted); }
+.component-library .cl-demo { position:relative;isolation:isolate;min-height:224px;padding:52px 22px 24px;gap:20px;background:var(--cl-well);border-block-color:var(--cl-stroke); }
+.component-library .cl-scene-label { position:absolute;top:18px;left:22px;right:22px;display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:10px;letter-spacing:.6px; }
+.component-library .cl-scene-mark { width:18px;height:5px;border:1px solid var(--cl-stroke);border-radius:99px; }
+.component-library [data-material=regular] .cl-demo { background:radial-gradient(ellipse at 12% 4%,var(--cl-underlay),transparent 58%),radial-gradient(ellipse at 92% 100%,var(--ambient-apricot),transparent 54%),var(--cl-well); }
+.component-library [data-material=standard] .cl-demo { background:var(--cl-panel); }
+.component-library .cl-specimen-foot { padding:17px 22px 19px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:7px; }
+.component-library .cl-specimen-foot p { flex-basis:100%;font-size:12px;line-height:1.8;margin:0 0 5px; }
+.component-library .cl-specimen-foot>span { border:0;background:var(--surface-hover);color:var(--muted);border-radius:99px;padding:5px 9px; }
+.component-library .cl-material-label { font:8px/1.5 var(--font-mono);letter-spacing:.7px;color:var(--muted); }
+/* --- 光学边缘只属于功能表面，内容与文字不受折射 --- */
+.component-library [data-cl-glass] { isolation:isolate;background:var(--cl-glass-bg);border:1px solid var(--cl-glass-border);box-shadow:var(--cl-glass-shadow);backdrop-filter:blur(10px) saturate(210%);-webkit-backdrop-filter:blur(10px) saturate(210%); }
+.component-library :is(button,summary,[data-cl-glass=group],.cd-command-list,.cn-combo-list)[data-cl-glass] { position:relative; }
+.component-library [data-cl-glass]::before { content:'';position:absolute;inset:-1px;padding:1px;border-radius:inherit;pointer-events:none;background:radial-gradient(ellipse at var(--cl-pointer-x,50%) 0%,rgba(255,255,255,.8),transparent 64%),var(--cl-rim);mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude;-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;opacity:calc(.5 + var(--cl-light,0)*.5);transition:opacity 180ms; }
+.component-library :is(.cn-popover,.cf-menu)>summary[data-cl-glass],.component-library :is(.cn-menu,.cf-menu-panel,.cn-combo-list)[data-cl-glass] { background:var(--cl-glass-bg);border-color:var(--cl-glass-border);box-shadow:var(--cl-glass-shadow); }
+.component-library .cn-split>details>summary { background:transparent;box-shadow:none; }
+.component-library :is(.cn-segment,.cn-split)[data-cl-glass=group] { border-radius:999px; }
+.component-library :is(.cf-popover,.cn-menu)[data-cl-glass=menu]>.cf-primary { background:var(--primary);color:var(--on-primary);border-color:var(--primary); }
+.component-library [data-cl-glass]::after { content:'';position:absolute;left:16%;right:16%;top:0;height:6px;border-top:1px solid var(--cl-top-light);border-radius:50%;pointer-events:none;opacity:.8; }
+.component-library [data-cl-glass].cl-active { --cl-light:.75; }
+.component-library [data-cl-glass]>.liquid-rim { display:none; }
+.component-library [data-cl-glass=prominent] { color:var(--on-primary);border-color:color-mix(in srgb,var(--primary) 78%,white);background:linear-gradient(165deg,color-mix(in srgb,var(--primary) 85%,white),var(--primary) 62%,color-mix(in srgb,var(--primary) 88%,#172b58));box-shadow:inset 0 1px 1px rgba(255,255,255,.56),0 8px 18px -13px var(--primary); }
+.component-library [data-cl-glass=prominent]::after { border-color:rgba(255,255,255,.65); }
+.component-library [data-cl-glass=group] { border-radius:24px; }
+.component-library [data-cl-glass=group] :is(button,summary) { backdrop-filter:none;-webkit-backdrop-filter:none; }
+.component-library [data-cl-glass=menu] { border-radius:24px; }
+.component-library .cn-menu[data-cl-glass=menu] { border-radius:30px; }
+.component-library [data-cl-glass=menu] :is(button,.btn) { box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;background:transparent;border-color:transparent; }
+.component-library [data-cl-glass=menu] :is(button,.btn):hover { background:var(--primary-soft); }
+.component-library [data-cl-glass=group] [aria-pressed=true],.component-library [data-cl-glass=group] [aria-selected=true] { background:var(--surface-solid);box-shadow:0 2px 6px -3px rgba(30,56,94,.35),inset 0 1px 1px var(--glass-inset);border-color:var(--line); }
+.component-library .cl-press-ring { position:absolute;inset:-3px;border:1px solid var(--cl-glass-border);border-radius:inherit;pointer-events:none; }
+/* --- 辅助偏好保持独立，降级后仍有清楚的轮廓 --- */
+[data-transparency=reduce] .component-library [data-cl-glass],[data-contrast=more] .component-library [data-cl-glass] { background:var(--surface-solid)!important;color:var(--text)!important;border-color:var(--line-strong)!important;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:none!important; }
+[data-transparency=reduce] .component-library [data-cl-glass]::before,[data-transparency=reduce] .component-library [data-cl-glass]::after,[data-contrast=more] .component-library [data-cl-glass]::before,[data-contrast=more] .component-library [data-cl-glass]::after { display:none; }
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more) {
+ .component-library [data-cl-glass] { background:var(--surface-solid)!important;color:var(--text)!important;border-color:var(--line-strong)!important;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:none!important; }
+ .component-library [data-cl-glass]::before,.component-library [data-cl-glass]::after { display:none; }
+}
+@media(prefers-reduced-motion:reduce) { .component-library [data-cl-glass],.component-library .cl-categories button { transition:none; }.component-library .cl-press-ring { display:none; } }
+@media(forced-colors:active) { .component-library [data-cl-glass] { background:Canvas;color:CanvasText;border:1px solid CanvasText;box-shadow:none;backdrop-filter:none; }.component-library [data-cl-glass]::before,.component-library [data-cl-glass]::after { display:none; } }
+@media(max-width:767px) {
+ .component-library .cl-heading h2 { font-size:29px;letter-spacing:-.8px; }.component-library .cl-total { padding-left:16px; }.component-library .cl-total strong { font-size:45px; }
+ .component-library .cl-heading { padding-top:24px; }.component-library .cl-specimen-head { padding:19px 18px 16px; }.component-library .cl-demo { padding:48px 18px 22px;min-height:210px; }.component-library .cl-scene-label { left:18px;right:18px; }
+ .component-library .cl-specimen-foot { padding:16px 18px 18px; }.component-library .cl-categories button { min-height:40px; }
+}
+.component-library[data-density=compact] .cl-demo { min-height:180px; }

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖真实通知浮层、概览聚合、浏览器几何信息和受控 API 失败。
- * [OUTPUT]: 验证浮层布局、顶栏访问、计时暂停及交互期间的来源隔离与轮询恢复。
+ * [OUTPUT]: 验证浮层文档布局、顶栏访问、计时暂停及交互期间的来源隔离与轮询恢复。
  * [POS]: 通知机制的桌面、平板和手机回归；不访问线上数据。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -9,6 +9,14 @@ import { dashboardFixture, fixtureAPI, tenantURL } from "./fixtures";
 
 const errors = (page: Page) => page.locator('[data-notify][data-kind="error"]');
 const successes = (page: Page) => page.locator('[data-notify][data-kind="success"]');
+
+async function documentBounds(element: Locator) {
+  // 手机浏览器会在点击时滚动页面；文档坐标只检测实际布局变化。
+  return element.evaluate(node => {
+    const box = node.getBoundingClientRect();
+    return { x: box.x + scrollX, y: box.y + scrollY, width: box.width, height: box.height };
+  });
+}
 
 async function expectCentered(page: Page, notice: Locator) {
   await expect(notice).toBeVisible();
@@ -28,12 +36,12 @@ test("login failure and native validation notify without moving the form", async
   await page.goto("/login");
   const submit = page.getByRole("button", { name: "进入工作空间", exact: true });
   const form = page.locator("form").filter({ has: submit });
-  const before = await form.boundingBox();
+  const before = await documentBounds(form);
   await submit.click();
   await expectCentered(page, errors(page));
   await expect(page.locator('input[name="username"]')).toBeFocused();
   await expect(form.locator('[role="alert"]')).toHaveCount(0);
-  expect(await form.boundingBox()).toEqual(before);
+  expect(await documentBounds(form)).toEqual(before);
   const preferences = page.getByRole("button", { name: "界面偏好", exact: true });
   if (await preferences.isVisible()) {
     const control = (await preferences.boundingBox())!;
@@ -48,12 +56,12 @@ test("login failure and native validation notify without moving the form", async
   }
   await page.locator('input[name="username"]').fill("notification-draft");
   await page.locator('input[name="password"]').fill("retained-password");
-  const filled = await form.boundingBox();
+  const filled = await documentBounds(form);
   await submit.click();
   await expect(errors(page)).toHaveCount(1);
   await expect(errors(page)).toContainText(detail);
   await expectCentered(page, errors(page));
-  expect(await form.boundingBox()).toEqual(filled);
+  expect(await documentBounds(form)).toEqual(filled);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: info.outputPath("login-notification.png"), fullPage: true });
   await errors(page).getByRole("button", { name: "关闭通知" }).click();

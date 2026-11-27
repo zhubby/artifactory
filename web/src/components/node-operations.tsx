@@ -80,7 +80,7 @@ export function NodeOperations({
     }
   }
   return (
-    <div className="node-section-stack" ref={content}>
+    <div className="node-section-stack node-operations" ref={content}>
       <NodeTelemetryStatus node={node} />
       <FiniteNodeOperations key={node.id} node={node} user={user} />
       {user.role === "admin" && <NodeSection title={t("terminal.title")}>

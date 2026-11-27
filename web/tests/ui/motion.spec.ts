@@ -45,7 +45,7 @@ for (const kind of ["quick navigation", "personal settings"]) {
     await expect(panel).toBeVisible();
     const { frames, settled, viewport, duration } = await entranceFrames(panel);
     expect(duration).toBeGreaterThanOrEqual(120);
-    expect(duration).toBeLessThanOrEqual(180);
+    expect(duration).toBeLessThanOrEqual(320);
     for (const frame of frames) {
       expect(Math.abs(frame.x + frame.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
       expect(Math.abs(frame.y + frame.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(5);

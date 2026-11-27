@@ -37,7 +37,7 @@ test("login exposes registration and submits only account credentials", async ({
   await page.locator('input[name="confirmPassword"]').fill("reader-password");
   await page.getByRole("button", { name: "注册并进入工作空间", exact: true }).click();
   await expect(page).toHaveURL(/\/tenants$/);
-  await expect(page.getByRole("heading", { name: "选择租户" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "选择工作空间" })).toBeVisible();
   expect(credentials).toEqual({ username: "new-reader", password: "reader-password" });
   await expect(page.getByRole("button", { name: "发起构建", exact: true })).toHaveCount(0);
 });
@@ -180,8 +180,12 @@ test("registration is keyboard accessible and suppresses repeated submissions", 
   await expect(page.locator('input[name="password"]')).toBeFocused();
   await page.keyboard.type("reader-password");
   await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "显示密码", exact: true }).first()).toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(page.locator('input[name="confirmPassword"]')).toBeFocused();
   await page.keyboard.type("reader-password");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "显示密码", exact: true }).last()).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "注册并进入工作空间", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");

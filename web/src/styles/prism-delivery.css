@@ -1,0 +1,112 @@
+/**
+ * [INPUT]: 依赖真实构建阶段、计划、执行日志和四步引导类名。
+ * [OUTPUT]: 提供 Standard 交付工作台、连续阶段导航和可读审计层级。
+ * [POS]: 只改变已持久数据的呈现，不增加阶段或改变执行状态。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+/* --- 构建身份与稳定阅读面 --- */
+.build-detail-header { margin-bottom: 16px; gap: 20px; }
+.build-detail-heading h1 { font-size: 30px; line-height: 1.3; letter-spacing: -.025em; }
+.build-detail-back { min-height: 40px; font-size: 13px; }
+.build-detail-meta { gap: 12px 24px; padding: 16px 20px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--card); }
+.build-detail .ui-tabs { gap: 4px; padding: 5px; }
+.build-detail-contract > summary { min-height: 44px; font-size: 13px; }
+.build-detail-contract > pre { border-radius: 14px; }
+.build-detail .build-layout > div:first-child > .panel { padding: 16px; border: 1px solid var(--border); border-radius: 20px; background: var(--card); }
+.build-detail .build-layout > div:first-child .section-title { min-height: 40px; padding: 0 0 12px; }
+.build-detail .target-button { padding: 12px; border-radius: 14px; }
+.target-button.selected { background: var(--primary-soft); color: var(--primary); }
+.build-detail .log-console { border-radius: 0 0 22px 22px; font-size: 13px; }
+.build-meta { gap: 12px 24px; padding: 18px 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--card); }
+/* --- 阶段的空间连续性；轮询只更新状态 --- */
+.build-process-summary { padding: 24px; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 24px; background: linear-gradient(145deg,var(--pearl-top),var(--card)); box-shadow: var(--content-shadow); }
+.build-process-summary-icon { width: 48px; height: 48px; border-radius: 16px; color: var(--primary); background: var(--primary-soft); }
+.build-process-summary h2 { font-size: 24px; }
+.build-process-summary > div > p:not(.build-process-eyebrow) { font-size: 14px; }
+.build-process-eyebrow { font-size: 12px; }
+.build-process-duration { font-size: 12px; }
+.build-process-stages { gap: 4px; padding: 8px; border: 1px solid var(--border); border-radius: 22px; background: var(--card); }
+.build-process-stage,.build-process-stage:first-child { min-height: 88px; padding: 12px; border-radius: 16px; }
+.build-process-stage[aria-pressed=true] { background: var(--primary-soft); }
+.build-process-stage strong { font-size: 13px; font-weight: 550; }
+.build-process-stage-number { width: 30px; height: 30px; font-size: 12px; background: var(--quiet); }
+.stage-succeeded .build-process-stage-number { background: var(--success-bg); color: var(--success); }
+.stage-running .build-process-stage-number { background: var(--info-bg); color: var(--info); border-color: var(--info); box-shadow: 0 0 0 4px color-mix(in srgb,var(--primary) 8%,transparent); }
+.stage-failed .build-process-stage-number { background: var(--danger-bg); }
+.build-process-preparation { padding: 24px; border-radius: 20px; background: var(--card); }
+.build-process-preparation h3,.build-process-timeline h3 { font-size: 16px; }
+.build-process-preparation p,.build-process-preparation header > span,.build-process-preparation li { font-size: 12px; }
+.build-process-preparation code { font-size: 12px; }
+.build-process-timeline { padding: 24px; border: 1px solid var(--border); border-radius: 24px; background: var(--card); }
+.build-process-timeline > header p { font-size: 13px; }
+.build-process-event-action { font-size: 14px; }
+.build-process-event-target { font-size: 12px; }
+.build-process-event-actor,.build-process-events time { font-size: 11px; }
+.build-process-events summary { min-height: 68px; }
+.build-process-event-dot { margin-top: 29px; }
+.build-process-events dl > div { font-size: 12px; }
+/* --- 计划、目标和命令使用一致圆角与分组 --- */
+.build-plan-header { padding: 20px 24px; }
+.build-plan-heading h2 { font-size: 18px; }
+.build-plan-stats { font-size: 12px; }
+.build-plan-body { padding: 24px; gap: 24px; }
+.build-plan-clarification { padding: 20px; border-radius: 18px; background: var(--warning-bg); }
+.build-plan-summary-text { font-size: 14px; }
+.build-plan-nav-item { min-height: 64px; padding: 12px; border-radius: 16px; }
+.build-plan-nav-item[aria-pressed=true] { background: var(--primary-soft); border-color: var(--border); }
+.build-plan-nav-name,.build-plan-target-header h3 { font-size: 14px; }
+.build-plan-nav-meta,.build-plan-nav-kind { font-size: 12px; }
+.build-plan-step-heading { min-height: 60px; }
+.build-plan-step-title { font-size: 14px; }
+.build-plan-step-number { width: 28px; height: 28px; border-radius: 9px; background: var(--secondary); }
+.build-plan-code { border-radius: 14px; }
+.build-plan-code-toolbar { min-height: 40px; padding-inline: 10px; color:var(--log-muted); }
+.build-plan-code-toolbar [data-slot=button] { color:var(--log-foreground); }
+.build-plan-code pre { font-size: 13px; line-height: 1.8; }
+.build-plan-fields dt,.build-plan-fields dd { font-size: 13px; }
+.build-plan-secondary pre:not(.build-plan-code pre) { border-radius: 14px; padding: 16px; }
+/* --- 审计保留真实轮次和阅读锚点 --- */
+.audit-intro { font-size: 13px; }
+.audit-rounds { gap: 8px; padding-bottom: 8px; }
+.audit-rounds > button { padding: 12px 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--card); }
+.audit-rounds > button[aria-pressed=true] { border-color: var(--primary); background: var(--primary-soft); }
+.audit-action { border-radius: 14px; padding: 16px 12px; }
+.audit-action[aria-pressed=true] { background: var(--primary-soft); }
+.audit-action-copy strong { font-size: 14px; }
+.audit-action-copy > span { font-size: 12px; }
+.audit-inspector { padding: 24px; border-radius: 24px; box-shadow: var(--content-shadow); }
+.audit-inspector h3 { font-size: 18px; }
+.audit-inspector .ui-tabs { gap: 4px; }
+.audit-inspector .ui-tab { padding-inline: 12px; font-size: 12px; }
+.audit-detail-body { font-size: 14px; }
+.audit-detail-body pre { border-radius: 12px; font-size: 12px; }
+.audit-file-bar { padding: 12px; border-radius: 12px; }
+/* --- 构建引导为功能玻璃中的稳定内容 --- */
+.wizard-steps { gap: 12px; padding-bottom: 20px; }
+.wizard-steps li { gap: 10px; font-size: 13px; }
+.wizard-step-dot { width: 30px; height: 30px; font-size: 12px; }
+.wizard-question { font-size: 24px; }
+.wizard-choice { min-height: 64px; padding: 16px; gap: 12px; border-radius: 16px; background: var(--card); }
+.wizard-choice[data-selected=true] { border-color: var(--primary); background: var(--primary-soft); }
+.wizard-choice-detail { font-size: 12px; }
+.guide-target { padding: 24px; border-radius: 20px; background: var(--card); }
+.wizard-review > div { padding-block: 18px; }
+.wizard-review dt,.wizard-review dd { font-size: 14px; }
+@media(max-width:1199px) { .build-process-stages { grid-template-columns: minmax(0,1fr); } .build-process-stage,.build-process-stage:first-child { min-height: 56px; } .build-process-stage > span:nth-child(2) { display:flex; justify-content:space-between; align-items:baseline; gap:12px; } }
+@media(max-width:767px) {
+ .build-detail-heading h1 { font-size: 26px; }
+ .build-detail-meta { padding: 16px; }
+ .build-process-summary { padding: 20px; }
+ .build-process-summary h2 { font-size: 22px; }
+ .build-process-duration { width: auto; margin-left: 64px; }
+ .build-process-preparation,.build-process-timeline { padding: 20px; }
+ .build-plan-header,.build-plan-body { padding: 20px; }
+ .build-plan-step-body { padding-left: 0; }
+ .build-plan-fields > div { grid-template-columns: 90px minmax(0,1fr); }
+ .build-plan-fields dd { font-size: 13px; }
+ .audit-inspector { padding: 20px; }
+ .wizard-steps { gap: 6px; }
+ .wizard-steps li { flex-direction:column; align-items:flex-start; gap:6px; font-size:12px; }
+ .wizard-question { font-size:22px; }
+ .guide-target { padding:20px; }
+}

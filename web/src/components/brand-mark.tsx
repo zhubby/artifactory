@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖父元素的语义前景色。
+ * [OUTPUT]: 提供固定比例的装配 A 品牌 SVG。
+ * [POS]: 认证、导航和工作空间共用品牌标记。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
 export function BrandMark() {
   return (
     <svg

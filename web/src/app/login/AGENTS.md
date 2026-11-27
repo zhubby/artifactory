@@ -3,6 +3,6 @@
 
 成员列表
 AGENTS.md: 本目录职责、成员和依赖入口。
-page.tsx: 保留登录草稿，白名单校验邮箱返回地址；登录不消费验证令牌。
+page.tsx: Prism 用户名认证与密码显隐，保留草稿和邮箱返回白名单。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

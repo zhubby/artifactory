@@ -1,0 +1,45 @@
+<!doctype html>
+<!--
+[INPUT]: 依赖本地主题、页面与账户设置模块、字体和品牌符号。
+[OUTPUT]: 提供独立的 Artifactory 概念原型入口。
+[POS]: 静态应用入口；不访问生产 API。
+[PROTOCOL]: Update this header on change, then check AGENTS.md
+-->
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Artifactory 流光工作台：液态玻璃设计系统与完整产品交互原型。">
+  <title>Artifactory · 流光工作台</title>
+  <link rel="icon" type="image/svg+xml" href="assets/brand.svg">
+  <link rel="preload" href="assets/inter.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="flows.css">
+  <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="liquid.css">
+  <link rel="stylesheet" href="motion.css">
+  <link rel="stylesheet" href="catalog.css">
+  <link rel="stylesheet" href="catalog-inputs.css">
+  <link rel="stylesheet" href="catalog-data.css">
+  <link rel="stylesheet" href="catalog-feedback.css">
+  <link rel="stylesheet" href="optics.css">
+  <link rel="stylesheet" href="charts.css">
+  <link rel="stylesheet" href="catalog-optics.css">
+  <link rel="stylesheet" href="entry-shell.css">
+  <link rel="stylesheet" href="entry-auth.css">
+  <link rel="stylesheet" href="entry-tenants.css">
+  <link rel="stylesheet" href="entry-projects.css">
+  <link rel="stylesheet" href="entry-project-delivery.css">
+  <link rel="stylesheet" href="entry-dashboard.css">
+  <link rel="stylesheet" href="entry-management.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <div id="app"></div>
+  <div id="overlay-root"></div>
+  <div id="notify" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

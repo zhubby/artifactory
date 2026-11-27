@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖账户通知夹具与浏览器交互。
- * [OUTPUT]: 验证顶栏通知入口、抽屉焦点、修订已读与跨租户请求。
+ * [OUTPUT]: 验证顶栏通知入口、抽屉焦点、修订已读与跨工作空间请求。
  * [POS]: 持久通知的确定性浏览器验收。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -254,7 +254,7 @@ test("pagination and scope filters preserve newer unread attention", async ({
   await expect
     .poll(() => queries.some((v) => v.includes("needs_action=true")))
     .toBe(true);
-  const tenant = page.getByRole("combobox", { name: "工作区", exact: true });
+  const tenant = page.getByRole("combobox", { name: "工作空间", exact: true });
   await tenant.click();
   await page.getByRole("option", { name: "Build Team", exact: true }).click();
   await expect

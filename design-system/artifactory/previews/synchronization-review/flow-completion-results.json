@@ -1,0 +1,198 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "targets-custom-platform-drafts",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "targets-duplicate-review-preservation",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "targets-32-and-minimum-boundaries",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "logs-follow-disconnect-retry",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "audit-all-exceptions-budget",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "distribution-published-gate",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "distribution-config-frozen-retry",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "light",
+    "name": "page-errors",
+    "pass": true,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "targets-custom-platform-drafts",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "targets-duplicate-review-preservation",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "targets-32-and-minimum-boundaries",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "logs-follow-disconnect-retry",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "audit-all-exceptions-budget",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "distribution-published-gate",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "distribution-config-frozen-retry",
+    "pass": true
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "name": "page-errors",
+    "pass": true,
+    "errors": []
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "targets-custom-platform-drafts",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "targets-duplicate-review-preservation",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "targets-32-and-minimum-boundaries",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "logs-follow-disconnect-retry",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "audit-all-exceptions-budget",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "distribution-published-gate",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "distribution-config-frozen-retry",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "light",
+    "name": "page-errors",
+    "pass": true,
+    "errors": []
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "targets-custom-platform-drafts",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "targets-duplicate-review-preservation",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "targets-32-and-minimum-boundaries",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "logs-follow-disconnect-retry",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "audit-all-exceptions-budget",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "distribution-published-gate",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "distribution-config-frozen-retry",
+    "pass": true
+  },
+  {
+    "width": 375,
+    "theme": "dark",
+    "name": "page-errors",
+    "pass": true,
+    "errors": []
+  }
+]

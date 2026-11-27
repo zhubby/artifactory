@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖租户路由、节点池管理、设备终端、租户 API 和共享顶栏。
+ * [INPUT]: 依赖工作空间路由、项目目录、节点池、设备终端和共享顶栏。
  * [OUTPUT]: 提供保留作用域身份的 Console 控制台。
  * [POS]: 由租户布局持续挂载，按租户与项目隔离状态，非法路径让位于 404。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -11,12 +11,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   ArrowRight,
-  ArrowUpRight,
-  FolderGit2,
   Menu,
   Plus,
-  Search,
-  Settings2,
   X,
   GitBranch,
 } from "lucide-react";
@@ -39,9 +35,8 @@ import { ReleaseTable } from "@/components/release-table";
 import { ReleaseDetail } from "@/components/release-detail";
 import { ImageCatalog } from "@/components/image-catalog";
 import { Dashboard } from "@/components/dashboard";
-import { ProjectForm } from "@/components/forms";
+import { ProjectsWorkspace } from "@/components/projects-workspace";
 import { Button } from "@/components/ui/button";
-import { Modal } from "@/components/ui/dialog";
 import {
   ArtifactTable,
   Empty,
@@ -60,8 +55,6 @@ import type {
   Build,
   Artifact,
   Release,
-  Credential,
-  Pool,
 } from "@/lib/types";
 import { compareReleaseVersions } from "@/lib/releases";
 
@@ -315,128 +308,6 @@ function Workspace({
   );
 }
 
-function ProjectsWorkspace({
-  context,
-  user,
-  projects,
-  reload,
-}: {
-  context: TenantContext;
-  user: User;
-  projects?: Project[];
-  reload: () => Promise<void>;
-}) {
-  const { t, date, number } = useUI();
-  const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
-  const pools = useRemote<Pool[]>(creating ? "/pools" : null);
-  const credentials = useRemote<Credential[]>(creating ? "/credentials" : null);
-  const filtered = projects?.filter((project) =>
-    `${project.name} ${project.slug} ${project.repository_url}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
-  );
-  return (
-    <>
-      <PageTitle
-        eyebrow={context.tenant.name}
-        title={t("navigation.projects")}
-        description={t("workspace.projectsDescription")}
-      >
-        {user.role === "admin" && context.tenant.status === "active" && (
-          <Button onClick={() => setCreating(true)}>
-            <Plus />
-            {t("projects.add")}
-          </Button>
-        )}
-      </PageTitle>
-      <div className="workspace-section-heading">
-        <div>
-          <h2>{t("workspace.allProjects")}</h2>
-          <span>{projects ? number(projects.length) : "—"}</span>
-        </div>
-        <label className="workspace-filter">
-          <Search size={16} />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            aria-label={t("workspace.searchProject")}
-            placeholder={t("workspace.searchProject")}
-          />
-        </label>
-      </div>
-      {!filtered ? (
-        <Loading />
-      ) : !filtered.length ? (
-        <section className="panel">
-          <Empty
-            title={
-              projects?.length
-                ? t("workspace.noResults")
-                : t(
-                    user.role === "admin"
-                      ? "projects.first"
-                      : "tenants.noProjects",
-                  )
-            }
-            detail={
-              projects?.length
-                ? t("workspace.trySearch")
-                : user.role === "admin"
-                  ? t("projects.firstDetail")
-                  : t("tenants.requestAccess")
-            }
-          />
-        </section>
-      ) : (
-        <div className="project-grid">
-          {filtered.map((project) => (
-            <article className="project-card" key={project.id}>
-              <div className="project-card-identity">
-                <span className="project-glyph"><FolderGit2 size={17} aria-hidden="true" /></span>
-                <div className="min-w-0">
-                  <Link className="project-card-title" href={projectPath(project.slug)}>{project.name}<ArrowUpRight aria-hidden="true" /></Link>
-                  <p className="project-card-repository" title={project.repository_url}>{project.repository_url}</p>
-                </div>
-              </div>
-              <div className="project-card-latest">
-                <Status small value={project.last_build?.status || project.status} />
-                <span>{project.last_build ? date(project.last_build.created_at) : t("projects.noBuilds")}</span>
-              </div>
-              <span className="project-card-count">{number(project.build_count)} {t("navigation.builds")}</span>
-              {project.effective_role === "admin" ? <Link href={projectPath(project.slug) + "/settings"}
-                className="inline-flex size-8 items-center justify-center rounded hover:bg-secondary max-md:size-11"
-                aria-label={t("projects.settingsNamed", { name: project.name })}><Settings2 size={15} /></Link> : <span />}
-            </article>
-          ))}
-        </div>
-      )}
-      <Modal
-        open={creating}
-        onOpenChange={setCreating}
-        title={t("projects.dialogTitle")}
-        description={t("projects.dialogDetail")}
-      >
-        <ErrorBox message={pools.error || credentials.error} />
-        {!pools.data || !credentials.data ? (
-          pools.error || credentials.error ? <Button variant="secondary" onClick={() => {
-            void pools.reload();
-            void credentials.reload();
-          }}>{t("common.retry")}</Button> : <Loading variant="form" />
-        ) : (
-          <ProjectForm
-            pools={pools.data}
-            credentials={credentials.data}
-            done={() => {
-              setCreating(false);
-              void reload();
-            }}
-          />
-        )}
-      </Modal>
-    </>
-  );
-}
 
 function ProjectWorkspace({
   project,
