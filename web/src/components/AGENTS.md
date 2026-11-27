@@ -44,7 +44,8 @@ nodes-workspace.tsx: 按节点池精确筛选并保留查询地址，组合安�
 node-pools-workspace.tsx: 以 Standard 卡片呈现设备总数与在线计数，保留池操作和设备入口。
 notifications.tsx: 顶部居中显示通知，避开手机顶栏与抽屉导航，桥接校验和弹窗焦点。
 preferences-controls.tsx: 为登录页和个人设置提供自定义语言、主题下拉。
-prism-interactions.tsx: 用事件触发玻璃流光与连续悬停胶囊，无常驻帧循环。
+prism-interactions.tsx: 以事件连接指针折光、按压光晕和选择胶囊，独立响应辅助偏好。
+prism-capsule.ts: 保留速度的弹簧装饰层，连续改变位置与尺寸，收敛后停止调度。
 providers.tsx: 组合账户、语言、主题、顶部进度和全局通知，动效适配系统偏好。
 release-detail.tsx: 组合版本说明、构建历史与单构建交付；发布弹窗固定候选，候选失效须重选；各状态可编辑说明，已发布镜像分发使用固定版本标签。
 release-form.tsx: 创建版本并编辑多行说明，版本创建后只读；源码与目标归属构建引导。

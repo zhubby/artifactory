@@ -35,7 +35,7 @@ for (const kind of ["quick navigation", "personal settings"]) {
     await expect(page.locator("html")).toHaveAttribute("data-motion", "on");
     // Pause only the playback so first-frame geometry remains observable even
     // when automation reaches the dialog after its short entrance would end.
-    await page.addStyleTag({ content: ".modal-panel, .account-panel { animation-play-state: paused !important; }" });
+    await page.addStyleTag({ content: ".modal-panel[data-state=open], .account-panel[data-state=open] { animation-play-state: paused !important; }" });
     const trigger = kind === "quick navigation"
       ? page.getByRole("button", { name: "快捷导航", exact: true })
       : page.locator(".account-trigger");

@@ -18,6 +18,7 @@ charts-dark.png: 展示深色组件库图表与线条对比。
 charts-mobile.png: 展示 375px 组件库图表与图例。
 optical-lens.png: 展示位移折射透镜与三档材质控制。
 immersive-motion.mp4: 演示连续悬停泡、单次流光、主题扩散与向导衔接。
+console-optics-motion.mp4: 演示实际控制台的指针折光、弹簧导航、菜单和弹窗。
 components-review/: 保存 120 项组件的明暗分类图与总览。
 product-review/: 保存产品复核后的框架、状态与设备预览。
 entry-review/: 保存登录、工作空间和项目的明暗与手机预览。

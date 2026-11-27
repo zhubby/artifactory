@@ -44,11 +44,13 @@
   --log-foreground: #d6e6ff;
   --log-muted: #a2b5d0;
   --selection: #a4baff33;
-  --glass-top: rgba(42,49,61,.82);
-  --glass-bottom: rgba(27,37,55,.64);
-  --glass-inset: rgba(255,255,255,.26);
-  --glass-edge: rgba(172,195,235,.24);
-  --glass-reflection: rgba(198,218,255,.16);
+  --glass-top: rgba(61,79,112,.68);
+  --glass-bottom: rgba(22,35,58,.54);
+  --glass-inset: rgba(255,255,255,.48);
+  --glass-edge: rgba(185,207,244,.3);
+  --glass-reflection: rgba(198,218,255,.24);
+  --glass-contact: rgba(5,15,34,.48);
+  --glass-prism: rgba(146,183,255,.19);
   --scrim: rgba(0,0,0,.58);
   --pearl-top: #222a36;
   --pearl-bottom: #1c212a;
@@ -117,6 +119,8 @@
   --glass-inset: rgba(255,255,255,.95);
   --glass-edge: rgba(255,255,255,.8);
   --glass-reflection: rgba(255,255,255,.72);
+  --glass-contact: rgba(36,66,117,.24);
+  --glass-prism: rgba(132,174,255,.17);
   --scrim: rgba(19,32,54,.30);
   --pearl-top: #ffffff;
   --pearl-bottom: #edf3ff;

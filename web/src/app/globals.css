@@ -1,6 +1,6 @@
 /**
- * [INPUT]: 依赖 Tailwind、Prism 材质、业务详情与反馈样式。
- * [OUTPUT]: 提供全局字体、主题映射、下拉浮层、加载反馈和系统动效适配。
+ * [INPUT]: 依赖 Tailwind、Prism 材质、交互光学、业务详情与反馈样式。
+ * [OUTPUT]: 提供全局字体、主题映射、浮层、高光和系统动效适配。
  * [POS]: 由根布局加载的控制台样式入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -28,6 +28,7 @@
 @import "../styles/prism-auth.css";
 @import "../styles/prism-tenants.css";
 @import "../styles/prism-devices.css";
+@import "../styles/prism-motion.css";
 
 @theme inline {
   --color-background: var(--background);

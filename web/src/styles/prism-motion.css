@@ -1,0 +1,88 @@
+/**
+ * [INPUT]: 依赖 Prism 材质变量、交互坐标、Radix 状态与弹簧装饰层。
+ * [OUTPUT]: 提供随指针折光、弹性选择、按压光晕与浮层展开。
+ * [POS]: 材质和业务布局后的动态层；正文与控件命中保持稳定。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+/* --- 玻璃深度由表面反光、底缘反射和接触阴影组成 --- */
+[data-prism-surface] { isolation: isolate; }
+.header-tools,.prism-project-toolbar { position: relative; }
+.prism-hall .ph-scene .ph-glass { pointer-events: auto; }
+.prism-sheen { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; z-index: -1; box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--glass-inset) 32%,transparent),inset 2px 3px 9px -5px var(--glass-inset),inset -2px -4px 9px -5px var(--glass-prism); }
+.prism-sheen::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 220px 150px at var(--prism-pointer-x,var(--prism-entry-x,50%)) var(--prism-pointer-y,0%),var(--glass-reflection),transparent 74%),radial-gradient(ellipse 180px 90px at calc(100% - var(--prism-pointer-x,50%)) 110%,var(--glass-prism),transparent 75%);
+  opacity: 0;
+  transform: none;
+  transition: opacity 240ms var(--ease);
+}
+[data-prism-pointer] > .prism-sheen::before { opacity: .8; }
+.prism-sheen::after {
+  content: ''; position: absolute; inset: -60%;
+  background: linear-gradient(112deg,transparent 38%,color-mix(in srgb,var(--glass-reflection) 60%,transparent) 48%,var(--glass-inset) 50%,transparent 57%);
+  transform: translateX(-40%) rotate(-8deg); opacity: 0;
+}
+[data-prism-active] > .prism-sheen::after { animation: prism-caustic 720ms var(--ease) both; }
+@keyframes prism-caustic { 0% { opacity: 0; transform: translateX(-40%) rotate(-10deg); } 28% { opacity: .8; } 100% { opacity: 0; transform: translateX(40%) rotate(-10deg); } }
+[data-prism-surface][data-prism-pointer]::before {
+  background: conic-gradient(from var(--prism-rim-angle,210deg),#ffffffdb,#8dd7f17a 12%,#b4a1ff80 28%,transparent 40%,#ffcfa58c 60%,#e6b3fb80 76%,#ffffffdb);
+}
+:is(.account-menu,.space-selector-menu,.select-content)::before {
+  content: ''; position: absolute; inset: 0; padding: 1px; border-radius: inherit; pointer-events: none;
+  background: conic-gradient(from 210deg,#85c1ff65,#e3aff54c,#ffd8ac75,#ffffffb3,#8bd3ea60,#b9a9ff65,#85c1ff65);
+  mask: linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0); mask-composite: exclude; -webkit-mask-composite: xor;
+}
+/* --- 弹簧只变换背板，文字与点击范围保持原位 --- */
+[data-prism-group] { position: relative; isolation: isolate; }
+.prism-selection-capsule,.prism-hover-capsule {
+  position: absolute; left: 0; top: 0; border-radius: 999px; pointer-events: none; z-index: -1;
+  border: 1px solid var(--glass-edge); transform-origin: left top;
+  background: linear-gradient(160deg,var(--glass-reflection),color-mix(in srgb,var(--glass-prism) 45%,transparent));
+  box-shadow: inset 0 1px 1px var(--glass-inset),inset 0 -1px 1px var(--glass-prism),0 5px 12px -8px var(--glass-contact);
+  opacity: 0; transition: opacity 150ms;
+}
+.prism-selection-capsule { background: linear-gradient(160deg,color-mix(in srgb,var(--primary-soft) 75%,var(--glass-top)),color-mix(in srgb,var(--primary-soft) 66%,var(--glass-bottom))); }
+.prism-selection-capsule.visible,.prism-hover-capsule.visible { opacity: 1; }
+:is(.prism-selection-capsule,.prism-hover-capsule)::after {
+  content: ''; position: absolute; top: 0; left: 16%; right: 16%; height: 35%; border-top: 1px solid var(--glass-inset); border-radius: 50%;
+  background: linear-gradient(var(--glass-prism),transparent);
+}
+[data-prism-selection] :is(.nav-item.active,.ui-tab[aria-selected=true],button[aria-current=page]) { background: transparent; box-shadow: none; }
+[data-prism-group]:has(> .prism-hover-capsule.visible) :is(.nav-item:not(.active),.ui-tab:not([aria-selected=true]),.header-docs):hover { background: transparent; }
+/* --- 按压收缩与释放回弹发生在局部光学层 --- */
+:is([data-slot=button],.nav-item,.ui-tab,.select-trigger,.command-trigger,.account-trigger,.header-docs,.inbox-bell,.space-selector summary,.ph-enter-space) { position: relative; }
+:is([data-slot=button],.ph-enter-space):not(:disabled):active { transform: none; }
+.prism-press-wave {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none; overflow: hidden;
+  background: radial-gradient(circle at var(--press-x,50%) var(--press-y,50%),var(--glass-inset),var(--glass-reflection) 24%,transparent 72%);
+  box-shadow: inset 0 1px 1px var(--glass-inset); opacity: 0;
+}
+.prism-press-wave::after {
+  content: ''; position: absolute; inset: 1px; border: 1px solid var(--glass-edge); border-radius: inherit;
+  animation: prism-pressure 620ms var(--ease) both;
+}
+@keyframes prism-pressure { 0% { transform: scale(.9,.78); opacity: .1; } 25% { transform: scale(.97,.92); opacity: .85; } 65% { transform: scale(1.025,1.06); opacity: .4; } 100% { transform: scale(1); opacity: 0; } }
+/* --- 菜单从触发侧舒展，面板在中心收敛 --- */
+:is(.account-menu,.space-selector-menu) { transform-origin: var(--prism-popover-origin,50% 0%); animation: prism-popover-enter 320ms var(--ease); }
+.select-content { animation: prism-popover-enter 320ms var(--ease); }
+.select-content[data-state=closed] { animation: none; }
+.modal-panel:not(.drawer-panel)[data-state=open],.account-panel[data-state=open] { animation: prism-panel-enter 320ms var(--ease); }
+.modal-panel[data-state=open] > .prism-sheen::before,.account-panel[data-state=open] > .prism-sheen::before { animation: prism-panel-light 700ms ease-out; }
+.modal-panel:not(.drawer-panel)[data-state=closed],.account-panel[data-state=closed] { animation: none; }
+.modal-overlay[data-state=open],.account-overlay[data-state=open] { animation: prism-overlay-enter 220ms ease-out; }
+.modal-overlay[data-state=closed],.account-overlay[data-state=closed] { animation: none; }
+@keyframes prism-panel-enter { 0% { opacity: 0; transform: translateY(4px) scale(.94); } 76% { opacity: 1; transform: translateY(-1px) scale(1.006); } 100% { opacity: 1; transform: none; } }
+@keyframes prism-popover-enter { 0% { opacity: 0; transform: translateY(-4px) scale(.93,.87); } 76% { opacity: 1; transform: translateY(1px) scale(1.006,1.012); } 100% { opacity: 1; transform: none; } }
+@keyframes prism-overlay-enter { from { opacity: 0; } to { opacity: 1; } }
+@keyframes prism-panel-light { 0% { opacity: 0; } 24% { opacity: .75; } 100% { opacity: 0; } }
+/* --- 手机长任务使用实体阅读面，视觉辅助偏好独立降级 --- */
+@media (max-width:767px) { .modal-panel.drawer-panel,.account-panel { background: var(--card); } }
+:root:is([data-transparency=reduce],[data-contrast=more]) :is(.prism-sheen,.prism-hover-capsule,.prism-selection-capsule,.prism-press-wave) { display: none; }
+:root:is([data-transparency=reduce],[data-contrast=more]) :is(.account-menu,.space-selector-menu,.select-content)::before { display: none; }
+@media (prefers-reduced-transparency:reduce),(prefers-contrast:more),(forced-colors:active) {
+  .prism-sheen,.prism-hover-capsule,.prism-selection-capsule,.prism-press-wave { display: none; }
+  :is(.account-menu,.space-selector-menu,.select-content)::before { display: none; }
+  [data-prism-selection] :is(.nav-item.active,.ui-tab[aria-selected=true],button[aria-current=page]) { background: var(--primary-soft); }
+}
+@media (prefers-reduced-motion:reduce) { .prism-sheen,.prism-hover-capsule,.prism-press-wave { display: none; } }
+:root[data-motion=off] :is(.prism-sheen,.prism-hover-capsule,.prism-press-wave) { display: none; }

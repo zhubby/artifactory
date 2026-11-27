@@ -44,6 +44,7 @@ node-installation.spec.ts: 验证固定同版本安装、过期、关闭秘密�
 node-installation-commands.spec.ts: 隔离执行 Shell 与 PowerShell，验证传参、摘要、进程策略与 CA 保留。
 peripheral-visual.spec.ts: 验证认证页、邀请页、独立项目目录空态和错误页的视觉边界。
 prism-system.spec.ts: 验证授权项目双视图、查找排序、小屏阅读、独立材质降级和反光收敛。
+prism-optics.spec.ts: 采样指针高光、跨路由弹簧、稳定按压范围和辅助偏好中断。
 preferences.spec.ts: 验证用户视觉和语言偏好。
 readable-routes.spec.ts: 验证项目目录、概览构建深链接、slug 导航和作用域切换。
 registration.spec.ts: 验证注册交互。

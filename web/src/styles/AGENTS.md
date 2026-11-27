@@ -16,6 +16,7 @@ tokens.css: 与 Prism 原型同源的主题、语义颜色、材质和动效变�
 prism-auth.css: 认证品牌雕塑、Standard 表单与密码显隐，适配系统辅助偏好。
 prism-tenants.css: 工作空间珠光目录、功能玻璃与交付雕塑，适配主题、窄屏和辅助偏好。
 prism-material.css: Standard 内容和 Regular 功能层，色散细边及辅助偏好降级。
+prism-motion.css: 指针折光、弹簧胶囊、局部按压和浮层开合，保持文字和命中范围稳定。
 prism-devices.css: 设备目录、节点池、容量圆端与终端外围的 Prism 材质。
 prism-delivery.css: 真实阶段、计划、执行日志、审计与四步引导的 Standard 层级。
 prism-notifications.css: 通知功能玻璃、消息列表与账户订阅的 Prism 外观。
