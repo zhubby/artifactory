@@ -128,6 +128,7 @@
 - [Prism 0.2.6 Kubernetes 上线记录 · 2026-11-27](releases/2026-11-27-prism-kubernetes.md)
 - [动态玻璃 Web 上线记录 · 2026-11-28](releases/2026-11-28-liquid-optics-kubernetes.md)
 - [页面打磨与 AI 审计 Web 上线记录 · 2026-11-28](releases/2026-11-28-page-polish-kubernetes.md)
+- [页面精修收尾重新部署 · 2026-11-28](releases/2026-11-28-final-page-polish-kubernetes.md)
 - [0.2.0 Kubernetes 试部署记录](releases/0.2.0-kubernetes-trial.md)
 - [多租户 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-multitenancy-kubernetes.md)
 - [可读路由 Kubernetes 升级记录 · 2026-11-15](releases/2026-11-15-readable-routes-kubernetes.md)
