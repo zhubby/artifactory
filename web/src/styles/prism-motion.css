@@ -6,7 +6,7 @@
  */
 /* --- 玻璃深度由表面反光、底缘反射和接触阴影组成 --- */
 [data-prism-surface] { isolation: isolate; }
-.header-tools,.prism-project-toolbar { position: relative; }
+.header-tools,.prism-project-toolbar,.prism-delivery-toolbar,.audit-toolbar { position: relative; }
 .prism-hall .ph-scene .ph-glass { pointer-events: auto; }
 .prism-sheen { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; z-index: -1; box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--glass-inset) 32%,transparent),inset 2px 3px 9px -5px var(--glass-inset),inset -2px -4px 9px -5px var(--glass-prism); }
 .prism-sheen::before {
@@ -48,9 +48,10 @@
   background: linear-gradient(var(--glass-prism),transparent);
 }
 [data-prism-selection] :is(.nav-item.active,.ui-tab[aria-selected=true],button[aria-current=page]) { background: transparent; box-shadow: none; }
+.node-detail-tabs[data-prism-selection] button[aria-selected=true],.inbox-tabs[data-prism-selection] button[aria-pressed=true] { background: transparent; box-shadow: none; }
 [data-prism-group]:has(> .prism-hover-capsule.visible) :is(.nav-item:not(.active),.ui-tab:not([aria-selected=true]),.header-docs):hover { background: transparent; }
 /* --- 按压收缩与释放回弹发生在局部光学层 --- */
-:is([data-slot=button],.nav-item,.ui-tab,.select-trigger,.command-trigger,.account-trigger,.header-docs,.inbox-bell,.space-selector summary,.ph-enter-space) { position: relative; }
+:is([data-slot=button],.nav-item,.ui-tab,.select-trigger,.command-trigger,.account-trigger,.header-docs,.inbox-bell,.space-selector summary,.ph-enter-space,.node-detail-tabs button,.inbox-tabs button,.audit-action,.audit-rounds button) { position: relative; }
 :is([data-slot=button],.ph-enter-space):not(:disabled):active { transform: none; }
 .prism-press-wave {
   position: absolute; inset: 0; border-radius: inherit; pointer-events: none; overflow: hidden;

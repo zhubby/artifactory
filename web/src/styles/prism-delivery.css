@@ -5,6 +5,27 @@
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 /* --- 构建身份与稳定阅读面 --- */
+.prism-delivery-toolbar { position: relative; margin-bottom: 20px; padding: 12px 16px; border: 1px solid var(--glass-edge); border-radius: 24px; background: linear-gradient(145deg,var(--glass-top),var(--glass-bottom)); backdrop-filter: blur(var(--blur)) saturate(var(--saturate)); box-shadow: inset 0 1px 1px var(--glass-inset),var(--content-shadow); }
+.prism-delivery-toolbar .list-toolbar { margin: 0; }
+.prism-delivery-toolbar .workspace-filter { max-width: 380px; background: var(--card); }
+.release-notes-disclosure { min-width: 180px; max-width: 56ch; }
+.release-notes-disclosure > summary { display: grid; gap: 8px; padding-block: 5px; list-style: none; cursor: pointer; }
+.release-notes-disclosure > summary::-webkit-details-marker { display: none; }
+.release-notes-toggle { display: flex; align-items: center; gap: 5px; min-height: 28px; color: var(--primary); font-size: 12px; }
+.release-notes-collapse { display: none; }
+.release-notes-disclosure[open] .release-notes-expand,.release-notes-disclosure[open] .release-notes-preview { display: none; }
+.release-notes-disclosure[open] .release-notes-collapse { display: inline; }
+.release-notes-disclosure[open] .release-notes-toggle svg { rotate: 180deg; }
+.release-notes-body { line-height: 1.8; overflow-wrap: anywhere; }
+.release-notes-disclosure:has(summary:focus-visible) { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 10px; }
+.delivery-build-table td:first-child { min-width: 190px; }
+.delivery-build-table td:nth-child(2) { min-width: 140px; }
+.delivery-build-table td:last-child a { display: inline-grid; place-items: center; width: 44px; min-height: 44px; border-radius: 14px; }
+.delivery-build-table td:last-child a:hover { background: var(--primary-soft); }
+.delivery-build-table td,.delivery-release-table td { vertical-align: top; }
+:root:is([data-transparency=reduce],[data-contrast=more]) .prism-delivery-toolbar { background: var(--card); backdrop-filter: none; }
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more),(forced-colors:active) { .prism-delivery-toolbar { background: var(--card); backdrop-filter: none; } }
+@media(max-width:767px) { .prism-delivery-toolbar { padding: 12px; } .release-notes-toggle { min-height: 44px; } }
 .build-detail-header { margin-bottom: 16px; gap: 20px; }
 .build-detail-heading h1 { font-size: 30px; line-height: 1.3; letter-spacing: -.025em; }
 .build-detail-back { min-height: 40px; font-size: 13px; }

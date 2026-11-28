@@ -1,0 +1,115 @@
+/**
+ * [INPUT]: 依赖设置分区、模型表单、成员列表和 Prism 语义变量。
+ * [OUTPUT]: 提供 Standard 设置阅读面、分组表单与完整身份阅读。
+ * [POS]: 只约束设置与账户内容；权限、请求和草稿由业务组件维持。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+/* --- 设置按任务分区，正文保留稳定表面 --- */
+.prism-settings { container-type: inline-size; }
+.prism-settings > fieldset { min-width: 0; }
+.prism-settings .management-section { padding: 28px; }
+.prism-settings .management-section > h2 { margin-bottom: 12px; }
+.prism-settings .management-description { max-width: 62ch; margin-bottom: 24px; line-height: 1.8; }
+.settings-heading { align-items: center; gap: 24px; margin-bottom: 24px; }
+.settings-heading > div { min-width: 0; }
+.settings-heading h2 { font-size: 20px; line-height: 1.4; letter-spacing: -.02em; }
+.settings-heading p,.settings-description { max-width: 64ch; color: var(--muted-foreground); font-size: 14px; line-height: 1.8; }
+.settings-heading > [data-slot=button] { flex-shrink: 0; min-height: 44px; }
+.settings-records { border-radius: 24px; }
+.settings-records .section-title > div > span { display: inline; }
+.settings-records td { min-width: 0; overflow-wrap: anywhere; }
+.settings-record-caption { margin-top: 6px; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; }
+.settings-scope-list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.settings-state { display: inline-flex; align-items: center; gap: 6px; width: fit-content; max-width: 100%; padding: 4px 9px; border-radius: 999px; background: var(--secondary); color: var(--muted-foreground); font-size: 12px; line-height: 1.5; white-space: nowrap; }
+.settings-state::before { content: ''; flex-shrink: 0; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.settings-state[data-state=valid] { color: var(--success); background: var(--success-bg); }
+.settings-state[data-state=expired] { color: var(--warning); background: var(--warning-bg); }
+.settings-state[data-state=revoked] { color: var(--destructive); background: var(--danger-bg); }
+.settings-identity-detail { min-width: 104px; max-width: 240px; }
+.settings-identity-detail > summary { min-height: 36px; width: fit-content; padding-block: 8px; color: var(--foreground); cursor: pointer; }
+.settings-identity-detail > summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 4px; }
+.settings-identity-detail > code { display: block; margin: 2px 0 8px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--quiet); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; user-select: all; }
+.settings-footnote { display: flex; align-items: flex-start; gap: 9px; margin-top: 24px; max-width: 72ch; color: var(--muted-foreground); font-size: 12px; line-height: 1.8; }
+.settings-footnote > svg { flex-shrink: 0; margin-top: 3px; }
+
+/* --- 模型连接与预算分组，兼容项保留渐进展开 --- */
+.settings-models { display: grid; gap: 24px; min-width: 0; }
+.settings-models > .settings-description { margin: 0; }
+.settings-models .section-title { gap: 16px; flex-wrap: wrap; }
+.settings-models .section-title > [data-slot=button] { min-height: 44px; }
+.settings-model-table table { min-width: 680px; }
+.settings-model-name { display: inline-flex; align-items: center; min-height: 40px; text-align: left; color: var(--primary); font-size: 14px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.settings-model-name:hover { text-decoration: underline; text-underline-offset: 4px; }
+.settings-model-name:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 4px; }
+.settings-model-id { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.settings-endpoint { max-width: 28ch; overflow-wrap: anywhere; }
+.settings-model-budget { min-width: 130px; color: var(--muted-foreground); font-size: 12px; font-variant-numeric: tabular-nums; line-height: 1.8; }
+.settings-retry { padding: 24px; }
+.settings-form-group { display: grid; gap: 20px; min-width: 0; margin: 0; padding: 20px; border: 1px solid var(--border); border-radius: 18px; background: var(--card); }
+.settings-form-group > legend { padding-inline: 6px; font-size: 14px; font-weight: 600; line-height: 1.6; }
+.settings-model-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-items: start; gap: 20px 16px; }
+.settings-model-fields > label { min-width: 0; }
+.settings-choice-group { min-width: 0; margin: 0; padding: 16px 20px 20px; border: 1px solid var(--border); border-radius: 18px; background: var(--card); }
+.settings-choice-group > legend { padding-inline: 6px; font-size: 14px; font-weight: 600; line-height: 1.6; }
+.settings-project-choices { display: grid; gap: 4px; max-height: 220px; overflow: auto; overscroll-behavior: contain; padding: 3px; margin: -3px; }
+.settings-project-choices > label,.settings-scope-choices > label,.settings-model-options > label { display: flex; align-items: center; gap: 10px; min-height: 44px; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; cursor: pointer; }
+.settings-project-choices > label:has(input:checked),.settings-scope-choices > label:has(input:checked),.settings-model-options > label:has(input:checked) { border-color: color-mix(in srgb,var(--primary) 45%,var(--border)); background: var(--primary-soft); }
+.settings-project-choices > label:focus-within,.settings-scope-choices > label:focus-within,.settings-model-options > label:focus-within { outline: 2px solid var(--ring); outline-offset: 2px; }
+.settings-scope-choices,.settings-model-options { display: flex; flex-wrap: wrap; gap: 10px; }
+.settings-model-options { display: grid; grid-template-columns: minmax(0,1fr); }
+.settings-compatibility { padding: 0 20px; border-radius: 18px; }
+.settings-compatibility > summary { min-height: 48px; display: flex; align-items: center; }
+.settings-compatibility[open] { padding-bottom: 20px; }
+
+/* --- 成员标题、表单与记录使用同一起点 --- */
+.settings-members { display: grid; min-width: 0; gap: 24px; }
+.settings-member-section { margin-top: 0; }
+.settings-member-section > .section-title { align-items: flex-start; padding: 24px; }
+.settings-member-section > .section-title > div { display: grid; gap: 8px; }
+.settings-member-section > .section-title h2 { font-size: 18px; line-height: 1.5; }
+.settings-member-section > .section-title > div > span { display: block; max-width: 64ch; font-size: 13px; line-height: 1.8; }
+.settings-member-section > .form-stack { padding: 24px; border-bottom: 1px solid var(--border); }
+.settings-member-section > .form-stack .form-footer { padding-top: 0; margin-top: 0; border-top: 0; }
+.settings-member-section > .form-stack .form-footer [data-slot=button] { min-height: 44px; }
+.settings-member-list { margin: 0; padding-inline: 24px; list-style: none; }
+.settings-member-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; min-width: 0; padding-block: 20px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.settings-member-row:last-child { border-bottom: 0; }
+.settings-member-name { flex: 1 1 160px; min-width: 0; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+.settings-member-row .select-trigger { max-width: 180px; }
+.settings-member-row > [data-slot=button] { min-height: 40px; }
+.settings-member-row > .form-stack { display: block; }
+.settings-member-row > .form-stack .form-footer { padding: 0; margin: 0; border: 0; }
+.settings-invitation-list .settings-member-name { font-size: 13px; color: var(--muted-foreground); }
+.settings-invitation-link { display: flex; align-items: flex-start; gap: 12px; margin: 20px 24px; }
+.settings-member-section > .loading-state { padding: 20px 24px; }
+.settings-member-section > .empty-state { padding: 40px 24px; }
+
+/* --- 账户正文延续设置阅读间距，不叠加玻璃 --- */
+.account-panel-content .form-stack { gap: 22px; }
+.account-panel-content .form-footer { padding-top: 20px; }
+.account-panel-content .form-footer [data-slot=button] { min-height: 44px; }
+.account-panel-content .preference-fields { gap: 20px; }
+
+@container (max-width: 600px) {
+  .prism-settings .management-section { padding: 20px; }
+  .settings-heading { align-items: flex-start; flex-direction: column; gap: 16px; }
+  .settings-heading h2 { font-size: 18px; }
+  .settings-member-section > .section-title,.settings-member-section > .form-stack { padding: 20px; }
+  .settings-member-list { padding-inline: 20px; }
+  .settings-invitation-link { margin-inline: 20px; }
+  .settings-member-name { flex-basis: 100%; }
+  .settings-member-row > [data-slot=button] { min-height: 44px; }
+}
+@media (max-width: 600px) {
+  .settings-model-fields { grid-template-columns: minmax(0,1fr); gap: 18px; }
+  .settings-form-group { padding: 18px 16px; }
+  .settings-choice-group { padding: 14px 16px 18px; }
+  .settings-compatibility { padding-inline: 16px; }
+  .settings-model-name,.settings-identity-detail > summary { min-height: 44px; }
+  .settings-models .section-title { padding: 20px; }
+  .settings-member-row .select-trigger { max-width: 100%; }
+}
+@media (forced-colors: active) {
+  .settings-state { border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
+  .settings-project-choices > label:has(input:checked),.settings-scope-choices > label:has(input:checked),.settings-model-options > label:has(input:checked) { border-color: Highlight; background: Canvas; }
+}

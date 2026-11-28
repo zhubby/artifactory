@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖统一设置导航、项目 API、Webhook 与签名配置。
- * [OUTPUT]: 提供 WorkspaceManagement 工作区设置。
+ * [OUTPUT]: 提供具名分区、统一阅读宽度与设置表单。
  * [POS]: 按分区隔离设置状态；项目表单等待必需资源后挂载。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -202,7 +202,7 @@ export function WorkspaceManagement({
         title={t(selected?.label || (project ? "workspace.manageProject" : "workspace.manageTenant"))}
         description={project?.name || context.tenant.name}
       />
-      <div className="management-content">{content}</div>
+      <div className="management-content prism-settings" data-settings-section={section} data-settings-scope={project ? "project" : "workspace"}>{content}</div>
     </>
   );
 }

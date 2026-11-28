@@ -24,10 +24,12 @@
 @import "../styles/prism-workspace.css";
 @import "../styles/prism-projects.css";
 @import "../styles/prism-delivery.css";
+@import "../styles/prism-audit.css";
 @import "../styles/prism-notifications.css";
 @import "../styles/prism-auth.css";
 @import "../styles/prism-tenants.css";
 @import "../styles/prism-devices.css";
+@import "../styles/prism-settings.css";
 @import "../styles/prism-motion.css";
 
 @theme inline {

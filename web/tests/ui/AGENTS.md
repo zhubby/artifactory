@@ -29,7 +29,7 @@ images.spec.ts: 验证已发布 Release 分发、候选只读、凭据清空，�
 monochrome-workspace.spec.ts: 验证快捷导航、应用分类、草稿保护与日志状态。
 model-compatibility.spec.ts: 验证任意模型名、兼容配置回显、协议切换与密钥留空保存。
 planning-feedback.spec.ts: 验证实时与已确认统计、终态优先、旧审计身份和镜像确认说明。
-planning-audit.spec.ts: 验证独立标签顺序与按需加载、工具关联、分页、切离停轮询和阅读状态。
+planning-audit.spec.ts: 验证审计按需加载、工具关联、已加载搜索与异常筛选、复制失败反馈、手机焦点跳转、分页和阅读状态。
 planning-audit-data.spec.ts: 验证调用和提案身份、完整分片、原文保留与预算提示分类。
 motion.spec.ts: 验证默认动效、系统减少动态适配、历史开关忽略及偏好界面无动效控制。
 node-evolution.spec.ts: 验证双语窄屏队列进展、持久清单冲突、永久拒收、采样裁剪、队列和磁盘未知与零值、OTA门禁、请求恢复、取消确认和结果权限。

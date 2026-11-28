@@ -1,15 +1,18 @@
 /**
- * [INPUT]: 依赖审计阅读投影、已保存的文本和中英文界面文案。
- * [OUTPUT]: 安全呈现任务输入、正文、文件与日志，保留原始记录入口。
- * [POS]: 审计详情的纯展示层；不执行 HTML，不请求或改写源码。
+ * [INPUT]: 依赖审计阅读投影、已保存文本、剪贴板与统一通知。
+ * [OUTPUT]: 安全呈现审计正文，提供类型层级与原始记录复制。
+ * [POS]: 审计详情阅读层；不执行 HTML，不请求或改写源码。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 "use client";
 import { Fragment, useState, type ReactNode } from "react";
+import { ClipboardList, Copy, FileText, GitPullRequest, Info, MessageSquare, Sparkles, Wrench } from "lucide-react";
 import { useUI } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { auditObject, type AuditEntry } from "@/lib/planning-audit";
+import { asError } from "@/lib/errors";
+import { notify } from "@/lib/notify";
 import { bytes } from "@/lib/utils";
 
 function inline(text: string): ReactNode {
@@ -96,8 +99,32 @@ export function auditTitle(entry: AuditEntry, t: ReturnType<typeof useUI>["t"]) 
 
 export function AuditInspector({ entry, tab, setTab, terminal }: { entry: AuditEntry; tab: string; setTab: (value: string) => void; terminal: boolean }) {
   const { t, date } = useUI();
+  const [copying, setCopying] = useState(false);
+  const Icon = entry.kind === "tool" ? Wrench : entry.kind === "proposal" ? GitPullRequest
+    : entry.kind === "context" ? ClipboardList : entry.kind === "assistant" ? Sparkles
+      : entry.kind === "user" ? MessageSquare : entry.kind === "system" || entry.kind === "runtime" ? Info : FileText;
+  const copy = async () => {
+    setCopying(true);
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(entry.records, null, 2));
+      notify.success(t("common.copied"));
+    } catch (error) {
+      notify.error(asError(error));
+    } finally {
+      setCopying(false);
+    }
+  };
   return <section className="audit-inspector" role="region" aria-label={t("audit.detail")}>
-    <header><div><h3>{auditTitle(entry, t)}</h3>{entry.name && <code className="audit-tool-name">{entry.name}</code>}</div><span className={`audit-outcome outcome-${entry.outcome || "missing"}`}>{t(entry.outcome ? `audit.outcomes.${entry.outcome}` : entry.kind === "tool" || entry.kind === "proposal" ? terminal ? "audit.missingResult" : "audit.waitingResult" : `audit.kinds.${entry.kind}`)}</span></header>
+    <header>
+      <div className="audit-inspector-heading">
+        <span className={`audit-inspector-icon kind-${entry.kind}`} aria-hidden="true"><Icon size={20} /></span>
+        <div className="audit-inspector-title"><p className="audit-inspector-eyebrow">{t(`audit.kinds.${entry.kind}`)}</p><h3>{auditTitle(entry, t)}</h3>{entry.name && <code className="audit-tool-name">{entry.name}</code>}</div>
+      </div>
+      <div className="audit-inspector-actions">
+        <span className={`audit-outcome outcome-${entry.outcome || "missing"}`}>{t(entry.outcome ? `audit.outcomes.${entry.outcome}` : entry.kind === "tool" || entry.kind === "proposal" ? terminal ? "audit.missingResult" : "audit.waitingResult" : `audit.kinds.${entry.kind}`)}</span>
+        <Button type="button" variant="ghost" size="sm" disabled={copying} aria-busy={copying} title={`${t("common.copy")} · ${t("audit.raw")}`} onClick={() => void copy()}><Copy aria-hidden="true" />{t("common.copy")}</Button>
+      </div>
+    </header>
     <div className="audit-detail-meta"><time dateTime={entry.records[0].created_at}>{date(entry.records[0].created_at)}</time>{entry.durationMs !== undefined && <span>{entry.durationMs} ms</span>}</div>
     <Tabs value={tab} onChange={setTab} label={t("audit.detailTabs")} items={[
       { value: "result", label: t("audit.readable") }, { value: "arguments", label: t("audit.arguments") }, { value: "raw", label: t("audit.raw") },

@@ -96,6 +96,44 @@ test("task input leads with the goal and keeps remaining context folded", async 
   await expect(extra).toContainText(build.id);
 });
 
+test("loaded search and attention filter keep the selected evidence and pagination available", async ({ page }) => {
+  const audit = await openAudit(page);
+  await audit.getByRole("button", { name: /读取文件.*README.md/ }).click();
+  const detail = audit.getByRole("region", { name: "动作详情", exact: true });
+  await audit.getByRole("searchbox", { name: "搜索动作、文件或调用标识" }).fill("not-in-loaded-records");
+  await expect(audit.getByText("已加载的动作中没有匹配项。调整筛选，或继续加载记录。", { exact: true })).toBeVisible();
+  await expect(detail.getByRole("heading", { name: "Build demo", exact: true })).toBeVisible();
+  await expect(audit.getByRole("button", { name: "加载更多消息", exact: true })).toBeVisible();
+  await audit.getByRole("searchbox").fill("");
+  await audit.getByRole("combobox", { name: "动作类型", exact: true }).click();
+  await page.getByRole("option", { name: "需要留意", exact: true }).click();
+  await expect(audit.locator(".audit-feed").getByRole("button", { name: /Dockerfile/ })).toBeVisible();
+  await expect(audit.locator(".audit-feed").getByRole("button", { name: /README.md/ })).toHaveCount(0);
+  await expect(detail.getByRole("heading", { name: "Build demo", exact: true })).toBeVisible();
+  await expect(audit.locator(".audit-summary")).toContainText("3 个已加载工具与提案");
+});
+
+test("copy uses the selected raw records and reports clipboard failure", async ({ page }) => {
+  const audit = await openAudit(page);
+  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text: string) => { (window as unknown as Record<string, unknown>).auditCopied = text; } } }));
+  await audit.getByRole("button", { name: /读取文件.*README.md/ }).click();
+  const detail = audit.getByRole("region", { name: "动作详情", exact: true });
+  await detail.getByRole("button", { name: "复制", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, unknown>).auditCopied)).toContain('"toolCallId": "read-a"');
+  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("Clipboard permission denied"); } } }));
+  await detail.getByRole("button", { name: "复制", exact: true }).click();
+  await expect(page.getByText("Clipboard permission denied", { exact: true })).toBeVisible();
+});
+
+test("mobile detail and action shortcuts place focus on the reading region", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile", "Mobile reading navigation");
+  const audit = await openAudit(page);
+  await audit.getByRole("button", { name: "查看所选详情", exact: true }).click();
+  await expect(audit.locator(".audit-inspector-anchor")).toBeFocused();
+  await audit.getByRole("button", { name: "返回动作列表", exact: true }).click();
+  await expect(audit.locator(".audit-feed")).toBeFocused();
+});
+
 test("background audit polling preserves the selected raw record and reading position", async ({ page }) => {
   await page.clock.install();
   const audit = await openAudit(page, "zh-CN", "light", true);

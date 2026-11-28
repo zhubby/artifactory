@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖租户下载 API、全局通知和带验签证据的制品类型。
- * [OUTPUT]: 提供内容标题、标题附件、页面动作、骨架和制品验签表。
+ * [OUTPUT]: 提供内容标题、页面动作、骨架和可键盘滚动的制品验签表。
  * [POS]: 业务页面复用的展示与反馈边界。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -56,6 +56,7 @@ export function Status({
     resolving: t("status.resolving"),
     planning: t("status.planning"),
     replanning: t("status.replanning"),
+    interrupted: t("status.interrupted"),
     needs_input: t("status.needs_input"),
     queued: t("status.queued"),
     leased: t("status.leased"),
@@ -250,7 +251,7 @@ export function ArtifactTable({ artifacts }: { artifacts: Artifact[] }) {
   return (
     <div>
       <ErrorBox message={error} />
-      <div className="table-scroll">
+      <div className="table-scroll delivery-artifact-table" tabIndex={0} role="region" aria-label={t("artifacts.files")}>
         <table>
           <thead>
             <tr>

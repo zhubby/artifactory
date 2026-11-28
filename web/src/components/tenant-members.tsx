@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖成员与邀请 API、统一表单、Select 和全局通知。
- * [OUTPUT]: 提供租户成员、邀请和项目成员编辑界面。
+ * [OUTPUT]: 提供成员与邀请的独立表单、记录列表和空态。
  * [POS]: 成员与邀请独立展示首读骨架，刷新保留列表和表单草稿。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -9,6 +9,7 @@
 import { useState } from "react";
 import {
   CopyButton,
+  Empty,
   ErrorBox,
   Field,
   Loading,
@@ -52,7 +53,7 @@ export function TenantMembers({ user }: { user: User }) {
     }
   }
   return (
-    <div className="grid min-w-0 gap-6">
+    <div className="settings-members">
       <ErrorBox message={error || members.error || invites.error} />
       {(members.error || invites.error) && (
         <Button
@@ -62,10 +63,11 @@ export function TenantMembers({ user }: { user: User }) {
           {t("common.retry")}
         </Button>
       )}
-      <section className="panel p-5 sm:p-6">
+      <section className="panel settings-member-section">
         <SectionTitle
           title={t("tenants.members")}
           detail={t("tenants.memberDetail")}
+          live
         />
         <SubmitForm
           label={t("tenants.add")}
@@ -91,14 +93,14 @@ export function TenantMembers({ user }: { user: User }) {
         </SubmitForm>
         {!members.data ? (
           !members.error && <Loading />
-        ) : (
-          <ul className="mt-6 divide-y divide-border">
+        ) : !members.data.length ? <Empty title={t("security.empty")} detail={t("tenants.memberDetail")} /> : (
+          <ul className="settings-member-list">
             {members.data.map((member) => (
               <li
                 key={member.id}
-                className="flex flex-wrap items-center gap-3 py-4"
+                className="settings-member-row"
               >
-                <span className="min-w-0 flex-1 break-words text-sm">
+                <span className="settings-member-name">
                   {member.username}
                 </span>
                 {member.role === "owner" ? (
@@ -144,10 +146,11 @@ export function TenantMembers({ user }: { user: User }) {
           </ul>
         )}
       </section>
-      <section className="panel p-5 sm:p-6">
+      <section className="panel settings-member-section">
         <SectionTitle
           title={t("tenants.invitations")}
           detail={t("tenants.inviteDetail")}
+          live
         />
         <SubmitForm
           label={t("tenants.generateInvite")}
@@ -168,23 +171,23 @@ export function TenantMembers({ user }: { user: User }) {
           </Field>
         </SubmitForm>
         {link && (
-          <div className="notice mt-4 flex min-w-0 items-start gap-3">
+          <div className="notice settings-invitation-link">
             <code className="min-w-0 flex-1 break-all text-xs">{link}</code>
             <CopyButton value={link} />
           </div>
         )}
         {!invites.data ? (
           !invites.error && <Loading variant="list" />
-        ) : <ul className="mt-4 divide-y divide-border">
+        ) : !invites.data.length ? <Empty title={t("security.empty")} detail={t("tenants.inviteDetail")} /> : <ul className="settings-member-list settings-invitation-list">
           {invites.data.map((invite) => (
             <li
               key={invite.id}
-              className="flex flex-wrap items-center gap-3 py-3 text-xs"
+              className="settings-member-row"
             >
-              <span className="min-w-0 flex-1">
+              <span className="settings-member-name">
                 {t(`tenants.${invite.role}`)} · {date(invite.expires_at)}
               </span>
-              <span className="text-muted-foreground">
+              <span className="settings-state" data-state={invite.accepted_at ? "used" : invite.revoked_at ? "revoked" : Date.parse(invite.expires_at) <= Date.now() ? "expired" : "valid"}>
                 {invite.accepted_at
                   ? t("tenants.used")
                   : invite.revoked_at
@@ -260,10 +263,11 @@ export function ProjectMembers({ project }: { project: Project; user: User }) {
     `/projects/${project.id}/member-options`,
   );
   return (
-    <section className="panel mt-6 p-5 sm:p-6">
+    <section className="panel settings-member-section">
       <SectionTitle
         title={t("tenants.projectMembers")}
         detail={t("tenants.projectMemberDetail")}
+        live
       />
       <ErrorBox message={members.error || options.error} />
       {(members.error || options.error) && (
@@ -307,14 +311,14 @@ export function ProjectMembers({ project }: { project: Project; user: User }) {
       </SubmitForm>
       {!members.data ? (
         !members.error && <Loading />
-      ) : (
-        <ul className="mt-4 divide-y divide-border">
+      ) : !members.data.length ? <Empty title={t("security.empty")} detail={t("tenants.projectMemberDetail")} /> : (
+        <ul className="settings-member-list">
           {members.data.map((member) => (
             <li
-              className="flex flex-wrap items-center gap-4 py-3"
+              className="settings-member-row"
               key={member.user_id}
             >
-              <span className="min-w-0 flex-1 break-words text-sm">
+              <span className="settings-member-name">
                 {member.username}
               </span>
               <span className="tag">{t(`security.${member.role}`)}</span>

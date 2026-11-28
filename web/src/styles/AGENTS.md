@@ -7,6 +7,7 @@ components.css: 共享单行筛选、正文标题附件、统一控件高度、�
 build-detail.css: 构建详情的紧凑标题、折叠合同、计划目标导航、步骤命令和 OCI 参数布局。
 build-process.css: 源码子步骤、窄屏有界耗时、阶段导航和可展开事件时间线。
 planning-audit.css: 独立审计标签的规划轮次、关联动作与详情双栏及手机布局。
+prism-audit.css: 轮次概览、玻璃筛选工具、动作轨迹和稳定证据阅读面。
 dashboard.css: 提供珠光指标、等宽圆角图表与近期活动，按容器宽度重排并适配强制颜色。
 node-detail.css: 以珠光分区呈现设备档案、圆角渐变资源趋势与折叠信息。
 dropdown.css: 统一单选触发器、等宽对齐浮层和隐藏字段，适配主题与手机触控。
@@ -21,6 +22,7 @@ prism-devices.css: 设备目录、节点池、容量圆端与终端外围的 Pri
 prism-delivery.css: 真实阶段、计划、执行日志、审计与四步引导的 Standard 层级。
 prism-notifications.css: 通知功能玻璃、消息列表与账户订阅的 Prism 外观。
 prism-projects.css: 项目目录焦点、Standard 卡片、Regular 工具组与双视图。
+prism-settings.css: 设置与账户的稳定阅读面、模型字段分组、成员对齐和完整身份展开。
 prism-workspace.css: 悬浮侧栏、连续顶栏、手机44px工具、账户和设置的响应式布局。
 wizard.css: 定义四步弹窗、平台禁选卡片与固定操作的响应式布局。
 workspace.css: 连接共享顶栏工具、账户插槽与侧栏骨架，手机触控至少 44px。

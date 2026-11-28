@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖独立构建目标摘要与含 Release 归属的构建列表。
- * [OUTPUT]: 提供版本归属、本次源码、目标与构建状态表。
+ * [OUTPUT]: 提供可键盘滚动的构建状态表与具名详情入口。
  * [POS]: 版本工作台与项目聚合共用的构建入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -21,7 +21,7 @@ export function BuildTable({ builds }: { builds: Build[] }) {
   if (!builds.length)
     return <Empty title={t("builds.empty")} detail={t("builds.emptyDetail")} />;
   return (
-    <div className="table-scroll">
+    <div className="table-scroll delivery-build-table" tabIndex={0} role="region" aria-label={t("releaseFlow.buildHistory")}>
       <table>
         <thead>
           <tr>
@@ -44,7 +44,7 @@ export function BuildTable({ builds }: { builds: Build[] }) {
                 >
                   {build.project_name}
                 </Link>
-                <div className="mt-1.5 font-mono text-[10px] text-muted-foreground">
+                <div className="mt-1.5 font-mono text-xs text-muted-foreground">
                   #{build.number}
                   {build.release_version && (
                     <span className="ml-2 text-primary">
@@ -58,7 +58,7 @@ export function BuildTable({ builds }: { builds: Build[] }) {
                   <GitBranch size={12} />
                   {build.requested_ref}
                 </div>
-                <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+                <div className="mt-1.5 flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
                   <GitCommitHorizontal size={12} />
                   {short(build.commit_sha)}
                 </div>
@@ -72,12 +72,12 @@ export function BuildTable({ builds }: { builds: Build[] }) {
               <td className="font-mono text-xs text-muted-foreground">
                 {elapsed(build.created_at, build.finished_at)}
               </td>
-              <td className="font-mono text-[11px] text-muted-foreground">
+              <td className="font-mono text-xs text-muted-foreground">
                 {date(build.created_at)}
               </td>
               <td>
                 <Link
-                  className="inline-flex rounded p-1 text-muted-foreground hover:text-primary"
+                  className="delivery-row-link inline-flex size-11 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-primary"
                   href={buildPath(build.project_slug, build.number, build.release_id)}
                   aria-label={t("builds.view", { id: build.number })}
                 >

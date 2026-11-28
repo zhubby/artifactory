@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖设置 API、统一通知、表单及 UI 词条。
- * [OUTPUT]: 提供 Settings 设置分区与可键盘滚动的数据表。
+ * [OUTPUT]: 提供设置分区、可键盘滚动的数据表与完整审计身份。
  * [POS]: 在独立分区实例内编辑设置；首读失败提供重试。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -72,7 +72,7 @@ export function Settings({
   ];
   return (
     <>
-      <div className="management-section-heading">
+      <div className="management-section-heading settings-heading">
         <div>
           <h2 id="security-section-title">{tabs.find((entry) => entry.id === tab)?.label}</h2>
           <p>{t("security.description")}</p>
@@ -102,7 +102,7 @@ export function Settings({
           </div>
         )}
         {
-          <section className="panel">
+          <section className="panel settings-records">
             <SectionTitle
               title={
                 tabs.find((entry) => entry.id === tab)?.label ||
@@ -163,14 +163,14 @@ export function Settings({
                           <tr key={token.id}>
                             <td>
                               {token.name}
-                              <div className="mt-1 font-mono text-[10px] text-muted-foreground">
+                              <div className="settings-record-caption">
                                 {t("common.projectCount", {
                                   count: token.project_ids.length,
                                 })}
                               </div>
                             </td>
                             <td>
-                              <div className="flex gap-1">
+                              <div className="settings-scope-list">
                                 {token.scopes.map((scope) => (
                                   <span key={scope} className="tag">
                                     {scope}
@@ -182,11 +182,13 @@ export function Settings({
                               {date(token.expires_at)}
                             </td>
                             <td className="text-xs text-muted-foreground">
+                              <span className="settings-state" data-state={token.revoked ? "revoked" : new Date(token.expires_at) < new Date() ? "expired" : "valid"}>
                               {token.revoked
                                 ? t("status.revoked")
                                 : new Date(token.expires_at) < new Date()
                                   ? t("status.expired")
                                   : t("status.valid")}
+                              </span>
                             </td>
                             <td>
                               {!token.revoked && (
@@ -239,10 +241,10 @@ export function Settings({
                                 {entry.action}
                               </td>
                               <td className="font-mono text-xs text-muted-foreground">
-                                {short(entry.actor)}
+                                <details className="settings-identity-detail"><summary>{short(entry.actor)}</summary><code>{entry.actor}</code></details>
                               </td>
                               <td className="font-mono text-xs text-muted-foreground">
-                                {short(entry.resource_id)}
+                                <details className="settings-identity-detail"><summary>{short(entry.resource_id)}</summary><code>{entry.resource_id}</code></details>
                               </td>
                             </tr>
                           ))}
@@ -288,13 +290,13 @@ export function Settings({
               <Field label={t("security.tokenName")}>
                 <Input name="name" required maxLength={100} />
               </Field>
-              <fieldset>
+              <fieldset className="settings-choice-group">
                 <legend className="mb-3 text-sm font-medium">
                   {t("security.projects")}
                 </legend>
-                <div className="grid max-h-40 gap-3 overflow-auto">
+                <div className="settings-project-choices">
                   {projects.map((project) => (
-                    <label key={project.id} className="flex gap-2 text-xs">
+                    <label key={project.id}>
                       <input
                         type="checkbox"
                         name="projects"
@@ -318,11 +320,11 @@ export function Settings({
                   )}
                 </div>
               </fieldset>
-              <fieldset>
+              <fieldset className="settings-choice-group">
                 <legend className="mb-3 text-sm font-medium">
                   {t("security.scopes")}
                 </legend>
-                <div className="flex gap-5">
+                <div className="settings-scope-choices">
                   {(!tokenProjects.length ||
                   tokenProjects.some(
                     (id) =>
@@ -332,7 +334,7 @@ export function Settings({
                     ? ["read"]
                     : ["read", "build", "release"]
                   ).map((scope) => (
-                    <label key={scope} className="flex gap-2 text-xs">
+                    <label key={scope}>
                       <input
                         type="checkbox"
                         name="scopes"
@@ -362,8 +364,8 @@ export function Settings({
         title={t("security.saveToken")}
         close={() => setSecret(undefined)}
       />
-      <div className="mt-6 flex items-center gap-2 text-[11px] text-muted-foreground">
-        <KeyRound size={13} />
+      <div className="settings-footnote">
+        <KeyRound size={15} aria-hidden="true" />
         {t("security.notice")}
       </div>
     </>

@@ -9,10 +9,10 @@
 import { useEffect } from "react";
 import { createPrismCapsule } from "./prism-capsule";
 
-const surfaces = ".sidebar,.workspace-topbar,.account-menu,.space-selector-menu,.select-content,.modal-panel,.account-panel,.prism-auth-glass,.ph-glass,.prism-auth .header-tools,.prism-hall .header-tools,.prism-project-toolbar,.prism-device-toolbar,.terminal-controls,.inbox-drawer";
-const groups = ".sidebar-navigation nav:not(.workspace-settings-navigation),.workspace-settings-group,.ui-tabs,.header-tools,.account-sections";
-const controls = ".nav-item,.ui-tab,.header-docs,.command-trigger,.account-trigger,.inbox-bell,.account-sections button";
-const pressControls = "[data-slot=button],.select-trigger,.command-trigger,.account-trigger,.header-docs,.inbox-bell,.space-selector summary,.ui-tab,.nav-item,.ph-enter-space";
+const surfaces = ".sidebar,.workspace-topbar,.account-menu,.space-selector-menu,.select-content,.modal-panel,.account-panel,.prism-auth-glass,.ph-glass,.prism-auth .header-tools,.prism-hall .header-tools,.prism-project-toolbar,.prism-device-toolbar,.prism-delivery-toolbar,.audit-toolbar,.node-detail-tabs,.terminal-controls,.inbox-drawer";
+const groups = ".sidebar-navigation nav:not(.workspace-settings-navigation),.workspace-settings-group,.ui-tabs,.header-tools,.account-sections,.node-detail-tabs,.inbox-tabs";
+const controls = ".nav-item,.ui-tab,.header-docs,.command-trigger,.account-trigger,.inbox-bell,.account-sections button,.node-detail-tabs button,.inbox-tabs button";
+const pressControls = "[data-slot=button],.select-trigger,.command-trigger,.account-trigger,.header-docs,.inbox-bell,.space-selector summary,.ui-tab,.nav-item,.ph-enter-space,.node-detail-tabs button,.inbox-tabs button,.audit-action,.audit-rounds button";
 type Capsule = ReturnType<typeof createPrismCapsule>;
 type Group = { selection?: Capsule; hover?: Capsule };
 
@@ -68,7 +68,7 @@ export function PrismInteractions() {
           state.selection?.destroy(); state.hover?.destroy(); states.delete(group);
           return;
         }
-        const selected = group.querySelector<HTMLElement>(".nav-item.active,.ui-tab[aria-selected=true],button[aria-current=page]");
+        const selected = group.querySelector<HTMLElement>(".nav-item.active,.ui-tab[aria-selected=true],button[aria-current=page],.node-detail-tabs button[aria-selected=true],.inbox-tabs button[aria-pressed=true]");
         if (selected && optical()) {
           state.selection ??= createPrismCapsule(group, "prism-selection-capsule");
           state.selection.move(selected, moving());
@@ -209,11 +209,11 @@ export function PrismInteractions() {
       const selector = `${surfaces},${groups}`;
       const nodesChanged = records.some(record => record.type === "childList" && [...record.addedNodes, ...record.removedNodes].some(node => node instanceof Element && (node.matches(selector) || node.querySelector(selector))));
       if (nodesChanged) prepare();
-      else if (records.some(record => record.type === "attributes" && record.target instanceof Element && record.target.matches(".nav-item,.ui-tab,.account-sections button"))) schedule();
+      else if (records.some(record => record.type === "attributes" && record.target instanceof Element && record.target.matches(controls))) schedule();
     });
     const preferences = new MutationObserver(preference);
     prepare();
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "aria-selected", "aria-current"] });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "aria-selected", "aria-current", "aria-pressed"] });
     preferences.observe(root, { attributes: true, attributeFilter: ["data-motion", "data-transparency", "data-contrast"] });
     document.addEventListener("pointerover", enter, { passive: true });
     document.addEventListener("pointermove", move, { passive: true });

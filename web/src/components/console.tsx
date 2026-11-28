@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖工作空间路由、项目目录、节点池、设备终端和共享顶栏。
- * [OUTPUT]: 提供保留作用域身份的 Console 控制台。
+ * [OUTPUT]: 提供保留作用域身份的控制台和交付目录工具层。
  * [POS]: 由租户布局持续挂载，按租户与项目隔离状态，非法路径让位于 404。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -414,7 +414,7 @@ function ProjectWorkspace({
         </>
       ) : (
         <>
-          <ListToolbar query={query} onQueryChange={setQuery}
+          <div className="prism-delivery-toolbar"><ListToolbar query={query} onQueryChange={setQuery}
             count={column === "builds" ? visibleBuilds?.length : column === "artifacts" ? visibleArtifacts?.length : visibleReleases?.length}>
             {["builds","releases"].includes(column) && <Select className="input" aria-label={t("redesign.filterStatus")} value={status} onChange={event => setStatus(event.target.value)}>
               <option value="">{t("redesign.allStatus")}</option>
@@ -423,7 +423,7 @@ function ProjectWorkspace({
             <Select className="input" aria-label={t("redesign.order")} value={order} onChange={event => setOrder(event.target.value)}>
               <option value="newest">{t(column === "releases" ? "releaseFlow.versionDescending" : "redesign.newest")}</option><option value="oldest">{t(column === "releases" ? "releaseFlow.versionAscending" : "redesign.oldest")}</option>
             </Select>
-          </ListToolbar>
+          </ListToolbar></div>
           <ErrorBox
             message={builds.error || artifacts.error || releases.error}
           />

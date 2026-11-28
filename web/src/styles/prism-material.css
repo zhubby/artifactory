@@ -33,6 +33,13 @@ input[type=checkbox], input[type=radio] { accent-color: var(--primary); }
 .status-running,.status-resolving,.status-leased,.status-preparing { color: var(--info); background: var(--info-bg); }
 .status-needs_input,.status-waiting,.status-draining,.status-publishing { background: var(--warning-bg); }
 .empty-state { padding: 64px 24px; }
+.skeleton-block { border-radius: 999px; }
+.skeleton-icon { border-radius: 12px; }
+.skeleton-table .skeleton-row { min-height: 64px; }
+.skeleton-detail .skeleton-row { padding: 20px; border-radius: 20px; }
+.skeleton-form .skeleton-caption { height: 44px; border-radius: var(--radius-input); }
+.skeleton-cards .skeleton-row { min-height: 180px; padding: 24px; border-radius: var(--radius-content); }
+.skeleton-cards .skeleton-icon { border-radius: 14px; }
 th { height: 44px; padding: 12px 20px; font-size: 12px; }
 td { height: 64px; padding: 14px 20px; font-size: 14px; }
 .ui-tabs { width: fit-content; max-width: 100%; padding: 5px; gap: 4px; border: 1px solid var(--border); border-radius: 999px; background: var(--secondary); }
