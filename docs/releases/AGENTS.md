@@ -5,6 +5,7 @@
 0.2.6.md: 记录 Prism 控制台、设计交付及文档入口修复。
 2026-11-27-prism-kubernetes.md: 记录 0.2.6 镜像恢复、SSA 收敛与真实验收。
 2026-11-28-liquid-optics-kubernetes.md: 记录动态玻璃Web镜像、单组件更新与真实交互验收。
+2026-11-28-page-polish-kubernetes.md: 记录页面打磨、AI审计Web镜像与真实宽窄屏验收。
 0.2.0-kubernetes-trial.md: 记录受限命名空间和三个 Control 副本的首次部署。
 2026-11-15-multitenancy-kubernetes.md: 记录多租户迁移、权限和现场验收。
 2026-11-15-readable-routes-kubernetes.md: 记录可读路由升级和入口验证。
