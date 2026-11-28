@@ -3,7 +3,7 @@
 
 account.tsx: 保持单实例账户菜单、设置草稿和焦点，退出后发出活动会话清理信号。
 ai-settings.tsx: 分组配置模型连接、调用预算与接口兼容字段，目录提供首读重试和键盘滚动。
-auth-shell.tsx: 以品牌玻璃雕塑和 Standard 表单组合登录、注册与邀请。
+auth-shell.tsx: 组合品牌玻璃雕塑、Standard 认证表单和顶栏账户插槽，避免账户浮层遮挡品牌说明。
 brand-mark.tsx: 渲染 Artifactory 品牌标记。
 build-detail.tsx: 组合过程、执行、计划、独立 AI 审计与制品；首次展示过程，轮询保留用户标签。
 build-process.tsx: 展示当前 Pod 的源码子步骤、真实阶段和失败分类；保留事件展开状态。
@@ -21,7 +21,7 @@ projects-workspace.tsx: 基于授权快照呈现项目焦点、搜索、排序�
 console.tsx: 按工作空间与项目隔离状态，组合顶栏、交付筛选工具层、节点池、设备终端路由、权限骨架与星标。
 dashboard.tsx: 读取完整窗口指标和近期活动，范围切换使用共享下拉，后台刷新保留内容。
 dashboard-charts.tsx: 按需加载 Recharts，以等比例圆角渐变柱和柔和曲线呈现构建结果与成功周转，保留断点和孤立样本。
-emissary-ota.tsx: 确认后发起固定产品版本升级，保留失败重试、取消、并发和暂停。
+emissary-ota.tsx: 确认后发起固定产品版本升级，提供历史空态和键盘滚动，保留失败重试、取消、并发和暂停。
 node-installation-settings.tsx: 按系统管理员权限配置全局设备公开地址，首读可重试。
 node-enrollment-dialog.tsx: 固定产品统一版本，展示平台安装命令、单用凭证与过期状态。
 forms.tsx: 提供项目、节点、凭据表单，复用下拉并统一提交通知。
@@ -63,7 +63,7 @@ ui/: 提供统一基础控件。
 header-tools.tsx: 工作区、租户大厅与通知页按文档、通知铃铛、账户插槽排列顶栏工具。
 image-builds.tsx: 只读展示镜像候选与增量平台日志，后台轮询和终态补读静默，正式分发从 Release 发起。
 image-catalog.tsx: 按项目查询正式镜像、所属版本与来源构建，提供键盘滚动和摘要拉取引用复制。
-image-credentials.tsx: 配置仓库凭据和 BuildKit Secret，列表首读显示骨架并提供失败重试。
+image-credentials.tsx: 分区配置镜像凭据和 BuildKit Secret，展示空态、公开身份与完整引用，保留首读重试和秘密清空。
 
 notification-provider.tsx: 在账户边界维护单 SSE 连接，合并失效并静默补读摘要。
 notification-center.tsx: 顶栏铃铛与独立页面共用抽屉和未读数，后台重验保留原阅读窗口及滚动。

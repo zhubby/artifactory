@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖品牌、偏好控件、账户上下文和 Prism 认证样式。
+ * [INPUT]: 依赖品牌、偏好控件、账户上下文、账户插槽和 Prism 认证样式。
  * [OUTPUT]: 提供登录、注册和邀请共用的 AuthShell。
  * [POS]: 以玻璃交付雕塑承载品牌；珠光阅读面承载真实认证表单。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -11,7 +11,7 @@ import { Apple, ArrowRight, GitBranch, LockKeyhole, PanelsTopLeft, ShieldCheck, 
 import { BrandMark } from "@/components/brand-mark";
 import { PreferencesControls } from "@/components/preferences-controls";
 import { useUI } from "@/components/providers";
-import { useAccount } from "@/components/account";
+import { AccountSlot, useAccount } from "@/components/account";
 
 function DeliverySculpture() {
   return (
@@ -54,7 +54,7 @@ export function AuthShell({ title, description, notice, children, variant = "inv
         <a href="/" className="brand prism-auth-brand"><span className="brand-mark"><BrandMark /></span><span>Artifactory<small>PRISM</small></span></a>
         <div className="prism-auth-header-end">
           <p>{t("prismAuth.headerNote")}</p>
-          {!account.data && <div className="login-preferences prism-auth-glass"><PreferencesControls /></div>}
+          {account.data ? <AccountSlot placement="header" /> : <div className="login-preferences prism-auth-glass"><PreferencesControls /></div>}
         </div>
       </header>
       <div className="prism-auth-layout">

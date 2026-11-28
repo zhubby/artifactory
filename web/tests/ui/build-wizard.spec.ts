@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖独立 Release 说明、Build 目标、源码夹具和共享下拉。
- * [OUTPUT]: 验证项目导航、版本创建、说明编辑与轮询稳定的单构建交付。
+ * [OUTPUT]: 验证项目导航、版本说明完整阅读与轮询稳定的单构建交付。
  * [POS]: Release 与 Build 职责边界的浏览器回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -165,6 +165,26 @@ test("Release list searches notes and sorts SemVer",async({page})=>{
   await expect(page.locator("tbody tr td:first-child")).toHaveText(["1.2.0","1.2.0-rc.10","1.2.0-rc.2"]);
   await page.locator('.workspace-filter input').fill("needle");
   await expect(page.locator("tbody tr td:first-child")).toHaveText(["1.2.0"]);
+});
+
+test("Release notes expand with the keyboard and retain complete long content in the local table", async ({ page }, info) => {
+  await fixtureAPI(page);
+  const notes = "Release summary\n" + "Delivery detail with full evidence. ".repeat(70) + "\nFinal retained note.";
+  await page.route("**/api/v1/releases?*", route => route.fulfill({ json: [{ ...release, notes }] }));
+  await page.goto(tenantURL(`/projects/${project.slug}/releases`));
+  const table = page.getByRole("region", { name: "Release 版本", exact: true });
+  await expect(table).toHaveAttribute("tabindex", "0");
+  const disclosure = table.locator(".release-notes-disclosure");
+  await expect(disclosure).not.toHaveAttribute("open", "");
+  await disclosure.locator("summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(disclosure).toHaveAttribute("open", "");
+  await expect(disclosure.locator(".release-notes-body")).toHaveText(notes);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.screenshot({ path: info.outputPath("release-notes-expanded.png"), fullPage: true });
+  await disclosure.locator("summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(disclosure).not.toHaveAttribute("open", "");
 });
 
 for (const role of ["viewer","archived"] as const) test(`${role} contexts expose no release mutation`,async({page})=>{

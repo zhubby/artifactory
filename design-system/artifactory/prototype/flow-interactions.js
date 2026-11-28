@@ -1,12 +1,13 @@
 /**
- * [INPUT]: 依赖构建、发布和分发状态、页面重绘与本地通知。
- * [OUTPUT]: 导出交付动作绑定，保留草稿、日志连接、焦点和滚动。
+ * [INPUT]: 依赖构建、审计筛选、发布状态、页面重绘与本地通知。
+ * [OUTPUT]: 导出交付动作绑定，保留证据、草稿、焦点和滚动。
  * [POS]: 交付领域本地控制器；不发送网络请求，不更改真实产品。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
 import { buildView, logView } from './flow-build.js';
 import { releaseView } from './flow-release.js';
 import { startDistribution } from './flow-distribution.js';
+import { applyAuditFilter, auditRawText, auditReading } from './flow-audit.js';
 
 const attached = new WeakMap();
 function currentView(root,state) {
@@ -36,7 +37,7 @@ export function bindFlowInteractions(root,state,hooks={}) {
   const controller=new AbortController(); attached.set(root,controller);
   const {signal}=controller;
   restore(root,state);
-  const notify=message=>hooks.notify?.(message);
+  const notify=(message,error=false)=>hooks.notify?.(message,error);
   const redraw=(el,anchor)=>{
     const action=el?.dataset.flowAction,value=el?.dataset.flowValue;
     captureFlowState(root,state); hooks.persist?.(); hooks.render?.();
@@ -57,6 +58,11 @@ export function bindFlowInteractions(root,state,hooks={}) {
     });
   };
   root.addEventListener('input',event=>{
+    if(event.target.matches('[data-audit-search]')){
+      const view=currentView(root,state);if(!view)return;
+      auditReading(view).reading.query=event.target.value;
+      applyAuditFilter(root,view);hooks.persist?.();return;
+    }
     const el=event.target.closest('[data-flow-draft]');if(!el)return;
     const view=currentView(root,state);if(view)view[el.dataset.flowDraft]=el.value;hooks.persist?.();
   },{signal});
@@ -102,12 +108,28 @@ export function bindFlowInteractions(root,state,hooks={}) {
       if(view.answer.length>8000){draft?.setCustomValidity('回答不能超过 8000 个字符。');draft?.reportValidity();draft?.addEventListener('input',()=>draft.setCustomValidity(''),{once:true});return;}
       view.answerSubmitted=true;view.scenario='running';notify('演示回答已保存在本地；未提交真实规划。');
     }
-    else if(name==='audit-round'){view.auditRound=value;view.auditPage=1;view.auditEntry='read-tree';}
-    else if(name==='audit-entry'){view.auditEntry=value;view.auditTab='result';}
-    else if(name==='audit-tab')view.auditTab=value;
-    else if(name==='audit-more'){if(view.auditScenario==='error'){notify('请先重试恢复审计读取。');return;}view.auditPage++;}
-    else if(name==='audit-scenario'){view.auditScenario=value;view.auditEntry='';view.auditPage=1;}
-    else if(name==='audit-retry'){view.auditScenario='normal';view.auditEntry='read-tree';notify('已恢复本地审计样例；未调用模型。');}
+    else if(name==='audit-round')view.auditRound=value;
+    else if(name==='audit-entry'){const {reading}=auditReading(view);reading.entry=value;reading.tab='result';}
+    else if(name==='audit-tab')auditReading(view).reading.tab=value;
+    else if(name==='audit-filter'){
+      auditReading(view).reading.filter=value;applyAuditFilter(root,view);hooks.persist?.();
+      const menu=el.closest('.select'),summary=menu.querySelector('summary');
+      summary.querySelector('span').textContent=el.textContent.trim();
+      summary.setAttribute('aria-label',`审计动作筛选：${el.textContent.trim()}`);
+      menu.querySelectorAll('[role=option]').forEach(option=>option.setAttribute('aria-selected',String(option===el)));
+      menu.open=false;summary.focus({preventScroll:true});return;
+    }
+    else if(name==='audit-copy'){
+      const raw=auditRawText(view);
+      (async()=>{try{await navigator.clipboard.writeText(raw);notify('已复制当前原始演示记录。');}catch{notify('无法复制记录。请切换到原始记录后选择文本复制。',true);}})();return;
+    }
+    else if(name==='audit-detail-jump'||name==='audit-feed-jump'){
+      const target=root.querySelector(name==='audit-detail-jump'?'.df-audit-evidence':'.df-audit-feed');
+      target?.scrollIntoView({block:'start',behavior:'instant'});target?.focus({preventScroll:true});return;
+    }
+    else if(name==='audit-more'){if(view.auditScenario==='error'){notify('请先重试恢复审计读取。',true);return;}auditReading(view).reading.page++;}
+    else if(name==='audit-scenario')view.auditScenario=value;
+    else if(name==='audit-retry'){view.auditScenario='normal';notify('已恢复本地审计样例；未调用模型。');}
     else if(name==='release-tab')release.tab=value;
     else if(name==='external-start'){
       captureFlowState(root,state);startDistribution(release);

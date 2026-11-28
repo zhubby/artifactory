@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖设置分区、模型表单、成员列表和 Prism 语义变量。
+ * [INPUT]: 依赖设置分区、模型表单、成员、镜像凭据和 Prism 语义变量。
  * [OUTPUT]: 提供 Standard 设置阅读面、分组表单与完整身份阅读。
  * [POS]: 只约束设置与账户内容；权限、请求和草稿由业务组件维持。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
@@ -84,6 +84,27 @@
 .settings-member-section > .loading-state { padding: 20px 24px; }
 .settings-member-section > .empty-state { padding: 40px 24px; }
 
+/* --- 镜像凭据只展示公开身份，表单独立成区 --- */
+.settings-image-credentials { margin-top: 24px; }
+.settings-image-directory { min-width: 0; }
+.settings-image-directory > .loading-state { padding: 24px; }
+.settings-image-directory > .empty-state { padding: 40px 24px; }
+.settings-image-list { list-style: none; margin: 0; padding-inline: 24px; }
+.settings-image-credential { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px 20px; min-width: 0; padding-block: 24px; border-bottom: 1px solid var(--border); }
+.settings-image-credential:last-child { border-bottom: 0; }
+.settings-image-identity { min-width: 0; }
+.settings-image-identity h3 { font-size: 14px; font-weight: 600; line-height: 1.7; overflow-wrap: anywhere; }
+.settings-image-identity p,.settings-image-reference > span { color: var(--muted-foreground); font-size: 12px; line-height: 1.7; }
+.settings-image-reference { display: grid; gap: 4px; min-width: 0; }
+.settings-image-reference code { font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; user-select: all; }
+.settings-image-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.settings-image-actions [data-slot=button] { min-width: 44px; min-height: 44px; }
+.settings-image-form { padding: 24px; border-top: 1px solid var(--border); }
+.settings-image-form > .form-stack { max-width: 720px; }
+.settings-image-form-heading { display: grid; gap: 8px; margin-bottom: 24px; }
+.settings-image-form-heading h3 { font-size: 16px; font-weight: 600; }
+.settings-image-form-heading p { max-width: 64ch; color: var(--muted-foreground); font-size: 13px; line-height: 1.8; }
+
 /* --- 账户正文延续设置阅读间距，不叠加玻璃 --- */
 .account-panel-content .form-stack { gap: 22px; }
 .account-panel-content .form-footer { padding-top: 20px; }
@@ -99,6 +120,11 @@
   .settings-invitation-link { margin-inline: 20px; }
   .settings-member-name { flex-basis: 100%; }
   .settings-member-row > [data-slot=button] { min-height: 44px; }
+  .settings-image-list { padding-inline: 20px; }
+  .settings-image-form { padding: 20px; }
+  .settings-image-credential { gap: 12px; padding-block: 20px; }
+  .settings-image-reference { grid-column: 1 / -1; }
+  .settings-image-actions { grid-column: 1 / -1; justify-content: flex-start; }
 }
 @media (max-width: 600px) {
   .settings-model-fields { grid-template-columns: minmax(0,1fr); gap: 18px; }

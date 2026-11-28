@@ -5,6 +5,7 @@ index.html: 提供应用容器、可访问入口与本地资源加载。
 tokens.css: 定义标准内容、Regular主题与64px顶栏变量。
 styles.css: 实现236px导航、64px顶栏、页面与响应式布局。
 flows.css: 定义交付正文、执行阅读、审计分栏和发布状态布局。
+audit.css: 定义轮次卡片、玻璃筛选和稳定证据阅读面，适配手机焦点跳转。
 admin.css: 呈现设备目录、侧面板、资源图表与节点池。
 liquid.css: 定义单层导航光学、裁切流光、悬停玻璃泡与辅助偏好。
 motion.js: 驱动分组入场、视口绘图、悬停流动与弹性按压。
@@ -44,9 +45,9 @@ device-detail.js: 呈现五标签设备侧面板，约束焦点与阅读位置�
 device-operations.js: 演示有限操作请求、分页结果与固定版本升级阶段。
 entry-device-actions.js: 约束名称、运维和终端动作，以节点池深链保持筛选。
 flow-build.js: 按项目内构建身份呈现五标签、源码阶段、执行历史和澄清草稿。
-flow-audit.js: 呈现审计轮次、分片动作、异常记录和预算提示。
+flow-audit.js: 筛选已加载审计样例，按轮次保留证据、分页和异常场景。
 flow-release.js: 演示单构建发布、固定候选重试和不可覆盖交付，返回项目版本目录。
-flow-interactions.js: 绑定交付本地动作、日志连接和分发重试，保留草稿与阅读锚点。
+flow-interactions.js: 绑定审计筛选复制、手机焦点与交付动作，保留草稿和阅读锚点。
 flow-wizard.js: 提供四步构建内容、授权目标、参数校验和请求样例。
 flow-targets.js: 编辑 1 至 32 个独立目标，保留类型草稿与授权平台约束。
 flow-distribution.js: 演示正式镜像外仓分发，固定凭据、路径、版本与摘要重试。

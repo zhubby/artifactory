@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "width": 375,
+      "height": 812,
+      "theme": "light",
+      "pagination_scroll": 80,
+      "round_return_scroll": 80,
+      "build_tab_return_scroll": 80
+    },
+    {
+      "width": 375,
+      "height": 812,
+      "theme": "dark",
+      "pagination_scroll": 80,
+      "round_return_scroll": 80,
+      "build_tab_return_scroll": 80
+    }
+  ]
+}

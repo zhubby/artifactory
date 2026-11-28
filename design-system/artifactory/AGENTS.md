@@ -14,6 +14,7 @@ tokens.json: 提供可迁移的明暗主题语义变量。
 README.md: 提供原型启动、评审路径与交付边界。
 REVIEW.md: 记录浏览器、交互与可访问性检查。
 PRODUCT-REVIEW.md: 记录产品原型的逐项问题、修正与验证边界。
+PAGE-REVIEW.md: 记录页面家族、完整设置矩阵与审计精修验收。
 LIQUID-GLASS-REFERENCE.md: 记录外部液态玻璃研究、来源与光学边界。
 previews/: 保存桌面、手机与关键流程预览。
 artifactory-prism.zip: 保存完整设计交付的可移植副本。

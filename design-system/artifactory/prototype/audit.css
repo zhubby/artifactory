@@ -1,0 +1,115 @@
+/**
+ * [INPUT]: 依赖本地审计轮次、动作筛选与 Prism 语义材质。
+ * [OUTPUT]: 提供轮次导航、玻璃工具和稳定证据阅读面。
+ * [POS]: 审计精修层；正文使用 Standard，功能工具使用 Regular。
+ * [PROTOCOL]: Update this header on change, then check AGENTS.md
+ */
+.df-audit.content-surface{padding:0!important;border:0;background:transparent;box-shadow:none}
+.df-audit [hidden]{display:none!important}
+.df-audit-intro{display:flex;align-items:center;gap:16px;margin:24px 0 14px}
+.df-audit-intro>div{flex:1;min-width:0}
+.df-audit-intro h2{margin:0;font-size:23px;line-height:1.4;letter-spacing:-.02em}
+.df-audit-intro p{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.8}
+.df-audit-mark{display:grid;place-items:center;width:48px;height:48px;flex-shrink:0;border:1px solid var(--line);border-radius:17px;color:var(--primary);background:linear-gradient(145deg,var(--pearl-top),var(--primary-soft));box-shadow:inset 0 1px 1px var(--glass-inset)}
+.df-audit-demo{font-size:12px;color:var(--muted);line-height:1.8;margin:0 0 22px 64px}
+.df-audit .df-rounds{flex-wrap:nowrap;gap:10px;overflow:auto;padding:4px 4px 12px;margin:0 -4px 18px;overscroll-behavior-inline:contain;scrollbar-width:thin}
+.df-audit .df-rounds>.df-choice{display:flex;align-items:center;gap:12px;min-height:80px;flex:0 0 auto;min-width:240px;max-width:380px;padding:14px 16px;border-radius:20px;color:var(--text);background:var(--surface-solid);transition:border-color var(--motion-fast),background var(--motion-fast),box-shadow var(--motion-fast)}
+.df-audit .df-rounds>.df-choice.selected{background:linear-gradient(145deg,var(--pearl-top),var(--primary-soft));box-shadow:0 4px 12px -8px var(--primary),inset 0 1px 1px var(--glass-inset)}
+.df-audit .df-rounds .df-round-index{margin:0;color:var(--muted);font:12px var(--font-mono)}
+.df-audit .df-rounds .df-round-copy{display:grid;gap:7px;margin:0;flex:1;min-width:0}
+.df-audit .df-round-copy strong{font-size:13px;overflow-wrap:anywhere;line-height:1.5}
+.df-audit .df-round-copy time{font:11px var(--font-mono);color:var(--muted)}
+.df-audit .df-rounds .badge{display:inline-flex;margin:0;white-space:nowrap}
+.df-audit-session{align-items:center;border:0;padding:14px 2px 20px;font-size:12px}
+.df-audit-session>div:first-child{min-width:0;flex:1}
+.df-audit-session .eyebrow{font-size:11px}
+.df-audit-session h3{margin:6px 0;font-size:20px;line-height:1.5;color:var(--text)}
+.df-audit-session p{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
+.df-audit-session>div:last-child{display:grid;gap:8px;justify-items:end;font-size:12px;font-variant-numeric:tabular-nums}
+.df-audit-session time{display:flex;align-items:center;gap:7px}
+.df-audit-stats{gap:12px 24px;padding:14px 18px;margin:0 0 20px;border:1px solid var(--line);border-radius:18px;background:var(--surface-solid);font-size:12px}
+.df-audit-stats>span{display:flex;align-items:center;gap:8px;padding:0;border:0;border-radius:0;background:none}
+.df-audit-toolbar{display:flex;align-items:center;gap:10px;padding:8px;border-radius:24px;isolation:auto;box-shadow:inset 0 1px 1px var(--glass-inset),var(--shadow)}
+.df-audit-toolbar::before,.df-audit-toolbar::after{pointer-events:none}
+.df-audit-search{display:flex;align-items:center;gap:10px;flex:1;min-width:0;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface-solid);color:var(--muted)}
+.df-audit-search:focus-within{outline:2px solid var(--primary);outline-offset:2px}
+.df-audit-search>svg{flex-shrink:0}
+.df-audit-search input{width:100%;min-width:0;border:0;outline:0;background:none;color:var(--text);font:13px var(--font-sans)}
+.df-audit-search input::placeholder{color:var(--muted)}
+.df-audit-filter{flex:0 0 190px;min-width:0}
+.df-audit-filter>summary{width:100%;min-height:44px;border-radius:999px;font-size:13px;background:var(--surface-solid)}
+.df-audit-filter [role=option][aria-selected=false]>.icon{visibility:hidden}
+.df-audit-filter .select-options{min-width:190px;z-index:var(--z-menu)}
+.df-audit-scope{margin:10px 4px 20px;color:var(--muted);font-size:12px;line-height:1.8}
+.df-audit-grid{grid-template-columns:minmax(240px,.72fr) minmax(0,1.28fr);gap:20px;margin-top:0}
+.df-audit-feed{max-height:600px;padding:16px 10px 12px;border:1px solid var(--line);border-radius:24px;background:var(--surface);scrollbar-gutter:stable;scroll-margin-top:104px}
+.df-audit-feed-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 6px 12px}
+.df-audit-feed-heading h3{margin:0;font-size:12px;font-weight:550}
+.df-audit-feed-heading>span{font:11px var(--font-mono);color:var(--muted)}
+.df-audit-feed>.df-choice{position:relative;min-height:76px;margin-bottom:4px;padding:14px 10px;align-items:flex-start;border-color:transparent;border-radius:16px;background:none;color:var(--text);gap:10px;transition:background var(--motion-fast),border-color var(--motion-fast)}
+.df-audit-feed>.df-choice.selected{border-color:color-mix(in srgb,var(--primary) 25%,var(--line));background:var(--primary-soft);color:var(--text)}
+.df-audit-feed .df-audit-icon{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:var(--surface-hover);color:var(--muted)}
+.df-audit-action-copy{flex:1;min-width:0}
+.df-audit-feed strong{font-size:13px;font-weight:550;line-height:1.6;overflow-wrap:anywhere}
+.df-audit-feed small{font:12px/1.8 var(--font-sans);color:var(--muted);margin-top:3px}
+.df-audit-outcome{font-size:11px;max-width:66px;color:var(--muted);margin-top:4px}
+.df-audit-feed>.df-choice>svg{flex-shrink:0;margin-top:5px;color:var(--muted)}
+.df-audit-feed>.btn{min-height:44px;margin:12px 6px}
+.df-audit-feed>.df-platform-hints{margin:12px 6px 4px}
+.df-audit-filter-empty{margin:8px 6px 20px;padding:18px;border-radius:16px;background:var(--surface-hover);font-size:13px;line-height:1.8;color:var(--muted)}
+.df-audit-evidence{min-width:0;border-radius:24px;scroll-margin-top:104px}
+.df-audit .df-inspector{padding:24px;max-height:700px;border-radius:24px;background:var(--surface-solid);box-shadow:0 12px 36px -28px rgba(40,55,95,.22);scrollbar-gutter:stable}
+.df-audit-inspector-heading{display:flex;align-items:flex-start;gap:12px}
+.df-audit-inspector-heading>.df-audit-mark{width:44px;height:44px;border-radius:15px}
+.df-audit-inspector-heading>div:not(.df-audit-inspector-actions){min-width:0;flex:1}
+.df-audit-inspector-heading .df-caption{margin:0;font-size:11px}
+.df-audit-inspector-heading h3{font-size:20px;line-height:1.5;margin:4px 0 7px;overflow-wrap:anywhere}
+.df-audit-inspector-heading p{font-size:12px;overflow-wrap:anywhere}
+.df-audit-inspector-actions{display:grid;justify-items:end;gap:8px;flex-shrink:0}
+.df-audit-inspector-actions .btn{min-height:40px;font-size:12px;padding:6px 10px}
+.df-audit .df-inline-tabs{margin-block:20px;gap:4px}
+.df-audit .df-inline-tabs .df-choice{min-height:40px;font-size:12px}
+.df-audit-detail-body{line-height:1.9;font-size:14px}
+.df-audit .code-block{padding:16px;margin:0;border-radius:14px;font-size:12px;line-height:1.9}
+.df-audit-document h4{font-size:16px;line-height:1.6;margin:0 0 12px;font-weight:600}
+.df-audit-document p{overflow-wrap:anywhere;line-height:1.9}
+.df-audit-files{display:grid;gap:10px;padding:0;list-style:none}
+.df-audit-files li{display:flex;align-items:center;gap:9px;font-size:12px}
+.df-audit-filebar{display:flex;align-items:center;gap:8px;padding:12px;margin-bottom:20px;border:1px solid var(--line);border-radius:14px;background:var(--surface-hover);font-size:12px;overflow-wrap:anywhere}
+.df-audit-filebar>code{min-width:0}
+.df-audit-fields{display:grid;gap:18px;margin:0}
+.df-audit-fields>div{padding-bottom:16px;border-bottom:1px solid var(--line)}
+.df-audit-fields>div:last-child{padding-bottom:0;border:0}
+.df-audit-fields dt{font-size:12px;color:var(--muted);margin-bottom:7px}
+.df-audit-fields dd{margin:0;font-size:14px;overflow-wrap:anywhere}
+.df-audit-boundary{padding:16px 18px;margin-bottom:16px;border:1px solid var(--line);border-radius:16px;background:var(--surface-solid);line-height:1.8;font-size:13px}
+.df-audit .df-platform-hints summary,.df-audit .df-scenario summary{min-height:44px;padding-block:10px}
+.df-audit .df-scenario>.df-choice{margin:8px 6px 0 0}
+.df-audit-mobile-jump{display:none}
+@media(max-width:1099px){.df-audit-grid{grid-template-columns:minmax(220px,.8fr) minmax(0,1.2fr);gap:14px}.df-audit-outcome{display:none}.df-audit .df-inspector{padding:20px}.df-audit-inspector-heading{flex-wrap:wrap}.df-audit-inspector-actions{display:flex;align-items:center;justify-content:space-between;width:100%}}
+@media(max-width:767px){
+ .df-audit-intro{margin-top:18px;gap:12px;flex-wrap:wrap}
+ .df-audit-intro h2{font-size:21px}
+ .df-audit-intro>div{min-width:180px}
+ .df-audit-intro>.badge{margin-left:60px}
+ .df-audit-demo{margin-left:0;font-size:12px}
+ .df-audit-session{align-items:flex-start;gap:12px}
+ .df-audit-session>div:last-child{justify-items:start;font-size:11px}
+ .df-audit-stats{display:grid;gap:12px;padding:16px}
+ .df-audit-toolbar{flex-wrap:wrap;padding:10px;border-radius:22px}
+ .df-audit-search{flex-basis:100%;min-height:44px}
+ .df-audit-search input{font-size:16px}
+ .df-audit-filter{flex-basis:100%}
+ .df-audit-grid{grid-template-columns:minmax(0,1fr);gap:20px}
+ .df-audit-feed{max-height:360px}
+ .df-audit-outcome{display:block}
+ .df-audit .df-inspector{max-height:none;padding:20px}
+ .df-audit-inspector-heading{gap:10px}
+ .df-audit-inspector-heading>.df-audit-mark{width:36px;height:36px;border-radius:12px}
+ .df-audit-inspector-heading h3{font-size:18px}
+ .df-audit-inspector-actions .btn{min-height:44px}
+ .df-audit-detail-body{max-height:min(580px,70dvh);overflow:auto;padding-right:4px}
+ .df-audit-mobile-jump{display:flex;margin-bottom:12px}
+ .df-audit-mobile-jump .btn{min-height:44px}
+}
+@media(forced-colors:active){.df-audit-feed,.df-audit .df-inspector,.df-audit-stats{background:Canvas;border:1px solid CanvasText;box-shadow:none}.df-audit .df-rounds>.df-choice.selected,.df-audit-feed>.df-choice.selected{border:2px solid Highlight;background:Canvas;color:CanvasText}.df-audit-search:focus-within{outline-color:Highlight}}

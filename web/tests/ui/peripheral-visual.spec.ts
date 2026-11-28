@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Playwright、页面路由及测试夹具。
- * [OUTPUT]: 验证入口边界、项目目录空态、全局错误通知与构建阶段布局。
+ * [OUTPUT]: 验证认证顶栏账户、入口边界、项目目录空态和全局错误通知。
  * [POS]: 使用模拟 API 的界面浏览器回归入口。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -26,6 +26,20 @@ for (const locale of ["zh-CN", "en"] as const)
         await current.evaluate(() => document.fonts.ready);
         await current.evaluate(() => window.scrollTo(0, 0));
         expect(await current.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+        const authHeader = current.locator(".prism-auth-header");
+        if (new URL(current.url()).pathname.startsWith("/join/")) {
+          const account = authHeader.locator(".account-slot-header .account-trigger");
+          await expect(account).toBeVisible();
+          await expect(current.locator(".account-trigger")).toHaveCount(1);
+          const note = authHeader.locator(".prism-auth-header-end > p");
+          if (await note.isVisible()) {
+            const noteBox = await note.boundingBox();
+            const accountBox = await account.boundingBox();
+            expect(noteBox).not.toBeNull();
+            expect(accountBox).not.toBeNull();
+            expect(noteBox!.x + noteBox!.width).toBeLessThanOrEqual(accountBox!.x);
+          }
+        }
         await current.screenshot({ path: resolve(directory, `${locale}-${theme}-${name}.png`), fullPage: true, animations: "disabled" });
       };
       for (const path of ["login", "register"]) {

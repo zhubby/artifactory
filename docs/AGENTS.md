@@ -15,12 +15,12 @@ api.md: 定义HTTP输入、节点池、有限操作、构建过程和项目权�
 artifactory-rename-2026-11-11.md: 记录产品命名迁移。
 signing.md: 定义签名凭据、任务下发、原生验签与密钥轮换。
 configuration.md: 定义任务执行计划的结构与限制。
-design-system.md: 定义 Prism 材质、工作空间层级、真实交互与辅助偏好合同。
+design-system.md: 定义 Prism 材质、工作空间层级、审计阅读与真实交互合同。
 direct-pod-execution-2026-11-19.md: 记录直接 Pod 编排、执行围栏、启动等待和故障依赖隔离的验证边界。
 control-ha.md: 定义控制平面多副本和容量验证。
 emissary-ota.md: 定义信任源、管理员升级、真实进度、冻结续签与保留身份的启动器维护。
 emissary-native-acceptance.md: 定义专用宿主、Linux原生满盘补报、文件系统门禁及阶段读回。
-frontend-experience.md: 定义导航首读、草稿、偏好、日志与 AI 审计阅读及验证。
+frontend-experience.md: 定义导航首读、草稿、偏好、日志与审计筛选、复制和焦点体验。
 helm.md: 定义 Kubernetes 1.28 安装、接单排空、双库协议切换与持久身份保留。
 image-builds.md: 定义独立镜像池准入、容器镜像生命周期、整合网关、池代理和交付边界。
 image-builds-kubernetes-acceptance-2026-11-17.md: 记录镜像、独立 Operator、网关迁移与空闲连接验收。

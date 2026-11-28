@@ -45,6 +45,7 @@ http://127.0.0.1:4173/design-system/artifactory/prototype/
 | [prototype/index.html](prototype/index.html) | 独立交互原型入口 |
 | [REVIEW.md](REVIEW.md) | 实际验证范围、结果与演示行为说明 |
 | [PRODUCT-REVIEW.md](PRODUCT-REVIEW.md) | 产品原型逐项复核、修正与验证边界 |
+| [PAGE-REVIEW.md](PAGE-REVIEW.md) | 页面家族、全部设置分区与 AI 审计精修验收 |
 | [LIQUID-GLASS-REFERENCE.md](LIQUID-GLASS-REFERENCE.md) | 外部玻璃设计研究、来源与吸收边界 |
 | [artifactory-prism.zip](artifactory-prism.zip) | 完整规范、原型源码、本地资源与截图 |
 

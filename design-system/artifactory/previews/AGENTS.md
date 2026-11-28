@@ -23,5 +23,6 @@ components-review/: 保存 120 项组件的明暗分类图与总览。
 product-review/: 保存产品复核后的框架、状态与设备预览。
 entry-review/: 保存登录、工作空间和项目的明暗与手机预览。
 synchronization-review/: 保存账户、设备与交付流程的同步证据。
+page-polish/: 保存审计精修、辅助偏好和设置空态的本轮证据。
 
 [PROTOCOL]: Update this header on change, then check AGENTS.md

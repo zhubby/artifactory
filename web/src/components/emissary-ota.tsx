@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖产品统一版本、OTA API、系统安装配置与设备详情。
- * [OUTPUT]: 提供手动升级、真实进度、并发策略与执行历史。
+ * [OUTPUT]: 提供手动升级、真实进度、并发策略与可键盘阅读的历史及空态。
  * [POS]: 节点确认后发起升级；首读展示骨架，轮询保留策略草稿。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -10,7 +10,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { EmissaryUpdateProgress } from "@/components/emissary-update-progress";
 import { NodeInstallationSettings } from "@/components/node-installation-settings";
 import { useUI } from "@/components/providers";
-import { ErrorBox, Field, SectionTitle, Loading } from "@/components/common";
+import { Empty, ErrorBox, Field, SectionTitle, Loading } from "@/components/common";
 import { SubmitForm } from "@/components/forms";
 import { NodeFacts } from "@/components/node-detail-parts";
 import { Button } from "@/components/ui/button";
@@ -145,7 +145,7 @@ export function EmissarySettings({ user }: { user: User }) {
       </div>)}</div>}
     </section>
     <section className="panel"><SectionTitle title={t("ota.history")} />
-      {!updates.data ? !updates.error && <Loading variant="table" /> : <div className="table-scroll"><table><thead><tr>{[t("common.name"),t("ota.target"),t("ota.phase"),t("common.time"),t("ota.reason"),""].map((s,i)=><th key={i}>{s}</th>)}</tr></thead><tbody>
+      {!updates.data ? !updates.error && <Loading variant="table" /> : !updates.data.length ? <Empty title={t("ota.noUpdates")} detail={t("ota.noUpdatesHint")} /> : <div className="table-scroll" role="region" tabIndex={0} aria-label={t("ota.history")}><table><thead><tr>{[t("common.name"),t("ota.target"),t("ota.phase"),t("common.time"),t("ota.reason"),""].map((s,i)=><th key={i}>{s}</th>)}</tr></thead><tbody>
         {updates.data.map(u => <tr key={u.id}><td>{u.node_name}</td><td className="font-mono">{u.previous_version} → {u.version}</td><td>{t(`ota.stages.${u.status}`)}</td><td className="text-xs">{date(u.updated_at)}</td><td className="max-w-sm break-words text-xs">{u.error || "—"}</td><td>{admin && <UpdateActions update={u} version={version.data} reload={reload} />}</td></tr>)}
       </tbody></table></div>}
     </section>

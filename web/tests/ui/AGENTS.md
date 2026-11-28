@@ -11,10 +11,10 @@ build-execution-states.spec.ts: 验证无设备尝试的镜像执行、混合目
 build-process.spec.ts: 验证本代 ready、started 门槛，旧代隔离、源码失败和双语主题可读性。
 build-guide.spec.ts: 验证四步弹窗、混合目标、草稿与失败重试、最终确认、中英文明暗主题和无障碍。
 build-device-targets.spec.ts: 验证项目授权平台禁选、在线默认、高级约束和失败重试。
-build-wizard.spec.ts: 验证严格 SemVer、Release 说明、独立源码与目标、轮询稳定的单构建交付、候选失效重选、失败重试和权限。
+build-wizard.spec.ts: 验证严格 SemVer、版本说明键盘展开、独立源码与目标、单构建交付、候选失效重选、失败重试和权限。
 console-visual.spec.ts: 验证多语言概览、独立项目目录、侧栏设置与个人设置布局。
 dashboard.spec.ts: 验证聚合、范围、请求隔离、等宽图表、空态、孤立样本及双语主题无障碍。
-emissary-ota.spec.ts: 验证固定产品版本、手动升级提示、签名发行状态和历史权限。
+emissary-ota.spec.ts: 验证固定产品版本、手动升级提示、签名发行状态、历史空态、键盘滚动和权限。
 emissary-manual-update.spec.ts: 验证管理员确认发起、条件围栏、状态变化、失败恢复和多视口无障碍。
 errors.spec.ts: 验证错误状态和本地化。
 dropdown-controls.spec.ts: 验证首读门控、明暗主题与普通表单弹层齐宽对齐、焦点、必填空值、迟到默认值、字段事件、重置及长列表边界。
@@ -25,7 +25,7 @@ interaction-visual.spec.ts: 验证切换器键盘访问、顶栏通知焦点、3
 lifecycle-controls.spec.ts: 验证 HTTP 操作入口、幂等键、隐藏操作历史、范围恢复与终态停止轮询。
 loading-progress.spec.ts: 验证前台并发结束、失败释放、租户解析取消、轮询静默与未保存导航保护。
 loading-motion.spec.ts: 采样骨架与进度条动画帧，验证系统减少动态效果、快速请求防闪及 SSE 静默。
-images.spec.ts: 验证已发布 Release 分发、候选只读、凭据清空，以及慢轮询与终态日志补读保留输出。
+images.spec.ts: 验证正式镜像分发、候选只读、凭据空态与完整引用、秘密清空、刷新草稿和增量日志阅读。
 monochrome-workspace.spec.ts: 验证快捷导航、应用分类、草稿保护与日志状态。
 model-compatibility.spec.ts: 验证任意模型名、兼容配置回显、协议切换与密钥留空保存。
 planning-feedback.spec.ts: 验证实时与已确认统计、终态优先、旧审计身份和镜像确认说明。
@@ -42,7 +42,7 @@ node-pagination.spec.ts: 验证节点分页筛选及结构化元数据分组。
 node-pools.spec.ts: 验证节点池导航、管理员增改删、失败草稿、设备筛选和双语窄屏无障碍。
 node-installation.spec.ts: 验证固定同版本安装、过期、关闭秘密清理和系统地址权限。
 node-installation-commands.spec.ts: 隔离执行 Shell 与 PowerShell，验证传参、摘要、进程策略与 CA 保留。
-peripheral-visual.spec.ts: 验证认证页、邀请页、独立项目目录空态和错误页的视觉边界。
+peripheral-visual.spec.ts: 验证认证顶栏账户不遮挡说明、邀请页、项目目录空态和错误页的视觉边界。
 prism-system.spec.ts: 验证授权项目双视图、查找排序、小屏阅读、独立材质降级和反光收敛。
 prism-optics.spec.ts: 采样指针高光、跨路由弹簧、稳定按压范围和辅助偏好中断。
 preferences.spec.ts: 验证用户视觉和语言偏好。

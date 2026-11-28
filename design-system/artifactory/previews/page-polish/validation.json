@@ -1,0 +1,36 @@
+{
+  "delivery": {
+    "passed": 186
+  },
+  "ota": {
+    "passed": 108
+  },
+  "credentials": {
+    "passed": 12,
+    "final_layout_groups": 4
+  },
+  "peripheral_regression": {
+    "passed": 8
+  },
+  "page_states": {
+    "passed": 120,
+    "groups": 4
+  },
+  "settings_pages": {
+    "passed": 64,
+    "groups": 4
+  },
+  "typecheck": true,
+  "production_build": true,
+  "docs": {
+    "chapters": 135,
+    "html": 137,
+    "local_links": 24943
+  },
+  "independent_review": "prototype mobile scroll fixed and verified; production web no blockers",
+  "prototype": {
+    "groups_passed": 4,
+    "exception_cases_passed": 28,
+    "mobile_scroll_groups": 2
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "results": [
+    "reduced-transparency-keeps-controls",
+    "reduced-motion-independent-of-material",
+    "forced-colors-preserves-actions"
+  ]
+}

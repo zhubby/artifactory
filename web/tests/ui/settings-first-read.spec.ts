@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖设置分区、必需选项接口和可控首读与轮询响应。
- * [OUTPUT]: 验证独立骨架、失败重试、表单门控和设置身份切换。
+ * [OUTPUT]: 验证独立骨架、失败重试、凭据空态、表单门控和设置身份切换。
  * [POS]: 设置数据生命周期回归；草稿只随明确分区导航重置。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -9,7 +9,7 @@ import { fixtureAPI, openNavigation, project, tenantURL } from "./fixtures";
 
 const reads = [
   { name: "project signing preview", path: `/projects/${project.slug}/settings/signing`, api: `/projects/${project.id}/signing-preview`, heading: "默认签名方案", result: [], empty: "项目尚未设置默认签名方案。" },
-  { name: "image credentials", path: `/projects/${project.slug}/settings/resources`, api: `/projects/${project.id}/image-credentials`, heading: "镜像与构建凭据", result: [] },
+  { name: "image credentials", path: `/projects/${project.slug}/settings/resources`, api: `/projects/${project.id}/image-credentials`, heading: "镜像与构建凭据", result: [], empty: "暂无镜像与构建凭据" },
   { name: "tenant invitations", path: "/settings/members", api: "/tenant/invitations", heading: "邀请链接", result: [] },
   { name: "OTA pools", path: "/settings/emissary", api: "/pools", heading: "节点池升级策略", result: [] },
   { name: "OTA history", path: "/settings/emissary", api: "/emissary-updates", heading: "升级执行记录", result: [] },

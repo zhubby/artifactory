@@ -22,7 +22,7 @@ prism-devices.css: 设备目录、节点池、容量圆端与终端外围的 Pri
 prism-delivery.css: 真实阶段、计划、执行日志、审计与四步引导的 Standard 层级。
 prism-notifications.css: 通知功能玻璃、消息列表与账户订阅的 Prism 外观。
 prism-projects.css: 项目目录焦点、Standard 卡片、Regular 工具组与双视图。
-prism-settings.css: 设置与账户的稳定阅读面、模型字段分组、成员对齐和完整身份展开。
+prism-settings.css: 设置与账户的稳定阅读面、模型分组、成员对齐、镜像凭据目录和完整身份展开。
 prism-workspace.css: 悬浮侧栏、连续顶栏、手机44px工具、账户和设置的响应式布局。
 wizard.css: 定义四步弹窗、平台禁选卡片与固定操作的响应式布局。
 workspace.css: 连接共享顶栏工具、账户插槽与侧栏骨架，手机触控至少 44px。

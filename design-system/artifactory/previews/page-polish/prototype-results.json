@@ -1,0 +1,57 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "width": 1440,
+      "theme": "light",
+      "search_preserves_evidence": true,
+      "pagination_with_filter": true,
+      "round_reading_preserved": true,
+      "clipboard_success_and_failure": true,
+      "exception_scenes": 7,
+      "mobile_focus": false,
+      "overflow": 0,
+      "axe_violations": 0,
+      "page_errors": []
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "search_preserves_evidence": true,
+      "pagination_with_filter": true,
+      "round_reading_preserved": true,
+      "clipboard_success_and_failure": true,
+      "exception_scenes": 7,
+      "mobile_focus": false,
+      "overflow": 0,
+      "axe_violations": 0,
+      "page_errors": []
+    },
+    {
+      "width": 375,
+      "theme": "light",
+      "search_preserves_evidence": true,
+      "pagination_with_filter": true,
+      "round_reading_preserved": true,
+      "clipboard_success_and_failure": true,
+      "exception_scenes": 7,
+      "mobile_focus": true,
+      "overflow": 0,
+      "axe_violations": 0,
+      "page_errors": []
+    },
+    {
+      "width": 375,
+      "theme": "dark",
+      "search_preserves_evidence": true,
+      "pagination_with_filter": true,
+      "round_reading_preserved": true,
+      "clipboard_success_and_failure": true,
+      "exception_scenes": 7,
+      "mobile_focus": true,
+      "overflow": 0,
+      "axe_violations": 0,
+      "page_errors": []
+    }
+  ]
+}

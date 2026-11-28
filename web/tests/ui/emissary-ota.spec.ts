@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖节点、Artifactory 统一版本 API 与升级夹具。
- * [OUTPUT]: 验证固定产品版本、手动升级提示和历史操作边界。
+ * [OUTPUT]: 验证固定产品版本、历史空态、键盘滚动和操作边界。
  * [POS]: 运维设置和节点升级的浏览器回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -8,6 +8,33 @@ import { expect, test, type Page } from "@playwright/test";
 import { fixtureAPI, nodes, tenantURL } from "./fixtures";
 
 const version = { product_version: "0.2.0", release_id: "current", release_version: "0.2.0", release_status: "ready" };
+
+test("empty update history explains the next step without rendering an empty table", async ({ page }) => {
+  await fixtureAPI(page);
+  await page.goto(tenantURL("/settings/emissary"));
+  const history = page.locator("section.panel").filter({ has: page.getByRole("heading", { name: "升级执行记录", exact: true }) });
+  await expect(history.getByRole("heading", { name: "尚无升级记录", exact: true })).toBeVisible();
+  await expect(history).toContainText("管理员从设备详情发起升级后");
+  await expect(history.getByRole("table")).toHaveCount(0);
+});
+
+test("populated update history provides a named keyboard scroll region", async ({ page }) => {
+  await fixtureAPI(page);
+  await page.route("**/api/v1/emissary-updates", route => route.fulfill({ json: [{
+    id: "history-entry", node_id: nodes[0].id, node_name: "Mac Studio", release_id: "current", previous_version: "0.1.0", version: "0.2.0",
+    status: "succeeded", finished_at: "2026-11-25T00:00:00Z", updated_at: "2026-11-25T00:00:00Z",
+  }] }));
+  await page.goto(tenantURL("/settings/emissary"));
+  const history = page.getByRole("region", { name: "升级执行记录", exact: true });
+  await expect(history).toHaveAttribute("tabindex", "0");
+  await expect(history.getByRole("row").filter({ hasText: "Mac Studio" })).toContainText("升级成功");
+  await history.focus();
+  await expect(history).toBeFocused();
+  if (await history.evaluate(element => element.scrollWidth > element.clientWidth)) {
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => history.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
+  }
+});
 async function operations(page: Page) {
   await page.goto(tenantURL("/nodes"));
   await page.getByRole("button", { name: "查看 Mac Studio 的详情", exact: true }).click();

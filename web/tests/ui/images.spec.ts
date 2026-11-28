@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖镜像执行、发布和凭据 HTTP 夹具和共享 Select 交互助手。
- * [OUTPUT]: 验证完整外部引用复制、发布重试和秘密输入清空。
+ * [OUTPUT]: 验证镜像分发、凭据空态、完整引用、秘密清空与刷新草稿。
  * [POS]: 镜像控制台的浏览器流程回归。
  * [PROTOCOL]: Update this header on change, then check AGENTS.md
  */
@@ -70,6 +70,7 @@ test("registry credential creation clears private inputs and supports revocation
   });
   await page.goto(tenantURL(`/projects/${project.slug}/settings/resources`));
   const section = page.locator("section").filter({ has: page.getByRole("heading", { name: "镜像与构建凭据", exact: true }) }).last();
+  await expect(section.getByRole("heading", { name: "暂无镜像与构建凭据", exact: true })).toBeVisible();
   await section.getByLabel("名称", { exact: true }).fill("External");
   await section.getByLabel("仓库地址", { exact: true }).fill("https://external.example.com");
   await section.getByLabel("用户名", { exact: true }).fill("builder");
@@ -77,8 +78,40 @@ test("registry credential creation clears private inputs and supports revocation
   await section.getByRole("button", { name: "新增凭据", exact: true }).click();
   await expect(section.locator('input[name="password"]')).toHaveValue("");
   await expect(section.getByText("registry-credential", { exact: true })).toBeVisible();
+  await expect(section.getByText("已启用", { exact: true })).toBeVisible();
   await section.getByRole("button", { name: "停用", exact: true }).click();
   await expect(section.getByText("已停用", { exact: true })).toBeVisible();
+});
+
+for (const theme of ["light", "dark"] as const) test(`${theme}: credential records preserve full references and form drafts on refresh`, async ({ page }, info) => {
+  if (info.project.name === "mobile") await page.setViewportSize({ width: 375, height: 812 });
+  await fixtureAPI(page);
+  await page.addInitScript(value => localStorage.setItem("artifactory-theme", value), theme);
+  const rows = [
+    { ...credential, id: "registry-12345678-1234-1234-1234-123456789012", name: "Production registry with a long credential name" },
+    { id: "secret-12345678-1234-1234-1234-123456789012", name: "Dependency token", kind: "secret", enabled: false },
+  ];
+  let reads = 0;
+  await page.route("**/api/v1/projects/project-main/image-credentials", route => { reads++; return route.fulfill({ json: rows }); });
+  await page.goto(tenantURL(`/projects/${project.slug}/settings/resources`));
+  const section = page.locator(".settings-image-credentials");
+  await expect(section.locator(".settings-image-credential")).toHaveCount(2);
+  await expect(section.locator(".settings-image-reference code")).toHaveText(rows.map(row => row.id));
+  await expect(section.getByText("BuildKit Secret", { exact: true }).first()).toBeVisible();
+  const password = section.getByLabel("密码或访问令牌", { exact: true });
+  await password.fill("fixture-unsaved-secret");
+  await expect.poll(() => reads, { timeout: 15000 }).toBeGreaterThan(1);
+  await expect(password).toHaveValue("fixture-unsaved-secret");
+  for (const button of await section.locator(".settings-image-actions button").all()) {
+    const rect = (await button.boundingBox())!;
+    expect(rect.width).toBeGreaterThanOrEqual(44);
+    expect(rect.height).toBeGreaterThanOrEqual(44);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  expect(await section.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  await password.fill("");
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.screenshot({ path: info.outputPath(`image-credentials-${theme}.png`), fullPage: true });
 });
 
 test("formal delivery uses server filenames, version links and downloadable manifests", async ({page})=>{
